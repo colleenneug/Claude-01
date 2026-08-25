@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EREBUS CRADLE // Signal Lost</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2304070d'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%235eeaff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23ffb454'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/css/base.css" />
+<link rel="stylesheet" href="src/css/hud.css" />
+<link rel="stylesheet" href="src/css/screens.css" />
+<link rel="stylesheet" href="src/css/combat.css" />
+</head>
+<body class="booting">
+
+<canvas id="starfield" aria-hidden="true"></canvas>
+<div id="grid-floor" aria-hidden="true"></div>
+<div id="scanlines" aria-hidden="true"></div>
+<div id="vignette" aria-hidden="true"></div>
+
+<!-- cursor rig -->
+<div id="cursor" aria-hidden="true">
+  <div class="cur-ring"></div>
+  <div class="cur-dot"></div>
+  <div class="cur-bracket tl"></div>
+  <div class="cur-bracket tr"></div>
+  <div class="cur-bracket bl"></div>
+  <div class="cur-bracket br"></div>
+  <div class="cur-label"></div>
+  <svg class="cur-progress" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"></circle></svg>
+</div>
+<div id="cursor-trail" aria-hidden="true"></div>
+
+<main id="app">
+
+  <!-- ============ BOOT ============ -->
+  <section class="screen" id="screen-boot">
+    <div class="boot-wrap">
+      <pre id="boot-log"></pre>
+    </div>
+  </section>
+
+  <!-- ============ TITLE ============ -->
+  <section class="screen" id="screen-title">
+    <div class="title-wrap">
+      <div class="title-mark">ARK RECOVERY DIVISION // CLEARANCE OMEGA</div>
+      <h1 class="glitch" data-text="EREBUS CRADLE">EREBUS CRADLE</h1>
+      <div class="title-sub">S I G N A L &nbsp; L O S T</div>
+      <p class="title-blurb">
+        Forty years ago the colony ark <em>Erebus Cradle</em> stopped transmitting eleven light-years
+        out. Last week it answered. Not with a distress code &mdash; with a lullaby, sung by
+        two hundred thousand voices that no longer have throats.
+      </p>
+      <div class="title-actions">
+        <button class="btn btn-major" data-go="slots">ACCESS CREW REGISTRY</button>
+        <button class="btn" data-go="codex">FIELD CODEX</button>
+      </div>
+      <div class="title-foot">CURSOR-DRIVEN INTERFACE &middot; POINT &middot; HOVER &middot; COMMIT</div>
+    </div>
+  </section>
+
+  <!-- ============ SLOTS ============ -->
+  <section class="screen" id="screen-slots">
+    <header class="screen-head">
+      <h2>CREW REGISTRY</h2>
+      <p>Three operative slots are budgeted to this mission. Select a dossier to deploy, or
+         open an empty bay to enlist.</p>
+    </header>
+    <div class="slot-grid" id="slot-grid"></div>
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="title">&lsaquo; BACK</button>
+    </footer>
+  </section>
+
+  <!-- ============ CREATE ============ -->
+  <section class="screen" id="screen-create">
+    <header class="screen-head">
+      <h2>ENLISTMENT &mdash; BAY <span id="create-bay">1</span></h2>
+      <p>Every operative is cut from one of three doctrines. The doctrine decides your
+         abilities in the field and the doors that open for you aboard the ark.</p>
+    </header>
+
+    <div class="create-body">
+      <div class="class-rack" id="class-rack"></div>
+      <aside class="class-detail" id="class-detail">
+        <div class="empty-detail">SELECT A DOCTRINE</div>
+      </aside>
+    </div>
+
+    <div class="create-name">
+      <label for="name-input">OPERATIVE DESIGNATION</label>
+      <input id="name-input" maxlength="18" autocomplete="off" spellcheck="false" placeholder="ENTER CALLSIGN" />
+      <button class="btn btn-ghost btn-sm" id="name-random">RANDOMIZE</button>
+    </div>
+
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="slots">&lsaquo; CANCEL</button>
+      <button class="btn btn-major" id="btn-enlist" disabled>COMMIT DOSSIER</button>
+    </footer>
+  </section>
+
+  <!-- ============ CODEX ============ -->
+  <section class="screen" id="screen-codex">
+    <header class="screen-head">
+      <h2>FIELD CODEX</h2>
+      <p>Everything Recovery Division is willing to admit in writing.</p>
+    </header>
+    <div class="codex-body" id="codex-body"></div>
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="title">&lsaquo; BACK</button>
+    </footer>
+  </section>
+
+  <!-- ============ GAME ============ -->
+  <section class="screen" id="screen-game">
+    <div class="game-shell">
+
+      <aside class="panel hud-left">
+        <div class="hud-portrait" id="hud-portrait">
+          <div class="portrait-glyph" id="portrait-glyph"></div>
+          <div class="portrait-scan"></div>
+        </div>
+        <div class="hud-id">
+          <div class="hud-name" id="hud-name">&mdash;</div>
+          <div class="hud-class" id="hud-class">&mdash;</div>
+        </div>
+
+        <div class="stat-block">
+          <div class="bar-row">
+            <span class="bar-label">VITALS</span>
+            <span class="bar-val" id="hp-text">0/0</span>
+          </div>
+          <div class="bar"><div class="bar-fill hp" id="hp-fill"></div></div>
+
+          <div class="bar-row">
+            <span class="bar-label">SHIELD</span>
+            <span class="bar-val" id="sh-text">0</span>
+          </div>
+          <div class="bar"><div class="bar-fill sh" id="sh-fill"></div></div>
+
+          <div class="bar-row">
+            <span class="bar-label">CORE</span>
+            <span class="bar-val" id="en-text">0/0</span>
+          </div>
+          <div class="bar"><div class="bar-fill en" id="en-fill"></div></div>
+
+          <div class="bar-row">
+            <span class="bar-label">RANK <span id="lvl-text">1</span></span>
+            <span class="bar-val" id="xp-text">0/0</span>
+          </div>
+          <div class="bar"><div class="bar-fill xp" id="xp-fill"></div></div>
+        </div>
+
+        <div class="hud-attrs" id="hud-attrs"></div>
+        <div class="hud-inv" id="hud-inv"></div>
+
+        <div class="hud-sysmenu">
+          <button class="btn btn-ghost btn-sm" id="btn-save">SAVE</button>
+          <button class="btn btn-ghost btn-sm" id="btn-quit">DISENGAGE</button>
+        </div>
+      </aside>
+
+      <section class="panel stage" id="stage">
+        <div class="stage-head">
+          <span class="stage-chapter" id="stage-chapter">CHAPTER I</span>
+          <span class="stage-loc" id="stage-loc">&mdash;</span>
+        </div>
+
+        <div class="stage-scroll" id="stage-scroll">
+          <div class="narrative" id="narrative"></div>
+        </div>
+
+        <div class="stage-choices" id="choices"></div>
+
+        <!-- combat overlay -->
+        <div class="combat-layer" id="combat-layer" hidden>
+          <div class="enemy-board" id="enemy-board"></div>
+          <div class="intent-strip" id="intent-strip"></div>
+          <div class="ability-bar" id="ability-bar"></div>
+          <div class="combat-foot">
+            <div class="turn-tag" id="turn-tag">TURN 1</div>
+            <button class="btn btn-ghost btn-sm" id="btn-focus">FOCUS &mdash; end turn, +4 CORE</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel hud-right">
+        <div class="log-head">TELEMETRY</div>
+        <div class="log-scroll" id="log"></div>
+        <div class="obj-head">OBJECTIVE</div>
+        <div class="obj-body" id="objective">&mdash;</div>
+      </aside>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast-rail"></div>
+
+<div id="modal" hidden>
+  <div class="modal-card panel">
+    <h3 id="modal-title">CONFIRM</h3>
+    <p id="modal-text"></p>
+    <div class="modal-actions" id="modal-actions"></div>
+  </div>
+</div>
+
+<audio id="hum" loop></audio>
+
+<script src="src/js/util.js"></script>
+<script src="src/js/audio.js"></script>
+<script src="src/js/cursor.js"></script>
+<script src="src/js/fx.js"></script>
+<script src="src/js/classes.js"></script>
+<script src="src/js/enemies.js"></script>
+<script src="src/js/storage.js"></script>
+<script src="src/js/story.js"></script>
+<script src="src/js/combat.js"></script>
+<script src="src/js/ui.js"></script>
+<script src="src/js/main.js"></script>
+</body>
+</html>
