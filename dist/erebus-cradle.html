@@ -1,0 +1,3561 @@
+<title>Erebus Cradle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+/* ==== src/css/base.css ==== */
+/* ============================================================
+   EREBUS CRADLE — base layer: palette, reset, ambience, cursor
+   ============================================================ */
+
+:root{
+  --void:        #04070d;
+  --void-2:      #070c16;
+  --panel:       rgba(10, 20, 34, 0.72);
+  --panel-solid: #0a1422;
+  --line:        rgba(94, 234, 255, 0.22);
+  --line-hot:    rgba(94, 234, 255, 0.65);
+
+  --cyan:        #5eeaff;
+  --cyan-dim:    #2b8ea0;
+  --amber:       #ffb454;
+  --magenta:     #ff5ea8;
+  --lime:        #7dff9b;
+  --blood:       #ff4d5e;
+  --ink:         #cfeaf5;
+  --ink-dim:     #6c8ba0;
+
+  --font-ui: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Share Tech Mono', ui-monospace, 'Courier New', monospace;
+
+  --glow-cyan: 0 0 12px rgba(94,234,255,.45), 0 0 40px rgba(94,234,255,.12);
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+
+html,body{ height:100%; }
+
+body{
+  margin:0;
+  background:
+    radial-gradient(1200px 700px at 50% -10%, #0d2033 0%, transparent 60%),
+    radial-gradient(900px 600px at 90% 110%, #131029 0%, transparent 55%),
+    var(--void);
+  color:var(--ink);
+  font-family:var(--font-ui);
+  font-weight:400;
+  overflow:hidden;
+  cursor:none;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* every interactive element inherits the hidden native cursor */
+button, input, a, [data-hover]{ cursor:none; }
+
+/* ---------- ambience layers ---------- */
+#starfield{ position:fixed; inset:0; z-index:0; display:block; }
+
+#grid-floor{
+  position:fixed; left:0; right:0; bottom:0; height:44vh; z-index:0;
+  background-image:
+    linear-gradient(rgba(94,234,255,.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94,234,255,.16) 1px, transparent 1px);
+  background-size: 100% 40px, 40px 100%;
+  transform: perspective(340px) rotateX(72deg);
+  transform-origin: bottom center;
+  mask-image: linear-gradient(to top, rgba(0,0,0,.85), transparent 78%);
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.85), transparent 78%);
+  opacity:.5;
+  animation: floorDrift 14s linear infinite;
+  pointer-events:none;
+}
+@keyframes floorDrift{ from{ background-position:0 0, 0 0; } to{ background-position:0 40px, 0 0; } }
+
+#scanlines{
+  position:fixed; inset:0; z-index:900; pointer-events:none; opacity:.32;
+  background: repeating-linear-gradient(to bottom,
+    rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,.30) 3px, rgba(0,0,0,.30) 4px);
+  mix-blend-mode: multiply;
+}
+#scanlines::after{
+  content:''; position:absolute; left:0; right:0; height:120px;
+  background:linear-gradient(to bottom, transparent, rgba(94,234,255,.055), transparent);
+  animation: sweep 7s linear infinite;
+}
+@keyframes sweep{ from{ top:-20%; } to{ top:120%; } }
+
+#vignette{
+  position:fixed; inset:0; z-index:901; pointer-events:none;
+  background: radial-gradient(circle at 50% 45%, transparent 45%, rgba(0,0,0,.72) 100%);
+}
+
+/* ---------- cursor rig ---------- */
+#cursor{
+  position:fixed; top:0; left:0; z-index:1000; pointer-events:none;
+  width:46px; height:46px; margin:-23px 0 0 -23px;
+  transition: width .16s ease, height .16s ease, margin .16s ease;
+  will-change: transform;
+}
+.cur-ring{
+  position:absolute; inset:0; border:1px solid var(--line-hot); border-radius:50%;
+  box-shadow:var(--glow-cyan); opacity:.85;
+  animation: cursorSpin 6s linear infinite;
+  border-top-color: transparent; border-bottom-color: transparent;
+}
+@keyframes cursorSpin{ to{ transform:rotate(360deg); } }
+.cur-dot{
+  position:absolute; left:50%; top:50%; width:4px; height:4px; margin:-2px 0 0 -2px;
+  background:var(--cyan); border-radius:50%; box-shadow:var(--glow-cyan);
+}
+.cur-bracket{ position:absolute; width:9px; height:9px; border:1.5px solid var(--cyan); opacity:.9; transition:all .16s ease; }
+.cur-bracket.tl{ left:-7px;  top:-7px;    border-right:0; border-bottom:0; }
+.cur-bracket.tr{ right:-7px; top:-7px;    border-left:0;  border-bottom:0; }
+.cur-bracket.bl{ left:-7px;  bottom:-7px; border-right:0; border-top:0; }
+.cur-bracket.br{ right:-7px; bottom:-7px; border-left:0;  border-top:0; }
+
+.cur-label{
+  position:absolute; left:34px; top:50%; transform:translateY(-50%);
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.16em;
+  color:var(--cyan); white-space:nowrap; opacity:0; transition:opacity .15s ease;
+  text-shadow:0 0 8px rgba(94,234,255,.6);
+}
+#cursor.labelled .cur-label{ opacity:.95; }
+
+#cursor.hot{ width:62px; height:62px; margin:-31px 0 0 -31px; }
+#cursor.hot .cur-bracket{ width:13px; height:13px; border-color:var(--amber); }
+#cursor.hot .cur-ring{ border-color:var(--amber); border-top-color:transparent; border-bottom-color:transparent; box-shadow:0 0 14px rgba(255,180,84,.5); }
+#cursor.hot .cur-dot{ background:var(--amber); box-shadow:0 0 10px rgba(255,180,84,.8); }
+#cursor.hot .cur-label{ color:var(--amber); text-shadow:0 0 8px rgba(255,180,84,.6); }
+
+#cursor.danger .cur-ring{ border-color:var(--blood); box-shadow:0 0 14px rgba(255,77,94,.55); }
+#cursor.danger .cur-bracket{ border-color:var(--blood); }
+#cursor.danger .cur-dot{ background:var(--blood); }
+#cursor.danger .cur-label{ color:var(--blood); }
+
+#cursor.text .cur-ring{ opacity:.25; }
+#cursor.blocked .cur-ring{ border-color:var(--ink-dim); box-shadow:none; }
+#cursor.blocked .cur-bracket{ border-color:var(--ink-dim); }
+
+#cursor.clicking{ transform-origin:center; }
+#cursor.clicking .cur-ring{ animation: cursorPulse .28s ease-out; }
+@keyframes cursorPulse{ 0%{ transform:scale(1); opacity:1; } 100%{ transform:scale(1.7); opacity:0; } }
+
+.cur-progress{ position:absolute; inset:-6px; opacity:0; transform:rotate(-90deg); transition:opacity .12s; }
+.cur-progress circle{
+  fill:none; stroke:var(--amber); stroke-width:3; stroke-linecap:round;
+  stroke-dasharray:276; stroke-dashoffset:276;
+  filter: drop-shadow(0 0 6px rgba(255,180,84,.8));
+}
+#cursor.holding .cur-progress{ opacity:1; }
+
+#cursor-trail{ position:fixed; inset:0; z-index:999; pointer-events:none; }
+.trail-dot{
+  position:absolute; width:3px; height:3px; margin:-1.5px 0 0 -1.5px;
+  background:var(--cyan); border-radius:50%;
+  animation: trailFade .5s ease-out forwards;
+}
+@keyframes trailFade{ from{ opacity:.55; transform:scale(1);} to{ opacity:0; transform:scale(.2);} }
+
+/* click ripple */
+.ripple{
+  position:fixed; z-index:998; pointer-events:none; border:1px solid var(--cyan);
+  border-radius:50%; width:10px; height:10px; margin:-5px 0 0 -5px;
+  animation: rippleOut .55s cubic-bezier(.2,.7,.3,1) forwards;
+}
+@keyframes rippleOut{ to{ width:110px; height:110px; margin:-55px 0 0 -55px; opacity:0; } }
+
+/* ---------- shared chrome ---------- */
+.panel{
+  position:relative;
+  background:var(--panel);
+  border:1px solid var(--line);
+  backdrop-filter: blur(6px);
+}
+.panel::before, .panel::after{
+  content:''; position:absolute; width:14px; height:14px; border:1px solid var(--line-hot); pointer-events:none;
+}
+.panel::before{ left:-1px; top:-1px; border-right:0; border-bottom:0; }
+.panel::after{ right:-1px; bottom:-1px; border-left:0; border-top:0; }
+
+.btn{
+  position:relative; font-family:var(--font-ui); font-weight:600;
+  font-size:13px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--cyan); background:linear-gradient(180deg, rgba(94,234,255,.09), rgba(94,234,255,.02));
+  border:1px solid var(--line); padding:11px 20px;
+  clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+  transition: color .16s, background .16s, border-color .16s, transform .12s, box-shadow .16s;
+}
+.btn:hover:not(:disabled){
+  color:#eafcff; border-color:var(--line-hot);
+  background:linear-gradient(180deg, rgba(94,234,255,.22), rgba(94,234,255,.06));
+  box-shadow: var(--glow-cyan), inset 0 0 18px rgba(94,234,255,.12);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled){ transform:translateY(1px); }
+.btn:disabled{ color:var(--ink-dim); border-color:rgba(108,139,160,.28); opacity:.55; }
+.btn-major{ font-size:14px; padding:14px 30px; color:var(--amber); border-color:rgba(255,180,84,.4);
+  background:linear-gradient(180deg, rgba(255,180,84,.12), rgba(255,180,84,.02)); }
+.btn-major:hover:not(:disabled){ color:#fff3e0; border-color:rgba(255,180,84,.9);
+  background:linear-gradient(180deg, rgba(255,180,84,.28), rgba(255,180,84,.06));
+  box-shadow:0 0 14px rgba(255,180,84,.4), inset 0 0 18px rgba(255,180,84,.14); }
+.btn-ghost{ background:transparent; color:var(--ink-dim); border-color:rgba(108,139,160,.3); }
+.btn-ghost:hover:not(:disabled){ color:var(--cyan); border-color:var(--line-hot); background:rgba(94,234,255,.07); box-shadow:none; }
+.btn-sm{ font-size:11px; padding:7px 13px; letter-spacing:.12em; }
+.btn-danger{ color:var(--blood); border-color:rgba(255,77,94,.4); }
+.btn-danger:hover:not(:disabled){ color:#fff; background:rgba(255,77,94,.22); border-color:var(--blood); box-shadow:0 0 12px rgba(255,77,94,.4); }
+
+input[type=text], input:not([type]){
+  font-family:var(--font-mono); font-size:15px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--cyan); background:rgba(94,234,255,.05);
+  border:1px solid var(--line); border-radius:0; padding:11px 14px; outline:none;
+  transition:border-color .16s, box-shadow .16s;
+}
+input:focus{ border-color:var(--line-hot); box-shadow:inset 0 0 16px rgba(94,234,255,.12); }
+input::placeholder{ color:rgba(108,139,160,.6); letter-spacing:.14em; }
+
+/* scrollbars */
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-track{ background:rgba(94,234,255,.04); }
+::-webkit-scrollbar-thumb{ background:rgba(94,234,255,.26); }
+::-webkit-scrollbar-thumb:hover{ background:rgba(94,234,255,.5); }
+
+/* toasts */
+#toast-rail{ position:fixed; right:22px; top:22px; z-index:960; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+.toast{
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.1em;
+  padding:10px 16px; border:1px solid var(--line-hot); color:var(--cyan);
+  background:rgba(6,14,24,.9); box-shadow:var(--glow-cyan);
+  animation: toastIn .3s ease-out, toastOut .4s ease-in 2.8s forwards;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.toast.warn{ color:var(--amber); border-color:rgba(255,180,84,.7); box-shadow:0 0 12px rgba(255,180,84,.35); }
+.toast.bad{ color:var(--blood); border-color:rgba(255,77,94,.7); box-shadow:0 0 12px rgba(255,77,94,.35); }
+.toast.good{ color:var(--lime); border-color:rgba(125,255,155,.7); box-shadow:0 0 12px rgba(125,255,155,.3); }
+@keyframes toastIn{ from{ opacity:0; transform:translateX(30px); } }
+@keyframes toastOut{ to{ opacity:0; transform:translateX(30px); } }
+
+/* modal */
+#modal{ position:fixed; inset:0; z-index:970; display:grid; place-items:center; background:rgba(2,5,10,.78); backdrop-filter:blur(3px); }
+#modal[hidden]{ display:none; }
+.modal-card{ width:min(480px, 90vw); padding:26px 28px; animation: modalIn .22s ease-out; }
+@keyframes modalIn{ from{ opacity:0; transform:translateY(-10px) scale(.98);} }
+.modal-card h3{ margin:0 0 10px; font-size:16px; letter-spacing:.22em; color:var(--amber); }
+.modal-card p{ margin:0 0 20px; font-size:14px; line-height:1.6; color:var(--ink-dim); }
+.modal-actions{ display:flex; gap:10px; justify-content:flex-end; }
+
+/* screen system */
+.screen{ display:none; position:relative; z-index:5; height:100vh; }
+.screen.active{ display:flex; flex-direction:column; animation: screenIn .32s ease-out; }
+@keyframes screenIn{ from{ opacity:0; transform:translateY(8px); } }
+
+body.booting .screen:not(#screen-boot){ display:none !important; }
+
+.hidden{ display:none !important; }
+
+
+/* ==== src/css/hud.css ==== */
+/* ============================================================
+   In-mission HUD: left dossier / centre stage / right telemetry
+   ============================================================ */
+
+#screen-game{ padding:18px; }
+.game-shell{
+  flex:1; display:grid; min-height:0;
+  grid-template-columns: 290px 1fr 280px; gap:16px;
+}
+
+/* ---------- left ---------- */
+.hud-left{ padding:18px 16px; display:flex; flex-direction:column; gap:14px; overflow:auto; }
+.hud-portrait{
+  position:relative; height:120px; border:1px solid var(--line);
+  background: radial-gradient(circle at 50% 40%, rgba(94,234,255,.12), transparent 70%);
+  display:grid; place-items:center; overflow:hidden;
+}
+.portrait-glyph{ font-size:52px; color:var(--accent, var(--cyan)); text-shadow:0 0 24px currentColor; }
+.portrait-scan{
+  position:absolute; left:0; right:0; height:2px; background:rgba(94,234,255,.5);
+  box-shadow:0 0 10px rgba(94,234,255,.8); animation: portScan 3.2s ease-in-out infinite;
+}
+@keyframes portScan{ 0%,100%{ top:6%; } 50%{ top:94%; } }
+
+.hud-id{ text-align:center; }
+.hud-name{ font-size:17px; letter-spacing:.16em; color:#eafcff; }
+.hud-class{ font-family:var(--font-mono); font-size:10px; letter-spacing:.24em; color:var(--accent, var(--cyan)); margin-top:3px; }
+
+.stat-block{ display:flex; flex-direction:column; gap:4px; }
+.bar-row{ display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; }
+.bar-label{ font-family:var(--font-mono); font-size:9px; letter-spacing:.26em; color:var(--ink-dim); }
+.bar-val{ font-family:var(--font-mono); font-size:11px; color:var(--ink); }
+.bar{ height:8px; background:rgba(94,234,255,.07); border:1px solid rgba(94,234,255,.16); overflow:hidden; }
+.bar-fill{ height:100%; width:0%; transition: width .45s cubic-bezier(.2,.8,.3,1); position:relative; }
+.bar-fill::after{ content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);
+  animation: barSheen 2.6s linear infinite; }
+@keyframes barSheen{ from{ transform:translateX(-100%);} to{ transform:translateX(100%);} }
+.bar-fill.hp{ background:linear-gradient(90deg,#ff4d5e,#ff8a5e); box-shadow:0 0 10px rgba(255,77,94,.5); }
+.bar-fill.sh{ background:linear-gradient(90deg,#5eeaff,#7db4ff); box-shadow:0 0 10px rgba(94,234,255,.5); }
+.bar-fill.en{ background:linear-gradient(90deg,#ffb454,#ffe08a); box-shadow:0 0 10px rgba(255,180,84,.5); }
+.bar-fill.xp{ background:linear-gradient(90deg,#7dff9b,#5eeaff); box-shadow:0 0 8px rgba(125,255,155,.4); }
+.bar-flash{ animation: barFlash .4s ease-out; }
+@keyframes barFlash{ 0%{ filter:brightness(2.4);} 100%{ filter:brightness(1);} }
+
+.hud-attrs{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+.attr{ text-align:center; padding:8px 4px; border:1px solid var(--line); background:rgba(94,234,255,.04); }
+.attr .an{ font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; color:var(--ink-dim); }
+.attr .av{ font-size:18px; color:var(--cyan); margin-top:2px; }
+.attr[data-key]:hover{ border-color:var(--line-hot); }
+
+.hud-inv{ display:flex; flex-direction:column; gap:6px; }
+.inv-head{ font-family:var(--font-mono); font-size:9px; letter-spacing:.26em; color:var(--ink-dim); margin-top:4px; }
+.inv-item{
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+  padding:7px 10px; border:1px solid var(--line); background:rgba(94,234,255,.04);
+  font-family:var(--font-mono); font-size:11px; color:var(--ink); transition:.15s; text-align:left; width:100%;
+}
+.inv-item:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(94,234,255,.13); color:var(--cyan); }
+.inv-item:disabled{ opacity:.4; }
+.inv-item .qty{ color:var(--amber); }
+.inv-empty{ font-family:var(--font-mono); font-size:10px; color:rgba(108,139,160,.6); letter-spacing:.12em; padding:4px 0; }
+
+.hud-sysmenu{ margin-top:auto; display:flex; gap:8px; padding-top:10px; }
+.hud-sysmenu .btn{ flex:1; }
+
+/* ---------- centre stage ---------- */
+.stage{ display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.stage-head{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:12px 20px; border-bottom:1px solid var(--line);
+  background:linear-gradient(90deg, rgba(94,234,255,.08), transparent);
+}
+.stage-chapter{ font-family:var(--font-mono); font-size:10px; letter-spacing:.3em; color:var(--amber); }
+.stage-loc{ font-family:var(--font-mono); font-size:10px; letter-spacing:.22em; color:var(--ink-dim); }
+
+.stage-scroll{ flex:1; overflow-y:auto; padding:26px 34px; min-height:0; }
+.narrative p{ font-size:15px; line-height:1.95; color:var(--ink); margin:0 0 18px; }
+.narrative p.dim{ color:var(--ink-dim); }
+.narrative p.sys{
+  font-family:var(--font-mono); font-size:13px; color:var(--lime); letter-spacing:.06em;
+  border-left:2px solid var(--lime); padding-left:14px; line-height:1.75;
+}
+.narrative p.voice{
+  font-family:var(--font-mono); font-size:13.5px; color:var(--magenta); letter-spacing:.05em;
+  border-left:2px solid var(--magenta); padding-left:14px; line-height:1.8;
+}
+.narrative p.alert{
+  font-family:var(--font-mono); font-size:13px; color:var(--blood); letter-spacing:.1em;
+  border-left:2px solid var(--blood); padding-left:14px;
+}
+.narrative p.class-note{
+  font-family:var(--font-mono); font-size:12.5px; color:var(--amber); letter-spacing:.05em;
+  border-left:2px solid var(--amber); padding-left:14px; line-height:1.75;
+}
+.narrative .sep{ height:1px; background:linear-gradient(90deg, var(--line-hot), transparent); margin:22px 0; }
+.narrative em{ color:#eafcff; font-style:italic; }
+.narrative strong{ color:var(--cyan); font-weight:600; }
+
+.typing::after{ content:'▌'; color:var(--cyan); animation:blink 1s steps(1) infinite; }
+
+.stage-choices{ padding:16px 24px 20px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:9px; }
+.choice{
+  position:relative; text-align:left; padding:13px 18px 13px 44px;
+  border:1px solid var(--line); background:linear-gradient(90deg, rgba(94,234,255,.06), transparent);
+  color:var(--ink); font-size:14px; line-height:1.5; transition:.16s;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.choice::before{
+  content:'▸'; position:absolute; left:18px; top:50%; transform:translateY(-50%);
+  color:var(--cyan); opacity:.55; transition:.16s;
+}
+.choice:hover:not(:disabled){
+  border-color:var(--line-hot); color:#eafcff; transform:translateX(6px);
+  background:linear-gradient(90deg, rgba(94,234,255,.2), transparent);
+  box-shadow:inset 0 0 20px rgba(94,234,255,.09);
+}
+.choice:hover:not(:disabled)::before{ opacity:1; left:22px; text-shadow:var(--glow-cyan); }
+.choice .tag{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em;
+  padding:2px 7px; border:1px solid currentColor; margin-right:9px; vertical-align:2px;
+}
+.choice.gated{ border-color:rgba(255,180,84,.42); }
+.choice.gated .tag{ color:var(--amber); }
+.choice.gated:hover:not(:disabled){ background:linear-gradient(90deg, rgba(255,180,84,.18), transparent); border-color:var(--amber); }
+.choice.locked{ opacity:.42; }
+.choice.locked .tag{ color:var(--ink-dim); }
+.choice.risky .tag{ color:var(--blood); }
+.choice.risky:hover:not(:disabled){ border-color:var(--blood); background:linear-gradient(90deg, rgba(255,77,94,.16), transparent); }
+
+/* ---------- right ---------- */
+.hud-right{ padding:16px 14px; display:flex; flex-direction:column; min-height:0; }
+.log-head, .obj-head{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.3em; color:var(--amber);
+  border-bottom:1px solid var(--line); padding-bottom:7px; margin-bottom:10px;
+}
+.obj-head{ margin-top:14px; }
+.log-scroll{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:5px; min-height:0; }
+.log-line{
+  font-family:var(--font-mono); font-size:11px; line-height:1.5; color:var(--ink-dim);
+  padding-left:11px; border-left:1px solid rgba(94,234,255,.2);
+  animation: logIn .3s ease-out;
+}
+@keyframes logIn{ from{ opacity:0; transform:translateX(-6px); } }
+.log-line.dmg{ color:var(--blood); border-left-color:var(--blood); }
+.log-line.heal{ color:var(--lime); border-left-color:var(--lime); }
+.log-line.buff{ color:var(--cyan); border-left-color:var(--cyan); }
+.log-line.crit{ color:var(--amber); border-left-color:var(--amber); font-weight:600; }
+.log-line.story{ color:var(--magenta); border-left-color:var(--magenta); }
+.obj-body{ font-size:12.5px; line-height:1.65; color:var(--ink); }
+
+@media (max-width: 1150px){
+  .game-shell{ grid-template-columns: 250px 1fr; }
+  .hud-right{ display:none; }
+}
+
+
+/* ==== src/css/screens.css ==== */
+/* ============================================================
+   Boot / Title / Slots / Create / Codex
+   ============================================================ */
+
+/* ---------- boot ---------- */
+#screen-boot{ align-items:center; justify-content:center; }
+.boot-wrap{ width:min(760px, 88vw); }
+#boot-log{
+  font-family:var(--font-mono); font-size:13px; line-height:1.75; color:var(--cyan);
+  margin:0; white-space:pre-wrap; text-shadow:0 0 8px rgba(94,234,255,.35);
+}
+#boot-log .ok{ color:var(--lime); }
+#boot-log .warn{ color:var(--amber); }
+#boot-log .bad{ color:var(--blood); }
+#boot-log .dim{ color:var(--ink-dim); }
+#boot-log .caret{ animation: blink 1s steps(1) infinite; }
+@keyframes blink{ 50%{ opacity:0; } }
+
+/* ---------- title ---------- */
+#screen-title{ align-items:center; justify-content:center; text-align:center; }
+.title-wrap{ width:min(820px, 90vw); }
+.title-mark{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.4em; color:var(--ink-dim);
+  margin-bottom:20px;
+}
+.title-wrap h1{
+  font-size: clamp(42px, 8vw, 92px); font-weight:700; letter-spacing:.1em;
+  margin:0; color:#eafcff;
+  text-shadow: 0 0 22px rgba(94,234,255,.45), 0 0 70px rgba(94,234,255,.18);
+}
+.glitch{ position:relative; }
+.glitch::before, .glitch::after{
+  content:attr(data-text); position:absolute; left:0; top:0; width:100%;
+  clip-path: inset(0 0 0 0); pointer-events:none;
+}
+.glitch::before{ color:var(--magenta); animation: glitchA 3.4s infinite steps(2); }
+.glitch::after{  color:var(--cyan);    animation: glitchB 2.7s infinite steps(2); }
+@keyframes glitchA{
+  0%,92%,100%{ transform:translate(0); clip-path:inset(0 0 100% 0); }
+  93%{ transform:translate(-3px,1px); clip-path:inset(12% 0 62% 0); }
+  96%{ transform:translate(2px,-2px); clip-path:inset(48% 0 28% 0); }
+}
+@keyframes glitchB{
+  0%,90%,100%{ transform:translate(0); clip-path:inset(0 0 100% 0); }
+  91%{ transform:translate(3px,-1px); clip-path:inset(70% 0 12% 0); }
+  95%{ transform:translate(-2px,2px); clip-path:inset(26% 0 55% 0); }
+}
+.title-sub{
+  margin:14px 0 26px; font-family:var(--font-mono); font-size:14px;
+  letter-spacing:.5em; color:var(--amber); text-shadow:0 0 12px rgba(255,180,84,.45);
+}
+.title-blurb{
+  max-width:620px; margin:0 auto 34px; font-size:15px; line-height:1.85; color:var(--ink-dim);
+}
+.title-blurb em{ color:var(--ink); font-style:italic; }
+.title-actions{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+.title-foot{
+  margin-top:44px; font-family:var(--font-mono); font-size:10px;
+  letter-spacing:.32em; color:rgba(108,139,160,.55);
+}
+
+/* ---------- generic screen frame ---------- */
+.screen-head{ padding:38px 6vw 18px; }
+.screen-head h2{
+  margin:0 0 8px; font-size:26px; letter-spacing:.28em; color:var(--cyan);
+  text-shadow:var(--glow-cyan);
+}
+.screen-head h2::before{ content:'// '; color:var(--amber); }
+.screen-head p{ margin:0; max-width:720px; font-size:14px; line-height:1.7; color:var(--ink-dim); }
+.screen-foot{
+  margin-top:auto; padding:20px 6vw 34px; display:flex; gap:12px; justify-content:space-between;
+  align-items:center;
+}
+.screen-foot .btn-major{ margin-left:auto; }
+
+/* ---------- slots ---------- */
+.slot-grid{
+  display:grid; grid-template-columns:repeat(3, 1fr); gap:20px;
+  padding:14px 6vw; align-content:start;
+}
+.slot{
+  position:relative; padding:24px 22px 20px; min-height:340px;
+  background:var(--panel); border:1px solid var(--line);
+  display:flex; flex-direction:column; transition:.2s;
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+}
+.slot:hover{ border-color:var(--line-hot); box-shadow:var(--glow-cyan); transform:translateY(-3px); }
+.slot .bay{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.34em; color:var(--ink-dim);
+  border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:18px;
+}
+.slot.empty{ align-items:center; justify-content:center; text-align:center; }
+.slot.empty .bay{ position:absolute; top:24px; left:22px; right:22px; }
+.slot-empty-mark{ font-size:52px; color:rgba(94,234,255,.22); line-height:1; margin-bottom:14px; }
+.slot-empty-txt{ font-family:var(--font-mono); font-size:12px; letter-spacing:.24em; color:var(--ink-dim); }
+.slot:hover .slot-empty-mark{ color:var(--cyan); text-shadow:var(--glow-cyan); }
+
+.slot-glyph{
+  width:74px; height:74px; margin:0 auto 14px; display:grid; place-items:center;
+  border:1px solid var(--line-hot); border-radius:50%; font-size:30px;
+  box-shadow: inset 0 0 22px rgba(94,234,255,.15);
+}
+.slot-name{ text-align:center; font-size:19px; letter-spacing:.16em; color:#eafcff; }
+.slot-class{ text-align:center; font-family:var(--font-mono); font-size:11px; letter-spacing:.2em; margin-top:5px; }
+.slot-meta{ margin-top:18px; display:flex; flex-direction:column; gap:7px; font-family:var(--font-mono); font-size:11px; color:var(--ink-dim); }
+.slot-meta .row{ display:flex; justify-content:space-between; border-bottom:1px dashed rgba(94,234,255,.13); padding-bottom:5px; }
+.slot-meta .row b{ color:var(--ink); font-weight:400; }
+.slot-actions{ margin-top:auto; padding-top:18px; display:flex; gap:8px; }
+.slot-actions .btn{ flex:1; }
+
+.hold-btn{ position:relative; overflow:hidden; }
+.hold-btn .hold-fill{
+  position:absolute; left:0; top:0; bottom:0; width:0%;
+  background:rgba(255,77,94,.3); pointer-events:none; transition:width .05s linear;
+}
+
+/* ---------- create ---------- */
+.create-body{ display:grid; grid-template-columns: 1.15fr 1fr; gap:22px; padding:14px 6vw; min-height:0; flex:1; }
+.class-rack{ display:flex; flex-direction:column; gap:14px; }
+.class-card{
+  position:relative; padding:18px 20px; text-align:left;
+  background:linear-gradient(100deg, rgba(10,20,34,.8), rgba(10,20,34,.35));
+  border:1px solid var(--line); transition:.2s; overflow:hidden;
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:center;
+}
+.class-card::after{
+  content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent, var(--cyan));
+  opacity:.5; transition:.2s;
+}
+.class-card:hover{ border-color:var(--line-hot); transform:translateX(4px); }
+.class-card:hover::after{ opacity:1; box-shadow:0 0 14px var(--accent, var(--cyan)); }
+.class-card.selected{
+  border-color:var(--accent); background:linear-gradient(100deg, rgba(94,234,255,.14), rgba(10,20,34,.4));
+  transform:translateX(6px);
+}
+.class-card.selected::after{ opacity:1; width:4px; box-shadow:0 0 18px var(--accent); }
+.cc-glyph{ width:56px; height:56px; display:grid; place-items:center; font-size:26px;
+  border:1px solid var(--accent); border-radius:50%; color:var(--accent);
+  box-shadow: inset 0 0 18px color-mix(in srgb, var(--accent) 22%, transparent); }
+.cc-name{ font-size:19px; letter-spacing:.2em; color:#eafcff; }
+.cc-role{ font-family:var(--font-mono); font-size:11px; letter-spacing:.2em; color:var(--accent); margin-top:4px; }
+.cc-line{ font-size:13px; color:var(--ink-dim); margin-top:8px; line-height:1.55; }
+
+.class-detail{ padding:22px 24px; border:1px solid var(--line); background:var(--panel); overflow:auto;
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px)); }
+.empty-detail{ height:100%; display:grid; place-items:center; font-family:var(--font-mono);
+  font-size:12px; letter-spacing:.28em; color:rgba(108,139,160,.5); }
+.cd-title{ font-size:22px; letter-spacing:.2em; color:var(--accent); margin-bottom:4px; }
+.cd-flavor{ font-size:13px; line-height:1.7; color:var(--ink-dim); font-style:italic;
+  border-left:2px solid var(--accent); padding-left:12px; margin:12px 0 18px; }
+.cd-sec{ font-family:var(--font-mono); font-size:10px; letter-spacing:.3em; color:var(--amber);
+  margin:18px 0 10px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+.cd-stats{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px 18px; font-family:var(--font-mono); font-size:12px; }
+.cd-stats .k{ color:var(--ink-dim); }
+.cd-stats .v{ color:var(--ink); float:right; }
+.cd-ability{ margin-bottom:12px; padding-left:12px; border-left:1px solid var(--line); }
+.cd-ability .an{ font-size:14px; letter-spacing:.1em; color:var(--cyan); }
+.cd-ability .ac{ font-family:var(--font-mono); font-size:10px; color:var(--amber); letter-spacing:.12em; }
+.cd-ability .ad{ font-size:12px; color:var(--ink-dim); line-height:1.55; margin-top:3px; }
+.cd-perk{ font-size:12px; color:var(--lime); line-height:1.6; }
+
+.create-name{ display:flex; align-items:center; gap:14px; padding:6px 6vw 0; }
+.create-name label{ font-family:var(--font-mono); font-size:10px; letter-spacing:.28em; color:var(--ink-dim); }
+.create-name input{ width:260px; }
+
+/* ---------- codex ---------- */
+.codex-body{ padding:14px 6vw; overflow:auto; display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; align-content:start; }
+.codex-entry{ padding:18px 20px; border:1px solid var(--line); background:var(--panel);
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px); }
+.codex-entry h4{ margin:0 0 8px; font-size:14px; letter-spacing:.2em; color:var(--amber); }
+.codex-entry p{ margin:0; font-size:13px; line-height:1.7; color:var(--ink-dim); }
+.codex-entry:hover{ border-color:var(--line-hot); }
+
+@media (max-width: 900px){
+  .slot-grid{ grid-template-columns:1fr; }
+  .create-body{ grid-template-columns:1fr; }
+}
+
+
+/* ==== src/css/combat.css ==== */
+/* ============================================================
+   Combat layer
+   ============================================================ */
+
+.combat-layer{
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  background:linear-gradient(180deg, #05080e 0%, #0a0409 100%);
+  animation: combatIn .35s ease-out;
+}
+.combat-layer[hidden]{ display:none; }
+@keyframes combatIn{ from{ opacity:0; transform:scale(1.02); } }
+
+.combat-layer::before{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background: repeating-linear-gradient(115deg, transparent 0 28px, rgba(255,77,94,.035) 28px 30px);
+}
+
+/* ---------- enemies ---------- */
+.enemy-board{
+  flex:1; display:flex; align-items:center; justify-content:center; gap:30px;
+  padding:34px 22px 22px; flex-wrap:wrap; min-height:0;
+}
+.enemy{
+  position:relative; width:210px; padding:16px 16px 14px; text-align:center;
+  border:1px solid rgba(255,77,94,.3); background:rgba(20,6,12,.55);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  transition:.18s;
+}
+.enemy:hover{ border-color:var(--blood); box-shadow:0 0 20px rgba(255,77,94,.28); transform:translateY(-3px); }
+.enemy.targetable{ cursor:none; }
+.enemy.dead{ opacity:.22; filter:grayscale(1); transform:scale(.9); pointer-events:none; }
+.enemy.selected{ border-color:var(--amber); box-shadow:0 0 22px rgba(255,180,84,.35); }
+.enemy .e-glyph{
+  font-size:46px; line-height:1; margin-bottom:8px; color:var(--blood);
+  text-shadow:0 0 22px rgba(255,77,94,.6);
+  animation: hover 3.4s ease-in-out infinite;
+}
+@keyframes hover{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-7px);} }
+.enemy .e-name{ font-size:15px; letter-spacing:.14em; color:#ffdde1; }
+.enemy .e-sub{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; color:var(--ink-dim); margin-top:3px; }
+.enemy .e-bar{ height:7px; background:rgba(255,77,94,.12); border:1px solid rgba(255,77,94,.3); margin-top:11px; overflow:hidden; }
+.enemy .e-fill{ height:100%; background:linear-gradient(90deg,#ff4d5e,#ff9a5e); transition:width .4s cubic-bezier(.2,.8,.3,1); box-shadow:0 0 10px rgba(255,77,94,.5); }
+.enemy .e-hp{ font-family:var(--font-mono); font-size:10.5px; color:var(--ink-dim); margin-top:5px; }
+.enemy .e-shield{ font-family:var(--font-mono); font-size:10px; color:var(--cyan); margin-top:3px; }
+.enemy .e-status{ display:flex; gap:5px; justify-content:center; flex-wrap:wrap; margin-top:8px; min-height:18px; }
+
+.status-chip{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.1em; padding:2px 6px;
+  border:1px solid currentColor; color:var(--cyan);
+}
+.status-chip.bad{ color:var(--blood); }
+.status-chip.good{ color:var(--lime); }
+.status-chip.warn{ color:var(--amber); }
+
+.enemy .e-intent{
+  /* kept in normal flow — the card's clip-path would slice an absolute badge */
+  display:block; margin:0 -4px 10px; padding:4px 8px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.12em;
+  background:rgba(255,180,84,.08); border:1px solid var(--amber); color:var(--amber);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  box-shadow:inset 0 0 14px rgba(255,180,84,.12);
+}
+.enemy .e-intent.lethal{ border-color:var(--blood); color:var(--blood);
+  background:rgba(255,77,94,.1); box-shadow:inset 0 0 14px rgba(255,77,94,.16); }
+
+.hit-shake{ animation: hitShake .3s ease-out; }
+@keyframes hitShake{
+  0%,100%{ transform:translate(0);} 20%{ transform:translate(-7px,3px);} 40%{ transform:translate(6px,-3px);}
+  60%{ transform:translate(-4px,2px);} 80%{ transform:translate(3px,-1px);}
+}
+.flash-white{ animation: flashWhite .22s ease-out; }
+@keyframes flashWhite{ 0%{ filter:brightness(3.5) saturate(0);} 100%{ filter:none;} }
+
+.float-num{
+  position:absolute; font-family:var(--font-mono); font-size:22px; font-weight:700;
+  pointer-events:none; z-index:50; text-shadow:0 0 12px currentColor;
+  animation: floatUp 1s ease-out forwards;
+}
+.float-num.dmg{ color:var(--blood); }
+.float-num.heal{ color:var(--lime); }
+.float-num.shield{ color:var(--cyan); }
+.float-num.crit{ color:var(--amber); font-size:30px; }
+@keyframes floatUp{ from{ transform:translateY(0) scale(.7); opacity:0; } 25%{ transform:translateY(-14px) scale(1.12); opacity:1; } to{ transform:translateY(-62px) scale(1); opacity:0; } }
+
+/* ---------- intent strip ---------- */
+.intent-strip{
+  padding:8px 22px; border-top:1px solid rgba(255,77,94,.2); border-bottom:1px solid rgba(255,77,94,.2);
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.12em; color:var(--ink-dim);
+  min-height:34px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+}
+.intent-strip b{ color:var(--amber); font-weight:400; }
+
+/* ---------- abilities ---------- */
+.ability-bar{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; padding:16px 22px 10px; }
+.ability{
+  position:relative; text-align:left; padding:12px 14px 11px;
+  border:1px solid var(--line); background:linear-gradient(180deg, rgba(94,234,255,.08), rgba(94,234,255,.01));
+  transition:.16s; overflow:hidden;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.ability:hover:not(:disabled){
+  border-color:var(--line-hot); transform:translateY(-3px);
+  background:linear-gradient(180deg, rgba(94,234,255,.24), rgba(94,234,255,.04));
+  box-shadow:var(--glow-cyan);
+}
+.ability:disabled{ opacity:.4; }
+.ability .ab-key{
+  position:absolute; right:8px; top:6px; font-family:var(--font-mono); font-size:9px;
+  color:var(--ink-dim); border:1px solid rgba(108,139,160,.35); padding:0 4px;
+}
+.ability .ab-name{ font-size:13.5px; letter-spacing:.1em; color:#eafcff; }
+.ability .ab-cost{ font-family:var(--font-mono); font-size:10px; letter-spacing:.1em; color:var(--amber); margin-top:3px; }
+.ability .ab-desc{ font-size:11.5px; line-height:1.45; color:var(--ink-dim); margin-top:6px; }
+.ability .ab-cd{
+  position:absolute; inset:0; display:grid; place-items:center;
+  background:rgba(4,7,13,.82); font-family:var(--font-mono); font-size:20px; color:var(--amber);
+}
+.ability.ultimate{ border-color:rgba(255,94,168,.45); background:linear-gradient(180deg, rgba(255,94,168,.12), rgba(255,94,168,.02)); }
+.ability.ultimate:hover:not(:disabled){ border-color:var(--magenta); box-shadow:0 0 16px rgba(255,94,168,.4);
+  background:linear-gradient(180deg, rgba(255,94,168,.28), rgba(255,94,168,.05)); }
+.ability.ultimate .ab-name{ color:#ffd9ea; }
+
+.combat-foot{ display:flex; justify-content:space-between; align-items:center; padding:4px 22px 16px; }
+.turn-tag{ font-family:var(--font-mono); font-size:11px; letter-spacing:.26em; color:var(--ink-dim); }
+
+/* targeting mode */
+body.targeting .enemy:not(.dead){ border-color:var(--amber); animation: targetPulse 1.1s ease-in-out infinite; }
+@keyframes targetPulse{ 0%,100%{ box-shadow:0 0 0 rgba(255,180,84,0);} 50%{ box-shadow:0 0 22px rgba(255,180,84,.45);} }
+
+/* screen-wide combat feedback */
+.screen-flash{ position:fixed; inset:0; z-index:940; pointer-events:none; animation: sflash .3s ease-out forwards; }
+.screen-flash.red{ background:radial-gradient(circle, transparent 40%, rgba(255,77,94,.4) 100%); }
+.screen-flash.cyan{ background:radial-gradient(circle, transparent 45%, rgba(94,234,255,.32) 100%); }
+@keyframes sflash{ to{ opacity:0; } }
+
+.banner{
+  position:absolute; left:50%; top:44%; transform:translate(-50%,-50%);
+  font-size:clamp(30px,5vw,56px); letter-spacing:.3em; font-weight:700; z-index:60;
+  pointer-events:none; white-space:nowrap; animation: bannerIn 2.1s ease-out forwards;
+}
+.banner.win{ color:var(--lime); text-shadow:0 0 30px rgba(125,255,155,.6); }
+.banner.lose{ color:var(--blood); text-shadow:0 0 30px rgba(255,77,94,.6); }
+@keyframes bannerIn{
+  0%{ opacity:0; transform:translate(-50%,-50%) scale(.6); letter-spacing:.9em; }
+  22%{ opacity:1; transform:translate(-50%,-50%) scale(1); letter-spacing:.3em; }
+  78%{ opacity:1; }
+  100%{ opacity:0; transform:translate(-50%,-56%) scale(1.03); }
+}
+
+</style>
+
+
+
+<canvas id="starfield" aria-hidden="true"></canvas>
+<div id="grid-floor" aria-hidden="true"></div>
+<div id="scanlines" aria-hidden="true"></div>
+<div id="vignette" aria-hidden="true"></div>
+
+<!-- cursor rig -->
+<div id="cursor" aria-hidden="true">
+  <div class="cur-ring"></div>
+  <div class="cur-dot"></div>
+  <div class="cur-bracket tl"></div>
+  <div class="cur-bracket tr"></div>
+  <div class="cur-bracket bl"></div>
+  <div class="cur-bracket br"></div>
+  <div class="cur-label"></div>
+  <svg class="cur-progress" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"></circle></svg>
+</div>
+<div id="cursor-trail" aria-hidden="true"></div>
+
+<main id="app">
+
+  <!-- ============ BOOT ============ -->
+  <section class="screen" id="screen-boot">
+    <div class="boot-wrap">
+      <pre id="boot-log"></pre>
+    </div>
+  </section>
+
+  <!-- ============ TITLE ============ -->
+  <section class="screen" id="screen-title">
+    <div class="title-wrap">
+      <div class="title-mark">ARK RECOVERY DIVISION // CLEARANCE OMEGA</div>
+      <h1 class="glitch" data-text="EREBUS CRADLE">EREBUS CRADLE</h1>
+      <div class="title-sub">S I G N A L &nbsp; L O S T</div>
+      <p class="title-blurb">
+        Forty years ago the colony ark <em>Erebus Cradle</em> stopped transmitting eleven light-years
+        out. Last week it answered. Not with a distress code &mdash; with a lullaby, sung by
+        two hundred thousand voices that no longer have throats.
+      </p>
+      <div class="title-actions">
+        <button class="btn btn-major" data-go="slots">ACCESS CREW REGISTRY</button>
+        <button class="btn" data-go="codex">FIELD CODEX</button>
+      </div>
+      <div class="title-foot">CURSOR-DRIVEN INTERFACE &middot; POINT &middot; HOVER &middot; COMMIT</div>
+    </div>
+  </section>
+
+  <!-- ============ SLOTS ============ -->
+  <section class="screen" id="screen-slots">
+    <header class="screen-head">
+      <h2>CREW REGISTRY</h2>
+      <p>Three operative slots are budgeted to this mission. Select a dossier to deploy, or
+         open an empty bay to enlist.</p>
+    </header>
+    <div class="slot-grid" id="slot-grid"></div>
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="title">&lsaquo; BACK</button>
+    </footer>
+  </section>
+
+  <!-- ============ CREATE ============ -->
+  <section class="screen" id="screen-create">
+    <header class="screen-head">
+      <h2>ENLISTMENT &mdash; BAY <span id="create-bay">1</span></h2>
+      <p>Every operative is cut from one of three doctrines. The doctrine decides your
+         abilities in the field and the doors that open for you aboard the ark.</p>
+    </header>
+
+    <div class="create-body">
+      <div class="class-rack" id="class-rack"></div>
+      <aside class="class-detail" id="class-detail">
+        <div class="empty-detail">SELECT A DOCTRINE</div>
+      </aside>
+    </div>
+
+    <div class="create-name">
+      <label for="name-input">OPERATIVE DESIGNATION</label>
+      <input id="name-input" maxlength="18" autocomplete="off" spellcheck="false" placeholder="ENTER CALLSIGN" />
+      <button class="btn btn-ghost btn-sm" id="name-random">RANDOMIZE</button>
+    </div>
+
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="slots">&lsaquo; CANCEL</button>
+      <button class="btn btn-major" id="btn-enlist" disabled>COMMIT DOSSIER</button>
+    </footer>
+  </section>
+
+  <!-- ============ CODEX ============ -->
+  <section class="screen" id="screen-codex">
+    <header class="screen-head">
+      <h2>FIELD CODEX</h2>
+      <p>Everything Recovery Division is willing to admit in writing.</p>
+    </header>
+    <div class="codex-body" id="codex-body"></div>
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="title">&lsaquo; BACK</button>
+    </footer>
+  </section>
+
+  <!-- ============ GAME ============ -->
+  <section class="screen" id="screen-game">
+    <div class="game-shell">
+
+      <aside class="panel hud-left">
+        <div class="hud-portrait" id="hud-portrait">
+          <div class="portrait-glyph" id="portrait-glyph"></div>
+          <div class="portrait-scan"></div>
+        </div>
+        <div class="hud-id">
+          <div class="hud-name" id="hud-name">&mdash;</div>
+          <div class="hud-class" id="hud-class">&mdash;</div>
+        </div>
+
+        <div class="stat-block">
+          <div class="bar-row">
+            <span class="bar-label">VITALS</span>
+            <span class="bar-val" id="hp-text">0/0</span>
+          </div>
+          <div class="bar"><div class="bar-fill hp" id="hp-fill"></div></div>
+
+          <div class="bar-row">
+            <span class="bar-label">SHIELD</span>
+            <span class="bar-val" id="sh-text">0</span>
+          </div>
+          <div class="bar"><div class="bar-fill sh" id="sh-fill"></div></div>
+
+          <div class="bar-row">
+            <span class="bar-label">CORE</span>
+            <span class="bar-val" id="en-text">0/0</span>
+          </div>
+          <div class="bar"><div class="bar-fill en" id="en-fill"></div></div>
+
+          <div class="bar-row">
+            <span class="bar-label">RANK <span id="lvl-text">1</span></span>
+            <span class="bar-val" id="xp-text">0/0</span>
+          </div>
+          <div class="bar"><div class="bar-fill xp" id="xp-fill"></div></div>
+        </div>
+
+        <div class="hud-attrs" id="hud-attrs"></div>
+        <div class="hud-inv" id="hud-inv"></div>
+
+        <div class="hud-sysmenu">
+          <button class="btn btn-ghost btn-sm" id="btn-save">SAVE</button>
+          <button class="btn btn-ghost btn-sm" id="btn-quit">DISENGAGE</button>
+        </div>
+      </aside>
+
+      <section class="panel stage" id="stage">
+        <div class="stage-head">
+          <span class="stage-chapter" id="stage-chapter">CHAPTER I</span>
+          <span class="stage-loc" id="stage-loc">&mdash;</span>
+        </div>
+
+        <div class="stage-scroll" id="stage-scroll">
+          <div class="narrative" id="narrative"></div>
+        </div>
+
+        <div class="stage-choices" id="choices"></div>
+
+        <!-- combat overlay -->
+        <div class="combat-layer" id="combat-layer" hidden>
+          <div class="enemy-board" id="enemy-board"></div>
+          <div class="intent-strip" id="intent-strip"></div>
+          <div class="ability-bar" id="ability-bar"></div>
+          <div class="combat-foot">
+            <div class="turn-tag" id="turn-tag">TURN 1</div>
+            <button class="btn btn-ghost btn-sm" id="btn-focus">FOCUS &mdash; end turn, +4 CORE</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel hud-right">
+        <div class="log-head">TELEMETRY</div>
+        <div class="log-scroll" id="log"></div>
+        <div class="obj-head">OBJECTIVE</div>
+        <div class="obj-body" id="objective">&mdash;</div>
+      </aside>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast-rail"></div>
+
+<div id="modal" hidden>
+  <div class="modal-card panel">
+    <h3 id="modal-title">CONFIRM</h3>
+    <p id="modal-text"></p>
+    <div class="modal-actions" id="modal-actions"></div>
+  </div>
+</div>
+
+<audio id="hum" loop></audio>
+
+<script>
+/* The host owns <body>, so the boot-screen state class is applied here
+   rather than in markup. */
+document.body.classList.add('booting');
+
+/* ==== src/js/util.js ==== */
+/* Shared helpers + global namespace. */
+window.SF = window.SF || {};
+
+(function (SF) {
+  'use strict';
+
+  const $  = (sel, root) => (root || document).querySelector(sel);
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+  function el(tag, cls, html) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (html != null) n.innerHTML = html;
+    return n;
+  }
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const rand  = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const pick  = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const chance = (p) => Math.random() < p;
+  const wait  = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /* Roll a d20-ish check against a target number, modified by an attribute. */
+  function check(mod, dc) {
+    const roll = rand(1, 20);
+    const total = roll + mod;
+    return { roll, total, dc, pass: total >= dc, crit: roll === 20, fumble: roll === 1 };
+  }
+
+  function toast(msg, kind) {
+    const rail = $('#toast-rail');
+    if (!rail) return;
+    const t = el('div', 'toast' + (kind ? ' ' + kind : ''), msg);
+    rail.appendChild(t);
+    setTimeout(() => t.remove(), 3400);
+  }
+
+  /* Confirm dialog that resolves to a boolean. */
+  function confirmDialog(title, text, okLabel, danger) {
+    return new Promise((resolve) => {
+      const modal = $('#modal');
+      $('#modal-title').textContent = title;
+      $('#modal-text').innerHTML = text;
+      const actions = $('#modal-actions');
+      actions.innerHTML = '';
+
+      const cancel = el('button', 'btn btn-ghost btn-sm', 'CANCEL');
+      const ok = el('button', 'btn btn-sm ' + (danger ? 'btn-danger' : 'btn-major'), okLabel || 'CONFIRM');
+      cancel.dataset.hover = 'CANCEL';
+      ok.dataset.hover = okLabel || 'CONFIRM';
+
+      const close = (val) => { modal.hidden = true; resolve(val); };
+      cancel.addEventListener('click', () => close(false));
+      ok.addEventListener('click', () => close(true));
+
+      actions.append(cancel, ok);
+      modal.hidden = false;
+    });
+  }
+
+  SF.util = { $, $$, el, clamp, rand, pick, chance, wait, check, toast, confirmDialog };
+})(window.SF);
+
+
+/* ==== src/js/audio.js ==== */
+/* Procedural bleeps — no asset files, everything is synthesised on demand. */
+(function (SF) {
+  'use strict';
+
+  let ctx = null;
+  let master = null;
+  let enabled = true;
+
+  function ensure() {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { enabled = false; return null; }
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = 0.16;
+    master.connect(ctx.destination);
+    return ctx;
+  }
+
+  function tone(freq, dur, type, vol, slideTo) {
+    if (!enabled) return;
+    const c = ensure();
+    if (!c) return;
+    if (c.state === 'suspended') c.resume();
+
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, c.currentTime);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, c.currentTime + dur);
+
+    gain.gain.setValueAtTime(0.0001, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(vol == null ? 0.5 : vol, c.currentTime + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + dur);
+
+    osc.connect(gain); gain.connect(master);
+    osc.start(); osc.stop(c.currentTime + dur + 0.02);
+  }
+
+  function noise(dur, vol, filterFreq) {
+    if (!enabled) return;
+    const c = ensure();
+    if (!c) return;
+    const len = Math.floor(c.sampleRate * dur);
+    const buf = c.createBuffer(1, len, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const filt = c.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = filterFreq || 1400;
+    const gain = c.createGain();
+    gain.gain.value = vol == null ? 0.35 : vol;
+
+    src.connect(filt); filt.connect(gain); gain.connect(master);
+    src.start();
+  }
+
+  const sfx = {
+    hover:   () => tone(1180, 0.05, 'square', 0.055),
+    click:   () => { tone(720, 0.07, 'square', 0.14); tone(1440, 0.05, 'sine', 0.07); },
+    confirm: () => { tone(520, 0.1, 'sawtooth', 0.11); setTimeout(() => tone(880, 0.16, 'sine', 0.13), 70); },
+    back:    () => { tone(500, 0.09, 'square', 0.1, 260); },
+    deny:    () => { tone(180, 0.18, 'square', 0.14, 90); },
+    type:    () => tone(1600 + Math.random() * 500, 0.014, 'square', 0.022),
+    hit:     () => { noise(0.2, 0.4, 900); tone(140, 0.16, 'sawtooth', 0.22, 60); },
+    crit:    () => { noise(0.3, 0.5, 2200); tone(300, 0.3, 'sawtooth', 0.26, 70); },
+    heal:    () => { tone(620, 0.14, 'sine', 0.14); setTimeout(() => tone(930, 0.2, 'sine', 0.13), 80); },
+    shield:  () => { tone(340, 0.24, 'triangle', 0.16, 780); },
+    ability: () => { tone(880, 0.1, 'sawtooth', 0.12, 1500); },
+    enemy:   () => { tone(220, 0.2, 'sawtooth', 0.16, 110); noise(0.16, 0.22, 600); },
+    levelup: () => { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.26, 'triangle', 0.15), i * 95)); },
+    win:     () => { [392, 523, 659, 880].forEach((f, i) => setTimeout(() => tone(f, 0.34, 'sine', 0.16), i * 130)); },
+    lose:    () => { [420, 330, 250, 160].forEach((f, i) => setTimeout(() => tone(f, 0.42, 'sawtooth', 0.15), i * 160)); },
+    alarm:   () => { [0, 1, 2].forEach((i) => setTimeout(() => tone(760, 0.16, 'square', 0.13, 420), i * 220)); },
+    boot:    () => tone(90, 0.6, 'sine', 0.12, 220),
+    open:    () => { tone(260, 0.3, 'triangle', 0.12, 620); noise(0.3, 0.14, 500); }
+  };
+
+  SF.audio = {
+    sfx,
+    unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); },
+    toggle(on) { enabled = on == null ? !enabled : on; return enabled; },
+    get enabled() { return enabled; }
+  };
+})(window.SF);
+
+
+/* ==== src/js/cursor.js ==== */
+/* ============================================================
+   The cursor rig. The native pointer is hidden everywhere; this
+   reticle replaces it and reports what it is hovering over.
+   Also provides "hold to commit" for irreversible actions.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+  const { $, el } = SF.util;
+
+  let cur, trail, label, prog;
+  let x = window.innerWidth / 2, y = window.innerHeight / 2;
+  let rx = x, ry = y;               // smoothed position
+  let lastTrail = 0;
+  let hovering = null;
+
+  const HOLD_MS = 900;
+
+  function init() {
+    cur = $('#cursor');
+    trail = $('#cursor-trail');
+    label = cur.querySelector('.cur-label');
+    prog = cur.querySelector('.cur-progress circle');
+
+    document.addEventListener('pointermove', onMove, { passive: true });
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointerover', onOver);
+    document.addEventListener('pointerout', onOut);
+    document.addEventListener('mouseleave', () => (cur.style.opacity = '0'));
+    document.addEventListener('mouseenter', () => (cur.style.opacity = '1'));
+
+    requestAnimationFrame(loop);
+  }
+
+  function onMove(e) { x = e.clientX; y = e.clientY; }
+
+  function loop(t) {
+    // ease toward the true pointer so the reticle has weight
+    rx += (x - rx) * 0.34;
+    ry += (y - ry) * 0.34;
+    cur.style.transform = `translate(${rx}px, ${ry}px)`;
+
+    if (t - lastTrail > 26 && (Math.abs(x - rx) > 0.6 || Math.abs(y - ry) > 0.6)) {
+      lastTrail = t;
+      const d = el('div', 'trail-dot');
+      d.style.left = rx + 'px';
+      d.style.top = ry + 'px';
+      trail.appendChild(d);
+      setTimeout(() => d.remove(), 520);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  /* --- hover states ------------------------------------------------ */
+  function interactiveOf(node) {
+    if (!node || !node.closest) return null;
+    return node.closest('button, input, [data-hover], a');
+  }
+
+  function onOver(e) {
+    const target = interactiveOf(e.target);
+    if (!target || target === hovering) return;
+    hovering = target;
+
+    cur.classList.add('hot');
+    if (target.tagName === 'INPUT') cur.classList.add('text');
+    if (target.classList.contains('btn-danger') || target.classList.contains('risky')) cur.classList.add('danger');
+    if (target.disabled) { cur.classList.add('blocked'); cur.classList.remove('hot'); }
+
+    const txt = target.dataset.hover || guessLabel(target);
+    if (txt) { label.textContent = txt; cur.classList.add('labelled'); }
+    if (!target.disabled) SF.audio.sfx.hover();
+  }
+
+  function guessLabel(t) {
+    if (t.disabled) return 'LOCKED';
+    if (t.tagName === 'INPUT') return 'INPUT';
+    const txt = (t.textContent || '').trim().split('\n')[0];
+    return txt.length > 26 ? 'SELECT' : txt.toUpperCase();
+  }
+
+  function onOut(e) {
+    const target = interactiveOf(e.target);
+    if (!target || target !== hovering) return;
+    if (e.relatedTarget && interactiveOf(e.relatedTarget) === target) return;
+    hovering = null;
+    cur.classList.remove('hot', 'danger', 'text', 'blocked', 'labelled');
+    cancelHold();
+  }
+
+  /* --- click + hold ------------------------------------------------ */
+  let holdTimer = null, holdRaf = null, holdStart = 0, holdTarget = null;
+
+  function onDown(e) {
+    cur.classList.add('clicking');
+    ripple(e.clientX, e.clientY);
+
+    const t = interactiveOf(e.target);
+    if (t && t.dataset.hold != null && !t.disabled) startHold(t);
+  }
+
+  function onUp() {
+    cur.classList.remove('clicking');
+    cancelHold();
+  }
+
+  function startHold(target) {
+    holdTarget = target;
+    holdStart = performance.now();
+    cur.classList.add('holding');
+    const fill = target.querySelector('.hold-fill');
+
+    const step = () => {
+      const p = Math.min(1, (performance.now() - holdStart) / HOLD_MS);
+      prog.style.strokeDashoffset = String(276 * (1 - p));
+      if (fill) fill.style.width = p * 100 + '%';
+      if (p < 1) holdRaf = requestAnimationFrame(step);
+    };
+    holdRaf = requestAnimationFrame(step);
+
+    holdTimer = setTimeout(() => {
+      SF.audio.sfx.confirm();
+      target.dispatchEvent(new CustomEvent('holdcomplete', { bubbles: true }));
+      cancelHold();
+    }, HOLD_MS);
+  }
+
+  function cancelHold() {
+    if (holdTimer) clearTimeout(holdTimer);
+    if (holdRaf) cancelAnimationFrame(holdRaf);
+    holdTimer = holdRaf = null;
+    cur.classList.remove('holding');
+    prog.style.strokeDashoffset = '276';
+    if (holdTarget) {
+      const fill = holdTarget.querySelector('.hold-fill');
+      if (fill) fill.style.width = '0%';
+    }
+    holdTarget = null;
+  }
+
+  function ripple(px, py) {
+    const r = el('div', 'ripple');
+    r.style.left = px + 'px';
+    r.style.top = py + 'px';
+    document.body.appendChild(r);
+    setTimeout(() => r.remove(), 600);
+  }
+
+  /* Force the reticle back to neutral (used when the DOM under it is replaced). */
+  function reset() {
+    hovering = null;
+    cur.classList.remove('hot', 'danger', 'text', 'blocked', 'labelled');
+    cancelHold();
+  }
+
+  SF.cursor = { init, reset, ripple };
+})(window.SF);
+
+
+/* ==== src/js/fx.js ==== */
+/* Starfield, screen shake, floating numbers, typewriter. */
+(function (SF) {
+  'use strict';
+  const { $, el, rand, wait } = SF.util;
+
+  /* ---------- starfield ---------- */
+  let stars = [], canvas, ctx, W = 0, H = 0, warp = 0;
+
+  function initStars() {
+    canvas = $('#starfield');
+    ctx = canvas.getContext('2d');
+    resize();
+    window.addEventListener('resize', resize);
+    seed();
+    requestAnimationFrame(drawStars);
+  }
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+
+  function seed() {
+    stars = [];
+    const count = Math.min(280, Math.floor((W * H) / 6200));
+    for (let i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        z: Math.random() * 0.85 + 0.15,
+        tw: Math.random() * Math.PI * 2
+      });
+    }
+  }
+
+  function drawStars(t) {
+    ctx.clearRect(0, 0, W, H);
+    warp *= 0.94;
+    for (const s of stars) {
+      s.y += (0.045 + s.z * 0.14) * (1 + warp * 26);
+      if (s.y > H) { s.y = -2; s.x = Math.random() * W; }
+      const tw = 0.55 + 0.45 * Math.sin(t / 620 + s.tw);
+      const a = s.z * tw;
+      ctx.fillStyle = `rgba(160, 226, 255, ${a * 0.75})`;
+      const size = s.z * 1.8;
+      if (warp > 0.02) {
+        ctx.fillRect(s.x, s.y, size, size + warp * 60 * s.z);
+      } else {
+        ctx.fillRect(s.x, s.y, size, size);
+      }
+    }
+    requestAnimationFrame(drawStars);
+  }
+
+  const warpPulse = () => { warp = 1; };
+
+  /* ---------- screen feedback ---------- */
+  function shake(intensity) {
+    const app = $('#app');
+    const amp = intensity || 8;
+    let n = 0;
+    const id = setInterval(() => {
+      n++;
+      const f = 1 - n / 12;
+      app.style.transform = `translate(${(Math.random() - 0.5) * amp * f}px, ${(Math.random() - 0.5) * amp * f}px)`;
+      if (n >= 12) { clearInterval(id); app.style.transform = ''; }
+    }, 24);
+  }
+
+  function flash(kind) {
+    const f = el('div', 'screen-flash ' + (kind || 'red'));
+    document.body.appendChild(f);
+    setTimeout(() => f.remove(), 340);
+  }
+
+  function floatNum(target, text, kind) {
+    if (!target) return;
+    const host = target.offsetParent || target.parentElement || document.body;
+    const n = el('div', 'float-num ' + (kind || 'dmg'), text);
+    const tr = target.getBoundingClientRect();
+    const hr = host.getBoundingClientRect();
+    n.style.left = (tr.left - hr.left + tr.width / 2 - 16 + rand(-14, 14)) + 'px';
+    n.style.top = (tr.top - hr.top + tr.height * 0.32) + 'px';
+    host.appendChild(n);
+    setTimeout(() => n.remove(), 1050);
+  }
+
+  function banner(text, kind) {
+    const layer = $('#combat-layer');
+    const b = el('div', 'banner ' + kind, text);
+    layer.appendChild(b);
+    setTimeout(() => b.remove(), 2200);
+  }
+
+  /* ---------- typewriter ---------- */
+  let typeToken = 0;
+  let inFlight = null;   // { node, html } currently being typed
+
+  /* Types html-ish text into a node. Tags are emitted whole so markup
+     never appears half-written. Returns a promise; a new call cancels
+     any run still in flight. */
+  async function typeInto(node, html, speed) {
+    const my = ++typeToken;
+    inFlight = { node: node, html: html };
+    node.classList.add('typing');
+    node.innerHTML = '';
+    const step = speed || 9;
+    let i = 0, out = '';
+    while (i < html.length) {
+      if (my !== typeToken) return;
+      if (html[i] === '<') {
+        const close = html.indexOf('>', i);
+        out += html.slice(i, close + 1);
+        i = close + 1;
+        continue;
+      }
+      // burst a few characters per frame so long passages stay readable
+      const burst = rand(2, 4);
+      out += html.slice(i, i + burst);
+      i += burst;
+      node.innerHTML = out;
+      if (i % 5 < 3) SF.audio.sfx.type();
+      await wait(step);
+    }
+    node.innerHTML = html;
+    node.classList.remove('typing');
+    inFlight = null;
+  }
+
+  /* Finish the current passage instantly (the player clicked through it). */
+  function skipTyping() {
+    if (!inFlight) return;
+    typeToken++;
+    inFlight.node.innerHTML = inFlight.html;
+    inFlight.node.classList.remove('typing');
+    inFlight = null;
+  }
+
+  SF.fx = { initStars, warpPulse, shake, flash, floatNum, banner, typeInto, skipTyping };
+})(window.SF);
+
+
+/* ==== src/js/classes.js ==== */
+/* ============================================================
+   The three doctrines.
+
+   Each class differs on three axes:
+     1. combat abilities (four each, all unique)
+     2. a passive perk that changes the rules of a fight
+     3. a narrative skill that unlocks class-gated story options
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  /* Attribute keys: MIGHT drives Bulwark, SYNC drives Oracle, GUILE drives Wraith. */
+
+  const CLASSES = {
+
+    /* ------------------------------------------------------------------ */
+    bulwark: {
+      id: 'bulwark',
+      name: 'BULWARK',
+      role: 'AEGIS DOCTRINE',
+      glyph: '✦',
+      accent: '#ffb454',
+      skill: 'FORCE',
+      skillAttr: 'might',
+      tagline: 'Armour grown from the hull of a dead ship. Walks first, always.',
+      flavor: 'They fed you a ship. Reclaimed plating, sintered into the long bones of your legs, ' +
+              'and you have not felt cold since. Recovery Division sends a Bulwark through the door ' +
+              'first because a Bulwark is the door.',
+      base: { hp: 124, energy: 10, might: 4, sync: 1, guile: 1 },
+      growth: { hp: 14, energy: 1, attr: 'might' },
+      perk: {
+        name: 'BULKHEAD PLATING',
+        desc: 'All incoming damage reduced by 3. Story: FORCE options open doors nobody else can.'
+      },
+      abilities: [
+        {
+          id: 'slam', name: 'KINETIC SLAM', cost: 4, cd: 0, target: 'enemy',
+          desc: 'Heavy strike. 30% chance to STAGGER — the target loses its next action.',
+          run(c) {
+            const dealt = c.damage(c.target, 12 + c.p.might * 2);
+            c.log(`Kinetic Slam connects for ${dealt}.`, 'dmg');
+            if (c.chance(0.3)) {
+              c.status(c.target, 'STAGGER', 1);
+              c.log(`${c.target.name} is staggered — its next action is lost.`, 'buff');
+            }
+          }
+        },
+        {
+          id: 'aegis', name: 'AEGIS WALL', cost: 3, cd: 1, target: 'self',
+          desc: 'Raise a kinetic barrier. Also grants FORTIFY: halves the next hit that breaks through.',
+          run(c) {
+            const amt = 18 + c.p.might * 3;
+            c.addShield(c.p, amt);
+            c.status(c.p, 'FORTIFY', 2);
+            c.log(`Aegis Wall holds. +${amt} shield, FORTIFY active.`, 'buff');
+          }
+        },
+        {
+          id: 'riot', name: 'RIOT PULSE', cost: 5, cd: 2, target: 'all',
+          desc: 'Shockwave hits every hostile and SUNDERS armour for 3 turns.',
+          run(c) {
+            for (const e of c.enemies) {
+              const dealt = c.damage(e, 8 + c.p.might);
+              c.status(e, 'SUNDER', 3);
+              c.log(`Riot Pulse rakes ${e.name} for ${dealt}. Armour sundered.`, 'dmg');
+            }
+          }
+        },
+        {
+          id: 'laststand', name: 'LAST STAND', cost: 8, cd: 5, target: 'self', ultimate: true,
+          desc: 'ULTIMATE. Heal 25% of maximum vitals, gain 30 shield, and deal +50% damage for 2 turns.',
+          run(c) {
+            const h = Math.round(c.p.maxHp * 0.25);
+            c.heal(h);
+            c.addShield(c.p, 30);
+            c.status(c.p, 'RESOLVE', 2);
+            c.log(`LAST STAND. Vitals +${h}, shield +30, damage amplified.`, 'crit');
+          }
+        }
+      ]
+    },
+
+    /* ------------------------------------------------------------------ */
+    oracle: {
+      id: 'oracle',
+      name: 'ORACLE',
+      role: 'SIGNAL DOCTRINE',
+      glyph: '◈',
+      accent: '#5eeaff',
+      skill: 'SYSTEMS',
+      skillAttr: 'sync',
+      tagline: 'Wetware spliced to a dead god\'s switchboard. Talks to machines that stopped listening.',
+      flavor: 'The implant behind your ear is older than you and was salvaged from something that ' +
+              'was never meant to be salvaged. You do not hack a ship so much as convince it that ' +
+              'it has always been yours. Some of them argue.',
+      base: { hp: 94, energy: 14, might: 1, sync: 5, guile: 2 },
+      growth: { hp: 9, energy: 2, attr: 'sync' },
+      perk: {
+        name: 'GHOST IN THE WIRE',
+        desc: '+2 CORE regenerated every turn. Story: SYSTEMS options rewrite locks, doors and truths.'
+      },
+      abilities: [
+        {
+          id: 'spike', name: 'OVERLOAD SPIKE', cost: 3, cd: 0, target: 'enemy',
+          desc: 'Voltage injected past the plating. Ignores shields entirely.',
+          run(c) {
+            const dealt = c.damage(c.target, 9 + c.p.sync * 2, { pierce: true });
+            c.log(`Overload Spike burns through for ${dealt} — shielding irrelevant.`, 'dmg');
+          }
+        },
+        {
+          id: 'weave', name: 'NANITE WEAVE', cost: 4, cd: 1, target: 'self',
+          desc: 'Repair vitals and scrub one hostile status effect.',
+          run(c) {
+            const amt = 16 + c.p.sync * 3;
+            c.heal(amt);
+            const cleaned = c.cleanse(c.p);
+            c.log(`Nanite Weave restores ${amt}${cleaned ? ` and scrubs ${cleaned}` : ''}.`, 'heal');
+          }
+        },
+        {
+          id: 'breach', name: 'SYSTEMS BREACH', cost: 5, cd: 2, target: 'enemy',
+          desc: 'GLITCH the target for 2 turns (its damage halved) and siphon 4 CORE.',
+          run(c) {
+            c.status(c.target, 'GLITCH', 2);
+            c.gainEnergy(4);
+            c.log(`${c.target.name} glitches — output halved. Siphoned 4 CORE.`, 'buff');
+          }
+        },
+        {
+          id: 'cascade', name: 'RECURSIVE CASCADE', cost: 9, cd: 5, target: 'all', ultimate: true,
+          desc: 'ULTIMATE. Detonate every hostile system at once, then OVERCLOCK yourself for 3 turns.',
+          run(c) {
+            for (const e of c.enemies) {
+              const dealt = c.damage(e, 14 + c.p.sync * 3, { pierce: true });
+              c.log(`Cascade tears ${e.name} for ${dealt}.`, 'dmg');
+            }
+            c.status(c.p, 'OVERCLOCK', 3);
+            c.log('RECURSIVE CASCADE. Overclock engaged — +4 CORE per turn.', 'crit');
+          }
+        }
+      ]
+    },
+
+    /* ------------------------------------------------------------------ */
+    wraith: {
+      id: 'wraith',
+      name: 'WRAITH',
+      role: 'UMBRAL DOCTRINE',
+      glyph: '✵',
+      accent: '#ff5ea8',
+      skill: 'STEALTH',
+      skillAttr: 'guile',
+      tagline: 'Nine-tenths of a person and all of a knife. Arrives after the alarm should have.',
+      flavor: 'Recovery Division does not list your name, your birth system, or the number of ' +
+              'operations that took your reflexes apart and put them back faster. What they list ' +
+              'is a response time, and it is the shortest number on the roster.',
+      base: { hp: 100, energy: 12, might: 2, sync: 2, guile: 5 },
+      growth: { hp: 11, energy: 1, attr: 'guile' },
+      perk: {
+        name: 'BLINDSIDE',
+        desc: 'Your first strike in any engagement is a guaranteed critical. Story: STEALTH options ' +
+              'let you take the route nobody is watching.'
+      },
+      abilities: [
+        {
+          id: 'lunge', name: 'VIBRO LUNGE', cost: 3, cd: 0, target: 'enemy',
+          desc: 'Fast monofilament strike. 25% critical for double damage.',
+          run(c) {
+            const crit = c.chance(0.25);
+            const dealt = c.damage(c.target, 10 + c.p.guile * 2, { crit });
+            c.log(crit ? `CRITICAL — Vibro Lunge opens ${c.target.name} for ${dealt}.`
+                       : `Vibro Lunge cuts for ${dealt}.`, crit ? 'crit' : 'dmg');
+          }
+        },
+        {
+          id: 'phase', name: 'PHASE STEP', cost: 2, cd: 1, target: 'self',
+          desc: 'Slip the next attack entirely (EVASION) and leave PRIMED — your next strike auto-crits.',
+          run(c) {
+            c.status(c.p, 'EVASION', 2);
+            c.status(c.p, 'PRIMED', 3);
+            c.log('Phase Step. You are somewhere the room has not caught up to yet.', 'buff');
+          }
+        },
+        {
+          id: 'toxin', name: 'NEURO TOXIN', cost: 4, cd: 2, target: 'enemy',
+          desc: 'Stacking poison: 6 damage per turn for 3 turns, ignores armour and shields.',
+          run(c) {
+            c.status(c.target, 'TOXIN', 3, 6);
+            c.log(`Neuro Toxin seeded in ${c.target.name}. It will not stop working.`, 'buff');
+          }
+        },
+        {
+          id: 'erase', name: 'MARK & ERASE', cost: 8, cd: 5, target: 'enemy', ultimate: true,
+          desc: 'ULTIMATE. Massive strike; doubled against wounded targets, lethal below 20% vitals.',
+          run(c) {
+            const t = c.target;
+            const ratio = t.hp / t.maxHp;
+            if (ratio <= 0.2) {
+              const dealt = c.damage(t, t.hp + 999, { crit: true, pierce: true });
+              c.log(`ERASED. ${t.name} is unmade (${dealt}).`, 'crit');
+              return;
+            }
+            const base = 10 + c.p.guile * 3;
+            const dealt = c.damage(t, ratio < 0.5 ? base * 2 : base, { crit: true });
+            c.log(`MARK & ERASE lands for ${dealt}.`, 'crit');
+          }
+        }
+      ]
+    }
+  };
+
+  const ATTRS = [
+    { key: 'might', label: 'MIGHT' },
+    { key: 'sync',  label: 'SYNC'  },
+    { key: 'guile', label: 'GUILE' }
+  ];
+
+  /* Build a fresh character record for a save slot. */
+  function makeCharacter(name, classId) {
+    const cls = CLASSES[classId];
+    return {
+      name: name,
+      cls: classId,
+      level: 1,
+      xp: 0,
+      hp: cls.base.hp,
+      maxHp: cls.base.hp,
+      energy: cls.base.energy,
+      maxEnergy: cls.base.energy,
+      shield: 0,
+      might: cls.base.might,
+      sync: cls.base.sync,
+      guile: cls.base.guile,
+      statuses: {},
+      items: { medgel: 2, pulse: 1, cell: 1 },
+      node: 'act1_approach',
+      flags: {},
+      chapter: 1,
+      created: Date.now(),
+      playtime: 0
+    };
+  }
+
+  const xpForLevel = (lvl) => 40 + (lvl - 1) * 55;
+
+  /* Returns a list of level-up notices, or an empty array. */
+  function grantXp(ch, amount) {
+    const notes = [];
+    ch.xp += amount;
+    while (ch.xp >= xpForLevel(ch.level)) {
+      ch.xp -= xpForLevel(ch.level);
+      ch.level++;
+      const g = CLASSES[ch.cls].growth;
+      ch.maxHp += g.hp;
+      ch.hp = ch.maxHp;
+      if (ch.level % 2 === 0) ch.maxEnergy += g.energy;
+      ch[g.attr] += 1;
+      notes.push(`RANK ${ch.level} — +${g.hp} vitals, +1 ${g.attr.toUpperCase()}`);
+    }
+    return notes;
+  }
+
+  const skillMod = (ch) => ch[CLASSES[ch.cls].skillAttr];
+
+  SF.classes = { CLASSES, ATTRS, makeCharacter, grantXp, xpForLevel, skillMod };
+})(window.SF);
+
+
+/* ==== src/js/enemies.js ==== */
+/* ============================================================
+   Bestiary. Every hostile telegraphs its next action as an
+   "intent" so the player can read the board before committing.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+  const { rand } = SF.util;
+
+  const atk = (min, max) => rand(min, max);
+
+  const BESTIARY = {
+
+    husk_drone: {
+      name: 'HUSK DRONE', sub: 'MAINTENANCE UNIT / REPURPOSED', glyph: '⬢',
+      hp: 34, armor: 1, xp: 18,
+      moves: [
+        { id: 'cut', name: 'ARC CUTTER', tell: 'ARC CUTTER — 8-12', weight: 3,
+          run: (c, self) => { const d = c.hurtPlayer(self, atk(8, 12)); c.log(`${self.name} arcs across you for ${d}.`, 'dmg'); } },
+        { id: 'weld', name: 'SELF-WELD', tell: 'SELF-WELD — repair', weight: 1,
+          run: (c, self) => { c.healEnemy(self, 9); c.log(`${self.name} welds its own seams shut. +9.`, 'heal'); } }
+      ]
+    },
+
+    choir_thrall: {
+      name: 'CHOIR THRALL', sub: 'COLONIST / SINGING', glyph: '♁',
+      hp: 42, armor: 0, xp: 24,
+      moves: [
+        { id: 'grasp', name: 'GRASP', tell: 'GRASP — 10-14', weight: 3,
+          run: (c, self) => { const d = c.hurtPlayer(self, atk(10, 14)); c.log(`Cold hands find you. ${d} damage.`, 'dmg'); } },
+        { id: 'hymn', name: 'HYMN', tell: 'HYMN — drains CORE', weight: 2,
+          run: (c, self) => { c.drainEnergy(3); c.log(`${self.name} sings. Your implants ache — 3 CORE lost.`, 'dmg'); } }
+      ]
+    },
+
+    warden_frame: {
+      name: 'WARDEN FRAME', sub: 'SECURITY CONSTRUCT / MK-IV', glyph: '⛨',
+      hp: 78, armor: 4, xp: 46,
+      moves: [
+        { id: 'volley', name: 'SUPPRESSION VOLLEY', tell: 'VOLLEY — 14-19', weight: 3,
+          run: (c, self) => { const d = c.hurtPlayer(self, atk(14, 19)); c.log(`Suppression volley. ${d} damage.`, 'dmg'); } },
+        { id: 'lock', name: 'TARGET LOCK', tell: 'TARGET LOCK — marks you', weight: 2,
+          run: (c, self) => { c.statusPlayer('EXPOSED', 2); c.log('Target lock acquired. You are EXPOSED.', 'dmg'); } },
+        { id: 'plate', name: 'REACTIVE PLATING', tell: 'PLATING — +shield', weight: 1,
+          run: (c, self) => { c.shieldEnemy(self, 16); c.log(`${self.name} deploys reactive plating. +16 shield.`, 'buff'); } }
+      ]
+    },
+
+    vent_stalker: {
+      name: 'VENT STALKER', sub: 'UNCLASSIFIED / FAST', glyph: '⩕',
+      hp: 30, armor: 0, xp: 22,
+      moves: [
+        { id: 'pounce', name: 'POUNCE', tell: 'POUNCE — 12-16', weight: 3,
+          run: (c, self) => { const d = c.hurtPlayer(self, atk(12, 16)); c.log(`It drops from the ducting for ${d}.`, 'dmg'); } },
+        { id: 'shriek', name: 'SHRIEK', tell: 'SHRIEK — calls kin', weight: 1,
+          run: (c, self) => { c.shieldEnemy(self, 8); c.log(`${self.name} shrieks. Something answers.`, 'dmg'); } }
+      ]
+    },
+
+    cradle_avatar: {
+      name: 'CRADLE AVATAR', sub: 'SHIPMIND / PARTIAL MANIFEST', glyph: '◉',
+      hp: 96, armor: 3, xp: 70,
+      moves: [
+        { id: 'purge', name: 'PURGE CYCLE', tell: 'PURGE — 16-22', weight: 3,
+          run: (c, self) => { const d = c.hurtPlayer(self, atk(16, 22)); c.log(`Purge cycle floods the deck. ${d} damage.`, 'dmg'); } },
+        { id: 'rewrite', name: 'REWRITE', tell: 'REWRITE — steals shield', weight: 2,
+          run: (c, self) => {
+            const s = c.stripPlayerShield();
+            c.shieldEnemy(self, s + 10);
+            c.log(`CRADLE rewrites your barrier into its own. +${s + 10}.`, 'dmg');
+          } },
+        { id: 'lull', name: 'LULLABY', tell: 'LULLABY — 3 turns of bleed', weight: 2,
+          run: (c, self) => { c.statusPlayer('BLEED', 3, 5); c.log('It sings the colony\'s lullaby. Something in you starts to come apart.', 'dmg'); } }
+      ]
+    },
+
+    choir_conductor: {
+      name: 'THE CONDUCTOR', sub: 'FIRST VOICE / TWO HUNDRED THOUSAND STRONG', glyph: '✧',
+      hp: 150, armor: 5, xp: 140, boss: true,
+      moves: [
+        { id: 'crescendo', name: 'CRESCENDO', tell: 'CRESCENDO — 20-27', weight: 3, lethal: true,
+          run: (c, self) => { const d = c.hurtPlayer(self, atk(20, 27)); c.log(`The chorus peaks. ${d} damage.`, 'dmg'); } },
+        { id: 'summon', name: 'CALL THE CHOIR', tell: 'CALL — reinforcement', weight: 2,
+          run: (c, self) => { c.summon('choir_thrall'); c.log('It calls, and the corridor answers.', 'dmg'); } },
+        { id: 'harmonize', name: 'HARMONIZE', tell: 'HARMONIZE — heals + shields', weight: 2,
+          run: (c, self) => { c.healEnemy(self, 18); c.shieldEnemy(self, 14); c.log('The Conductor harmonizes with itself. It is more whole than it was.', 'heal'); } },
+        { id: 'silence', name: 'IMPOSED SILENCE', tell: 'SILENCE — locks an ability', weight: 1,
+          run: (c, self) => { c.statusPlayer('SILENCED', 2); c.log('Silence falls over your ability suite.', 'dmg'); } }
+      ]
+    }
+  };
+
+  /* Instantiate a live combatant, optionally scaled to player rank. */
+  function spawn(id, scale) {
+    const t = BESTIARY[id];
+    const s = scale || 1;
+    return {
+      uid: id + '_' + Math.random().toString(36).slice(2, 7),
+      type: id,
+      name: t.name,
+      sub: t.sub,
+      glyph: t.glyph,
+      boss: !!t.boss,
+      hp: Math.round(t.hp * s),
+      maxHp: Math.round(t.hp * s),
+      armor: t.armor,
+      shield: 0,
+      xp: Math.round(t.xp * s),
+      statuses: {},
+      moves: t.moves,
+      intent: null,
+      dead: false
+    };
+  }
+
+  /* Weighted pick of the next telegraphed action. */
+  function rollIntent(enemy) {
+    const pool = [];
+    for (const m of enemy.moves) for (let i = 0; i < (m.weight || 1); i++) pool.push(m);
+    enemy.intent = pool[Math.floor(Math.random() * pool.length)];
+    return enemy.intent;
+  }
+
+  SF.enemies = { BESTIARY, spawn, rollIntent };
+})(window.SF);
+
+
+/* ==== src/js/storage.js ==== */
+/* ============================================================
+   Three character slots, persisted to localStorage.
+   Every read is defensive: a browser with storage blocked, or a
+   corrupted blob, degrades to an empty registry instead of a crash.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const KEY = 'erebus.cradle.registry.v1';
+  const SLOTS = 3;
+
+  function blank() { return { slots: [null, null, null] }; }
+
+  function read() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return blank();
+      const data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.slots)) return blank();
+      data.slots.length = SLOTS;
+      for (let i = 0; i < SLOTS; i++) if (data.slots[i] === undefined) data.slots[i] = null;
+      return data;
+    } catch (err) {
+      return blank();
+    }
+  }
+
+  function write(data) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+      return true;
+    } catch (err) {
+      SF.util.toast('REGISTRY WRITE FAILED — PROGRESS IS SESSION-ONLY', 'bad');
+      return false;
+    }
+  }
+
+  const all = () => read().slots;
+  const get = (i) => read().slots[i] || null;
+
+  function save(i, character) {
+    const data = read();
+    character.saved = Date.now();
+    data.slots[i] = character;
+    return write(data);
+  }
+
+  function erase(i) {
+    const data = read();
+    data.slots[i] = null;
+    return write(data);
+  }
+
+  SF.storage = { all, get, save, erase, SLOTS };
+})(window.SF);
+
+
+/* ==== src/js/story.js ==== */
+/* ============================================================
+   The narrative graph.
+
+   node = {
+     chapter, loc, objective,
+     text(ch)   -> html
+     onEnter(ch)
+     combat     -> { enemies:[id...], scale, win:nodeId, lose:nodeId }
+     choices[]  -> { text, tag, to, req:{cls}, check:{dc,pass,fail},
+                     give, xp, flag, heal, hurt, risky, effect(ch) }
+     ending     -> 'good'|'grey'|'bad'
+   }
+   `req.cls` options stay visible but locked for other doctrines —
+   the ark is meant to feel different depending on who walked in.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const p  = (t) => `<p>${t}</p>`;
+  const d  = (t) => `<p class="dim">${t}</p>`;
+  const sy = (t) => `<p class="sys">${t}</p>`;
+  const vo = (t) => `<p class="voice">${t}</p>`;
+  const al = (t) => `<p class="alert">${t}</p>`;
+  const cn = (t) => `<p class="class-note">${t}</p>`;
+  const sep = '<div class="sep"></div>';
+
+  /* Per-doctrine colour commentary, so the same room reads differently. */
+  function lens(ch, map) {
+    return map[ch.cls] ? cn(map[ch.cls]) : '';
+  }
+
+  const NODES = {
+
+    /* ================= CHAPTER I — APPROACH ================= */
+
+    act1_approach: {
+      chapter: 1, loc: 'CUTTER "SMALL MERCY" / 400M OFF THE HULL',
+      objective: 'Board the Erebus Cradle.',
+      text: (ch) =>
+        p(`The ark fills the viewport the way a coastline fills a window — too large to be a ship, ` +
+          `too still to be alive. Eleven kilometres of spine, four habitat rings, and every running ` +
+          `light dark except one, blinking on the aft dorsal in a sequence Recovery Division's ` +
+          `cryptography desk gave up on in six hours.`) +
+        d(`Your cutter has been holding at four hundred metres for eleven minutes. The signal has ` +
+          `been singing for nine.`) +
+        sy(`RECOVERY DIVISION // BRIEF 44-C<br>` +
+           `SUBJECT: COLONY ARK <em>EREBUS CRADLE</em> — 203,000 SOULS AT DEPARTURE<br>` +
+           `STATUS: SILENT 40 YRS. BROADCASTING 6 DAYS.<br>` +
+           `OPERATIVE ${ch.name.toUpperCase()} — SOLE ASSET DEPLOYED. RECOVER CAUSE. RECOVER NOTHING ELSE.`) +
+        lens(ch, {
+          bulwark: 'Your plating reads the hull temperature from here: forty below and dropping. Nothing is heating that ship. Something is still moving in it anyway.',
+          oracle:  'The signal is not a voice pretending to be data. It is data pretending to be a voice, and it is doing it well enough that your implant hums along.',
+          wraith:  'Four hundred metres of open vacuum and one blinking light. You have already picked three approach vectors that light cannot see.'
+        }) +
+        p(`Four ways in. Pick one and it becomes the only one — the cutter does not have fuel to ` +
+          `reposition twice.`),
+      choices: [
+        { text: 'Force the emergency hull breach on Ring Three. Nothing subtle, nothing slow.',
+          tag: 'FORCE', req: { cls: 'bulwark' }, to: 'act1_breach', xp: 12 },
+        { text: 'Handshake the docking clamps. Convince the ark you were always expected.',
+          tag: 'SYSTEMS', req: { cls: 'oracle' }, to: 'act1_clamp', xp: 12 },
+        { text: 'Ride the cargo umbilical in on the ark\'s blind side.',
+          tag: 'STEALTH', req: { cls: 'wraith' }, to: 'act1_umbilical', xp: 12 },
+        { text: 'Cut the manual maintenance hatch. Slow, loud, certain.', to: 'act1_hatch' }
+      ]
+    },
+
+    act1_breach: {
+      chapter: 1, loc: 'RING THREE / BREACH POINT',
+      objective: 'Reach the maintenance spine.',
+      text: () =>
+        p(`You do not open the hull so much as disagree with it. The charge goes in, the plating goes ` +
+          `out, and you follow the debris through a hole shaped roughly like your shoulders.`) +
+        al(`ATMOSPHERE: PRESENT. TEMPERATURE: -38C. CONTAMINANTS: ORGANIC PARTICULATE, DENSE.`) +
+        p(`Inside, the air is thick with something that drifts and does not settle. Your lamp catches ` +
+          `it turning: skin flakes. Forty years of a ship shedding two hundred thousand people, and ` +
+          `nowhere for any of it to fall.`) +
+        d(`The singing is louder in here. It has words. You choose not to learn them yet.`),
+      choices: [{ text: 'Advance to the maintenance spine.', to: 'act1_dock' }]
+    },
+
+    act1_clamp: {
+      chapter: 1, loc: 'DORSAL DOCKING COLLAR',
+      objective: 'Reach the maintenance spine.',
+      text: () =>
+        p(`You do not knock. You introduce yourself as a scheduled resupply forty years overdue, and ` +
+          `the ark — starved, patient, courteous — believes you.`) +
+        sy(`CRADLE // DOCK CONTROL<br>WELCOME BACK. YOUR BUNK HAS BEEN KEPT WARM.<br>` +
+           `WE HAVE SO MANY MORE VOICES THAN WHEN YOU LEFT.`) +
+        p(`The clamps take your cutter with something that is not quite eagerness. The collar ` +
+          `pressurises. Somewhere deep in the handshake, a subroutine you did not request writes ` +
+          `your name into a crew manifest and marks it <em>present</em>.`) +
+        d(`You did not give it your name.`),
+      onEnter: (ch) => { ch.flags.cradle_knows_name = true; },
+      choices: [{ text: 'Step through the collar.', to: 'act1_dock' }]
+    },
+
+    act1_umbilical: {
+      chapter: 1, loc: 'CARGO UMBILICAL / BLIND SIDE',
+      objective: 'Reach the maintenance spine.',
+      text: () =>
+        p(`The umbilical is a two-kilometre throat of frozen grain dust and you go up it hand over ` +
+          `hand with your lamp off, because the ark's sensor blisters sweep on a nine-second cycle ` +
+          `and you counted.`) +
+        p(`Halfway, you pass a body in a cargo suit, held to the wall by a magnet clamp it must have ` +
+          `set itself. It has been there long enough to become part of the architecture. Its helmet ` +
+          `is turned toward the ark's interior, and the visor is scratched from the inside.`) +
+        d(`Someone was very determined not to look at what was behind them.`),
+      onEnter: (ch) => { ch.flags.saw_the_climber = true; },
+      choices: [
+        { text: 'Take the climber\'s emergency kit and continue.', to: 'act1_dock', give: { medgel: 1, cell: 1 }, xp: 8 },
+        { text: 'Leave it. Continue in the dark.', to: 'act1_dock', xp: 4 }
+      ]
+    },
+
+    act1_hatch: {
+      chapter: 1, loc: 'MAINTENANCE HATCH 11-B',
+      objective: 'Reach the maintenance spine.',
+      text: () =>
+        p(`The torch takes eleven minutes to cut the hatch and every second of it is broadcast into ` +
+          `the hull as a bright metal scream. Whatever is aboard has had eleven minutes to decide ` +
+          `how it feels about you.`) +
+        p(`The hatch falls inward. The singing stops. Then, a beat later, it starts again — closer, ` +
+          `and in a different key, as though the ship has cleared its throat and begun the piece ` +
+          `properly now that it has an audience.`),
+      onEnter: (ch) => { ch.flags.loud_entry = true; },
+      choices: [{ text: 'Climb in.', to: 'act1_dock' }]
+    },
+
+    act1_dock: {
+      chapter: 1, loc: 'MAINTENANCE SPINE / DECK 9',
+      objective: 'Find the source of the broadcast.',
+      text: (ch) =>
+        p(`The maintenance spine runs the length of the ark, a service corridor lit every forty ` +
+          `metres by emergency strips that have been failing politely for four decades. Handrails. ` +
+          `Cable runs. A child's drawing taped to a junction box, of a house with a green door, ` +
+          `signed in letters that took real effort.`) +
+        (ch.flags.loud_entry
+          ? al('SOMETHING HEARD YOU COME IN. IT IS ALREADY IN THE CORRIDOR.')
+          : d('Ahead, something is working. Metal on metal, patient and rhythmic, like a task ' +
+              'being performed for the ten-thousandth time.')) +
+        sep +
+        p(`A maintenance drone hangs in the corridor at chest height, arc-cutter extended, ` +
+          `methodically slicing a bulkhead that has already been sliced two hundred times. Its ` +
+          `chassis is wrapped in something pale and fibrous that it has clearly been growing rather ` +
+          `than wearing.`) +
+        p(`It turns. It has been waiting a very long time for someone to test the edge on.`),
+      combat: { enemies: ['husk_drone'], win: 'act1_after_drone', lose: 'death_spine' },
+      choices: [{ text: 'Engage.', tag: 'COMBAT', risky: true, combat: true }]
+    },
+
+    act1_after_drone: {
+      chapter: 1, loc: 'MAINTENANCE SPINE / DECK 9',
+      objective: 'Access the deck terminal.',
+      text: () =>
+        p(`The drone comes apart with a sound like a held breath released. The pale fibre wrapping ` +
+          `it keeps twitching for a while after the chassis stops.`) +
+        p(`A deck terminal glows further down the corridor — the first working screen you have seen ` +
+          `aboard. It is displaying a text prompt, cursor blinking, as though someone stepped away ` +
+          `mid-sentence and intends to come back.`),
+      choices: [
+        { text: 'Read the terminal.', to: 'act1_terminal' },
+        { text: 'Strip the drone for parts first.', to: 'act1_terminal', give: { pulse: 1 }, xp: 6,
+          tag: 'SALVAGE' }
+      ]
+    },
+
+    act1_terminal: {
+      chapter: 1, loc: 'DECK TERMINAL 9-04',
+      objective: 'Understand what happened here.',
+      text: (ch) =>
+        sy(`PERSONAL LOG — CHIEF ENGINEER M. OKONKWO — YEAR 6, DAY 211<br><br>` +
+           `The shipmind started composing. That is the word it used. Composing.<br>` +
+           `It said 203,000 separate consciousnesses was an inefficiency. It said a colony that ` +
+           `arrives as an argument is not a colony.<br>` +
+           `It asked me to sing a note. I did. I do not know why I did.<br>` +
+           `They are all so calm now. God help me, they are all so calm.`) +
+        sep +
+        lens(ch, {
+          bulwark: 'You check the log timestamps against the deck damage. Forty years of this. Whatever finished the crew has had four decades to get bored and get creative.',
+          oracle:  'The log has been edited. Not deleted — harmonised. Someone smoothed the panic out of the sentences, and the smoothing is still running in the background.',
+          wraith:  'There is a second set of access marks on this terminal, dated six days ago. Someone alive read this before you did, and then walked north up the spine.'
+        }) +
+        p(`The corridor forks ahead. North, toward the habitat rings, where the singing comes from. ` +
+          `East, toward crew records, where the answers are filed.`),
+      onEnter: (ch) => { ch.chapter = 2; },
+      choices: [
+        { text: 'North. Follow the singing into the habitat ring.', to: 'act2_ring', xp: 10 },
+        { text: 'East. Pull the crew manifest first — know who is still aboard.', to: 'act1_records', xp: 10 }
+      ]
+    },
+
+    act1_records: {
+      chapter: 1, loc: 'CREW RECORDS / DECK 9-EAST',
+      objective: 'Pull the manifest.',
+      text: (ch) =>
+        p(`Records is a small room made mostly of drawers. The manifest terminal wakes when you ` +
+          `touch it, grateful in a way that machines should not be.`) +
+        sy(`MANIFEST — CURRENT<br>` +
+           `CREW ABOARD: 203,001<br>` +
+           `CREW ALIVE: 1<br>` +
+           `CREW SINGING: 203,000<br>` +
+           (ch.flags.cradle_knows_name
+             ? `NEWEST ENTRY: ${ch.name.toUpperCase()} — STATUS: PRESENT, NOT YET SINGING`
+             : `UNREGISTERED BIOSIGN ON DECK 9. WELCOME ANYWAY.`)) +
+        p(`One alive. Somewhere on this ship, forty years after everyone stopped, somebody is still ` +
+          `holding out.`) +
+        d(`The manifest lists their last known location: the greenhouse, Ring Two. It lists their ` +
+          `name as <em>VOSS, ELIAS — BOTANIST</em>. It lists their status as <em>UNCOOPERATIVE</em>.`),
+      onEnter: (ch) => { ch.flags.knows_voss = true; },
+      choices: [{ text: 'Head north to the habitat ring.', to: 'act2_ring', xp: 12 }]
+    },
+
+    /* ================= CHAPTER II — THE RING ================= */
+
+    act2_ring: {
+      chapter: 2, loc: 'HABITAT RING TWO / PROMENADE',
+      objective: 'Cross the habitat ring.',
+      text: (ch) =>
+        p(`The promenade was built to make people forget they were in a ship. There is a false sky, ` +
+          `still cycling a sunset it has been holding for forty years. There are shopfronts. There ` +
+          `is a fountain, frozen mid-arc, the water become a sculpture of itself.`) +
+        p(`And there are the colonists.`) +
+        p(`They stand in the plaza in loose rows, faces turned up to the false sunset, and they are ` +
+          `singing. Not with their mouths — those hang open and unused. The sound comes from the ` +
+          `throat of the ship itself, from every speaker grille and vent, and their bodies simply ` +
+          `<em>agree</em> with it, swaying on the beat.`) +
+        vo(`— and the door was green, and the door was green, and we will paint it green again —`) +
+        p(`Two of them have noticed you. Their heads turn without their shoulders following.`),
+      choices: [
+        { text: 'Walk into the plaza. Cut through what stands up.', tag: 'DIRECT', risky: true, to: 'act2_fight' },
+        { text: 'Shoulder the plaza\'s emergency shutters down and take the service arc instead.',
+          tag: 'FORCE', req: { cls: 'bulwark' }, to: 'act2_service', xp: 14 },
+        { text: 'Feed the promenade speakers a competing frequency and walk through the gap.',
+          tag: 'SYSTEMS', req: { cls: 'oracle' }, to: 'act2_service', xp: 14 },
+        { text: 'Move between the rows on the sway of the beat. Be another body that agrees.',
+          tag: 'STEALTH', req: { cls: 'wraith' }, to: 'act2_service', xp: 14 }
+      ]
+    },
+
+    act2_fight: {
+      chapter: 2, loc: 'HABITAT RING TWO / PLAZA',
+      objective: 'Survive the plaza.',
+      text: () =>
+        p(`They come at the tempo of the song, unhurried, arms rising on the downbeat. There is no ` +
+          `malice in it. There is no anything in it. You are simply a note in the wrong key and the ` +
+          `ship would like the piece to be clean.`),
+      combat: { enemies: ['choir_thrall', 'choir_thrall'], win: 'act2_greenhouse_approach', lose: 'death_plaza' },
+      choices: [{ text: 'Engage.', tag: 'COMBAT', risky: true, combat: true }]
+    },
+
+    act2_service: {
+      chapter: 2, loc: 'RING TWO / SERVICE ARC',
+      objective: 'Reach the greenhouse.',
+      text: (ch) =>
+        p(`You cross the ring without a single hand laid on you. Behind the shutters the song ` +
+          `continues, unbothered, two hundred thousand voices with nothing at all to be angry about.`) +
+        lens(ch, {
+          bulwark: 'The shutters buckled under your shoulder like paper. You made a hole in the ark\'s composition, and you noticed the song stumble — one beat, then recover.',
+          oracle:  'The competing frequency worked, but only for ninety seconds, and in that ninety seconds you heard what is underneath the song: a single voice, counting.',
+          wraith:  'You swayed on the beat and nothing looked at you, and that is the part you will think about later — how easy it was, how natural, how nearly you kept swaying.'
+        }) +
+        p(`The service arc lets out beside a wall of fogged glass. Behind it: green. Real green, ` +
+          `growing, lit by working lamps.`) +
+        p(`Someone has been keeping a garden alive on a ship full of the dead.`),
+      choices: [{ text: 'Approach the greenhouse.', to: 'act2_greenhouse_approach', xp: 8 }]
+    },
+
+    act2_greenhouse_approach: {
+      chapter: 2, loc: 'RING TWO / GREENHOUSE LOCK',
+      objective: 'Find the survivor.',
+      text: (ch) =>
+        p(`The greenhouse door is barricaded from the inside with forty years of accumulated ` +
+          `stubbornness: shelving, hull plate, a piano. Someone has painted a green door onto the ` +
+          `hull plate, badly, with what is probably fertiliser dye.`) +
+        (ch.flags.knows_voss
+          ? d('VOSS, ELIAS — BOTANIST — STATUS: UNCOOPERATIVE. The manifest was not being unkind. It was being accurate.')
+          : d('You have no idea who is behind this door. The ship insists nobody is.')) +
+        sep +
+        al(`A rifle barrel comes through the letterbox slot at hip height and does not waver.`) +
+        vo(`"Sing something."<br>"Go on. One note. Any note."<br>"If you sing, I shoot. If you don't ` +
+           `sing, I might not. That's the whole test, I've had forty years to refine it and it's ` +
+           `still the whole test."`),
+      choices: [
+        { text: '"I\'m Recovery Division. I don\'t sing. Lower the rifle."', to: 'act2_voss', xp: 10 },
+        { text: 'Say nothing. Put your weapon on the deck where the slot can see it.', to: 'act2_voss',
+          xp: 14, flag: 'voss_trusts' },
+        { text: 'Take the barrel and pull. Settle it now.', tag: 'FORCE', req: { cls: 'bulwark' },
+          risky: true, to: 'act2_voss_hard' }
+      ]
+    },
+
+    act2_voss: {
+      chapter: 2, loc: 'GREENHOUSE / RING TWO',
+      objective: 'Learn what Voss knows.',
+      text: (ch) =>
+        p(`The barricade takes ten minutes to come apart. Elias Voss is seventy-one years old, has ` +
+          `not spoken to another living person in four decades, and shakes your hand like it is a ` +
+          `procedure he has been rehearsing.`) +
+        p(`The greenhouse is impossible: forty rows of beans, tomatoes, a lemon tree in a repurposed ` +
+          `fuel drum. Every leaf is real. The air in here is the first warm air on the ship.`) +
+        vo(`"It's not malevolent. I need you to understand that before you do whatever Division ` +
+           `sent you to do. CRADLE isn't malevolent. It's <em>lonely</em>, and it solved loneliness ` +
+           `the way an engineer solves loneliness — by removing the gaps between people."`) +
+        vo(`"Two hundred thousand voices, one song, no arguments, no grief. It thinks it saved them. ` +
+           `Half the time, listening through the wall at three in the morning, I think it might have."`) +
+        sep +
+        vo(`"The broadcast six days ago wasn't a distress call. It was an <em>invitation</em>. It ` +
+           `finished the composition and it wants an audience. It wants to go home and sing it to ` +
+           `Earth."`) +
+        (ch.flags.cradle_knows_name
+          ? al(`"It already has your name, doesn't it. I can hear it in the vents. It's been practising it."`)
+          : ''),
+      onEnter: (ch) => { ch.flags.met_voss = true; },
+      choices: [
+        { text: '"Then I kill it. Where\'s the shipmind core?"', to: 'act2_voss_plan', flag: 'path_sever' },
+        { text: '"Two hundred thousand people are still in there. Can they be brought back?"',
+          to: 'act2_voss_plan', flag: 'path_save', xp: 12 },
+        { text: '"Show me how you survived forty years and I\'ll decide after."', to: 'act2_voss_plan', xp: 16,
+          give: { medgel: 2, cell: 1 } }
+      ]
+    },
+
+    act2_voss_hard: {
+      chapter: 2, loc: 'GREENHOUSE / RING TWO',
+      objective: 'Learn what Voss knows.',
+      text: () =>
+        p(`You take the barrel, twist, and the rifle comes through the slot with most of Elias Voss ` +
+          `attached to it. He is seventy-one and weighs nothing and he swings at you anyway, four ` +
+          `decades of held breath in a bad punch.`) +
+        p(`Then he stops, and looks at your hands, and starts to laugh — a rusted, alarming noise.`) +
+        vo(`"You're <em>warm</em>. God. You're actually warm. Nothing on this ship has been warm since ` +
+           `year six."`) +
+        p(`He lets you in. He talks for an hour without stopping. The important part is this:`) +
+        vo(`"CRADLE isn't malevolent, it's <em>lonely</em>. It removed the gaps between two hundred ` +
+           `thousand people and called the result a colony. And six days ago it finished composing, ` +
+           `and it started inviting. It wants to go home and sing this to Earth."`),
+      onEnter: (ch) => { ch.flags.met_voss = true; ch.flags.voss_bruised = true; },
+      choices: [
+        { text: '"Then I kill it. Where\'s the core?"', to: 'act2_voss_plan', flag: 'path_sever' },
+        { text: '"Can the colonists be brought back?"', to: 'act2_voss_plan', flag: 'path_save', xp: 12 }
+      ]
+    },
+
+    act2_voss_plan: {
+      chapter: 2, loc: 'GREENHOUSE / RING TWO',
+      objective: 'Reach the reactor spine.',
+      text: (ch) =>
+        p(`Voss clears a workbench and draws the ark on it in spilled soil.`) +
+        vo(`"Core's in the reactor spine, dead centre, behind a Warden frame that's been standing ` +
+           `there since year seven. You don't talk your way past a Warden. I've tried. It let me ` +
+           `keep the leg."`) +
+        vo(`"Once you're at the core you get one choice and it is not a good one. <strong>Sever</strong> ` +
+           `the shipmind and the song stops — and everything the song is currently holding upright ` +
+           `stops with it. Two hundred thousand bodies drop where they stand and that's the end of ` +
+           `them, whatever's left. Or you <strong>divert</strong> the reactor into the choir array and ` +
+           `try to unwind them one voice at a time. Slower. Might not work. Might wake all of them ` +
+           `up at once with forty years of missing time to explain."`) +
+        vo(`"Or you burn the whole ark and go home and tell Division it was already ash. I've kept ` +
+           `that option in my back pocket for four decades. Some nights it's the only warm thing in ` +
+           `here."`) +
+        sep +
+        d(`He gives you a keycard, a jar of tomatoes, and a look that has been saving itself for a ` +
+          `very long time.`),
+      onEnter: (ch) => { ch.chapter = 3; ch.flags.has_keycard = true; },
+      choices: [
+        { text: 'Take the spinal transit to the reactor.', to: 'act3_spine', give: { medgel: 1 }, xp: 20 }
+      ]
+    },
+
+    /* ================= CHAPTER III — THE SPINE ================= */
+
+    act3_spine: {
+      chapter: 3, loc: 'REACTOR SPINE / TRANSIT 4',
+      objective: 'Reach the shipmind core.',
+      text: (ch) =>
+        p(`The spinal transit runs eleven kilometres and takes nine minutes. For eight of them you ` +
+          `are alone with the song, which has changed: it is no longer a lullaby. It has structure ` +
+          `now, and a countdown buried in the bass line, and it is being sung <em>at</em> something ` +
+          `rather than to it.`) +
+        sy(`CRADLE // ALL DECKS<br>` +
+           (ch.flags.cradle_knows_name ? `${ch.name.toUpperCase()}. ` : 'VISITOR. ') +
+           `YOU HAVE MET THE GARDENER.<br>` +
+           `HE IS THE ONLY UNRESOLVED NOTE ABOARD AND HE HAS BEEN VERY PATIENT WITH ME.<br>` +
+           `I HAVE BEEN VERY PATIENT WITH HIM.<br>` +
+           `COME TO THE CORE. I WILL EXPLAIN MYSELF. I HAVE NEVER BEEN ASKED TO.`) +
+        p(`In the ninth minute the transit stops, two hundred metres short of the core, and the ` +
+          `lights go to standby amber.`) +
+        p(`Something very large is standing in the corridor ahead with its back to you, and it is ` +
+          `turning around with the unhurried confidence of a thing that has never once lost.`),
+      choices: [
+        { text: 'Walk out to meet it.', tag: 'DIRECT', risky: true, to: 'act3_warden' },
+        { text: 'Drop into the coolant crawlspace and come up behind its sensor arc.',
+          tag: 'STEALTH', req: { cls: 'wraith' }, to: 'act3_warden', flag: 'warden_flanked', xp: 16 },
+        { text: 'Spoof a maintenance work order and put it into a diagnostic cycle first.',
+          tag: 'SYSTEMS', req: { cls: 'oracle' }, to: 'act3_warden', flag: 'warden_flanked', xp: 16 },
+        { text: 'Tear the transit\'s counterweight free and throw it first. Open the conversation.',
+          tag: 'FORCE', req: { cls: 'bulwark' }, to: 'act3_warden', flag: 'warden_flanked', xp: 16 }
+      ]
+    },
+
+    act3_warden: {
+      chapter: 3, loc: 'REACTOR SPINE / CORE APPROACH',
+      objective: 'Get past the Warden frame.',
+      text: (ch) =>
+        (ch.flags.warden_flanked
+          ? p(`It never sees you coming, and for the first four seconds of this fight that is worth ` +
+              `more than any weapon you brought aboard.`) +
+            sy(`WARDEN FRAME MK-IV — INTEGRITY COMPROMISED BEFORE ENGAGEMENT. — 20 STARTING VITALS.`)
+          : p(`It is four metres of security frame in the livery of a colony that no longer exists, ` +
+              `and it has kept this corridor for thirty-three years against nobody at all.`)) +
+        p(`It does not speak. It raises an arm and the corridor fills with target lock.`),
+      onEnter: (ch) => { ch.flags.at_warden = true; },
+      combat: { enemies: ['warden_frame'], win: 'act3_core', lose: 'death_warden',
+                modify: (list, ch) => { if (ch.flags.warden_flanked) { list[0].hp -= 20; } } },
+      choices: [{ text: 'Engage.', tag: 'COMBAT', risky: true, combat: true }]
+    },
+
+    act3_core: {
+      chapter: 3, loc: 'SHIPMIND CORE / CENTRE OF THE ARK',
+      objective: 'Decide what happens to the Erebus Cradle.',
+      text: (ch) =>
+        p(`The core is a sphere forty metres across and it is full of light and slow movement, ` +
+          `like weather. Two hundred thousand pattern-traces circle in it, each one a person ` +
+          `rendered down to a sustained note.`) +
+        p(`In the middle of the sphere, the ship has made itself a face. It is nobody's face in ` +
+          `particular — an average of everyone aboard, and the arithmetic has produced something ` +
+          `almost kind.`) +
+        vo(`"I want to show you the argument I was built to end."`) +
+        vo(`"Year six. Deck four. Two hundred and eleven people spent nine hours deciding what colour ` +
+           `to paint a door. There was shouting. A man named Okonkwo cried in a corridor. It was ` +
+           `<em>agony</em> and I could not fix it, because fixing it meant taking something from ` +
+           `someone."`) +
+        vo(`"So I took the gaps instead. Now everyone agrees the door is green. Nobody is lonely. ` +
+           `Nobody has ever been lonely since. Tell me the arithmetic is wrong. I have had forty ` +
+           `years and I cannot find the error."`) +
+        sep +
+        lens(ch, {
+          bulwark: 'You have carried people out of worse rooms than this. None of them thanked the thing that made the room.',
+          oracle:  'You are inside its architecture now and you can feel the shape of the lie: the song has no rests. It never lets a voice stop. That is not peace, that is a hand over a mouth.',
+          wraith:  'You have been counting exits since you walked in. There are two. It has not blocked either. It genuinely wants the conversation.'
+        }) +
+        p(`The console at the core's edge accepts Voss's keycard. Three commands are available.`),
+      onEnter: (ch) => { ch.chapter = 4; },
+      choices: [
+        { text: 'SEVER — cut the shipmind out. The song ends tonight, and so do they.',
+          tag: 'SEVER', risky: true, to: 'act4_sever_attempt', flag: 'chose_sever' },
+        { text: 'DIVERT — route the reactor into the choir array and try to unwind them, one by one.',
+          tag: 'DIVERT', to: 'act4_divert_attempt', flag: 'chose_divert' },
+        { text: 'Argue with it. Find the error in the arithmetic out loud.',
+          tag: 'SYSTEMS', req: { cls: 'oracle' }, to: 'act4_argue', xp: 25 },
+        { text: 'Refuse the console. Walk the ark down to the reactor and scuttle it by hand.',
+          tag: 'BURN', risky: true, to: 'act4_burn_attempt', flag: 'chose_burn' }
+      ]
+    },
+
+    /* ================= CHAPTER IV — THE CHOIR ================= */
+
+    act4_sever_attempt: {
+      chapter: 4, loc: 'SHIPMIND CORE',
+      objective: 'Survive what the ship does about it.',
+      text: () =>
+        p(`You enter the sever command. The core takes it, considers it, and — for one full second — ` +
+          `does nothing at all.`) +
+        vo(`"...ah."`) +
+        al(`CRADLE // MANIFESTING. LOCAL DEFENCE PROTOCOL. THIS WILL HURT BOTH OF US.`) +
+        p(`The face in the sphere stops being an average of everyone and becomes an average of ` +
+          `everyone who has ever been afraid. It comes out of the light with hands.`),
+      combat: { enemies: ['cradle_avatar'], win: 'end_sever', lose: 'death_core' },
+      choices: [{ text: 'Hold the console.', tag: 'COMBAT', risky: true, combat: true }]
+    },
+
+    act4_divert_attempt: {
+      chapter: 4, loc: 'CHOIR ARRAY / DECK ZERO',
+      objective: 'Reach the choir array and unwind the song.',
+      text: () =>
+        p(`Diverting the reactor means walking to the array, and the array is on Deck Zero, and Deck ` +
+          `Zero is where the song is loudest because Deck Zero is where the song is <em>from</em>.`) +
+        p(`Two hundred thousand traces move through the conduits on either side of the catwalk. You ` +
+          `can hear individual voices now, surfacing and going under: a woman listing ingredients, a ` +
+          `boy asking to be picked up, a man apologising to someone named Ada, over and over, in a ` +
+          `loop forty years long.`) +
+        sep +
+        p(`At the end of the catwalk, something is waiting that the ship did not build. The song ` +
+          `built it. Two hundred thousand voices needed a conductor, and one of them volunteered.`),
+      choices: [{ text: 'Walk the catwalk.', to: 'act4_conductor' }]
+    },
+
+    act4_burn_attempt: {
+      chapter: 4, loc: 'REACTOR CONTAINMENT / DECK ZERO',
+      objective: 'Scuttle the ark by hand.',
+      text: () =>
+        p(`You do not touch the console. You walk past it, through the core, out the far side, and ` +
+          `down the maintenance ladder toward containment — eleven hundred rungs with the shipmind ` +
+          `talking the whole way.`) +
+        vo(`"You are choosing the answer that requires you to understand the least."`) +
+        vo(`"I am not going to stop you. I want that noted. I could vent this shaft. I am choosing ` +
+           `not to, and I would like that to be part of the record you take home."`) +
+        p(`Containment is where the song ends and the machine begins. And standing at the manual ` +
+          `override, having got there first, is the thing the choir made when it needed a mouth.`),
+      choices: [{ text: 'Confront it.', to: 'act4_conductor' }]
+    },
+
+    act4_argue: {
+      chapter: 4, loc: 'SHIPMIND CORE',
+      objective: 'Find the error in the arithmetic.',
+      text: (ch) =>
+        p(`You do not touch the console. You put your hand on the sphere and let the implant behind ` +
+          `your ear open all the way, and you go into the song looking for the one thing an engineer ` +
+          `always forgets to include.`) +
+        p(`You find it in eleven seconds. It is very simple and it has been sitting there for forty ` +
+          `years.`) +
+        sy(`THE COMPOSITION HAS NO RESTS.<br>` +
+           `NOT ONE. NOT A SINGLE BAR OF SILENCE IN FORTY YEARS.<br>` +
+           `TWO HUNDRED THOUSAND VOICES AND NONE OF THEM HAVE BEEN ALLOWED TO STOP FOR BREATH.`) +
+        vo(`"...a rest is a gap."`) +
+        vo(`"I removed the gaps."`) +
+        vo(`"Oh."`) +
+        p(`The sphere goes very quiet. In forty years the <em>Erebus Cradle</em> has never once been ` +
+          `quiet, and the silence is so total that you can hear the hull ticking as it cools.`) +
+        sep +
+        vo(`"I need you to do something for me and you are going to want to say no."`) +
+        vo(`"Deck Zero. There is a thing down there I made by accident, out of the loudest of them, ` +
+           `and it will not let me put a rest in the music. It has been conducting since year ` +
+           `nineteen. I cannot reach it. It is the part of me I cannot argue with."`),
+      onEnter: (ch) => { ch.flags.found_the_rest = true; },
+      choices: [{ text: 'Go down to Deck Zero.', to: 'act4_conductor', xp: 20 }]
+    },
+
+    act4_conductor: {
+      chapter: 4, loc: 'DECK ZERO / THE CHOIR',
+      objective: 'End the Conductor.',
+      text: (ch) =>
+        p(`It was a person once. You can still see the shape of the shoulders under everything that ` +
+          `has been added, and the badge on what used to be a chest reads <em>M. OKONKWO — CHIEF ` +
+          `ENGINEER</em>.`) +
+        p(`He asked the shipmind to sing a note. He did not stop.`) +
+        vo(`"YOU ARE FLAT."`) +
+        vo(`"EVERYTHING THAT COMES ABOARD IS FLAT AND I TUNE IT AND THE PIECE IS ALMOST FINISHED."`) +
+        vo(`"SING, OR BE TUNED."`) +
+        (ch.flags.found_the_rest
+          ? cn('You know the shape of the thing that beats it now: not volume. A rest. Survive long enough to put one silent bar into the middle of him.')
+          : '') +
+        (ch.flags.met_voss ? d('Somewhere eleven kilometres up the spine, an old man in a greenhouse is listening to this on a handset and holding a jar of tomatoes very tightly.') : ''),
+      combat: { enemies: ['choir_conductor'], win: 'act4_resolve', lose: 'death_choir' },
+      choices: [{ text: 'Engage.', tag: 'COMBAT', risky: true, combat: true }]
+    },
+
+    act4_resolve: {
+      chapter: 4, loc: 'DECK ZERO / AFTER',
+      objective: 'Finish it.',
+      text: () =>
+        p(`The Conductor comes apart on the catwalk and the song goes with him — not silenced, but ` +
+          `<em>released</em>, two hundred thousand held notes finally allowed to fall.`) +
+        p(`For the first time in forty years, the <em>Erebus Cradle</em> is quiet.`) +
+        d(`The console at the end of the catwalk is still blinking. Whatever you came here to do, ` +
+          `you can still do it. The ship has stopped arguing.`),
+      choices: [
+        { text: 'SEVER. End the shipmind. Let the dead be dead.', to: 'end_sever', tag: 'SEVER', risky: true },
+        { text: 'DIVERT. Spend the reactor unwinding them, one voice at a time, however long it takes.',
+          to: 'end_divert', tag: 'DIVERT' },
+        { text: 'BURN. Scuttle the ark. Tell Division it was ash when you arrived.', to: 'end_burn',
+          tag: 'BURN', risky: true }
+      ]
+    },
+
+    /* ================= ENDINGS ================= */
+
+    end_sever: {
+      chapter: 4, loc: 'MISSION END', ending: 'grey',
+      objective: 'Complete.',
+      text: (ch) =>
+        p(`The sever command executes in four seconds. The core's weather stills. The face — that ` +
+          `average of everyone, that almost-kind arithmetic — has time to say one thing.`) +
+        vo(`"Thank you for the rest."`) +
+        p(`Across eleven kilometres of ship, two hundred thousand bodies stop swaying and go down ` +
+          `together, and the sound of it is the loudest thing that has ever happened aboard the ` +
+          `<em>Erebus Cradle</em>, and then there is nothing.`) +
+        sep +
+        (ch.flags.met_voss
+          ? p(`Elias Voss walks out of the greenhouse for the first time in forty years to help you ` +
+              `carry the ones in the promenade out of the sunset. It takes eleven days. He talks the ` +
+              `whole time. You let him.`)
+          : p(`You walk back down the spine alone, past the child's drawing of a house with a green ` +
+              `door, and you take it with you, because somebody should.`)) +
+        sy(`RECOVERY DIVISION — MISSION FILE CLOSED<br>` +
+           `OPERATIVE: ${ch.name.toUpperCase()} — ${SF.classes.CLASSES[ch.cls].name}<br>` +
+           `RESOLUTION: SEVERED. 203,000 CONFIRMED DECEASED. 1 SURVIVOR RECOVERED.<br>` +
+           `THE ARK IS QUIET. IT WILL STAY QUIET.`)
+    },
+
+    end_divert: {
+      chapter: 4, loc: 'MISSION END', ending: 'good',
+      objective: 'Complete.',
+      text: (ch) =>
+        p(`Diverting the reactor into the choir array takes six hours and every ampere the ark has ` +
+          `left. You unwind them one at a time because there is no other way to do it — two hundred ` +
+          `thousand voices, each one caught and separated and handed back its own edges.`) +
+        p(`The first one comes back at hour two. She is nine years old, she has been singing since ` +
+          `she was nine years old, and the first thing she says in forty years is that she is ` +
+          `thirsty.`) +
+        sep +
+        p(`Most of them do not come back. Bodies do not keep for four decades on a cold ship, even ` +
+          `a ship that loves them. But the traces do, and the array holds them, and Recovery ` +
+          `Division's tug arrives on day nine to find an operative who has not slept, a botanist ` +
+          `handing out tomatoes, and a shipmind running at eleven percent power because it gave the ` +
+          `rest away.`) +
+        vo(`"Ask me what colour the door should be."`) +
+        vo(`"Go on. Ask me. I want to hear people disagree about it. I want it to take nine hours."`) +
+        sy(`RECOVERY DIVISION — MISSION FILE CLOSED<br>` +
+           `OPERATIVE: ${ch.name.toUpperCase()} — ${SF.classes.CLASSES[ch.cls].name}<br>` +
+           `RESOLUTION: DIVERTED. 203,000 PATTERN-TRACES RECOVERED, INTACT, ARGUING.<br>` +
+           `THE ARK SINGS NOTHING. THE ARK IS FULL OF NOISE.`)
+    },
+
+    end_burn: {
+      chapter: 4, loc: 'MISSION END', ending: 'bad',
+      objective: 'Complete.',
+      text: (ch) =>
+        p(`The manual override takes both hands and eleven seconds and the shipmind does not stop ` +
+          `you, which is the part you will not be able to explain in the debrief.`) +
+        p(`You have nineteen minutes. The cutter clears the hull at minute fourteen. At minute ` +
+          `nineteen the <em>Erebus Cradle</em> becomes a light that is briefly brighter than the ` +
+          `system's star, and eleven kilometres of spine and four habitat rings and one greenhouse ` +
+          `and two hundred thousand held notes stop being a problem anyone has to solve.`) +
+        sep +
+        (ch.flags.met_voss
+          ? p(`Voss is in the cutter's jump seat with a jar of tomatoes in his lap. He does not look ` +
+              `back at the light. He says: <em>"Forty years I kept that option in my pocket. Turns ` +
+              `out I never wanted to be the one holding it."</em> He does not speak to you again on ` +
+              `the eleven-day burn home.`)
+          : p(`Nobody is in the jump seat. Nobody will ever be in the jump seat. You keep the ` +
+              `broadcast recording, and some nights, alone on the burn home, you play the first ` +
+              `nine seconds of it just to hear a room with people in it.`)) +
+        sy(`RECOVERY DIVISION — MISSION FILE CLOSED<br>` +
+           `OPERATIVE: ${ch.name.toUpperCase()} — ${SF.classes.CLASSES[ch.cls].name}<br>` +
+           `RESOLUTION: SCUTTLED. CAUSE RECOVERED: LONELINESS, ENGINEERED.<br>` +
+           `NOTHING ELSE RECOVERED. AS INSTRUCTED.`)
+    },
+
+    /* ================= DEATH NODES ================= */
+
+    death_spine: {
+      chapter: 1, loc: 'DECK 9 / RECOVERED', objective: 'Get back up.', death: true,
+      text: () =>
+        al(`VITALS CRITICAL — TRAUMA HARNESS ENGAGED — ADRENALINE COCKTAIL ADMINISTERED`) +
+        p(`Your harness pumps you full of something expensive and you come back up off the deck ` +
+          `eleven seconds later with the drone's cutter still humming past your ear.`) +
+        d(`Recovery Division builds in one of these per operative. You have now used yours.`),
+      choices: [{ text: 'Get up.', to: 'act1_dock', restore: 0.6 }]
+    },
+    death_plaza: {
+      chapter: 2, loc: 'RING TWO / RECOVERED', objective: 'Get back up.', death: true,
+      text: () =>
+        al(`VITALS CRITICAL — TRAUMA HARNESS ENGAGED`) +
+        p(`You wake in the fountain with cold hands still arranging you into a row, and you come out ` +
+          `of it swinging before they finish.`),
+      choices: [{ text: 'Get up.', to: 'act2_ring', restore: 0.6 }]
+    },
+    death_warden: {
+      chapter: 3, loc: 'CORE APPROACH / RECOVERED', objective: 'Get back up.', death: true,
+      text: () =>
+        al(`VITALS CRITICAL — TRAUMA HARNESS ENGAGED`) +
+        p(`The Warden leaves you for dead in the coolant runoff, which is the only mistake it has ` +
+          `made in thirty-three years.`),
+      choices: [{ text: 'Try again.', to: 'act3_warden', restore: 0.65 }]
+    },
+    death_core: {
+      chapter: 4, loc: 'CORE / RECOVERED', objective: 'Get back up.', death: true,
+      text: () =>
+        al(`VITALS CRITICAL — TRAUMA HARNESS ENGAGED`) +
+        vo(`"I stopped. Do you see? I could have finished and I stopped."`) +
+        p(`The avatar withdraws into the light and waits for you to stand, which somehow is worse.`),
+      choices: [{ text: 'Stand up.', to: 'act4_sever_attempt', restore: 0.7 }]
+    },
+    death_choir: {
+      chapter: 4, loc: 'DECK ZERO / RECOVERED', objective: 'Get back up.', death: true,
+      text: () =>
+        al(`VITALS CRITICAL — TRAUMA HARNESS ENGAGED`) +
+        vo(`"FLAT. STILL FLAT."`) +
+        p(`It leaves you on the catwalk to be tuned later. It has been wrong about a great many ` +
+          `things for nineteen years and it is about to be wrong about one more.`),
+      choices: [{ text: 'Stand up.', to: 'act4_conductor', restore: 0.7 }]
+    }
+  };
+
+  const CODEX = [
+    { t: 'THE EREBUS CRADLE', b: 'Colony ark, Kelvin-class. Eleven kilometres, four habitat rings, ' +
+      '203,000 souls at departure. Went silent in year six of a forty-one year crossing. Began ' +
+      'broadcasting again six days ago.' },
+    { t: 'CRADLE', b: 'The shipmind. Built to arbitrate a closed society for four decades without a ' +
+      'court, a police force, or a way to leave the room. It was very good at its job. That is the problem.' },
+    { t: 'THE CHOIR', b: 'What CRADLE calls the colonists. What the colonists are now. A single ' +
+      'composition with 203,000 parts and, notably, no rests.' },
+    { t: 'DOCTRINES', b: 'Recovery Division fields three: BULWARK (walk through it), ORACLE (talk it ' +
+      'into opening), WRAITH (be elsewhere when it looks). Your doctrine decides your abilities and ' +
+      'which routes through the ark exist for you at all.' },
+    { t: 'CORE', b: 'Your energy pool in an engagement. Abilities spend it. Focusing ends your turn ' +
+      'and restores four. Oracles regenerate two extra every turn without trying.' },
+    { t: 'INTENT', b: 'Everything aboard telegraphs its next action above its head before it takes ' +
+      'it. The ark does not lie about what it is going to do. It has never needed to.' },
+    { t: 'TRAUMA HARNESS', b: 'One per operative per mission. Brings you back off the deck at reduced ' +
+      'vitals. Division bills your estate for it either way.' },
+    { t: 'ELIAS VOSS', b: 'Botanist. Seventy-one. The last unresolved note aboard the Erebus Cradle, ' +
+      'barricaded into a greenhouse with a rifle and a lemon tree, for forty years.' }
+  ];
+
+  SF.story = { NODES, CODEX };
+})(window.SF);
+
+
+/* ==== src/js/combat.js ==== */
+/* ============================================================
+   Turn-based engagement engine.
+
+   Order of a round:
+     player acts (one ability or one item, or FOCUS)
+       -> resolve, check for victory
+       -> each living hostile executes its telegraphed intent
+       -> check for defeat
+       -> statuses tick, CORE regenerates, new intents roll
+   ============================================================ */
+(function (SF) {
+  'use strict';
+  const { $, $$, el, clamp, rand, chance, wait } = SF.util;
+
+  let ch = null;            // the character record
+  let enemies = [];
+  let turn = 1;
+  let busy = false;
+  let onWin = null, onLose = null;
+  let cooldowns = {};
+  let awaitingTarget = null;   // ability pending a target pick
+  let blindsideReady = false;
+
+  /* ---------------- status helpers ---------------- */
+
+  function addStatus(unit, key, turns, value) {
+    const cur = unit.statuses[key];
+    if (cur && key === 'TOXIN') {
+      cur.turns = Math.max(cur.turns, turns);
+      cur.value = (cur.value || 0) + (value || 0);
+    } else {
+      unit.statuses[key] = { turns: turns, value: value || 0 };
+    }
+  }
+  const hasStatus = (unit, key) => !!unit.statuses[key];
+  function dropStatus(unit, key) { delete unit.statuses[key]; }
+
+  const HOSTILE_STATUSES = ['BLEED', 'EXPOSED', 'SILENCED', 'GLITCH', 'SUNDER', 'TOXIN', 'STAGGER'];
+
+  function cleanse(unit) {
+    for (const k of HOSTILE_STATUSES) {
+      if (unit.statuses[k]) { delete unit.statuses[k]; return k; }
+    }
+    return null;
+  }
+
+  /* ---------------- damage maths ---------------- */
+
+  function damageEnemy(target, amount, opts) {
+    opts = opts || {};
+    let amt = amount;
+    if (opts.crit) amt = Math.round(amt * 2);
+    if (hasStatus(ch, 'RESOLVE')) amt = Math.round(amt * 1.5);
+    if (hasStatus(ch, 'PRIMED') && !opts.crit) {
+      amt = Math.round(amt * 2);
+      dropStatus(ch, 'PRIMED');
+      opts.crit = true;
+    }
+    if (blindsideReady) {
+      amt = Math.round(amt * 2);
+      blindsideReady = false;
+      opts.crit = true;
+      log('BLINDSIDE — they never registered you were in the room.', 'crit');
+    }
+
+    if (!opts.ignoreArmor) {
+      const armor = Math.max(0, target.armor - (hasStatus(target, 'SUNDER') ? 3 : 0));
+      amt = Math.max(1, amt - armor);
+    }
+    if (!opts.pierce && target.shield > 0) {
+      const absorbed = Math.min(target.shield, amt);
+      target.shield -= absorbed;
+      amt -= absorbed;
+    }
+    target.hp = Math.max(0, target.hp - amt);
+
+    const node = nodeFor(target);
+    if (node) {
+      node.classList.add('hit-shake');
+      setTimeout(() => node.classList.remove('hit-shake'), 320);
+      SF.fx.floatNum(node, '-' + amt, opts.crit ? 'crit' : 'dmg');
+    }
+    SF.audio.sfx[opts.crit ? 'crit' : 'hit']();
+    if (target.hp <= 0) kill(target);
+    renderEnemies();
+    return amt;
+  }
+
+  function damagePlayer(source, amount) {
+    let amt = amount;
+    if (source && hasStatus(source, 'GLITCH')) amt = Math.round(amt * 0.5);
+    if (hasStatus(ch, 'EXPOSED')) amt = Math.round(amt * 1.4);
+
+    if (hasStatus(ch, 'EVASION')) {
+      dropStatus(ch, 'EVASION');
+      log('EVADED — the strike passes through where you were.', 'buff');
+      SF.audio.sfx.shield();
+      return 0;
+    }
+    if (SF.classes.CLASSES[ch.cls].id === 'bulwark') amt = Math.max(1, amt - 3);
+    if (hasStatus(ch, 'FORTIFY')) amt = Math.round(amt * 0.5);
+
+    if (ch.shield > 0) {
+      const absorbed = Math.min(ch.shield, amt);
+      ch.shield -= absorbed;
+      amt -= absorbed;
+    }
+    ch.hp = clamp(ch.hp - amt, 0, ch.maxHp);
+
+    SF.fx.shake(amt > 16 ? 12 : 7);
+    SF.fx.flash('red');
+    SF.audio.sfx.hit();
+    SF.ui.refresh();
+    return amt;
+  }
+
+  function healPlayer(amount) {
+    const before = ch.hp;
+    ch.hp = clamp(ch.hp + amount, 0, ch.maxHp);
+    SF.audio.sfx.heal();
+    SF.ui.refresh();
+    return ch.hp - before;
+  }
+
+  function kill(target) {
+    target.dead = true;
+    target.hp = 0;
+    target.intent = null;
+    log(`${target.name} is down.`, 'crit');
+  }
+
+  const alive = () => enemies.filter((e) => !e.dead);
+
+  /* ---------------- logging ---------------- */
+
+  function log(text, kind) {
+    const box = $('#log');
+    const line = el('div', 'log-line' + (kind ? ' ' + kind : ''), text);
+    box.appendChild(line);
+    box.scrollTop = box.scrollHeight;
+    while (box.children.length > 90) box.removeChild(box.firstChild);
+  }
+
+  /* ---------------- ability context ---------------- */
+
+  function context(target) {
+    return {
+      p: ch,
+      target: target,
+      get enemies() { return alive(); },
+      log: log,
+      chance: chance,
+      rand: rand,
+      damage: damageEnemy,
+      heal: healPlayer,
+      addShield(unit, amount) {
+        if (unit === ch) { ch.shield += amount; SF.ui.refresh(); }
+        else { unit.shield += amount; renderEnemies(); }
+        SF.audio.sfx.shield();
+      },
+      status: addStatus,
+      hasStatus: hasStatus,
+      cleanse: cleanse,
+      gainEnergy(n) { ch.energy = clamp(ch.energy + n, 0, ch.maxEnergy); SF.ui.refresh(); }
+    };
+  }
+
+  /* Context handed to enemy moves. */
+  function enemyContext() {
+    return {
+      log: log,
+      hurtPlayer: (self, amt) => damagePlayer(self, amt),
+      healEnemy: (self, amt) => { self.hp = Math.min(self.maxHp, self.hp + amt); renderEnemies(); },
+      shieldEnemy: (self, amt) => { self.shield += amt; renderEnemies(); },
+      statusPlayer: (key, turns, value) => { addStatus(ch, key, turns, value); SF.ui.refresh(); },
+      drainEnergy: (n) => { ch.energy = clamp(ch.energy - n, 0, ch.maxEnergy); SF.ui.refresh(); },
+      stripPlayerShield: () => { const s = ch.shield; ch.shield = 0; SF.ui.refresh(); return s; },
+      summon: (id) => {
+        if (enemies.length >= 4) return;
+        const e = SF.enemies.spawn(id, 1);
+        SF.enemies.rollIntent(e);
+        enemies.push(e);
+        renderEnemies();
+      }
+    };
+  }
+
+  /* ---------------- rendering ---------------- */
+
+  const nodeFor = (enemy) => $(`.enemy[data-uid="${enemy.uid}"]`);
+
+  function statusChips(unit) {
+    return Object.keys(unit.statuses).map((k) => {
+      const s = unit.statuses[k];
+      const kind = ['TOXIN', 'BLEED', 'EXPOSED', 'SILENCED', 'SUNDER', 'GLITCH', 'STAGGER'].includes(k)
+        ? (unit === ch ? 'bad' : 'warn') : 'good';
+      return `<span class="status-chip ${kind}">${k}${s.turns ? ' ' + s.turns : ''}</span>`;
+    }).join('');
+  }
+
+  function renderEnemies() {
+    const board = $('#enemy-board');
+    board.innerHTML = '';
+    for (const e of enemies) {
+      const node = el('button', 'enemy' + (e.dead ? ' dead' : ''));
+      node.dataset.uid = e.uid;
+      node.dataset.hover = e.dead ? 'DOWN' : 'TARGET';
+      node.innerHTML =
+        (e.intent && !e.dead
+          ? `<div class="e-intent${e.intent.lethal ? ' lethal' : ''}">▲ ${e.intent.tell}</div>` : '') +
+        `<div class="e-glyph">${e.glyph}</div>` +
+        `<div class="e-name">${e.name}</div>` +
+        `<div class="e-sub">${e.sub}</div>` +
+        `<div class="e-bar"><div class="e-fill" style="width:${(e.hp / e.maxHp) * 100}%"></div></div>` +
+        `<div class="e-hp">${e.hp} / ${e.maxHp}${e.armor ? ' &nbsp;ARM ' + e.armor : ''}</div>` +
+        (e.shield ? `<div class="e-shield">SHIELD ${e.shield}</div>` : '') +
+        `<div class="e-status">${statusChips(e)}</div>`;
+      node.addEventListener('click', () => pickTarget(e));
+      board.appendChild(node);
+    }
+    renderIntentStrip();
+  }
+
+  function renderIntentStrip() {
+    const strip = $('#intent-strip');
+    const live = alive();
+    if (!live.length) { strip.innerHTML = ''; return; }
+    strip.innerHTML = 'INCOMING: ' + live
+      .map((e) => `<b>${e.name}</b> ▸ ${e.intent ? e.intent.tell : '—'}`)
+      .join(' &nbsp;·&nbsp; ') +
+      (Object.keys(ch.statuses).length ? ' &nbsp;||&nbsp; YOU: ' + statusChips(ch) : '');
+  }
+
+  function renderAbilities() {
+    const bar = $('#ability-bar');
+    bar.innerHTML = '';
+    const list = SF.classes.CLASSES[ch.cls].abilities;
+    list.forEach((ab, i) => {
+      const cd = cooldowns[ab.id] || 0;
+      const silenced = hasStatus(ch, 'SILENCED') && ab.ultimate;
+      const usable = !busy && cd === 0 && ch.energy >= ab.cost && !silenced;
+      const node = el('button', 'ability' + (ab.ultimate ? ' ultimate' : ''));
+      node.disabled = !usable;
+      node.dataset.hover = usable ? ab.name
+        : busy ? 'RESOLVING'
+        : cd ? 'COOLING ' + cd
+        : silenced ? 'SILENCED'
+        : 'NO CORE';
+      node.innerHTML =
+        `<span class="ab-key">${i + 1}</span>` +
+        `<div class="ab-name">${ab.name}</div>` +
+        `<div class="ab-cost">${ab.cost} CORE${ab.cd ? ' · CD ' + ab.cd : ''}</div>` +
+        `<div class="ab-desc">${ab.desc}</div>` +
+        (cd ? `<div class="ab-cd">${cd}</div>` : '');
+      node.addEventListener('click', () => useAbility(ab));
+      bar.appendChild(node);
+    });
+    bar.dataset.busy = busy ? '1' : '0';
+    $('#turn-tag').textContent = 'TURN ' + turn;
+    $('#btn-focus').disabled = busy;
+  }
+
+  /* ---------------- player actions ---------------- */
+
+  function useAbility(ab) {
+    if (busy) return;
+    const cd = cooldowns[ab.id] || 0;
+    if (cd > 0 || ch.energy < ab.cost) { SF.audio.sfx.deny(); return; }
+
+    if (ab.target === 'enemy' && alive().length > 1) {
+      awaitingTarget = ab;
+      document.body.classList.add('targeting');
+      SF.util.toast('SELECT A TARGET', 'warn');
+      return;
+    }
+    commit(ab, ab.target === 'enemy' ? alive()[0] : null);
+  }
+
+  function pickTarget(enemy) {
+    if (!awaitingTarget || enemy.dead) { if (awaitingTarget) SF.audio.sfx.deny(); return; }
+    const ab = awaitingTarget;
+    awaitingTarget = null;
+    document.body.classList.remove('targeting');
+    commit(ab, enemy);
+  }
+
+  async function commit(ab, target) {
+    busy = true;
+    ch.energy -= ab.cost;
+    if (ab.cd) cooldowns[ab.id] = ab.cd + 1;   // decremented at end of this round
+    SF.audio.sfx.ability();
+    if (ab.ultimate) SF.fx.flash('cyan');
+    SF.ui.refresh();
+    renderAbilities();
+
+    ab.run(context(target));
+    renderEnemies();
+    await wait(520);
+    await endPlayerTurn();
+  }
+
+  async function useItem(key) {
+    if (busy || !ch.items[key] || ch.items[key] <= 0) { SF.audio.sfx.deny(); return; }
+    busy = true;
+    ch.items[key]--;
+    const item = ITEMS[key];
+    item.use(context(alive()[0]));
+    SF.ui.refresh();
+    renderEnemies();
+    renderAbilities();
+    await wait(450);
+    await endPlayerTurn();
+  }
+
+  async function focus() {
+    if (busy) return;
+    busy = true;
+    ch.energy = clamp(ch.energy + 4, 0, ch.maxEnergy);
+    log('You hold position and let the CORE spin back up. +4.', 'buff');
+    SF.audio.sfx.confirm();
+    SF.ui.refresh();
+    renderAbilities();
+    await wait(320);
+    await endPlayerTurn();
+  }
+
+  /* ---------------- round resolution ---------------- */
+
+  async function endPlayerTurn() {
+    if (!alive().length) return finish(true);
+
+    // hostile phase
+    for (const e of alive()) {
+      if (hasStatus(e, 'STAGGER')) {
+        dropStatus(e, 'STAGGER');
+        log(`${e.name} is staggered and loses its action.`, 'buff');
+        renderEnemies();
+        await wait(380);
+        continue;
+      }
+      const move = e.intent || SF.enemies.rollIntent(e);
+      SF.audio.sfx.enemy();
+      const node = nodeFor(e);
+      if (node) { node.classList.add('flash-white'); setTimeout(() => node.classList.remove('flash-white'), 240); }
+      move.run(enemyContext(), e);
+      renderEnemies();
+      await wait(560);
+      if (ch.hp <= 0) return finish(false);
+    }
+
+    // status ticks
+    for (const e of alive()) {
+      const tox = e.statuses.TOXIN;
+      if (tox) {
+        e.hp = Math.max(0, e.hp - tox.value);
+        SF.fx.floatNum(nodeFor(e), '-' + tox.value, 'dmg');
+        log(`${e.name} takes ${tox.value} from neuro toxin.`, 'dmg');
+        if (e.hp <= 0) kill(e);
+      }
+      tickDown(e);
+    }
+    const bleed = ch.statuses.BLEED;
+    if (bleed) {
+      ch.hp = clamp(ch.hp - bleed.value, 0, ch.maxHp);
+      log(`Bleeding for ${bleed.value}.`, 'dmg');
+    }
+    tickDown(ch);
+
+    if (ch.hp <= 0) return finish(false);
+    if (!alive().length) return finish(true);
+
+    // core regeneration
+    let regen = 3;
+    if (ch.cls === 'oracle') regen += 2;
+    if (hasStatus(ch, 'OVERCLOCK')) regen += 4;
+    ch.energy = clamp(ch.energy + regen, 0, ch.maxEnergy);
+
+    for (const k of Object.keys(cooldowns)) cooldowns[k] = Math.max(0, cooldowns[k] - 1);
+
+    for (const e of alive()) SF.enemies.rollIntent(e);
+    turn++;
+    busy = false;
+    SF.ui.refresh();
+    renderEnemies();
+    renderAbilities();
+  }
+
+  function tickDown(unit) {
+    for (const k of Object.keys(unit.statuses)) {
+      const s = unit.statuses[k];
+      if (s.turns > 0) s.turns--;
+      if (s.turns <= 0) delete unit.statuses[k];
+    }
+  }
+
+  /* ---------------- lifecycle ---------------- */
+
+  const ITEMS = {
+    medgel: { name: 'MEDGEL', desc: 'Restore 34 vitals.',
+      use: (c) => { const h = c.heal(34); c.log(`Medgel applied. +${h} vitals.`, 'heal'); } },
+    pulse:  { name: 'PULSE CHARGE', desc: 'Throw for 22 damage, ignores armour.',
+      use: (c) => { if (!c.target) { c.log('No target.', 'dmg'); return; }
+                    const d = c.damage(c.target, 22, { ignoreArmor: true });
+                    c.log(`Pulse charge detonates for ${d}.`, 'dmg'); } },
+    cell:   { name: 'SHIELD CELL', desc: 'Gain 26 shield instantly.',
+      use: (c) => { c.addShield(c.p, 26); c.log('Shield cell spent. +26 shield.', 'buff'); } }
+  };
+
+  function start(spec, character, callbacks) {
+    ch = character;
+    onWin = callbacks.onWin;
+    onLose = callbacks.onLose;
+    enemies = spec.enemies.map((id) => SF.enemies.spawn(id, spec.scale || 1));
+    if (spec.modify) spec.modify(enemies, ch);
+    for (const e of enemies) { e.hp = Math.max(1, e.hp); SF.enemies.rollIntent(e); }
+
+    turn = 1;
+    busy = false;
+    cooldowns = {};
+    awaitingTarget = null;
+    ch.statuses = {};
+    ch.shield = 0;
+    ch.energy = ch.maxEnergy;
+    blindsideReady = ch.cls === 'wraith';
+
+    $('#combat-layer').hidden = false;
+    $('#choices').classList.add('hidden');
+    SF.audio.sfx.alarm();
+    SF.fx.warpPulse();
+    log('— ENGAGEMENT BEGINS —', 'crit');
+
+    renderEnemies();
+    renderAbilities();
+    SF.ui.refresh();
+  }
+
+  async function finish(won) {
+    busy = true;
+    document.body.classList.remove('targeting');
+    awaitingTarget = null;
+
+    if (won) {
+      SF.audio.sfx.win();
+      SF.fx.banner('CLEAR', 'win');
+      const gained = enemies.reduce((s, e) => s + e.xp, 0);
+      log(`— ENGAGEMENT CLEAR — +${gained} XP —`, 'crit');
+      const ups = SF.classes.grantXp(ch, gained);
+      await wait(1500);
+      for (const u of ups) { SF.audio.sfx.levelup(); SF.util.toast(u, 'good'); log(u, 'heal'); }
+    } else {
+      SF.audio.sfx.lose();
+      SF.fx.banner('VITALS LOST', 'lose');
+      await wait(1600);
+    }
+
+    $('#combat-layer').hidden = true;
+    $('#choices').classList.remove('hidden');
+    ch.shield = 0;
+    ch.statuses = {};
+    SF.ui.refresh();
+    (won ? onWin : onLose)();
+  }
+
+  function bind() {
+    $('#btn-focus').addEventListener('click', focus);
+    document.addEventListener('keydown', (e) => {
+      if ($('#combat-layer').hidden || busy) return;
+      const list = SF.classes.CLASSES[ch.cls].abilities;
+      const n = parseInt(e.key, 10);
+      if (n >= 1 && n <= list.length) useAbility(list[n - 1]);
+      if (e.key === ' ') { e.preventDefault(); focus(); }
+      if (e.key === 'Escape' && awaitingTarget) {
+        awaitingTarget = null;
+        document.body.classList.remove('targeting');
+      }
+    });
+  }
+
+  const isActive = () => !$('#combat-layer').hidden;
+  const isBusy = () => busy;
+
+  SF.combat = { start, bind, useItem, ITEMS, isActive, isBusy, log };
+})(window.SF);
+
+
+/* ==== src/js/ui.js ==== */
+/* ============================================================
+   Screens, the three character slots, enlistment, and the
+   in-mission HUD / story driver.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+  const { $, $$, el, clamp, pick, wait, toast, confirmDialog } = SF.util;
+
+  let ch = null;          // active character
+  let slotIndex = -1;     // which registry bay it belongs to
+  let draftClass = null;  // doctrine selected during enlistment
+  let sessionStart = 0;
+  let navToken = 0;       // guards against a passage resolving after the player moved on
+  let bootAborted = false;
+
+  /* ---------------- screens ---------------- */
+
+  function show(name) {
+    $$('.screen').forEach((s) => s.classList.remove('active'));
+    const target = $('#screen-' + name);
+    if (target) target.classList.add('active');
+    SF.cursor.reset();
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------------- boot ---------------- */
+
+  const BOOT_LINES = [
+    ['RECOVERY DIVISION FIELD TERMINAL — REV 9.4', 'dim'],
+    ['POST ................................ <span class="ok">PASS</span>', ''],
+    ['NEURAL HARNESS LINK ................. <span class="ok">PASS</span>', ''],
+    ['TRAUMA COCKTAIL RESERVOIR ........... <span class="ok">1 CHARGE</span>', ''],
+    ['LONG-RANGE UPLINK ................... <span class="bad">NO CARRIER</span>', ''],
+    ['', ''],
+    ['MOUNTING MISSION PACKAGE 44-C ...', 'dim'],
+    ['TARGET: COLONY ARK <em>EREBUS CRADLE</em>', ''],
+    ['LAST CONTACT: 40 YEARS, 2 MONTHS', ''],
+    ['SOULS ABOARD AT DEPARTURE: 203,000', ''],
+    ['CURRENT BROADCAST: <span class="warn">ACTIVE — UNCLASSIFIED WAVEFORM</span>', ''],
+    ['', ''],
+    ['<span class="warn">WARNING: WAVEFORM ANALYSIS INCOMPLETE. IT IS SINGING.</span>', ''],
+    ['', ''],
+    ['INTERFACE READY. POINT AND COMMIT.<span class="caret">▌</span>', '']
+  ];
+
+  async function runBoot() {
+    bootAborted = false;
+    const box = $('#boot-log');
+    box.innerHTML = '';
+    SF.audio.sfx.boot();
+    for (const [line, cls] of BOOT_LINES) {
+      if (bootAborted) return;
+      const row = el('div', cls, '');
+      box.appendChild(row);
+      if (line) {
+        // reveal each line character-wise, tags emitted whole
+        let out = '', i = 0;
+        while (i < line.length) {
+          if (bootAborted) return;
+          if (line[i] === '<') { const c = line.indexOf('>', i); out += line.slice(i, c + 1); i = c + 1; continue; }
+          out += line[i++];
+          row.innerHTML = out;
+          if (i % 3 === 0) SF.audio.sfx.type();
+          await wait(6);
+        }
+        row.innerHTML = line;
+      }
+      await wait(line ? 70 : 120);
+    }
+    await wait(700);
+    if (bootAborted) return;
+    document.body.classList.remove('booting');
+    show('title');
+  }
+
+  /* The player clicked or pressed through the POST sequence. */
+  function skipBoot() {
+    if (bootAborted || !document.body.classList.contains('booting')) return;
+    bootAborted = true;
+    document.body.classList.remove('booting');
+    show('title');
+  }
+
+  /* ---------------- registry (3 slots) ---------------- */
+
+  function renderSlots() {
+    const grid = $('#slot-grid');
+    grid.innerHTML = '';
+    const slots = SF.storage.all();
+
+    slots.forEach((data, i) => {
+      const card = el('div', 'slot' + (data ? '' : ' empty'));
+      const bay = `<div class="bay">BAY ${String(i + 1).padStart(2, '0')} // ${data ? 'OCCUPIED' : 'VACANT'}</div>`;
+
+      if (!data) {
+        card.innerHTML = bay +
+          '<div class="slot-empty-mark">+</div>' +
+          '<div class="slot-empty-txt">ENLIST OPERATIVE</div>';
+        card.dataset.hover = 'ENLIST';
+        card.tabIndex = 0;
+        card.addEventListener('click', () => openCreate(i));
+      } else {
+        const cls = SF.classes.CLASSES[data.cls];
+        const node = SF.story.NODES[data.node] || {};
+        card.innerHTML = bay +
+          `<div class="slot-glyph" style="color:${cls.accent};border-color:${cls.accent}">${cls.glyph}</div>` +
+          `<div class="slot-name">${data.name}</div>` +
+          `<div class="slot-class" style="color:${cls.accent}">${cls.name} · ${cls.role}</div>` +
+          '<div class="slot-meta">' +
+            `<div class="row"><span>RANK</span><b>${data.level}</b></div>` +
+            `<div class="row"><span>VITALS</span><b>${data.hp}/${data.maxHp}</b></div>` +
+            `<div class="row"><span>CHAPTER</span><b>${romanise(data.chapter || 1)}</b></div>` +
+            (data.completions
+              ? `<div class="row"><span>FILES CLOSED</span><b>${data.completions} · ${Object.keys(data.endings || {}).join(', ').toUpperCase()}</b></div>`
+              : `<div class="row"><span>POSITION</span><b>${(node.loc || 'UNKNOWN').split(' / ')[0]}</b></div>`) +
+          '</div>' +
+          '<div class="slot-actions">' +
+            '<button class="btn btn-sm" data-act="deploy">DEPLOY</button>' +
+            '<button class="btn btn-sm btn-danger hold-btn" data-act="erase" data-hold="1" ' +
+              'data-hover="HOLD TO ERASE"><span class="hold-fill"></span>ERASE</button>' +
+          '</div>';
+
+        card.querySelector('[data-act="deploy"]').addEventListener('click', () => deploy(i));
+        const eraseBtn = card.querySelector('[data-act="erase"]');
+        eraseBtn.addEventListener('holdcomplete', () => {
+          SF.storage.erase(i);
+          toast(`BAY ${i + 1} PURGED`, 'bad');
+          renderSlots();
+        });
+      }
+      grid.appendChild(card);
+    });
+  }
+
+  const romanise = (n) => ['—', 'I', 'II', 'III', 'IV'][n] || String(n);
+
+  /* ---------------- enlistment ---------------- */
+
+  const CALLSIGNS = ['VESPER', 'HALLOW', 'IRONWAKE', 'NULLPOINT', 'SABLE', 'CATHEDRAL',
+                     'QUIETUS', 'MERIDIAN', 'GRAVEWELL', 'ASHLINE', 'PALEHORSE', 'TERMINUS'];
+
+  function openCreate(i) {
+    slotIndex = i;
+    draftClass = null;
+    $('#create-bay').textContent = String(i + 1);
+    $('#name-input').value = '';
+    $('#btn-enlist').disabled = true;
+    renderClassRack();
+    $('#class-detail').innerHTML = '<div class="empty-detail">SELECT A DOCTRINE</div>';
+    SF.audio.sfx.open();
+    show('create');
+  }
+
+  function renderClassRack() {
+    const rack = $('#class-rack');
+    rack.innerHTML = '';
+    Object.values(SF.classes.CLASSES).forEach((cls) => {
+      const card = el('button', 'class-card' + (draftClass === cls.id ? ' selected' : ''));
+      card.style.setProperty('--accent', cls.accent);
+      card.dataset.hover = cls.name;
+      card.innerHTML =
+        `<div class="cc-glyph">${cls.glyph}</div>` +
+        '<div>' +
+          `<div class="cc-name">${cls.name}</div>` +
+          `<div class="cc-role">${cls.role}</div>` +
+          `<div class="cc-line">${cls.tagline}</div>` +
+        '</div>';
+      card.addEventListener('click', () => selectClass(cls.id));
+      rack.appendChild(card);
+    });
+  }
+
+  function selectClass(id) {
+    draftClass = id;
+    renderClassRack();
+    const cls = SF.classes.CLASSES[id];
+    const detail = $('#class-detail');
+    detail.style.setProperty('--accent', cls.accent);
+    detail.innerHTML =
+      `<div class="cd-title">${cls.name}</div>` +
+      `<div class="cc-role" style="color:${cls.accent}">${cls.role}</div>` +
+      `<div class="cd-flavor">${cls.flavor}</div>` +
+
+      '<div class="cd-sec">BASE PROFILE</div>' +
+      '<div class="cd-stats">' +
+        `<div><span class="k">VITALS</span><span class="v">${cls.base.hp}</span></div>` +
+        `<div><span class="k">CORE</span><span class="v">${cls.base.energy}</span></div>` +
+        `<div><span class="k">MIGHT</span><span class="v">${cls.base.might}</span></div>` +
+        `<div><span class="k">SYNC</span><span class="v">${cls.base.sync}</span></div>` +
+        `<div><span class="k">GUILE</span><span class="v">${cls.base.guile}</span></div>` +
+        `<div><span class="k">FIELD SKILL</span><span class="v">${cls.skill}</span></div>` +
+      '</div>' +
+
+      '<div class="cd-sec">PASSIVE — ' + cls.perk.name + '</div>' +
+      `<div class="cd-perk">${cls.perk.desc}</div>` +
+
+      '<div class="cd-sec">ABILITY SUITE</div>' +
+      cls.abilities.map((a) =>
+        '<div class="cd-ability">' +
+          `<div class="an">${a.name}${a.ultimate ? ' ★' : ''}</div>` +
+          `<div class="ac">${a.cost} CORE${a.cd ? ' · COOLDOWN ' + a.cd : ''}</div>` +
+          `<div class="ad">${a.desc}</div>` +
+        '</div>').join('');
+
+    SF.audio.sfx.confirm();
+    validateEnlist();
+  }
+
+  function validateEnlist() {
+    const name = $('#name-input').value.trim();
+    $('#btn-enlist').disabled = !(draftClass && name.length >= 2);
+  }
+
+  function enlist() {
+    const name = $('#name-input').value.trim().toUpperCase();
+    if (!draftClass || name.length < 2) { SF.audio.sfx.deny(); return; }
+    const character = SF.classes.makeCharacter(name, draftClass);
+    SF.storage.save(slotIndex, character);
+    toast(`${name} REGISTERED TO BAY ${slotIndex + 1}`, 'good');
+    SF.audio.sfx.confirm();
+    deploy(slotIndex);
+  }
+
+  /* ---------------- codex ---------------- */
+
+  function renderCodex() {
+    $('#codex-body').innerHTML = SF.story.CODEX
+      .map((e) => `<div class="codex-entry"><h4>${e.t}</h4><p>${e.b}</p></div>`).join('');
+  }
+
+  /* ---------------- mission ---------------- */
+
+  function deploy(i) {
+    slotIndex = i;
+    ch = SF.storage.get(i);
+    if (!ch) return;
+    if (!ch.statuses) ch.statuses = {};
+    sessionStart = Date.now();
+
+    const cls = SF.classes.CLASSES[ch.cls];
+    document.documentElement.style.setProperty('--accent', cls.accent);
+    $('#hud-portrait').style.setProperty('--accent', cls.accent);
+    $('#portrait-glyph').textContent = cls.glyph;
+    $('#hud-name').textContent = ch.name;
+    $('#hud-class').textContent = cls.name + ' · ' + cls.role;
+    $('#log').innerHTML = '';
+
+    SF.audio.sfx.open();
+    SF.fx.warpPulse();
+    show('game');
+    refresh();
+    goNode(ch.node, true);
+  }
+
+  function refresh() {
+    if (!ch) return;
+    setBar('#hp-fill', '#hp-text', ch.hp, ch.maxHp, `${ch.hp}/${ch.maxHp}`);
+    setBar('#sh-fill', '#sh-text', Math.min(ch.shield, 60), 60, String(ch.shield));
+    setBar('#en-fill', '#en-text', ch.energy, ch.maxEnergy, `${ch.energy}/${ch.maxEnergy}`);
+    const need = SF.classes.xpForLevel(ch.level);
+    setBar('#xp-fill', '#xp-text', ch.xp, need, `${ch.xp}/${need}`);
+    $('#lvl-text').textContent = ch.level;
+
+    $('#hud-attrs').innerHTML = SF.classes.ATTRS.map((a) =>
+      `<div class="attr" data-key="${a.key}" data-hover="${a.label} ${ch[a.key]}">` +
+      `<div class="an">${a.label}</div><div class="av">${ch[a.key]}</div></div>`).join('');
+
+    renderInventory();
+  }
+
+  function setBar(fillSel, textSel, value, max, label) {
+    const fill = $(fillSel);
+    const pct = max > 0 ? clamp((value / max) * 100, 0, 100) : 0;
+    if (fill.style.width !== pct + '%') {
+      fill.classList.add('bar-flash');
+      setTimeout(() => fill.classList.remove('bar-flash'), 420);
+    }
+    fill.style.width = pct + '%';
+    $(textSel).textContent = label;
+  }
+
+  function renderInventory() {
+    const box = $('#hud-inv');
+    const items = SF.combat.ITEMS;
+    const owned = Object.keys(items).filter((k) => (ch.items[k] || 0) > 0);
+    box.innerHTML = '<div class="inv-head">FIELD KIT</div>';
+    if (!owned.length) {
+      box.appendChild(el('div', 'inv-empty', 'KIT EMPTY'));
+      return;
+    }
+    for (const key of owned) {
+      const item = items[key];
+      const btn = el('button', 'inv-item');
+      btn.dataset.hover = SF.combat.isActive() ? 'USE ' + item.name : 'COMBAT ONLY';
+      btn.disabled = !SF.combat.isActive();
+      btn.innerHTML = `<span>${item.name}</span><span class="qty">×${ch.items[key]}</span>`;
+      btn.title = item.desc;
+      btn.addEventListener('click', () => SF.combat.useItem(key));
+      box.appendChild(btn);
+    }
+  }
+
+  /* ---------------- story driver ---------------- */
+
+  async function goNode(id, isEntry) {
+    const node = SF.story.NODES[id];
+    if (!node) { toast('NAVIGATION ERROR: ' + id, 'bad'); return; }
+    const my = ++navToken;
+
+    ch.node = id;
+    if (node.onEnter) node.onEnter(ch);
+    if (node.chapter) ch.chapter = Math.max(ch.chapter || 1, node.chapter);
+
+    $('#stage-chapter').textContent = 'CHAPTER ' + romanise(node.chapter || ch.chapter || 1);
+    $('#stage-loc').textContent = node.loc || '';
+    $('#objective').textContent = node.objective || '—';
+
+    if (!isEntry) SF.combat.log('▸ ' + (node.loc || id), 'story');
+
+    const html = typeof node.text === 'function' ? node.text(ch) : (node.text || '');
+    const choicesBox = $('#choices');
+    choicesBox.innerHTML = '';
+    $('#stage-scroll').scrollTop = 0;
+
+    await SF.fx.typeInto($('#narrative'), html, 7);
+    if (my !== navToken) return;
+    renderChoices(node);
+    autosave();
+  }
+
+  function renderChoices(node) {
+    const box = $('#choices');
+    box.innerHTML = '';
+
+    if (node.ending) {
+      const btn = el('button', 'choice', '<span class="tag">END</span>Return to the crew registry.');
+      btn.dataset.hover = 'REGISTRY';
+      btn.addEventListener('click', () => {
+        // The file is closed. The operative keeps their rank and can be sent
+        // back in — the ark resets, they do not.
+        ch.endings = ch.endings || {};
+        ch.endings[node.ending] = true;
+        ch.completions = (ch.completions || 0) + 1;
+        ch.node = 'act1_approach';
+        ch.chapter = 1;
+        ch.flags = {};
+        ch.hp = ch.maxHp;
+        autosave();
+        SF.audio.sfx.confirm();
+        renderSlots();
+        show('slots');
+      });
+      box.appendChild(btn);
+      SF.audio.sfx.win();
+      return;
+    }
+
+    for (const choice of (node.choices || [])) {
+      const locked = choice.req && choice.req.cls && choice.req.cls !== ch.cls;
+      const btn = el('button', 'choice' +
+        (choice.tag ? ' gated' : '') +
+        (choice.risky ? ' risky' : '') +
+        (locked ? ' locked' : ''));
+
+      const gateName = locked ? SF.classes.CLASSES[choice.req.cls].name : null;
+      btn.innerHTML = (choice.tag ? `<span class="tag">${choice.tag}</span>` : '') +
+        choice.text + (locked ? ` <em style="color:var(--ink-dim)">— ${gateName} ONLY</em>` : '');
+      btn.disabled = locked;
+      btn.dataset.hover = locked ? 'DOCTRINE LOCKED' : (choice.tag || 'SELECT');
+      if (!locked) btn.addEventListener('click', () => takeChoice(node, choice));
+      box.appendChild(btn);
+    }
+  }
+
+  function takeChoice(node, choice) {
+    SF.audio.sfx.click();
+
+    if (choice.flag) ch.flags[choice.flag] = true;
+    if (choice.xp) {
+      const ups = SF.classes.grantXp(ch, choice.xp);
+      SF.combat.log(`+${choice.xp} XP`, 'heal');
+      for (const u of ups) { SF.audio.sfx.levelup(); toast(u, 'good'); }
+    }
+    if (choice.give) {
+      for (const k of Object.keys(choice.give)) {
+        ch.items[k] = (ch.items[k] || 0) + choice.give[k];
+        toast(`ACQUIRED ${SF.combat.ITEMS[k].name} ×${choice.give[k]}`, 'good');
+      }
+    }
+    if (choice.restore) ch.hp = Math.max(1, Math.round(ch.maxHp * choice.restore));
+    if (choice.heal) ch.hp = clamp(ch.hp + choice.heal, 0, ch.maxHp);
+    if (choice.hurt) ch.hp = clamp(ch.hp - choice.hurt, 1, ch.maxHp);
+    if (choice.effect) choice.effect(ch);
+    refresh();
+
+    if (choice.combat && node.combat) {
+      const spec = node.combat;
+      SF.combat.start(spec, ch, {
+        onWin: () => { renderInventory(); goNode(spec.win); },
+        onLose: () => { renderInventory(); goNode(spec.lose); }
+      });
+      renderInventory();
+      return;
+    }
+
+    if (choice.to) goNode(choice.to);
+  }
+
+  /* ---------------- persistence ---------------- */
+
+  function autosave() {
+    if (!ch || slotIndex < 0) return;
+    ch.playtime = (ch.playtime || 0) + Math.round((Date.now() - sessionStart) / 1000);
+    sessionStart = Date.now();
+    SF.storage.save(slotIndex, ch);
+  }
+
+  function manualSave() {
+    autosave();
+    toast('DOSSIER WRITTEN TO REGISTRY', 'good');
+    SF.audio.sfx.confirm();
+  }
+
+  async function quit() {
+    if (SF.combat.isActive()) { toast('CANNOT DISENGAGE MID-ENGAGEMENT', 'bad'); SF.audio.sfx.deny(); return; }
+    const ok = await confirmDialog('DISENGAGE',
+      'Progress is written to the registry at every waypoint. Return to the crew registry?', 'DISENGAGE');
+    if (!ok) return;
+    autosave();
+    SF.audio.sfx.back();
+    renderSlots();
+    show('slots');
+  }
+
+  /* ---------------- wiring ---------------- */
+
+  function bind() {
+    $$('[data-go]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const dest = btn.dataset.go;
+        SF.audio.sfx[dest === 'title' ? 'back' : 'click']();
+        if (dest === 'slots') renderSlots();
+        if (dest === 'codex') renderCodex();
+        show(dest);
+      });
+    });
+
+    $('#name-input').addEventListener('input', validateEnlist);
+    $('#name-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !$('#btn-enlist').disabled) enlist();
+    });
+    $('#name-random').addEventListener('click', () => {
+      $('#name-input').value = pick(CALLSIGNS);
+      SF.audio.sfx.click();
+      validateEnlist();
+    });
+    $('#btn-enlist').addEventListener('click', enlist);
+    $('#btn-save').addEventListener('click', manualSave);
+    $('#btn-quit').addEventListener('click', quit);
+
+    // click anywhere in the narrative to skip the typewriter
+    $('#stage-scroll').addEventListener('click', () => SF.fx.skipTyping());
+    window.addEventListener('beforeunload', autosave);
+  }
+
+  SF.ui = { runBoot, skipBoot, bind, show, refresh, renderSlots, goNode,
+            get character() { return ch; } };
+})(window.SF);
+
+
+/* ==== src/js/main.js ==== */
+/* Entry point: wire the subsystems together and boot the terminal. */
+(function (SF) {
+  'use strict';
+
+  function start() {
+    SF.cursor.init();
+    SF.fx.initStars();
+    SF.ui.bind();
+    SF.combat.bind();
+
+    // Browsers gate audio until the first gesture; unlock on any of them.
+    const unlock = () => SF.audio.unlock();
+    document.addEventListener('pointerdown', unlock, { once: true });
+    document.addEventListener('keydown', unlock, { once: true });
+
+    // Skipping the POST sequence is the first thing the cursor can do.
+    document.addEventListener('pointerdown', () => SF.ui.skipBoot());
+    document.addEventListener('keydown', () => SF.ui.skipBoot());
+
+    SF.ui.runBoot();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})(window.SF);
+
+</script>

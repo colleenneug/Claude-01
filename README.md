@@ -22,6 +22,17 @@ python3 -m http.server 8000   # then visit http://localhost:8000
 Everything is plain HTML/CSS/JS loaded with classic `<script>` tags, so `file://` works
 directly — there are no ES-module CORS problems and nothing to install.
 
+### Single-file build
+
+`dist/erebus-cradle.html` is the whole game inlined into one page — every
+stylesheet and script, no external requests except the Google Fonts pair. Use it
+when the game has to travel as a single file (hosting it somewhere, emailing it,
+opening it off a USB stick). Regenerate it after changing anything under `src/`:
+
+```
+python3 tools/bundle.py
+```
+
 ---
 
 ## The interface
@@ -141,4 +152,6 @@ src/js/story.js         the narrative graph and codex
 src/js/combat.js        turn engine
 src/js/ui.js            screens, slots, enlistment, story driver
 src/js/main.js          entry point
+tools/bundle.py         inlines the above into one self-contained page
+dist/erebus-cradle.html the generated single-file build
 ```
