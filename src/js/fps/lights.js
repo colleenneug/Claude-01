@@ -50,9 +50,12 @@
         return e;
       },
 
-      /* A light that follows something for as long as it lives. */
-      attach(colour, intensity, distance) {
-        const e = make(0, -1000, 0, colour, intensity, distance, { dynamic: true });
+      /* A light that follows something for as long as it lives. Pass
+         { dynamic: false } for something that is effectively a fixture, so
+         it competes on distance instead of jumping the queue. */
+      attach(colour, intensity, distance, opts) {
+        const e = make(0, -1000, 0, colour, intensity, distance,
+                       { dynamic: !(opts && opts.dynamic === false) });
         return {
           set(x, y, z) { e.x = x; e.y = y; e.z = z; },
           setIntensity(v) { e.intensity = v; },

@@ -15,13 +15,20 @@
   /* Spaces are axis-aligned boxes on the XZ plane. Doorways are declared
      on the shared wall between two spaces and cut from both. */
   const LAYOUT = {
+    /* One continuous route down the length of the ark. Every space is
+       centred on x = 0 and butts against the next, so the ten missions of
+       the campaign run through it end to end without a break. */
     spaces: [
-      { id: 'dock',      x: -8,  z: -46, w: 16, d: 14, h: 4.6, light: 0x9fc4d8, name: 'DOCKING COLLAR 4-A' },
-      { id: 'spine1',    x: -3,  z: -32, w: 6,  d: 26, h: 4.2, light: 0x7fd8e8, name: 'MAINTENANCE SPINE' },
-      { id: 'junction',  x: -9,  z: -6,  w: 18, d: 14, h: 5.0, light: 0xffb454, name: 'JUNCTION 9' },
-      { id: 'spine2',    x: -3,  z: 8,   w: 6,  d: 18, h: 4.2, light: 0x7fd8e8, name: 'SPINE / AFT' },
-      { id: 'promenade', x: -20, z: 26,  w: 40, d: 30, h: 7.5, light: 0xff7a9c, name: 'HABITAT RING TWO' },
-      { id: 'reactor',   x: -13, z: 56,  w: 26, d: 22, h: 6.5, light: 0xff5a4a, name: 'REACTOR ANTECHAMBER' }
+      { id: 'dock',       x: -8,  z: -46, w: 16, d: 14, h: 4.6,  light: 0x9fc4d8, name: 'DOCKING COLLAR 4-A' },
+      { id: 'spine1',     x: -3,  z: -32, w: 6,  d: 26, h: 4.2,  light: 0x7fd8e8, name: 'MAINTENANCE SPINE' },
+      { id: 'junction',   x: -9,  z: -6,  w: 18, d: 14, h: 5.0,  light: 0xffb454, name: 'JUNCTION 9' },
+      { id: 'spine2',     x: -3,  z: 8,   w: 6,  d: 18, h: 4.2,  light: 0x7fd8e8, name: 'SPINE / AFT' },
+      { id: 'promenade',  x: -20, z: 26,  w: 40, d: 30, h: 7.5,  light: 0xff7a9c, name: 'HABITAT RING TWO' },
+      { id: 'greenhouse', x: -14, z: 56,  w: 28, d: 20, h: 5.5,  light: 0x8fe08a, name: 'GREENHOUSE / RING TWO' },
+      { id: 'medbay',     x: -10, z: 76,  w: 20, d: 16, h: 4.4,  light: 0xd8e8f0, name: 'MEDICAL / TRIAGE' },
+      { id: 'reactor',    x: -13, z: 92,  w: 26, d: 22, h: 6.5,  light: 0xff5a4a, name: 'REACTOR ANTECHAMBER' },
+      { id: 'choir',      x: -11, z: 114, w: 22, d: 26, h: 6.0,  light: 0xb98cff, name: 'CHOIR ARRAY / CONDUITS' },
+      { id: 'deckzero',   x: -24, z: 140, w: 48, d: 40, h: 10.0, light: 0xff3fa0, name: 'DECK ZERO' }
     ],
     /* doorway: [spaceA, spaceB, axis, centre, width] — axis 'x' means the
        shared wall runs along X (a north/south doorway). */
@@ -30,7 +37,11 @@
       ['spine1', 'junction', 'x', 0, 3.2],
       ['junction', 'spine2', 'x', 0, 3.2],
       ['spine2', 'promenade', 'x', 0, 3.6],
-      ['promenade', 'reactor', 'x', 0, 4.4]
+      ['promenade', 'greenhouse', 'x', 0, 4.0],
+      ['greenhouse', 'medbay', 'x', 0, 3.4],
+      ['medbay', 'reactor', 'x', 0, 3.8],
+      ['reactor', 'choir', 'x', 0, 4.0],
+      ['choir', 'deckzero', 'x', 0, 5.0]
     ]
   };
 
@@ -224,26 +235,105 @@
     console_(-15, 48, 0.7, 0xff5ea8);
     console_(15, 34, -2.2, 0xff5ea8);
 
-    // reactor antechamber
-    crate(-9, 60, 0.2); crate(-7.6, 61.4, 0.7); crate(9, 62, -0.4);
-    barrel(-10.5, 66); barrel(9.8, 66.5); barrel(8.9, 67.4);
-    console_(0, 74.5, Math.PI, 0xff5a4a);
-    for (let x = -10; x <= 10; x += 5) pipeRun(x, 5.6, 67, 22, 'z');
+    // greenhouse — the one warm room on the ship
+    const planter = (x, z, w2, d2) => {
+      const m = box(w2, 0.7, d2, M.get('crate'), x, 0.35, z);
+      const soil = new THREE.Mesh(new THREE.BoxGeometry(w2 - 0.3, 0.12, d2 - 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x2f2418, roughness: 1 }));
+      soil.position.set(x, 0.74, z);
+      group.add(soil);
+      for (let i = 0; i < Math.floor(w2 * 1.6); i++) {
+        const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.7 + Math.random() * 0.5, 5),
+          new THREE.MeshStandardMaterial({ color: 0x2f7a3a, roughness: 0.85 }));
+        leaf.position.set(x + (Math.random() - 0.5) * (w2 - 0.6), 1.1,
+                          z + (Math.random() - 0.5) * (d2 - 0.6));
+        leaf.rotation.z = (Math.random() - 0.5) * 0.5;
+        leaf.castShadow = true;
+        group.add(leaf);
+      }
+      props.push(m);
+    };
+    for (let i = 0; i < 4; i++) { planter(-9 + i * 6, 61, 4.5, 2.2); planter(-9 + i * 6, 70, 4.5, 2.2); }
+    console_(-12, 66, 1.4, 0x8fe08a);
+    barrel(11, 59); barrel(11.8, 60); crate(10.5, 72, -0.4);
 
-    // the reactor itself: a tall emissive column behind glass
+    // medical — narrow, cluttered, bad sightlines
+    for (let i = 0; i < 4; i++) {
+      const bed = box(1.1, 0.62, 2.3, M.get('crate'), -7 + i * 4.6, 0.31, 79 + (i % 2) * 3);
+      bed.rotation.y = (i % 2) * 0.12;
+    }
+    console_(-8.5, 88, 0.8, 0xd8e8f0);
+    console_(8.5, 88, -0.8, 0xd8e8f0);
+    barrel(7.5, 79); crate(-8, 90, 0.3);
+
+    // reactor antechamber
+    crate(-9, 96, 0.2); crate(-7.6, 97.4, 0.7); crate(9, 98, -0.4);
+    barrel(-10.5, 102); barrel(9.8, 102.5); barrel(8.9, 103.4);
+    console_(0, 110.5, Math.PI, 0xff5a4a);
+    for (let x = -10; x <= 10; x += 5) pipeRun(x, 5.6, 103, 22, 'z');
+
+    // the reactor itself: a tall emissive column
     const core = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 6.2, 24),
       SF.materials.emissive(0xff6a4a, 3.0));
-    core.position.set(0, 3.1, 72);
+    core.position.set(0, 3.1, 108);
     group.add(core);
-    emit(0, 3.4, 72, 0xff6a4a, 4.2, 32);
-    colliders.push({ min: { x: -2.4, z: 69.6 }, max: { x: 2.4, z: 74.4 }, top: 6.2, bottom: 0 });
+    emit(0, 3.4, 108, 0xff6a4a, 4.2, 32);
+    colliders.push({ min: { x: -2.4, z: 105.6 }, max: { x: 2.4, z: 110.4 }, top: 6.2, bottom: 0 });
+
+    // choir array — the conduits carrying two hundred thousand voices
+    for (let i = 0; i < 6; i++) {
+      const zc = 118 + i * 4;
+      for (const sx of [-8.4, 8.4]) {
+        const conduit = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 5.4, 12),
+          SF.materials.emissive(0xb98cff, 1.5));
+        conduit.position.set(sx, 2.7, zc);
+        group.add(conduit);
+        colliders.push({ min: { x: sx - 0.55, z: zc - 0.55 },
+                         max: { x: sx + 0.55, z: zc + 0.55 }, top: 5.4, bottom: 0 });
+      }
+      if (i % 2 === 0) emit(0, 4.8, zc, 0xb98cff, 1.6, 14);
+    }
+    crate(-4, 122, 0.4); crate(4.5, 130, -0.3); barrel(-5, 134);
+
+    // deck zero — the boss arena: a raised dais with four resonance nodes
+    // set around it. boss.js drives the nodes.
+    const dais = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 8.2, 0.75, 32), M.get('deck'));
+    dais.position.set(0, 0.375, 160);
+    dais.receiveShadow = true;
+    group.add(dais);
+    colliders.push({ min: { x: -8.2, z: 151.8 }, max: { x: 8.2, z: 168.2 }, top: 0.75, bottom: 0 });
+
+    // the arena is far larger than a corridor and needs its own fixtures
+    emit(0, 8.4, 160, 0xff3fa0, 5.5, 42);
+    for (const [ex, ez] of [[-17, 146], [17, 146], [-17, 174], [17, 174]]) {
+      emit(ex, 6.5, ez, 0xb98cff, 3.2, 30);
+    }
+    emit(0, 3.2, 176, 0xff5a4a, 2.6, 24);
+
+    const nodeAnchors = [];
+    for (let i = 0; i < 4; i++) {
+      const ang = Math.PI / 4 + (i / 4) * Math.PI * 2;
+      const nx = Math.cos(ang) * 15.5, nz = 160 + Math.sin(ang) * 15.5;
+      const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.1, 1.5, 10), M.get('crate'));
+      pedestal.position.set(nx, 0.75, nz);
+      pedestal.castShadow = pedestal.receiveShadow = true;
+      group.add(pedestal);
+      colliders.push({ min: { x: nx - 0.9, z: nz - 0.9 }, max: { x: nx + 0.9, z: nz + 0.9 },
+                       top: 1.5, bottom: 0 });
+      nodeAnchors.push({ x: nx, y: 2.2, z: nz });
+    }
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      crate(Math.cos(ang) * 20, 160 + Math.sin(ang) * 17, ang, 1.3);
+    }
 
     scene.add(group);
 
     return {
       group, colliders, emitters, zones, props,
+      nodeAnchors: nodeAnchors,
       playerStart: new THREE.Vector3(0, 0, -40),
-      bounds: { minX: -22, maxX: 22, minZ: -48, maxZ: 80 }
+      bounds: { minX: -26, maxX: 26, minZ: -48, maxZ: 182 }
     };
   }
 

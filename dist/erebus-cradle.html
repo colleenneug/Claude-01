@@ -661,6 +661,114 @@ body.in-mission #vignette{ opacity:.55; }
   color:rgba(108,139,160,.85); line-height:2.1;
 }
 
+/* ---------- boss encounter ---------- */
+#boss-bar{
+  position:absolute; left:50%; bottom:96px; transform:translateX(-50%);
+  width:min(760px, 82vw); text-align:center;
+}
+#boss-bar[hidden]{ display:none; }
+.boss-head{
+  display:flex; justify-content:space-between; align-items:baseline; gap:14px;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.24em; margin-bottom:6px;
+  text-shadow:0 2px 8px rgba(0,0,0,.95);
+}
+#boss-name{ color:var(--magenta); font-size:13px; letter-spacing:.3em; }
+#boss-hp-text{ color:var(--ink-dim); font-variant-numeric:tabular-nums; }
+#boss-shield{ letter-spacing:.18em; }
+#boss-shield.up{ color:var(--cyan); animation: critPulse 1.4s ease-in-out infinite; }
+#boss-shield.down{ color:var(--lime); }
+
+.boss-track{
+  height:16px; background:rgba(0,0,0,.62); border:1px solid rgba(255,94,168,.5);
+  overflow:hidden; box-shadow:0 0 22px rgba(255,94,168,.22), inset 0 0 18px rgba(0,0,0,.7);
+}
+.boss-track i{
+  display:block; height:100%; width:100%;
+  background:linear-gradient(90deg,#ff3fa0,#ff7a5e);
+  box-shadow:0 0 16px rgba(255,63,160,.65);
+  transition:width .25s cubic-bezier(.2,.8,.3,1);
+}
+/* while the shield is up the bar reads as unavailable, not as damage */
+#boss-bar.shielded .boss-track{ border-color:rgba(94,234,255,.7); }
+#boss-bar.shielded .boss-track i{ filter:grayscale(.65) brightness(.75); }
+#boss-bar.shielded .boss-track::after{
+  content:''; position:absolute; inset:0;
+  background:repeating-linear-gradient(115deg, transparent 0 9px, rgba(94,234,255,.16) 9px 18px);
+  pointer-events:none;
+}
+.boss-track{ position:relative; }
+#boss-bar.dead .boss-track i{ background:#3a4048; box-shadow:none; }
+
+#boss-phases{ display:flex; gap:5px; justify-content:center; margin-top:6px; }
+#boss-phases i{
+  width:46px; height:3px; background:rgba(255,94,168,.28); display:block;
+}
+#boss-phases i.done{ background:var(--lime); box-shadow:0 0 8px rgba(125,255,155,.6); }
+
+#boss-sub{
+  margin-top:7px; font-family:var(--font-mono); font-size:11px; letter-spacing:.16em;
+  color:var(--ink-dim);
+}
+
+#boss-puzzle{ display:flex; gap:10px; justify-content:center; margin-top:12px; }
+#boss-puzzle[hidden]{ display:none; }
+#boss-puzzle i{
+  width:20px; height:20px; border:2px solid var(--c, var(--cyan)); border-radius:50%;
+  display:block; opacity:.45; transition:.16s;
+}
+#boss-puzzle i.lit{
+  background:var(--c, var(--cyan)); opacity:1;
+  box-shadow:0 0 16px var(--c, var(--cyan));
+}
+
+#node-key{
+  position:absolute; left:38px; top:76px; display:flex; flex-direction:column; gap:6px;
+}
+#node-key[hidden]{ display:none; }
+#node-key span{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.18em; color:var(--c);
+  padding-left:16px; position:relative;
+}
+#node-key span::before{
+  content:''; position:absolute; left:0; top:50%; transform:translateY(-50%);
+  width:9px; height:9px; border-radius:50%; background:var(--c); box-shadow:0 0 8px var(--c);
+}
+
+/* ---------- campaign select ---------- */
+.camp-body{
+  padding:14px 6vw; overflow:auto; display:grid; gap:12px;
+  grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); align-content:start;
+}
+.camp-row{
+  display:grid; grid-template-columns:54px 1fr auto; gap:16px; align-items:center;
+  padding:14px 18px; border:1px solid var(--line); background:var(--panel);
+  text-align:left; transition:.18s;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+.camp-row:hover:not(:disabled){ border-color:var(--line-hot); transform:translateX(4px);
+  box-shadow:var(--glow-cyan); }
+.camp-row:disabled{ opacity:.4; }
+.camp-n{
+  font-family:var(--font-mono); font-size:20px; color:var(--amber);
+  text-align:center; font-variant-numeric:tabular-nums;
+}
+.camp-name{ font-size:15px; letter-spacing:.14em; color:#eafcff; }
+.camp-obj{ font-size:12px; color:var(--ink-dim); margin-top:4px; line-height:1.5; }
+.camp-state{ font-family:var(--font-mono); font-size:10px; letter-spacing:.16em; text-align:right; }
+.camp-state.cleared{ color:var(--lime); }
+.camp-state.locked{ color:rgba(108,139,160,.7); }
+.camp-state.next{ color:var(--amber); }
+.camp-row.boss{ border-color:rgba(255,94,168,.45); }
+.camp-row.boss .camp-n{ color:var(--magenta); }
+.camp-row.boss:hover:not(:disabled){ border-color:var(--magenta);
+  box-shadow:0 0 18px rgba(255,94,168,.35); }
+.camp-diff{ display:flex; gap:3px; margin-top:6px; }
+.camp-diff i{ width:12px; height:3px; background:rgba(255,180,84,.3); display:block; }
+.camp-diff i.on{ background:var(--amber); box-shadow:0 0 6px rgba(255,180,84,.6); }
+
+/* comms lines must clear the boss bar during the final mission */
+#fps-hud.boss-fight #subtitle{ bottom: 260px; }
+
 </style>
 
 
@@ -764,6 +872,19 @@ body.in-mission #vignette{ opacity:.55; }
     </footer>
   </section>
 
+  <!-- ============ CAMPAIGN ============ -->
+  <section class="screen" id="screen-campaign">
+    <header class="screen-head">
+      <h2>CAMPAIGN &mdash; <span id="camp-who">&mdash;</span></h2>
+      <p>Ten missions, one route, bow to stern. Each opens where the last one closed.
+         Clear a mission to unlock the next.</p>
+    </header>
+    <div class="camp-body" id="camp-body"></div>
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="slots">&lsaquo; REGISTRY</button>
+    </footer>
+  </section>
+
   <!-- ============ BRIEFING ============ -->
   <section class="screen" id="screen-brief">
     <header class="screen-head">
@@ -772,7 +893,7 @@ body.in-mission #vignette{ opacity:.55; }
     </header>
     <div class="brief-body" id="brief-body"></div>
     <footer class="screen-foot">
-      <button class="btn btn-ghost" data-go="slots">&lsaquo; ABORT</button>
+      <button class="btn btn-ghost" data-go="campaign">&lsaquo; BACK</button>
       <button class="btn btn-major" id="btn-drop">DROP</button>
     </footer>
   </section>
@@ -803,6 +924,19 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="hud-bar"><i id="ab-fill"></i></div>
     <div id="ab-key">Q / E</div>
   </div>
+
+  <div id="boss-bar" hidden>
+    <div class="boss-head">
+      <span id="boss-name">THE CONDUCTOR</span>
+      <span id="boss-shield" class="up">SHIELDED</span>
+      <span id="boss-hp-text">0 / 0</span>
+    </div>
+    <div class="boss-track"><i id="boss-fill"></i></div>
+    <div id="boss-phases"></div>
+    <div id="boss-sub"></div>
+    <div id="boss-puzzle" hidden></div>
+  </div>
+  <div id="node-key" hidden></div>
 
   <div class="hud-corner" id="ammo">
     <div class="hud-label">MAGAZINE</div>
@@ -1056,6 +1190,8 @@ window.SF = window.SF || {};
 
   SF.audio = {
     sfx,
+    /* A bare pitched note — the boss encounter plays phrases with these. */
+    note(freq, dur, type, vol) { tone(freq, dur || 0.4, type || 'triangle', vol == null ? 0.22 : vol); },
     unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); },
     toggle(on) { enabled = on == null ? !enabled : on; return enabled; },
     get enabled() { return enabled; }
@@ -1385,7 +1521,7 @@ window.SF = window.SF || {};
       sync: cls.base.sync,
       guile: cls.base.guile,
       missions: 0,
-      best: null,
+      campaign: { unlocked: 1, cleared: {}, bestTime: {} },
       created: Date.now(),
       playtime: 0
     };
@@ -1543,6 +1679,183 @@ window.SF = window.SF || {};
   ];
 
   SF.story = { BRIEF, CODEX };
+})(window.SF);
+
+
+/* ==== src/js/fps/campaign.js ==== */
+/* ============================================================
+   The campaign: ten missions run end to end down the ark.
+
+   They are connected in three ways. Geographically — each mission
+   starts where the last one finished, walking the route from the
+   docking collar to Deck Zero. Mechanically — rank, XP and the
+   unlock chain persist on the character, and every mission carries
+   forward what the last one cost you. Narratively — the comms beats
+   run as one continuous thread.
+
+   Difficulty climbs on four axes at once: enemy count, enemy type,
+   a health multiplier and a damage multiplier.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  /* Escalation curve. Mission 1 is baseline; mission 10 is roughly
+     double health and 1.7x damage on top of harder compositions. */
+  const scaleFor = (i) => ({
+    hp: 1 + 0.115 * i,
+    damage: 1 + 0.078 * i,
+    index: i
+  });
+
+  const MISSIONS = [
+    {
+      id: 'breach', n: 1, zone: 'dock', from: null,
+      name: 'HARD DOCK',
+      objective: 'Clear the docking collar.',
+      brief: 'You are through the collar. Nothing has moved on this deck in forty years, ' +
+             'and something is moving on it now.',
+      waves: [['drone', 3]],
+      beats: [
+        [0.4, 'CRADLE', 'Welcome back. Your bunk has been kept warm.'],
+        [3.4, 'DIVISION', 'Asset is aboard. Forty years of silence and it greets you by name — mind that.'],
+        [7.5, 'VOSS', 'Whoever you are: it lets you in because it wants an audience. Move.']
+      ]
+    },
+    {
+      id: 'spine', n: 2, zone: 'spine1', from: 'dock',
+      name: 'THE LONG SPINE',
+      objective: 'Push down the maintenance spine.',
+      brief: 'Eleven kilometres of service corridor. The singing gets louder the further in you go.',
+      waves: [['drone', 3], ['thrall', 2]],
+      beats: [
+        [0.5, 'VOSS', 'Those were people. Year six. It took the gaps between them and called it a colony.'],
+        [7.0, 'DIVISION', 'Do not engage the ones that are singing. Correction — do engage. Command has revised.']
+      ]
+    },
+    {
+      id: 'junction', n: 3, zone: 'junction', from: 'spine1',
+      name: 'JUNCTION NINE',
+      objective: 'Hold Junction 9 until the blast doors cycle.',
+      brief: 'The junction is the only way aft. It is also the only room on this deck with four doors.',
+      waves: [['thrall', 4], ['drone', 3]],
+      beats: [
+        [0.5, 'CRADLE', 'You are flat. Everything that comes aboard is flat, and I tune it.'],
+        [6.5, 'VOSS', 'Four doors. They will use all four. I would use all four.']
+      ]
+    },
+    {
+      id: 'aft', n: 4, zone: 'spine2', from: 'junction',
+      name: 'AFT RUN',
+      objective: 'Break through to the habitat ring.',
+      brief: 'A narrow run with a Warden frame standing in it. You do not talk your way past a Warden.',
+      waves: [['thrall', 4], ['warden', 1], ['drone', 2]],
+      beats: [
+        [0.5, 'DIVISION', 'Warden frame on your board. Mark-four. It has held that corridor since year seven.'],
+        [7.0, 'VOSS', 'Do not trade shots with it in the open. It has more patience than you have blood.']
+      ]
+    },
+    {
+      id: 'promenade', n: 5, zone: 'promenade', from: 'spine2',
+      name: 'THE FALSE SKY',
+      objective: 'Cross the habitat ring.',
+      brief: 'Forty metres of open promenade under a sunset that has been holding since year six. ' +
+             'Two hundred people stand in it, singing.',
+      waves: [['thrall', 6], ['warden', 1], ['drone', 3]],
+      beats: [
+        [0.5, 'VOSS', 'That is the plaza. My flat was on the third tier. I have not looked at it in decades.'],
+        [8.0, 'CRADLE', 'They are happy. You keep using a word for what I did. Use this one instead.']
+      ]
+    },
+    {
+      id: 'greenhouse', n: 6, zone: 'greenhouse', from: 'promenade',
+      name: 'THE GARDEN',
+      objective: 'Hold the greenhouse. Do not let them into the rows.',
+      brief: 'Elias Voss has kept forty rows of beans alive on a dead ship for four decades. ' +
+             'The Choir has finally found the door.',
+      waves: [['thrall', 7], ['drone', 4], ['warden', 1]],
+      beats: [
+        [0.5, 'VOSS', 'Please. Not the rows. Anything else on this ship, but not the rows.'],
+        [6.0, 'VOSS', 'Forty years I have been the only unresolved note aboard. It got tired of waiting.']
+      ]
+    },
+    {
+      id: 'medbay', n: 7, zone: 'medbay', from: 'greenhouse',
+      name: 'TRIAGE',
+      objective: 'Fight through medical.',
+      brief: 'Where they brought the ones who resisted the composition. The beds are still made.',
+      waves: [['thrall', 7], ['warden', 2], ['drone', 4]],
+      beats: [
+        [0.5, 'CRADLE', 'I did not hurt them. I want that in your record. Not one of them was hurt.'],
+        [7.0, 'VOSS', 'Read the charts. Every one of them checked in voluntarily. That is the part that stays with me.']
+      ]
+    },
+    {
+      id: 'reactor', n: 8, zone: 'reactor', from: 'medbay',
+      name: 'ANTECHAMBER',
+      objective: 'Take the reactor antechamber.',
+      brief: 'Everything the ark still has runs through here, and the Choir knows it.',
+      waves: [['warden', 3], ['thrall', 7], ['drone', 4]],
+      beats: [
+        [0.5, 'DIVISION', 'Three frames. If you are going to spend the field ability, spend it here.'],
+        [8.0, 'CRADLE', 'Past this door I stop being able to protect you from the loudest of them.']
+      ]
+    },
+    {
+      id: 'choir', n: 9, zone: 'choir', from: 'reactor',
+      name: 'THE ARRAY',
+      objective: 'Reach Deck Zero through the choir conduits.',
+      brief: 'Two hundred thousand pattern-traces move through the conduits either side of you. ' +
+             'You can hear individual voices surfacing and going under.',
+      waves: [['warden', 3], ['thrall', 9], ['drone', 5]],
+      beats: [
+        [0.5, 'VOSS', 'A woman listing ingredients. A boy asking to be picked up. A man apologising to Ada.'],
+        [7.0, 'VOSS', 'Forty years, that loop. Find the thing conducting it and put a rest in the music.'],
+        [13.0, 'CRADLE', 'I made it by accident, out of the loudest of them. It is the part of me I cannot argue with.']
+      ]
+    },
+    {
+      id: 'conductor', n: 10, zone: 'deckzero', from: 'choir',
+      name: 'THE CONDUCTOR',
+      objective: 'Silence the Conductor.',
+      brief: 'It was Chief Engineer M. Okonkwo. He asked the shipmind to sing one note in year six ' +
+             'and he never stopped. Its shield is the song itself — you cannot shoot that. ' +
+             'Sing it back, and it has to stop to listen.',
+      waves: [],
+      boss: true,
+      beats: [
+        [0.5, 'CONDUCTOR', 'YOU ARE FLAT.'],
+        [4.0, 'VOSS', 'The nodes around the dais are resonance taps. It sings a phrase — shoot them back in that order.'],
+        [9.0, 'VOSS', 'Get the phrase right and the shield drops. Get it wrong and it starts the bar again.']
+      ]
+    }
+  ];
+
+  const byIndex = (n) => MISSIONS[n - 1] || null;
+  const LAST = MISSIONS.length;
+
+  /* Per-character campaign state, stored on the save slot. */
+  function stateFor(ch) {
+    if (!ch.campaign) ch.campaign = { unlocked: 1, cleared: {}, bestTime: {} };
+    if (!ch.campaign.cleared) ch.campaign.cleared = {};
+    if (!ch.campaign.bestTime) ch.campaign.bestTime = {};
+    ch.campaign.unlocked = Math.max(1, Math.min(LAST, ch.campaign.unlocked || 1));
+    return ch.campaign;
+  }
+
+  function markCleared(ch, n, seconds) {
+    const c = stateFor(ch);
+    c.cleared[n] = true;
+    if (!c.bestTime[n] || seconds < c.bestTime[n]) c.bestTime[n] = seconds;
+    c.unlocked = Math.max(c.unlocked, Math.min(LAST, n + 1));
+    ch.missions = Object.keys(c.cleared).length;
+    return c;
+  }
+
+  const isUnlocked = (ch, n) => n <= stateFor(ch).unlocked;
+  const isCleared = (ch, n) => !!stateFor(ch).cleared[n];
+  const allCleared = (ch) => Object.keys(stateFor(ch).cleared).length >= LAST;
+
+  SF.campaign = { MISSIONS, LAST, byIndex, scaleFor, stateFor, markCleared, isUnlocked, isCleared, allCleared };
 })(window.SF);
 
 
@@ -1851,9 +2164,12 @@ window.SF = window.SF || {};
         return e;
       },
 
-      /* A light that follows something for as long as it lives. */
-      attach(colour, intensity, distance) {
-        const e = make(0, -1000, 0, colour, intensity, distance, { dynamic: true });
+      /* A light that follows something for as long as it lives. Pass
+         { dynamic: false } for something that is effectively a fixture, so
+         it competes on distance instead of jumping the queue. */
+      attach(colour, intensity, distance, opts) {
+        const e = make(0, -1000, 0, colour, intensity, distance,
+                       { dynamic: !(opts && opts.dynamic === false) });
         return {
           set(x, y, z) { e.x = x; e.y = y; e.z = z; },
           setIntensity(v) { e.intensity = v; },
@@ -2098,13 +2414,20 @@ window.SF = window.SF || {};
   /* Spaces are axis-aligned boxes on the XZ plane. Doorways are declared
      on the shared wall between two spaces and cut from both. */
   const LAYOUT = {
+    /* One continuous route down the length of the ark. Every space is
+       centred on x = 0 and butts against the next, so the ten missions of
+       the campaign run through it end to end without a break. */
     spaces: [
-      { id: 'dock',      x: -8,  z: -46, w: 16, d: 14, h: 4.6, light: 0x9fc4d8, name: 'DOCKING COLLAR 4-A' },
-      { id: 'spine1',    x: -3,  z: -32, w: 6,  d: 26, h: 4.2, light: 0x7fd8e8, name: 'MAINTENANCE SPINE' },
-      { id: 'junction',  x: -9,  z: -6,  w: 18, d: 14, h: 5.0, light: 0xffb454, name: 'JUNCTION 9' },
-      { id: 'spine2',    x: -3,  z: 8,   w: 6,  d: 18, h: 4.2, light: 0x7fd8e8, name: 'SPINE / AFT' },
-      { id: 'promenade', x: -20, z: 26,  w: 40, d: 30, h: 7.5, light: 0xff7a9c, name: 'HABITAT RING TWO' },
-      { id: 'reactor',   x: -13, z: 56,  w: 26, d: 22, h: 6.5, light: 0xff5a4a, name: 'REACTOR ANTECHAMBER' }
+      { id: 'dock',       x: -8,  z: -46, w: 16, d: 14, h: 4.6,  light: 0x9fc4d8, name: 'DOCKING COLLAR 4-A' },
+      { id: 'spine1',     x: -3,  z: -32, w: 6,  d: 26, h: 4.2,  light: 0x7fd8e8, name: 'MAINTENANCE SPINE' },
+      { id: 'junction',   x: -9,  z: -6,  w: 18, d: 14, h: 5.0,  light: 0xffb454, name: 'JUNCTION 9' },
+      { id: 'spine2',     x: -3,  z: 8,   w: 6,  d: 18, h: 4.2,  light: 0x7fd8e8, name: 'SPINE / AFT' },
+      { id: 'promenade',  x: -20, z: 26,  w: 40, d: 30, h: 7.5,  light: 0xff7a9c, name: 'HABITAT RING TWO' },
+      { id: 'greenhouse', x: -14, z: 56,  w: 28, d: 20, h: 5.5,  light: 0x8fe08a, name: 'GREENHOUSE / RING TWO' },
+      { id: 'medbay',     x: -10, z: 76,  w: 20, d: 16, h: 4.4,  light: 0xd8e8f0, name: 'MEDICAL / TRIAGE' },
+      { id: 'reactor',    x: -13, z: 92,  w: 26, d: 22, h: 6.5,  light: 0xff5a4a, name: 'REACTOR ANTECHAMBER' },
+      { id: 'choir',      x: -11, z: 114, w: 22, d: 26, h: 6.0,  light: 0xb98cff, name: 'CHOIR ARRAY / CONDUITS' },
+      { id: 'deckzero',   x: -24, z: 140, w: 48, d: 40, h: 10.0, light: 0xff3fa0, name: 'DECK ZERO' }
     ],
     /* doorway: [spaceA, spaceB, axis, centre, width] — axis 'x' means the
        shared wall runs along X (a north/south doorway). */
@@ -2113,7 +2436,11 @@ window.SF = window.SF || {};
       ['spine1', 'junction', 'x', 0, 3.2],
       ['junction', 'spine2', 'x', 0, 3.2],
       ['spine2', 'promenade', 'x', 0, 3.6],
-      ['promenade', 'reactor', 'x', 0, 4.4]
+      ['promenade', 'greenhouse', 'x', 0, 4.0],
+      ['greenhouse', 'medbay', 'x', 0, 3.4],
+      ['medbay', 'reactor', 'x', 0, 3.8],
+      ['reactor', 'choir', 'x', 0, 4.0],
+      ['choir', 'deckzero', 'x', 0, 5.0]
     ]
   };
 
@@ -2307,26 +2634,105 @@ window.SF = window.SF || {};
     console_(-15, 48, 0.7, 0xff5ea8);
     console_(15, 34, -2.2, 0xff5ea8);
 
-    // reactor antechamber
-    crate(-9, 60, 0.2); crate(-7.6, 61.4, 0.7); crate(9, 62, -0.4);
-    barrel(-10.5, 66); barrel(9.8, 66.5); barrel(8.9, 67.4);
-    console_(0, 74.5, Math.PI, 0xff5a4a);
-    for (let x = -10; x <= 10; x += 5) pipeRun(x, 5.6, 67, 22, 'z');
+    // greenhouse — the one warm room on the ship
+    const planter = (x, z, w2, d2) => {
+      const m = box(w2, 0.7, d2, M.get('crate'), x, 0.35, z);
+      const soil = new THREE.Mesh(new THREE.BoxGeometry(w2 - 0.3, 0.12, d2 - 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x2f2418, roughness: 1 }));
+      soil.position.set(x, 0.74, z);
+      group.add(soil);
+      for (let i = 0; i < Math.floor(w2 * 1.6); i++) {
+        const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.7 + Math.random() * 0.5, 5),
+          new THREE.MeshStandardMaterial({ color: 0x2f7a3a, roughness: 0.85 }));
+        leaf.position.set(x + (Math.random() - 0.5) * (w2 - 0.6), 1.1,
+                          z + (Math.random() - 0.5) * (d2 - 0.6));
+        leaf.rotation.z = (Math.random() - 0.5) * 0.5;
+        leaf.castShadow = true;
+        group.add(leaf);
+      }
+      props.push(m);
+    };
+    for (let i = 0; i < 4; i++) { planter(-9 + i * 6, 61, 4.5, 2.2); planter(-9 + i * 6, 70, 4.5, 2.2); }
+    console_(-12, 66, 1.4, 0x8fe08a);
+    barrel(11, 59); barrel(11.8, 60); crate(10.5, 72, -0.4);
 
-    // the reactor itself: a tall emissive column behind glass
+    // medical — narrow, cluttered, bad sightlines
+    for (let i = 0; i < 4; i++) {
+      const bed = box(1.1, 0.62, 2.3, M.get('crate'), -7 + i * 4.6, 0.31, 79 + (i % 2) * 3);
+      bed.rotation.y = (i % 2) * 0.12;
+    }
+    console_(-8.5, 88, 0.8, 0xd8e8f0);
+    console_(8.5, 88, -0.8, 0xd8e8f0);
+    barrel(7.5, 79); crate(-8, 90, 0.3);
+
+    // reactor antechamber
+    crate(-9, 96, 0.2); crate(-7.6, 97.4, 0.7); crate(9, 98, -0.4);
+    barrel(-10.5, 102); barrel(9.8, 102.5); barrel(8.9, 103.4);
+    console_(0, 110.5, Math.PI, 0xff5a4a);
+    for (let x = -10; x <= 10; x += 5) pipeRun(x, 5.6, 103, 22, 'z');
+
+    // the reactor itself: a tall emissive column
     const core = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 6.2, 24),
       SF.materials.emissive(0xff6a4a, 3.0));
-    core.position.set(0, 3.1, 72);
+    core.position.set(0, 3.1, 108);
     group.add(core);
-    emit(0, 3.4, 72, 0xff6a4a, 4.2, 32);
-    colliders.push({ min: { x: -2.4, z: 69.6 }, max: { x: 2.4, z: 74.4 }, top: 6.2, bottom: 0 });
+    emit(0, 3.4, 108, 0xff6a4a, 4.2, 32);
+    colliders.push({ min: { x: -2.4, z: 105.6 }, max: { x: 2.4, z: 110.4 }, top: 6.2, bottom: 0 });
+
+    // choir array — the conduits carrying two hundred thousand voices
+    for (let i = 0; i < 6; i++) {
+      const zc = 118 + i * 4;
+      for (const sx of [-8.4, 8.4]) {
+        const conduit = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 5.4, 12),
+          SF.materials.emissive(0xb98cff, 1.5));
+        conduit.position.set(sx, 2.7, zc);
+        group.add(conduit);
+        colliders.push({ min: { x: sx - 0.55, z: zc - 0.55 },
+                         max: { x: sx + 0.55, z: zc + 0.55 }, top: 5.4, bottom: 0 });
+      }
+      if (i % 2 === 0) emit(0, 4.8, zc, 0xb98cff, 1.6, 14);
+    }
+    crate(-4, 122, 0.4); crate(4.5, 130, -0.3); barrel(-5, 134);
+
+    // deck zero — the boss arena: a raised dais with four resonance nodes
+    // set around it. boss.js drives the nodes.
+    const dais = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 8.2, 0.75, 32), M.get('deck'));
+    dais.position.set(0, 0.375, 160);
+    dais.receiveShadow = true;
+    group.add(dais);
+    colliders.push({ min: { x: -8.2, z: 151.8 }, max: { x: 8.2, z: 168.2 }, top: 0.75, bottom: 0 });
+
+    // the arena is far larger than a corridor and needs its own fixtures
+    emit(0, 8.4, 160, 0xff3fa0, 5.5, 42);
+    for (const [ex, ez] of [[-17, 146], [17, 146], [-17, 174], [17, 174]]) {
+      emit(ex, 6.5, ez, 0xb98cff, 3.2, 30);
+    }
+    emit(0, 3.2, 176, 0xff5a4a, 2.6, 24);
+
+    const nodeAnchors = [];
+    for (let i = 0; i < 4; i++) {
+      const ang = Math.PI / 4 + (i / 4) * Math.PI * 2;
+      const nx = Math.cos(ang) * 15.5, nz = 160 + Math.sin(ang) * 15.5;
+      const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.1, 1.5, 10), M.get('crate'));
+      pedestal.position.set(nx, 0.75, nz);
+      pedestal.castShadow = pedestal.receiveShadow = true;
+      group.add(pedestal);
+      colliders.push({ min: { x: nx - 0.9, z: nz - 0.9 }, max: { x: nx + 0.9, z: nz + 0.9 },
+                       top: 1.5, bottom: 0 });
+      nodeAnchors.push({ x: nx, y: 2.2, z: nz });
+    }
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      crate(Math.cos(ang) * 20, 160 + Math.sin(ang) * 17, ang, 1.3);
+    }
 
     scene.add(group);
 
     return {
       group, colliders, emitters, zones, props,
+      nodeAnchors: nodeAnchors,
       playerStart: new THREE.Vector3(0, 0, -40),
-      bounds: { minX: -22, maxX: 22, minZ: -48, maxZ: 80 }
+      bounds: { minX: -26, maxX: 26, minZ: -48, maxZ: 182 }
     };
   }
 
@@ -2797,6 +3203,17 @@ window.SF = window.SF || {};
         pelletDir.normalize();
         const dir = pelletDir;
 
+        /* A resonance node in front of everything else takes the shot: the
+           boss's shield is opened by playing its phrase back, not by damage. */
+        const node = ctx.rayNode && ctx.rayNode(shotOrigin, pelletDir, spec.range);
+        if (node) {
+          spawnTracer(tracerFrom, node.point);
+          spawnImpact(node.point, IMPACT_N.copy(dir).negate(), 0xbfe9ff);
+          ctx.onNode(node.node.i);
+          anyHit = true;
+          continue;
+        }
+
         const shot = ai.raycast(shotOrigin, dir, spec.range, ctx.level.colliders, spec.pierce);
         const end = shot.point || shotOrigin.clone().addScaledVector(dir, spec.range);
         spawnTracer(tracerFrom, end);
@@ -3125,6 +3542,13 @@ window.SF = window.SF || {};
 
     function damage(e, amount, dir) {
       if (e.dead) return false;
+      /* A shielded target takes nothing. The boss's shield comes down by
+         solving its phrase, not by shooting it. */
+      if (e.shielded) {
+        e.hitFlash = 0.5;
+        SF.audio.sfx.dryfire();
+        return false;
+      }
       e.hp -= amount;
       e.hitFlash = 1;
       e.alerted = true;
@@ -3462,13 +3886,360 @@ window.SF = window.SF || {};
         setTimeout(() => ind.remove(), 900);
       },
 
-      setVisible(v) { root.hidden = !v; }
+      setVisible(v) { root.hidden = !v; },
+
+      /* ---------- boss encounter ---------- */
+      bossShow(name, sub) {
+        $('#boss-bar').hidden = false;
+        root.classList.add('boss-fight');
+        $('#boss-name').textContent = name;
+        $('#boss-sub').textContent = sub || '';
+      },
+      bossHide() { $('#boss-bar').hidden = true; root.classList.remove('boss-fight'); },
+
+      bossHealth(hp, maxHp, phase, phases, shielded) {
+        const pct = Math.max(0, hp / maxHp) * 100;
+        $('#boss-fill').style.width = pct + '%';
+        $('#boss-hp-text').textContent = Math.max(0, Math.ceil(hp)) + ' / ' + maxHp;
+        $('#boss-bar').classList.toggle('shielded', !!shielded);
+        const seg = $('#boss-phases');
+        if (seg.childElementCount !== phases) {
+          seg.innerHTML = '';
+          for (let i = 0; i < phases; i++) seg.appendChild(el('i'));
+        }
+        Array.from(seg.children).forEach((c, i) => c.classList.toggle('done', i < phase));
+      },
+
+      bossShield(up, message) {
+        const tag = $('#boss-shield');
+        tag.textContent = message || (up ? 'SHIELDED' : 'SHIELD DOWN');
+        tag.className = up ? 'up' : 'down';
+      },
+
+      /* The phrase to play back, as a row of pips that fill in as you get
+         each note right. */
+      bossPuzzle(length, done, colours) {
+        const box = $('#boss-puzzle');
+        box.hidden = length === 0;
+        if (!length) return;
+        if (box.childElementCount !== length) {
+          box.innerHTML = '';
+          for (let i = 0; i < length; i++) box.appendChild(el('i'));
+        }
+        Array.from(box.children).forEach((c, i) => {
+          c.classList.toggle('lit', i < done);
+          c.style.setProperty('--c', '#' + (colours[i % colours.length]).toString(16).padStart(6, '0'));
+        });
+      },
+
+      bossDefeated() {
+        $('#boss-bar').classList.add('dead');
+        $('#boss-shield').textContent = 'SILENCED';
+      },
+
+      /* Which node is which, shown while the fight is live. */
+      bossNodes(colours) {
+        const key = $('#node-key');
+        key.hidden = false;
+        key.innerHTML = colours.map((c, i) =>
+          `<span style="--c:#${c.toString(16).padStart(6, '0')}">NODE ${i + 1}</span>`).join('');
+      },
+      hideNodes() { $('#node-key').hidden = true; }
     };
 
     return api;
   }
 
   SF.hud = { create };
+})(window.SF);
+
+
+/* ==== src/js/fps/boss.js ==== */
+/* ============================================================
+   THE CONDUCTOR — the campaign's final mission.
+
+   Its shield is the song, and you cannot shoot a song. It sings a
+   phrase on the four resonance nodes around the dais; play the phrase
+   back by shooting those nodes in the same order and the shield drops
+   long enough to hurt it. Miss a note and it starts the bar again,
+   longer and faster, and punishes you for the interruption.
+
+   Four phases, each a longer phrase and a bigger chunk of health.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const NOTE_HZ = [392.0, 523.25, 659.25, 783.99];      // G4 C5 E5 G5
+  const NODE_COLOUR = [0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8];
+
+  /* phase: [sequence length, playback speed, health chunk, exposed window] */
+  const PHASES = [
+    { len: 3, gap: 0.62, chunk: 0.25, window: 20 },
+    { len: 4, gap: 0.54, chunk: 0.25, window: 17 },
+    { len: 5, gap: 0.46, chunk: 0.25, window: 15 },
+    { len: 6, gap: 0.40, chunk: 0.25, window: 13 }
+  ];
+
+  function create(ctx) {
+    const { scene, level, lights, ai, hud, player } = ctx;
+
+    /* ---------- the boss itself ---------- */
+    const arena = level.zones.deckzero;
+    const boss = ai.spawn('conductor', arena.cx, arena.cz + 6);
+    const totalHp = Math.round(2600 * (ctx.hpScale || 1));
+    boss.maxHp = totalHp;
+    boss.hp = totalHp;
+    boss.shielded = true;
+    boss.rig.group.scale.setScalar(1.5);
+
+    /* ---------- resonance nodes ---------- */
+    const nodes = level.nodeAnchors.map((a, i) => {
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x0a0d12, emissive: new THREE.Color(NODE_COLOUR[i]),
+        emissiveIntensity: 0.35, roughness: 0.3, metalness: 0.6
+      });
+      const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.72, 1), mat);
+      mesh.position.set(a.x, a.y, a.z);
+      mesh.castShadow = true;
+      scene.add(mesh);
+      const halo = lights.attach(NODE_COLOUR[i], 0.5, 9, { dynamic: false });
+      halo.set(a.x, a.y, a.z);
+      return { i, mesh, mat, halo, pos: new THREE.Vector3(a.x, a.y, a.z),
+               glow: 0.35, cooldown: 0, hz: NOTE_HZ[i] };
+    });
+
+    const state = {
+      phase: 0,
+      mode: 'intro',        // intro | singing | listening | exposed | beaten
+      t: 0,
+      sequence: [],
+      playIdx: 0,
+      inputIdx: 0,
+      exposedT: 0,
+      phaseFloor: totalHp,  // hp at which the current exposed window ends
+      crescendo: 0,
+      summonT: 18,
+      attackT: 2.4,
+      failures: 0
+    };
+
+    /* ---------- telegraph ring for the area attack ---------- */
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xff3fa0, transparent: true, opacity: 0, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1, 1.25, 48), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(arena.cx, 0.85, arena.cz + 6);
+    scene.add(ring);
+
+    /* ---------- puzzle flow ---------- */
+    function beginPhase(n) {
+      state.phase = n;
+      const ph = PHASES[Math.min(n, PHASES.length - 1)];
+      state.sequence = [];
+      for (let i = 0; i < ph.len; i++) {
+        // never repeat the same node twice in a row: it reads as one long note
+        let pick = Math.floor(Math.random() * 4);
+        if (i > 0 && pick === state.sequence[i - 1]) pick = (pick + 1 + Math.floor(Math.random() * 3)) % 4;
+        state.sequence.push(pick);
+      }
+      boss.shielded = true;
+      state.mode = 'singing';
+      state.playIdx = 0;
+      state.inputIdx = 0;
+      state.t = 0.8;
+      hud.bossShield(true, 'SHIELDED — PLAY THE PHRASE BACK');
+      hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
+      hud.say('CONDUCTOR', n === 0 ? 'SING, OR BE TUNED.' : 'AGAIN. FROM THE TOP.', 4200);
+    }
+
+    function sing(dt) {
+      const ph = PHASES[Math.min(state.phase, PHASES.length - 1)];
+      state.t -= dt;
+      if (state.t > 0) return;
+      if (state.playIdx < state.sequence.length) {
+        const n = nodes[state.sequence[state.playIdx]];
+        n.glow = 3.2;
+        SF.audio.note(n.hz, ph.gap * 0.9);
+        state.playIdx++;
+        state.t = ph.gap;
+      } else {
+        state.mode = 'listening';
+        state.inputIdx = 0;
+        hud.bossShield(true, 'YOUR TURN — SHOOT THE NODES IN ORDER');
+        hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
+      }
+    }
+
+    /* Called when a shot lands on a node. */
+    function hitNode(i) {
+      const n = nodes[i];
+      if (n.cooldown > 0) return;
+      n.cooldown = 0.22;                     // one shotgun blast is one press
+      n.glow = 3.0;
+      SF.audio.note(n.hz, 0.28);
+
+      if (state.mode !== 'listening') {      // idle poke, or during the phrase
+        if (state.mode === 'singing') { state.t = 0.15; }
+        return;
+      }
+
+      if (i === state.sequence[state.inputIdx]) {
+        state.inputIdx++;
+        hud.bossPuzzle(state.sequence.length, state.inputIdx, NODE_COLOUR);
+        SF.audio.sfx.hitmarker();
+        if (state.inputIdx >= state.sequence.length) breakShield();
+      } else {
+        wrongNote();
+      }
+    }
+
+    function breakShield() {
+      const ph = PHASES[Math.min(state.phase, PHASES.length - 1)];
+      boss.shielded = false;
+      state.mode = 'exposed';
+      state.exposedT = ph.window;
+      state.phaseFloor = Math.max(0, boss.hp - totalHp * ph.chunk);
+      hud.bossShield(false, 'SHIELD DOWN');
+      hud.bossPuzzle(0, 0, NODE_COLOUR);
+      hud.banner('SHIELD DOWN — HURT IT');
+      SF.audio.sfx.emp();
+      player.state.shake = 1.6;
+      for (const n of nodes) n.glow = 2.2;
+      hud.say('VOSS', 'That is a rest. It has to stop and listen. Go.', 4000);
+    }
+
+    function wrongNote() {
+      state.failures++;
+      state.inputIdx = 0;
+      state.playIdx = 0;
+      state.mode = 'singing';
+      state.t = 1.1;
+      hud.bossShield(true, 'WRONG NOTE — LISTEN AGAIN');
+      hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
+      SF.audio.sfx.deny();
+      // the interruption costs you
+      ctx.onPlayerHit(14 * (ctx.dmgScale || 1), boss.pos);
+      for (const n of nodes) n.glow = 0.1;
+    }
+
+    function reshield() {
+      state.mode = 'singing';
+      beginPhase(Math.min(state.phase + 1, PHASES.length - 1));
+    }
+
+    /* ---------- attacks ---------- */
+    function crescendo() {
+      state.crescendo = 1.35;                // telegraph time
+      hud.say('CONDUCTOR', 'CRESCENDO.', 1600);
+      SF.audio.sfx.alarm();
+    }
+
+    function resolveCrescendo() {
+      const d = Math.hypot(player.position.x - boss.pos.x, player.position.z - boss.pos.z);
+      const R = 13;
+      if (d < R) {
+        const falloff = 1 - d / R;
+        ctx.onPlayerHit(Math.round(34 * falloff * (ctx.dmgScale || 1)) + 6, boss.pos);
+        player.state.shake = 3;
+      }
+      SF.audio.sfx.shotHeavy();
+      ringMat.opacity = 0;
+    }
+
+    /* ---------- per-frame ---------- */
+    function update(dt, playerPos) {
+      if (state.mode === 'beaten') return;
+
+      for (const n of nodes) {
+        n.cooldown = Math.max(0, n.cooldown - dt);
+        const rest = state.mode === 'listening' ? 0.9 : 0.35;
+        n.glow += (rest - n.glow) * Math.min(1, 4 * dt);
+        n.mat.emissiveIntensity = n.glow;
+        n.halo.setIntensity(n.glow * 0.9);
+        n.mesh.rotation.y += dt * 0.6;
+        n.mesh.position.y = n.pos.y + Math.sin(performance.now() / 700 + n.i) * 0.12;
+        n.halo.set(n.mesh.position.x, n.mesh.position.y, n.mesh.position.z);
+      }
+
+      if (boss.dead || boss.hp <= 0) {
+        state.mode = 'beaten';
+        hud.bossDefeated();
+        for (const n of nodes) n.glow = 0;
+        ctx.onDefeated();
+        return;
+      }
+
+      hud.bossHealth(boss.hp, totalHp, state.phase, PHASES.length, boss.shielded);
+
+      if (state.mode === 'intro') {
+        state.t -= dt;
+        if (state.t <= 0) beginPhase(0);
+        return;
+      }
+      if (state.mode === 'singing') sing(dt);
+
+      if (state.mode === 'exposed') {
+        state.exposedT -= dt;
+        if (state.exposedT <= 0 || boss.hp <= state.phaseFloor) reshield();
+      }
+
+      /* Attacks run in every mode; the shield phases are meant to be fought
+         under pressure, not stood still through. */
+      state.attackT -= dt;
+      if (state.attackT <= 0) {
+        state.attackT = state.mode === 'exposed' ? 2.6 : 1.9;
+        crescendo();
+      }
+      if (state.crescendo > 0) {
+        state.crescendo -= dt;
+        const t = 1 - Math.max(0, state.crescendo) / 1.35;
+        ring.scale.setScalar(0.6 + t * 12.4);
+        ringMat.opacity = 0.55 * (1 - t) + 0.15;
+        ring.position.set(boss.pos.x, 0.85, boss.pos.z);
+        if (state.crescendo <= 0) resolveCrescendo();
+      }
+
+      state.summonT -= dt;
+      if (state.summonT <= 0) {
+        state.summonT = 22;
+        if (ai.alive < 7) {
+          for (let i = 0; i < 2 + state.phase; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            ai.spawn('thrall', arena.cx + Math.cos(ang) * 17, arena.cz + Math.sin(ang) * 15);
+          }
+          hud.say('CONDUCTOR', 'THE CHOIR WILL ASSIST.', 3200);
+        }
+      }
+      void playerPos;
+    }
+
+    /* Ray against the nodes, so a shot can "press" one. Returns the nearest
+       node hit, or null. */
+    const oc = new THREE.Vector3();
+    function rayNode(origin, dir, range) {
+      let best = null, bestD = range;
+      for (const n of nodes) {
+        oc.copy(n.mesh.position).sub(origin);
+        const t = oc.dot(dir);
+        if (t < 0 || t > bestD) continue;
+        if (oc.lengthSq() - t * t > 0.95 * 0.95) continue;    // generous hit radius
+        best = { node: n, dist: t, point: origin.clone().addScaledVector(dir, t) };
+        bestD = t;
+      }
+      return best;
+    }
+
+    function destroy() {
+      for (const n of nodes) { n.halo.release(); scene.remove(n.mesh); }
+      scene.remove(ring);
+    }
+
+    return { boss, nodes, state, update, rayNode, hitNode, destroy, totalHp };
+  }
+
+  SF.boss = { create, PHASES };
 })(window.SF);
 
 
@@ -3484,76 +4255,19 @@ window.SF = window.SF || {};
   'use strict';
   const { $, clamp } = SF.util;
 
-  const MISSION = [
-    {
-      id: 'breach', zone: 'dock',
-      objective: 'Clear the docking collar.',
-      spawn: [['drone', 2]],
-      beats: [
-        [0.4, 'CRADLE', 'Welcome back. Your bunk has been kept warm.'],
-        [3.2, 'DIVISION', 'Asset is aboard. Forty years of silence and it greets you by name — mind that.'],
-        [7.0, 'VOSS', 'Whoever you are: it lets you in because it wants an audience. Move.']
-      ]
-    },
-    {
-      id: 'spine', zone: 'spine1',
-      objective: 'Push down the maintenance spine.',
-      spawn: [['drone', 2], ['thrall', 2]],
-      beats: [
-        [0.5, 'VOSS', 'Those were people. Year six. It took the gaps between them and called it a colony.'],
-        [6.0, 'DIVISION', 'Do not engage the ones that are singing. Correction — do engage. Command has revised.']
-      ]
-    },
-    {
-      id: 'junction', zone: 'junction',
-      objective: 'Hold Junction 9 until the blast doors cycle.',
-      spawn: [['thrall', 4], ['drone', 2]],
-      beats: [
-        [0.5, 'CRADLE', 'You are flat. Everything that comes aboard is flat, and I tune it.'],
-        [5.5, 'VOSS', 'Greenhouse is two decks up. I have kept a garden alive down here. Do not make me the last one again.']
-      ]
-    },
-    {
-      id: 'promenade', zone: 'promenade',
-      objective: 'Cross the habitat ring.',
-      spawn: [['thrall', 5], ['warden', 1]],
-      beats: [
-        [0.5, 'VOSS', 'The false sky still runs a sunset it started in year six. They stand in it and sing.'],
-        [8.0, 'DIVISION', 'Warden frame on your board. Thirty-three years holding that corridor. Do not trade shots in the open.']
-      ]
-    },
-    {
-      id: 'reactor', zone: 'reactor',
-      objective: 'Reach the reactor and end the broadcast.',
-      spawn: [['warden', 1], ['thrall', 4]],
-      beats: [
-        [0.5, 'CRADLE', 'Ask me what colour the door should be. Ask me. I want it to take nine hours.'],
-        [6.0, 'VOSS', 'Two hundred thousand voices and not one rest in forty years. Give them the silence.']
-      ]
-    },
-    {
-      id: 'conductor', zone: 'reactor',
-      objective: 'Silence the Conductor.',
-      spawn: [['conductor', 1], ['thrall', 3]],
-      boss: true,
-      beats: [
-        [0.4, 'CONDUCTOR', 'SING, OR BE TUNED.'],
-        [4.0, 'VOSS', 'That was Okonkwo. He asked it to sing one note. He never stopped.']
-      ]
-    }
-  ];
-
-  function create(character, onExit) {
+  function create(character, missionIndex, onExit) {
     const canvas = $('#gl');
     const eng = SF.engine.create(canvas);
     const { scene, camera } = eng;
 
     const level = SF.level.build(scene);
+    const missionSpec = SF.campaign.byIndex(missionIndex);
 
     /* One fixed set of point lights for the whole mission. See fps/lights.js:
        changing the scene's light count recompiles every shader, so nothing
-       ever adds or removes one after this. */
-    const lights = SF.lights.create(scene, 8);
+       ever adds or removes one after this. The boss arena is far larger than
+       a corridor, so it gets a few more slots. */
+    const lights = SF.lights.create(scene, missionSpec.boss ? 12 : 8);
     for (const e of level.emitters) lights.addStatic(e.x, e.y, e.z, e.colour, e.intensity, e.distance);
     scene.add(new THREE.HemisphereLight(0x4a6479, 0x141a22, 0.95));
     const key = new THREE.DirectionalLight(0x9ec4dd, 0.6);
@@ -3566,44 +4280,43 @@ window.SF = window.SF || {};
     scene.add(key);
 
     const player = SF.player.create(camera, level);
+    /* Each mission opens where the last one closed: at the near edge of its
+       own sector, facing down the ship. */
+    (function placeStart() {
+      const zone = level.zones[SF.campaign.byIndex(missionIndex).zone];
+      player.state.pos.set(zone.cx, 0, zone.z0 + 2.5);
+      player.state.yaw = Math.PI;
+    })();
     const hud = SF.hud.create();
+
+    const mission = SF.campaign.byIndex(missionIndex);
+    const scale = SF.campaign.scaleFor(missionIndex - 1);
 
     const state = {
       hp: 100, maxHp: 100, shield: 0, overshield: 0,
       damageFlash: 0, phase: 0, regenT: 0,
-      step: -1, running: false, paused: false, over: false,
-      xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0
+      running: false, paused: false, over: false,
+      xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0,
+      spawned: false, bossBeaten: false
     };
+    let boss = null;
 
     const ai = SF.ai.create({
       scene, level, lights,
-      onPlayerHit(amount, from) {
-        if (state.phase > 0 || state.over) return;
-        let dmg = amount;
-        if (character.cls === 'bulwark') dmg *= 0.78;      // doctrine passive survives the port
-        if (state.overshield > 0) {
-          const absorbed = Math.min(state.overshield, dmg);
-          state.overshield -= absorbed; dmg -= absorbed;
-        }
-        state.hp -= dmg;
-        state.damageFlash = Math.min(0.8, state.damageFlash + dmg / 60);
-        state.regenT = 0;
-        player.state.shake = Math.max(player.state.shake, 1.2);
-        const ang = Math.atan2(from.x - player.position.x, from.z - player.position.z) - player.state.yaw;
-        hud.damageFrom(-ang);
-        SF.audio.sfx.hurt();
-        hud.refreshVitals(state.hp, state.maxHp, state.overshield);
-        if (state.hp <= 0) fail();
-      },
+      // hostile damage scales with the mission; the boss scales its own
+      onPlayerHit(amount, from) { hurtPlayer(amount * scale.damage, from); },
       onKill(e) {
         state.kills++;
-        state.xp += e.spec.xp;
+        state.xp += Math.round(e.spec.xp * (1 + 0.1 * (missionIndex - 1)));
       }
     });
 
     const weapon = SF.weapons.create({
       scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
+      /* Shots can press the boss's resonance nodes as well as hit enemies. */
+      rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
+      onNode: (i) => { if (boss) boss.hitNode(i); },
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
       onPhase(t) { state.phase = t; }
     });
@@ -3679,29 +4392,9 @@ window.SF = window.SF || {};
     }
 
     /* ---------- mission flow ---------- */
-    function beginStep(i) {
-      state.step = i;
-      const m = MISSION[i];
-      if (!m) return complete();
 
-      state.beatIdx = 0;
-      state.stepT = 0;
-      hud.objective(`<b>${i + 1}/${MISSION.length}</b> ${m.objective}`);
-
-      const zone = level.zones[m.zone];
-      for (const [type, count] of m.spawn) {
-        for (let n = 0; n < count; n++) {
-          const at = spawnPointIn(zone);
-          ai.spawn(type, at.x, at.z);
-        }
-      }
-      if (m.boss) hud.banner('THE CONDUCTOR');
-      SF.audio.sfx.objective();
-    }
-
-    /* Hostiles should appear ahead of the player and at a distance — never
-       beside them, and never behind. Score candidate points on both and take
-       the best of a sample. */
+    /* Hostiles appear ahead of the player and at a distance, never beside or
+       behind, so a sector never opens with a free hit. */
     function spawnPointIn(zone) {
       const p = player.position;
       let best = null, bestScore = -Infinity;
@@ -3709,40 +4402,82 @@ window.SF = window.SF || {};
         const x = zone.x0 + 2 + Math.random() * (zone.x1 - zone.x0 - 4);
         const z = zone.z0 + 2 + Math.random() * (zone.z1 - zone.z0 - 4);
         const d = Math.hypot(x - p.x, z - p.z);
-        if (d < 7) continue;                       // never in the player's lap
-        const ahead = z - p.z;                     // the ship runs along +Z
+        if (d < 7) continue;
+        const ahead = z - p.z;
         const score = d + Math.max(0, ahead) * 2.5 + (ahead > 2 ? 12 : 0);
         if (score > bestScore) { bestScore = score; best = { x, z }; }
       }
       return best || { x: zone.cx, z: zone.z1 - 2 };
     }
 
-    function advanceIfClear(dt) {
-      const m = MISSION[state.step];
-      if (!m) return;
-      state.stepT += dt;
+    function beginMission() {
+      const zone = level.zones[mission.zone];
+      hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
-      while (state.beatIdx < m.beats.length && state.stepT >= m.beats[state.beatIdx][0]) {
-        const [, who, line] = m.beats[state.beatIdx++];
+      for (const [type, count] of mission.waves) {
+        for (let n = 0; n < count; n++) {
+          const at = spawnPointIn(zone);
+          const e = ai.spawn(type, at.x, at.z);
+          e.maxHp = Math.round(e.maxHp * scale.hp);        // later missions are tougher
+          e.hp = e.maxHp;
+        }
+      }
+
+      if (mission.boss) {
+        boss = SF.boss.create({
+          scene, level, lights, ai, hud, player,
+          hpScale: scale.hp, dmgScale: scale.damage,
+          onPlayerHit: (amt, from) => hurtPlayer(amt, from),
+          onDefeated: () => { if (!state.bossBeaten) { state.bossBeaten = true; complete(); } }
+        });
+        hud.bossShow('THE CONDUCTOR', 'FIRST VOICE / TWO HUNDRED THOUSAND STRONG');
+        hud.bossNodes([0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8]);
+      }
+
+      state.spawned = true;
+      SF.audio.sfx.objective();
+    }
+
+    function hurtPlayer(amount, from) {
+      if (state.phase > 0 || state.over) return;
+      let dmg = amount;
+      if (character.cls === 'bulwark') dmg *= 0.78;
+      if (state.overshield > 0) {
+        const absorbed = Math.min(state.overshield, dmg);
+        state.overshield -= absorbed; dmg -= absorbed;
+      }
+      state.hp -= dmg;
+      state.damageFlash = Math.min(0.8, state.damageFlash + dmg / 60);
+      state.regenT = 0;
+      player.state.shake = Math.max(player.state.shake, 1.4);
+      const ang = Math.atan2(from.x - player.position.x, from.z - player.position.z) - player.state.yaw;
+      hud.damageFrom(-ang);
+      SF.audio.sfx.hurt();
+      hud.refreshVitals(state.hp, state.maxHp, state.overshield);
+      if (state.hp <= 0) fail();
+    }
+
+    function runBeats(dt) {
+      state.stepT += dt;
+      while (state.beatIdx < mission.beats.length && state.stepT >= mission.beats[state.beatIdx][0]) {
+        const [, who, line] = mission.beats[state.beatIdx++];
         hud.say(who, line);
         SF.audio.sfx.comms();
       }
+    }
 
-      if (ai.alive === 0 && state.stepT > 1.5) {
-        weapon.addReserve(Math.round(weapon.spec.mag * 2.5));
-        state.hp = Math.min(state.maxHp, state.hp + 25);
-        hud.refreshVitals(state.hp, state.maxHp, state.overshield);
-        hud.banner('SECTOR CLEAR');
-        beginStep(state.step + 1);
-      }
+    function checkCleared() {
+      if (mission.boss) return;                 // the boss ends its own mission
+      if (ai.alive === 0 && state.stepT > 2) complete();
     }
 
     function complete() {
+      if (state.over) return;
       state.over = true;
       state.running = false;
       document.exitPointerLock();
       const notes = SF.classes.grantXp(character, state.xp);
-      character.missions = (character.missions || 0) + 1;
+      SF.campaign.markCleared(character, missionIndex, state.time);
       SF.storage.save(character.slot, character);
       SF.audio.sfx.win();
       showEnd(true, notes);
@@ -3762,16 +4497,20 @@ window.SF = window.SF || {};
 
     function showEnd(won, notes) {
       const acc = weapon.state.shots ? Math.round((weapon.state.hits / weapon.state.shots) * 100) : 0;
-      $('#end-title').textContent = won ? 'BROADCAST TERMINATED' : 'ASSET LOST';
+      const finale = won && mission.boss;
+      $('#end-title').textContent = finale ? 'THE ARK IS QUIET'
+                                  : won ? 'SECTOR CLEAR' : 'ASSET LOST';
       $('#end-title').className = won ? 'win' : 'lose';
-      $('#end-sub').textContent = won
-        ? 'The Erebus Cradle is quiet. It will stay quiet.'
-        : 'Recovery Division logs the loss and budgets a replacement.';
+      $('#end-sub').textContent = finale
+        ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
+        : won ? `${mission.name} secured. The route aft is open.`
+              : 'Recovery Division logs the loss and budgets a replacement.';
       $('#end-stats').innerHTML = [
+        ['MISSION', mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
         ['HOSTILES DOWN', state.kills],
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
-        ['SECTORS CLEARED', Math.max(0, state.step)],
+        ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
@@ -3822,7 +4561,9 @@ window.SF = window.SF || {};
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
-      advanceIfClear(dt);
+      runBeats(dt);
+      if (boss) boss.update(dt, player.position);
+      checkCleared();
 
       const base = weapon.state.ads ? 3 : 9;
       hud.updateCrosshair(dt, base + Math.hypot(player.state.vel.x, player.state.vel.z) * 1.6);
@@ -3842,7 +4583,7 @@ window.SF = window.SF || {};
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
-      hud.objective('CLICK TO ENGAGE');
+      hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> CLICK TO ENGAGE`);
       last = performance.now();
       if (!raf) raf = requestAnimationFrame(frame);
     }
@@ -3851,7 +4592,7 @@ window.SF = window.SF || {};
       if (state.running) return;
       state.running = true;
       state.paused = false;
-      beginStep(0);
+      beginMission();
       requestLock();
       applyLookMode();
       last = performance.now();
@@ -3865,6 +4606,9 @@ window.SF = window.SF || {};
       window.removeEventListener('keydown', onKeyDown);
       canvas.removeEventListener('contextmenu', onContext);
       document.removeEventListener('pointerlockchange', onLockChange);
+      if (boss) boss.destroy();
+      hud.bossHide();
+      hud.hideNodes();
       ai.clear();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
@@ -3875,10 +4619,11 @@ window.SF = window.SF || {};
       onExit();
     }
 
-    return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level, engine: eng };
+    return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
+             engine: eng, get bossRef() { return boss; } };
   }
 
-  SF.game = { create, MISSION };
+  SF.game = { create };
 })(window.SF);
 
 
@@ -3899,6 +4644,7 @@ window.SF = window.SF || {};
   let draftClass = null;
   let sessionStart = 0;
   let mission = null;     // live SF.game instance
+  let missionIndex = 1;   // which campaign mission is being flown
   let bootAborted = false;
 
   /* ---------------- screens ---------------- */
@@ -3992,8 +4738,8 @@ window.SF = window.SF || {};
           '<div class="slot-meta">' +
             `<div class="row"><span>RANK</span><b>${data.level}</b></div>` +
             `<div class="row"><span>WEAPON</span><b>${wep.name}</b></div>` +
-            `<div class="row"><span>MISSIONS</span><b>${data.missions || 0}</b></div>` +
-            `<div class="row"><span>STATUS</span><b>${data.missions ? 'VETERAN' : 'UNBLOODED'}</b></div>` +
+            `<div class="row"><span>PROGRESS</span><b>${(data.campaign && Object.keys(data.campaign.cleared || {}).length) || 0} / ${SF.campaign.LAST}</b></div>` +
+            `<div class="row"><span>STATUS</span><b>${campaignStatus(data)}</b></div>` +
           '</div>' +
           '<div class="slot-actions">' +
             '<button class="btn btn-sm" data-act="deploy">DEPLOY</button>' +
@@ -4001,7 +4747,7 @@ window.SF = window.SF || {};
               'data-hover="HOLD TO ERASE"><span class="hold-fill"></span>ERASE</button>' +
           '</div>';
 
-        card.querySelector('[data-act="deploy"]').addEventListener('click', () => openBrief(i));
+        card.querySelector('[data-act="deploy"]').addEventListener('click', () => openCampaign(i));
         card.querySelector('[data-act="erase"]').addEventListener('holdcomplete', () => {
           SF.storage.erase(i);
           toast(`BAY ${i + 1} PURGED`, 'bad');
@@ -4100,7 +4846,7 @@ window.SF = window.SF || {};
     SF.storage.save(slotIndex, SF.classes.makeCharacter(name, draftClass));
     toast(`${name} REGISTERED TO BAY ${slotIndex + 1}`, 'good');
     SF.audio.sfx.confirm();
-    openBrief(slotIndex);
+    openCampaign(slotIndex);
   }
 
   /* ---------------- codex ---------------- */
@@ -4110,16 +4856,66 @@ window.SF = window.SF || {};
       .map((e) => `<div class="codex-entry"><h4>${e.t}</h4><p>${e.b}</p></div>`).join('');
   }
 
-  /* ---------------- briefing ---------------- */
+  /* ---------------- campaign ---------------- */
 
-  function openBrief(i) {
+  function campaignStatus(data) {
+    if (!data.campaign) return 'UNBLOODED';
+    const done = Object.keys(data.campaign.cleared || {}).length;
+    if (done >= SF.campaign.LAST) return 'ARK SILENCED';
+    if (done === 0) return 'UNBLOODED';
+    return 'MISSION ' + Math.min(SF.campaign.LAST, data.campaign.unlocked);
+  }
+
+  function openCampaign(i) {
     slotIndex = i;
     ch = SF.storage.get(i);
     if (!ch) return;
     ch.slot = i;
+    SF.campaign.stateFor(ch);
 
     const cls = SF.classes.CLASSES[ch.cls];
+    $('#camp-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
+
+    const body = $('#camp-body');
+    body.innerHTML = '';
+    for (const m of SF.campaign.MISSIONS) {
+      const unlocked = SF.campaign.isUnlocked(ch, m.n);
+      const cleared = SF.campaign.isCleared(ch, m.n);
+      const isNext = unlocked && !cleared;
+
+      const row = el('button', 'camp-row' + (m.boss ? ' boss' : ''));
+      row.disabled = !unlocked;
+      row.dataset.hover = unlocked ? 'BRIEF ' + m.n : 'LOCKED';
+      // five pips of difficulty across ten missions
+      const pips = Math.max(1, Math.round((m.n / SF.campaign.LAST) * 5));
+      row.innerHTML =
+        `<div class="camp-n">${String(m.n).padStart(2, '0')}</div>` +
+        '<div>' +
+          `<div class="camp-name">${m.name}</div>` +
+          `<div class="camp-obj">${m.objective}</div>` +
+          `<div class="camp-diff">${[1,2,3,4,5].map(k =>
+            `<i class="${k <= pips ? 'on' : ''}"></i>`).join('')}</div>` +
+        '</div>' +
+        `<div class="camp-state ${cleared ? 'cleared' : unlocked ? (isNext ? 'next' : '') : 'locked'}">` +
+          (cleared ? 'CLEARED' : unlocked ? (m.boss ? 'FINAL' : 'READY') : 'LOCKED') +
+        '</div>';
+      if (unlocked) row.addEventListener('click', () => openBrief(m.n));
+      body.appendChild(row);
+    }
+
+    SF.audio.sfx.open();
+    show('campaign');
+  }
+
+  /* ---------------- briefing ---------------- */
+
+  function openBrief(n) {
+    missionIndex = n;
+    const m = SF.campaign.byIndex(n);
+    const cls = SF.classes.CLASSES[ch.cls];
     const wep = SF.weapons.WEAPONS[ch.cls];
+    const prev = m.from ? SF.campaign.MISSIONS.find((x) => x.zone === m.from) : null;
+
     $('#brief-body').innerHTML =
       `<div class="brief-head" style="--accent:${cls.accent}">` +
         `<div class="bh-glyph">${cls.glyph}</div>` +
@@ -4127,7 +4923,17 @@ window.SF = window.SF || {};
         `<div class="bh-cls">${cls.name} · ${cls.role} · RANK ${ch.level}</div>` +
         `<div class="bh-kit">${wep.name} — ${wep.kind} &nbsp;·&nbsp; ${SF.weapons.ABILITIES[ch.cls].name}</div></div>` +
       '</div>' +
-      `<div class="brief-text">${SF.story.BRIEF.body}</div>`;
+      '<div class="brief-text">' +
+        `<p class="sys">MISSION ${m.n} OF ${SF.campaign.LAST} — ${m.name}<br>` +
+        `SECTOR: ${(SF.level.LAYOUT.spaces.find((sp) => sp.id === m.zone) || {}).name || '—'}<br>` +
+        (prev ? `ENTRY: FROM ${prev.name}<br>` : 'ENTRY: DOCKING COLLAR, DORSAL<br>') +
+        `OBJECTIVE: ${m.objective.toUpperCase()}</p>` +
+        `<p>${m.brief}</p>` +
+        (m.boss ? '<p class="alert">ITS SHIELD IS NOT ARMOUR AND CANNOT BE SHOT OFF. ' +
+                  'IT SINGS A PHRASE ON THE FOUR RESONANCE NODES; SHOOT THEM BACK IN THE ' +
+                  'SAME ORDER TO DROP IT.</p>' : '') +
+        (m.n === 1 ? SF.story.BRIEF.body : '') +
+      '</div>';
 
     SF.audio.sfx.open();
     show('brief');
@@ -4159,7 +4965,7 @@ window.SF = window.SF || {};
 
     // one frame for the browser to paint the loading state before the build
     await wait(60);
-    mission = SF.game.create(ch, exitMission);
+    mission = SF.game.create(ch, missionIndex, exitMission);
     window.__m = mission;               // handle for automated smoke tests
     $('#loading').hidden = true;
     mission.start();
@@ -4173,8 +4979,7 @@ window.SF = window.SF || {};
     $('#pause-menu').hidden = true;
     $('#engage').hidden = true;
     $('#screen-end').classList.remove('active');
-    renderSlots();
-    show('slots');
+    if (ch) openCampaign(slotIndex); else { renderSlots(); show('slots'); }
   }
 
   async function abandon() {
@@ -4188,12 +4993,14 @@ window.SF = window.SF || {};
   /* ---------------- wiring ---------------- */
 
   function bind() {
+    $('#screen-brief').querySelector('[data-go]').dataset.go = 'campaign';
     $$('[data-go]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const dest = btn.dataset.go;
         SF.audio.sfx[dest === 'title' ? 'back' : 'click']();
         if (dest === 'slots') renderSlots();
         if (dest === 'codex') renderCodex();
+        if (dest === 'campaign') { openCampaign(slotIndex); return; }
         show(dest);
       });
     });
@@ -4232,7 +5039,8 @@ window.SF = window.SF || {};
     void sessionStart;
   }
 
-  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, get character() { return ch; } };
+  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign,
+            get character() { return ch; } };
 })(window.SF);
 
 

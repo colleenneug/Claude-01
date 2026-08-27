@@ -86,7 +86,65 @@
         setTimeout(() => ind.remove(), 900);
       },
 
-      setVisible(v) { root.hidden = !v; }
+      setVisible(v) { root.hidden = !v; },
+
+      /* ---------- boss encounter ---------- */
+      bossShow(name, sub) {
+        $('#boss-bar').hidden = false;
+        root.classList.add('boss-fight');
+        $('#boss-name').textContent = name;
+        $('#boss-sub').textContent = sub || '';
+      },
+      bossHide() { $('#boss-bar').hidden = true; root.classList.remove('boss-fight'); },
+
+      bossHealth(hp, maxHp, phase, phases, shielded) {
+        const pct = Math.max(0, hp / maxHp) * 100;
+        $('#boss-fill').style.width = pct + '%';
+        $('#boss-hp-text').textContent = Math.max(0, Math.ceil(hp)) + ' / ' + maxHp;
+        $('#boss-bar').classList.toggle('shielded', !!shielded);
+        const seg = $('#boss-phases');
+        if (seg.childElementCount !== phases) {
+          seg.innerHTML = '';
+          for (let i = 0; i < phases; i++) seg.appendChild(el('i'));
+        }
+        Array.from(seg.children).forEach((c, i) => c.classList.toggle('done', i < phase));
+      },
+
+      bossShield(up, message) {
+        const tag = $('#boss-shield');
+        tag.textContent = message || (up ? 'SHIELDED' : 'SHIELD DOWN');
+        tag.className = up ? 'up' : 'down';
+      },
+
+      /* The phrase to play back, as a row of pips that fill in as you get
+         each note right. */
+      bossPuzzle(length, done, colours) {
+        const box = $('#boss-puzzle');
+        box.hidden = length === 0;
+        if (!length) return;
+        if (box.childElementCount !== length) {
+          box.innerHTML = '';
+          for (let i = 0; i < length; i++) box.appendChild(el('i'));
+        }
+        Array.from(box.children).forEach((c, i) => {
+          c.classList.toggle('lit', i < done);
+          c.style.setProperty('--c', '#' + (colours[i % colours.length]).toString(16).padStart(6, '0'));
+        });
+      },
+
+      bossDefeated() {
+        $('#boss-bar').classList.add('dead');
+        $('#boss-shield').textContent = 'SILENCED';
+      },
+
+      /* Which node is which, shown while the fight is live. */
+      bossNodes(colours) {
+        const key = $('#node-key');
+        key.hidden = false;
+        key.innerHTML = colours.map((c, i) =>
+          `<span style="--c:#${c.toString(16).padStart(6, '0')}">NODE ${i + 1}</span>`).join('');
+      },
+      hideNodes() { $('#node-key').hidden = true; }
     };
 
     return api;

@@ -104,7 +104,7 @@
       sync: cls.base.sync,
       guile: cls.base.guile,
       missions: 0,
-      best: null,
+      campaign: { unlocked: 1, cleared: {}, bestTime: {} },
       created: Date.now(),
       playtime: 0
     };

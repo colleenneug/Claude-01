@@ -105,6 +105,8 @@
 
   SF.audio = {
     sfx,
+    /* A bare pitched note — the boss encounter plays phrases with these. */
+    note(freq, dur, type, vol) { tone(freq, dur || 0.4, type || 'triangle', vol == null ? 0.22 : vol); },
     unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); },
     toggle(on) { enabled = on == null ? !enabled : on; return enabled; },
     get enabled() { return enabled; }

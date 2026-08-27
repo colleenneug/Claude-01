@@ -130,27 +130,62 @@ shot**.
 
 ---
 
-## The mission
+## The campaign
 
-Six sectors, fought end to end down the length of the ark: the docking collar, the
-maintenance spine, Junction 9, the habitat ring, the reactor antechamber, and the
-Conductor at the end of it. Clearing a sector patches you up and resupplies you.
+Ten missions, run end to end down the length of the ark, and connected three ways.
 
-Four hostile types — husk drones that hover and close, choir thralls that swarm, warden
-frames that shoot from range, and the boss. Each telegraphs nothing and pursues with wall
-avoidance; head shots are a separate, smaller hit sphere on every one of them.
+**Geographically** — the route is one continuous ship. Each mission starts at the near
+edge of its own sector, where the previous one finished: docking collar → maintenance
+spine → Junction 9 → aft run → habitat ring → greenhouse → medical → reactor antechamber
+→ choir array → Deck Zero.
 
-The story survives the move to first person as staged comms traffic: CRADLE, Division and
-Voss all talk over you as you advance, and each objective carries its own beats.
+**Mechanically** — rank, XP and the unlock chain persist on the character. Clearing a
+mission unlocks the next; the campaign screen shows the whole route with what is cleared,
+what is next and what is still locked.
+
+**Narratively** — the comms beats run as one thread across all ten. CRADLE, Recovery
+Division and Elias Voss talk over you throughout, and the argument they are having
+resolves in the last mission.
+
+Difficulty climbs on four axes at once — enemy count, which types appear, a health
+multiplier and a damage multiplier:
+
+| Mission | Hostiles | Health ×| Damage ×|
+|---|---|---|---|
+| 1 · Hard Dock | 3 | 1.00 | 1.00 |
+| 3 · Junction Nine | 7 | 1.23 | 1.16 |
+| 5 · The False Sky | 10 | 1.46 | 1.31 |
+| 7 · Triage | 13 | 1.69 | 1.47 |
+| 9 · The Array | 17 | 1.92 | 1.62 |
+| 10 · The Conductor | boss | 2.04 | 1.70 |
+
+## The Conductor
+
+The final mission is a boss with a shield you cannot shoot off, because the shield is the
+song. A health bar runs along the bottom of the screen with a segment per phase; while
+the shield holds, the bar reads as hatched and unavailable and every round you put into
+it does nothing.
+
+To break it you solve a puzzle. Four resonance nodes stand around the dais, each with its
+own colour and pitch. The Conductor sings a phrase across them — **play it back by
+shooting those nodes in the same order**. Get it right and the shield drops long enough
+to hurt it. Hit a wrong note and it starts the bar again, and takes a swing at you for
+the interruption.
+
+There are four phases, and each one is a longer phrase played faster: three notes, then
+four, then five, then six. Miss your damage window and it re-shields with the harder
+phrase anyway. It summons the Choir, and it opens up with a crescendo that fills the arena
+whether the shield is up or not — the puzzle is meant to be solved under fire, not
+standing still.
 
 ---
 
 ## Three character slots
 
 The crew registry holds exactly three bays, persisted to `localStorage`. Each dossier
-carries its own name, doctrine, rank, XP and mission count, and can be deployed and
-erased independently. Rank carries across missions; XP is awarded for kills and banked on
-both success and failure. Storage failures (private windows, blocked site data) degrade to
+carries its own name, doctrine, rank, XP and its own campaign progress — how far down the
+ark that operative has got — and can be deployed and erased independently. Rank carries
+across missions; XP is awarded for kills and banked on both success and failure. Storage failures (private windows, blocked site data) degrade to
 a session-only game rather than crashing.
 
 Erasing a bay is deliberately awkward: press and **hold** the ERASE control until the
@@ -173,6 +208,7 @@ src/js/fx.js              menu starfield
 src/js/classes.js         the three doctrines and levelling
 src/js/storage.js         the three save slots
 src/js/story.js           briefing fiction and field codex
+src/js/fps/campaign.js    the ten missions, escalation curve, unlock chain
 src/js/fps/materials.js   procedural PBR textures (albedo / normal / roughness)
 src/js/fps/lights.js      fixed-size light pool (constant scene light count)
 src/js/fps/engine.js      renderer, tone mapping, hand-rolled post chain
@@ -180,7 +216,8 @@ src/js/fps/level.js       ship interior, collision boxes, lighting, props
 src/js/fps/player.js      pointer-lock look, movement physics, collision
 src/js/fps/weapons.js     the three weapons, hitscan, recoil, ADS, abilities
 src/js/fps/ai.js          hostiles, steering, projectiles, hit spheres
-src/js/fps/hud.js         crosshair, vitals, ammo, comms, kill feed
+src/js/fps/hud.js         crosshair, vitals, ammo, comms, kill feed, boss bar
+src/js/fps/boss.js        the Conductor: shield phases and the phrase puzzle
 src/js/fps/game.js        mission loop, objectives, player condition
 src/js/ui.js              menus and the handoff into a mission
 src/js/main.js            entry point

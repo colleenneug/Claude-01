@@ -14,6 +14,7 @@
   let draftClass = null;
   let sessionStart = 0;
   let mission = null;     // live SF.game instance
+  let missionIndex = 1;   // which campaign mission is being flown
   let bootAborted = false;
 
   /* ---------------- screens ---------------- */
@@ -107,8 +108,8 @@
           '<div class="slot-meta">' +
             `<div class="row"><span>RANK</span><b>${data.level}</b></div>` +
             `<div class="row"><span>WEAPON</span><b>${wep.name}</b></div>` +
-            `<div class="row"><span>MISSIONS</span><b>${data.missions || 0}</b></div>` +
-            `<div class="row"><span>STATUS</span><b>${data.missions ? 'VETERAN' : 'UNBLOODED'}</b></div>` +
+            `<div class="row"><span>PROGRESS</span><b>${(data.campaign && Object.keys(data.campaign.cleared || {}).length) || 0} / ${SF.campaign.LAST}</b></div>` +
+            `<div class="row"><span>STATUS</span><b>${campaignStatus(data)}</b></div>` +
           '</div>' +
           '<div class="slot-actions">' +
             '<button class="btn btn-sm" data-act="deploy">DEPLOY</button>' +
@@ -116,7 +117,7 @@
               'data-hover="HOLD TO ERASE"><span class="hold-fill"></span>ERASE</button>' +
           '</div>';
 
-        card.querySelector('[data-act="deploy"]').addEventListener('click', () => openBrief(i));
+        card.querySelector('[data-act="deploy"]').addEventListener('click', () => openCampaign(i));
         card.querySelector('[data-act="erase"]').addEventListener('holdcomplete', () => {
           SF.storage.erase(i);
           toast(`BAY ${i + 1} PURGED`, 'bad');
@@ -215,7 +216,7 @@
     SF.storage.save(slotIndex, SF.classes.makeCharacter(name, draftClass));
     toast(`${name} REGISTERED TO BAY ${slotIndex + 1}`, 'good');
     SF.audio.sfx.confirm();
-    openBrief(slotIndex);
+    openCampaign(slotIndex);
   }
 
   /* ---------------- codex ---------------- */
@@ -225,16 +226,66 @@
       .map((e) => `<div class="codex-entry"><h4>${e.t}</h4><p>${e.b}</p></div>`).join('');
   }
 
-  /* ---------------- briefing ---------------- */
+  /* ---------------- campaign ---------------- */
 
-  function openBrief(i) {
+  function campaignStatus(data) {
+    if (!data.campaign) return 'UNBLOODED';
+    const done = Object.keys(data.campaign.cleared || {}).length;
+    if (done >= SF.campaign.LAST) return 'ARK SILENCED';
+    if (done === 0) return 'UNBLOODED';
+    return 'MISSION ' + Math.min(SF.campaign.LAST, data.campaign.unlocked);
+  }
+
+  function openCampaign(i) {
     slotIndex = i;
     ch = SF.storage.get(i);
     if (!ch) return;
     ch.slot = i;
+    SF.campaign.stateFor(ch);
 
     const cls = SF.classes.CLASSES[ch.cls];
+    $('#camp-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
+
+    const body = $('#camp-body');
+    body.innerHTML = '';
+    for (const m of SF.campaign.MISSIONS) {
+      const unlocked = SF.campaign.isUnlocked(ch, m.n);
+      const cleared = SF.campaign.isCleared(ch, m.n);
+      const isNext = unlocked && !cleared;
+
+      const row = el('button', 'camp-row' + (m.boss ? ' boss' : ''));
+      row.disabled = !unlocked;
+      row.dataset.hover = unlocked ? 'BRIEF ' + m.n : 'LOCKED';
+      // five pips of difficulty across ten missions
+      const pips = Math.max(1, Math.round((m.n / SF.campaign.LAST) * 5));
+      row.innerHTML =
+        `<div class="camp-n">${String(m.n).padStart(2, '0')}</div>` +
+        '<div>' +
+          `<div class="camp-name">${m.name}</div>` +
+          `<div class="camp-obj">${m.objective}</div>` +
+          `<div class="camp-diff">${[1,2,3,4,5].map(k =>
+            `<i class="${k <= pips ? 'on' : ''}"></i>`).join('')}</div>` +
+        '</div>' +
+        `<div class="camp-state ${cleared ? 'cleared' : unlocked ? (isNext ? 'next' : '') : 'locked'}">` +
+          (cleared ? 'CLEARED' : unlocked ? (m.boss ? 'FINAL' : 'READY') : 'LOCKED') +
+        '</div>';
+      if (unlocked) row.addEventListener('click', () => openBrief(m.n));
+      body.appendChild(row);
+    }
+
+    SF.audio.sfx.open();
+    show('campaign');
+  }
+
+  /* ---------------- briefing ---------------- */
+
+  function openBrief(n) {
+    missionIndex = n;
+    const m = SF.campaign.byIndex(n);
+    const cls = SF.classes.CLASSES[ch.cls];
     const wep = SF.weapons.WEAPONS[ch.cls];
+    const prev = m.from ? SF.campaign.MISSIONS.find((x) => x.zone === m.from) : null;
+
     $('#brief-body').innerHTML =
       `<div class="brief-head" style="--accent:${cls.accent}">` +
         `<div class="bh-glyph">${cls.glyph}</div>` +
@@ -242,7 +293,17 @@
         `<div class="bh-cls">${cls.name} · ${cls.role} · RANK ${ch.level}</div>` +
         `<div class="bh-kit">${wep.name} — ${wep.kind} &nbsp;·&nbsp; ${SF.weapons.ABILITIES[ch.cls].name}</div></div>` +
       '</div>' +
-      `<div class="brief-text">${SF.story.BRIEF.body}</div>`;
+      '<div class="brief-text">' +
+        `<p class="sys">MISSION ${m.n} OF ${SF.campaign.LAST} — ${m.name}<br>` +
+        `SECTOR: ${(SF.level.LAYOUT.spaces.find((sp) => sp.id === m.zone) || {}).name || '—'}<br>` +
+        (prev ? `ENTRY: FROM ${prev.name}<br>` : 'ENTRY: DOCKING COLLAR, DORSAL<br>') +
+        `OBJECTIVE: ${m.objective.toUpperCase()}</p>` +
+        `<p>${m.brief}</p>` +
+        (m.boss ? '<p class="alert">ITS SHIELD IS NOT ARMOUR AND CANNOT BE SHOT OFF. ' +
+                  'IT SINGS A PHRASE ON THE FOUR RESONANCE NODES; SHOOT THEM BACK IN THE ' +
+                  'SAME ORDER TO DROP IT.</p>' : '') +
+        (m.n === 1 ? SF.story.BRIEF.body : '') +
+      '</div>';
 
     SF.audio.sfx.open();
     show('brief');
@@ -274,7 +335,7 @@
 
     // one frame for the browser to paint the loading state before the build
     await wait(60);
-    mission = SF.game.create(ch, exitMission);
+    mission = SF.game.create(ch, missionIndex, exitMission);
     window.__m = mission;               // handle for automated smoke tests
     $('#loading').hidden = true;
     mission.start();
@@ -288,8 +349,7 @@
     $('#pause-menu').hidden = true;
     $('#engage').hidden = true;
     $('#screen-end').classList.remove('active');
-    renderSlots();
-    show('slots');
+    if (ch) openCampaign(slotIndex); else { renderSlots(); show('slots'); }
   }
 
   async function abandon() {
@@ -303,12 +363,14 @@
   /* ---------------- wiring ---------------- */
 
   function bind() {
+    $('#screen-brief').querySelector('[data-go]').dataset.go = 'campaign';
     $$('[data-go]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const dest = btn.dataset.go;
         SF.audio.sfx[dest === 'title' ? 'back' : 'click']();
         if (dest === 'slots') renderSlots();
         if (dest === 'codex') renderCodex();
+        if (dest === 'campaign') { openCampaign(slotIndex); return; }
         show(dest);
       });
     });
@@ -347,5 +409,6 @@
     void sessionStart;
   }
 
-  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, get character() { return ch; } };
+  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign,
+            get character() { return ch; } };
 })(window.SF);

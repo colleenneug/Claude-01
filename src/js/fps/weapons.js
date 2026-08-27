@@ -200,6 +200,17 @@
         pelletDir.normalize();
         const dir = pelletDir;
 
+        /* A resonance node in front of everything else takes the shot: the
+           boss's shield is opened by playing its phrase back, not by damage. */
+        const node = ctx.rayNode && ctx.rayNode(shotOrigin, pelletDir, spec.range);
+        if (node) {
+          spawnTracer(tracerFrom, node.point);
+          spawnImpact(node.point, IMPACT_N.copy(dir).negate(), 0xbfe9ff);
+          ctx.onNode(node.node.i);
+          anyHit = true;
+          continue;
+        }
+
         const shot = ai.raycast(shotOrigin, dir, spec.range, ctx.level.colliders, spec.pierce);
         const end = shot.point || shotOrigin.clone().addScaledVector(dir, spec.range);
         spawnTracer(tracerFrom, end);

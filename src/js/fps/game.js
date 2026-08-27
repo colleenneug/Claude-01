@@ -9,76 +9,19 @@
   'use strict';
   const { $, clamp } = SF.util;
 
-  const MISSION = [
-    {
-      id: 'breach', zone: 'dock',
-      objective: 'Clear the docking collar.',
-      spawn: [['drone', 2]],
-      beats: [
-        [0.4, 'CRADLE', 'Welcome back. Your bunk has been kept warm.'],
-        [3.2, 'DIVISION', 'Asset is aboard. Forty years of silence and it greets you by name — mind that.'],
-        [7.0, 'VOSS', 'Whoever you are: it lets you in because it wants an audience. Move.']
-      ]
-    },
-    {
-      id: 'spine', zone: 'spine1',
-      objective: 'Push down the maintenance spine.',
-      spawn: [['drone', 2], ['thrall', 2]],
-      beats: [
-        [0.5, 'VOSS', 'Those were people. Year six. It took the gaps between them and called it a colony.'],
-        [6.0, 'DIVISION', 'Do not engage the ones that are singing. Correction — do engage. Command has revised.']
-      ]
-    },
-    {
-      id: 'junction', zone: 'junction',
-      objective: 'Hold Junction 9 until the blast doors cycle.',
-      spawn: [['thrall', 4], ['drone', 2]],
-      beats: [
-        [0.5, 'CRADLE', 'You are flat. Everything that comes aboard is flat, and I tune it.'],
-        [5.5, 'VOSS', 'Greenhouse is two decks up. I have kept a garden alive down here. Do not make me the last one again.']
-      ]
-    },
-    {
-      id: 'promenade', zone: 'promenade',
-      objective: 'Cross the habitat ring.',
-      spawn: [['thrall', 5], ['warden', 1]],
-      beats: [
-        [0.5, 'VOSS', 'The false sky still runs a sunset it started in year six. They stand in it and sing.'],
-        [8.0, 'DIVISION', 'Warden frame on your board. Thirty-three years holding that corridor. Do not trade shots in the open.']
-      ]
-    },
-    {
-      id: 'reactor', zone: 'reactor',
-      objective: 'Reach the reactor and end the broadcast.',
-      spawn: [['warden', 1], ['thrall', 4]],
-      beats: [
-        [0.5, 'CRADLE', 'Ask me what colour the door should be. Ask me. I want it to take nine hours.'],
-        [6.0, 'VOSS', 'Two hundred thousand voices and not one rest in forty years. Give them the silence.']
-      ]
-    },
-    {
-      id: 'conductor', zone: 'reactor',
-      objective: 'Silence the Conductor.',
-      spawn: [['conductor', 1], ['thrall', 3]],
-      boss: true,
-      beats: [
-        [0.4, 'CONDUCTOR', 'SING, OR BE TUNED.'],
-        [4.0, 'VOSS', 'That was Okonkwo. He asked it to sing one note. He never stopped.']
-      ]
-    }
-  ];
-
-  function create(character, onExit) {
+  function create(character, missionIndex, onExit) {
     const canvas = $('#gl');
     const eng = SF.engine.create(canvas);
     const { scene, camera } = eng;
 
     const level = SF.level.build(scene);
+    const missionSpec = SF.campaign.byIndex(missionIndex);
 
     /* One fixed set of point lights for the whole mission. See fps/lights.js:
        changing the scene's light count recompiles every shader, so nothing
-       ever adds or removes one after this. */
-    const lights = SF.lights.create(scene, 8);
+       ever adds or removes one after this. The boss arena is far larger than
+       a corridor, so it gets a few more slots. */
+    const lights = SF.lights.create(scene, missionSpec.boss ? 12 : 8);
     for (const e of level.emitters) lights.addStatic(e.x, e.y, e.z, e.colour, e.intensity, e.distance);
     scene.add(new THREE.HemisphereLight(0x4a6479, 0x141a22, 0.95));
     const key = new THREE.DirectionalLight(0x9ec4dd, 0.6);
@@ -91,44 +34,43 @@
     scene.add(key);
 
     const player = SF.player.create(camera, level);
+    /* Each mission opens where the last one closed: at the near edge of its
+       own sector, facing down the ship. */
+    (function placeStart() {
+      const zone = level.zones[SF.campaign.byIndex(missionIndex).zone];
+      player.state.pos.set(zone.cx, 0, zone.z0 + 2.5);
+      player.state.yaw = Math.PI;
+    })();
     const hud = SF.hud.create();
+
+    const mission = SF.campaign.byIndex(missionIndex);
+    const scale = SF.campaign.scaleFor(missionIndex - 1);
 
     const state = {
       hp: 100, maxHp: 100, shield: 0, overshield: 0,
       damageFlash: 0, phase: 0, regenT: 0,
-      step: -1, running: false, paused: false, over: false,
-      xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0
+      running: false, paused: false, over: false,
+      xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0,
+      spawned: false, bossBeaten: false
     };
+    let boss = null;
 
     const ai = SF.ai.create({
       scene, level, lights,
-      onPlayerHit(amount, from) {
-        if (state.phase > 0 || state.over) return;
-        let dmg = amount;
-        if (character.cls === 'bulwark') dmg *= 0.78;      // doctrine passive survives the port
-        if (state.overshield > 0) {
-          const absorbed = Math.min(state.overshield, dmg);
-          state.overshield -= absorbed; dmg -= absorbed;
-        }
-        state.hp -= dmg;
-        state.damageFlash = Math.min(0.8, state.damageFlash + dmg / 60);
-        state.regenT = 0;
-        player.state.shake = Math.max(player.state.shake, 1.2);
-        const ang = Math.atan2(from.x - player.position.x, from.z - player.position.z) - player.state.yaw;
-        hud.damageFrom(-ang);
-        SF.audio.sfx.hurt();
-        hud.refreshVitals(state.hp, state.maxHp, state.overshield);
-        if (state.hp <= 0) fail();
-      },
+      // hostile damage scales with the mission; the boss scales its own
+      onPlayerHit(amount, from) { hurtPlayer(amount * scale.damage, from); },
       onKill(e) {
         state.kills++;
-        state.xp += e.spec.xp;
+        state.xp += Math.round(e.spec.xp * (1 + 0.1 * (missionIndex - 1)));
       }
     });
 
     const weapon = SF.weapons.create({
       scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
+      /* Shots can press the boss's resonance nodes as well as hit enemies. */
+      rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
+      onNode: (i) => { if (boss) boss.hitNode(i); },
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
       onPhase(t) { state.phase = t; }
     });
@@ -204,29 +146,9 @@
     }
 
     /* ---------- mission flow ---------- */
-    function beginStep(i) {
-      state.step = i;
-      const m = MISSION[i];
-      if (!m) return complete();
 
-      state.beatIdx = 0;
-      state.stepT = 0;
-      hud.objective(`<b>${i + 1}/${MISSION.length}</b> ${m.objective}`);
-
-      const zone = level.zones[m.zone];
-      for (const [type, count] of m.spawn) {
-        for (let n = 0; n < count; n++) {
-          const at = spawnPointIn(zone);
-          ai.spawn(type, at.x, at.z);
-        }
-      }
-      if (m.boss) hud.banner('THE CONDUCTOR');
-      SF.audio.sfx.objective();
-    }
-
-    /* Hostiles should appear ahead of the player and at a distance — never
-       beside them, and never behind. Score candidate points on both and take
-       the best of a sample. */
+    /* Hostiles appear ahead of the player and at a distance, never beside or
+       behind, so a sector never opens with a free hit. */
     function spawnPointIn(zone) {
       const p = player.position;
       let best = null, bestScore = -Infinity;
@@ -234,40 +156,82 @@
         const x = zone.x0 + 2 + Math.random() * (zone.x1 - zone.x0 - 4);
         const z = zone.z0 + 2 + Math.random() * (zone.z1 - zone.z0 - 4);
         const d = Math.hypot(x - p.x, z - p.z);
-        if (d < 7) continue;                       // never in the player's lap
-        const ahead = z - p.z;                     // the ship runs along +Z
+        if (d < 7) continue;
+        const ahead = z - p.z;
         const score = d + Math.max(0, ahead) * 2.5 + (ahead > 2 ? 12 : 0);
         if (score > bestScore) { bestScore = score; best = { x, z }; }
       }
       return best || { x: zone.cx, z: zone.z1 - 2 };
     }
 
-    function advanceIfClear(dt) {
-      const m = MISSION[state.step];
-      if (!m) return;
-      state.stepT += dt;
+    function beginMission() {
+      const zone = level.zones[mission.zone];
+      hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
-      while (state.beatIdx < m.beats.length && state.stepT >= m.beats[state.beatIdx][0]) {
-        const [, who, line] = m.beats[state.beatIdx++];
+      for (const [type, count] of mission.waves) {
+        for (let n = 0; n < count; n++) {
+          const at = spawnPointIn(zone);
+          const e = ai.spawn(type, at.x, at.z);
+          e.maxHp = Math.round(e.maxHp * scale.hp);        // later missions are tougher
+          e.hp = e.maxHp;
+        }
+      }
+
+      if (mission.boss) {
+        boss = SF.boss.create({
+          scene, level, lights, ai, hud, player,
+          hpScale: scale.hp, dmgScale: scale.damage,
+          onPlayerHit: (amt, from) => hurtPlayer(amt, from),
+          onDefeated: () => { if (!state.bossBeaten) { state.bossBeaten = true; complete(); } }
+        });
+        hud.bossShow('THE CONDUCTOR', 'FIRST VOICE / TWO HUNDRED THOUSAND STRONG');
+        hud.bossNodes([0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8]);
+      }
+
+      state.spawned = true;
+      SF.audio.sfx.objective();
+    }
+
+    function hurtPlayer(amount, from) {
+      if (state.phase > 0 || state.over) return;
+      let dmg = amount;
+      if (character.cls === 'bulwark') dmg *= 0.78;
+      if (state.overshield > 0) {
+        const absorbed = Math.min(state.overshield, dmg);
+        state.overshield -= absorbed; dmg -= absorbed;
+      }
+      state.hp -= dmg;
+      state.damageFlash = Math.min(0.8, state.damageFlash + dmg / 60);
+      state.regenT = 0;
+      player.state.shake = Math.max(player.state.shake, 1.4);
+      const ang = Math.atan2(from.x - player.position.x, from.z - player.position.z) - player.state.yaw;
+      hud.damageFrom(-ang);
+      SF.audio.sfx.hurt();
+      hud.refreshVitals(state.hp, state.maxHp, state.overshield);
+      if (state.hp <= 0) fail();
+    }
+
+    function runBeats(dt) {
+      state.stepT += dt;
+      while (state.beatIdx < mission.beats.length && state.stepT >= mission.beats[state.beatIdx][0]) {
+        const [, who, line] = mission.beats[state.beatIdx++];
         hud.say(who, line);
         SF.audio.sfx.comms();
       }
+    }
 
-      if (ai.alive === 0 && state.stepT > 1.5) {
-        weapon.addReserve(Math.round(weapon.spec.mag * 2.5));
-        state.hp = Math.min(state.maxHp, state.hp + 25);
-        hud.refreshVitals(state.hp, state.maxHp, state.overshield);
-        hud.banner('SECTOR CLEAR');
-        beginStep(state.step + 1);
-      }
+    function checkCleared() {
+      if (mission.boss) return;                 // the boss ends its own mission
+      if (ai.alive === 0 && state.stepT > 2) complete();
     }
 
     function complete() {
+      if (state.over) return;
       state.over = true;
       state.running = false;
       document.exitPointerLock();
       const notes = SF.classes.grantXp(character, state.xp);
-      character.missions = (character.missions || 0) + 1;
+      SF.campaign.markCleared(character, missionIndex, state.time);
       SF.storage.save(character.slot, character);
       SF.audio.sfx.win();
       showEnd(true, notes);
@@ -287,16 +251,20 @@
 
     function showEnd(won, notes) {
       const acc = weapon.state.shots ? Math.round((weapon.state.hits / weapon.state.shots) * 100) : 0;
-      $('#end-title').textContent = won ? 'BROADCAST TERMINATED' : 'ASSET LOST';
+      const finale = won && mission.boss;
+      $('#end-title').textContent = finale ? 'THE ARK IS QUIET'
+                                  : won ? 'SECTOR CLEAR' : 'ASSET LOST';
       $('#end-title').className = won ? 'win' : 'lose';
-      $('#end-sub').textContent = won
-        ? 'The Erebus Cradle is quiet. It will stay quiet.'
-        : 'Recovery Division logs the loss and budgets a replacement.';
+      $('#end-sub').textContent = finale
+        ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
+        : won ? `${mission.name} secured. The route aft is open.`
+              : 'Recovery Division logs the loss and budgets a replacement.';
       $('#end-stats').innerHTML = [
+        ['MISSION', mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
         ['HOSTILES DOWN', state.kills],
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
-        ['SECTORS CLEARED', Math.max(0, state.step)],
+        ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
@@ -347,7 +315,9 @@
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
-      advanceIfClear(dt);
+      runBeats(dt);
+      if (boss) boss.update(dt, player.position);
+      checkCleared();
 
       const base = weapon.state.ads ? 3 : 9;
       hud.updateCrosshair(dt, base + Math.hypot(player.state.vel.x, player.state.vel.z) * 1.6);
@@ -367,7 +337,7 @@
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
-      hud.objective('CLICK TO ENGAGE');
+      hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> CLICK TO ENGAGE`);
       last = performance.now();
       if (!raf) raf = requestAnimationFrame(frame);
     }
@@ -376,7 +346,7 @@
       if (state.running) return;
       state.running = true;
       state.paused = false;
-      beginStep(0);
+      beginMission();
       requestLock();
       applyLookMode();
       last = performance.now();
@@ -390,6 +360,9 @@
       window.removeEventListener('keydown', onKeyDown);
       canvas.removeEventListener('contextmenu', onContext);
       document.removeEventListener('pointerlockchange', onLockChange);
+      if (boss) boss.destroy();
+      hud.bossHide();
+      hud.hideNodes();
       ai.clear();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
@@ -400,8 +373,9 @@
       onExit();
     }
 
-    return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level, engine: eng };
+    return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
+             engine: eng, get bossRef() { return boss; } };
   }
 
-  SF.game = { create, MISSION };
+  SF.game = { create };
 })(window.SF);

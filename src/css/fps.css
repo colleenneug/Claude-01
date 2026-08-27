@@ -197,3 +197,111 @@ body.in-mission #vignette{ opacity:.55; }
   margin-top:22px; font-family:var(--font-mono); font-size:11px; letter-spacing:.14em;
   color:rgba(108,139,160,.85); line-height:2.1;
 }
+
+/* ---------- boss encounter ---------- */
+#boss-bar{
+  position:absolute; left:50%; bottom:96px; transform:translateX(-50%);
+  width:min(760px, 82vw); text-align:center;
+}
+#boss-bar[hidden]{ display:none; }
+.boss-head{
+  display:flex; justify-content:space-between; align-items:baseline; gap:14px;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.24em; margin-bottom:6px;
+  text-shadow:0 2px 8px rgba(0,0,0,.95);
+}
+#boss-name{ color:var(--magenta); font-size:13px; letter-spacing:.3em; }
+#boss-hp-text{ color:var(--ink-dim); font-variant-numeric:tabular-nums; }
+#boss-shield{ letter-spacing:.18em; }
+#boss-shield.up{ color:var(--cyan); animation: critPulse 1.4s ease-in-out infinite; }
+#boss-shield.down{ color:var(--lime); }
+
+.boss-track{
+  height:16px; background:rgba(0,0,0,.62); border:1px solid rgba(255,94,168,.5);
+  overflow:hidden; box-shadow:0 0 22px rgba(255,94,168,.22), inset 0 0 18px rgba(0,0,0,.7);
+}
+.boss-track i{
+  display:block; height:100%; width:100%;
+  background:linear-gradient(90deg,#ff3fa0,#ff7a5e);
+  box-shadow:0 0 16px rgba(255,63,160,.65);
+  transition:width .25s cubic-bezier(.2,.8,.3,1);
+}
+/* while the shield is up the bar reads as unavailable, not as damage */
+#boss-bar.shielded .boss-track{ border-color:rgba(94,234,255,.7); }
+#boss-bar.shielded .boss-track i{ filter:grayscale(.65) brightness(.75); }
+#boss-bar.shielded .boss-track::after{
+  content:''; position:absolute; inset:0;
+  background:repeating-linear-gradient(115deg, transparent 0 9px, rgba(94,234,255,.16) 9px 18px);
+  pointer-events:none;
+}
+.boss-track{ position:relative; }
+#boss-bar.dead .boss-track i{ background:#3a4048; box-shadow:none; }
+
+#boss-phases{ display:flex; gap:5px; justify-content:center; margin-top:6px; }
+#boss-phases i{
+  width:46px; height:3px; background:rgba(255,94,168,.28); display:block;
+}
+#boss-phases i.done{ background:var(--lime); box-shadow:0 0 8px rgba(125,255,155,.6); }
+
+#boss-sub{
+  margin-top:7px; font-family:var(--font-mono); font-size:11px; letter-spacing:.16em;
+  color:var(--ink-dim);
+}
+
+#boss-puzzle{ display:flex; gap:10px; justify-content:center; margin-top:12px; }
+#boss-puzzle[hidden]{ display:none; }
+#boss-puzzle i{
+  width:20px; height:20px; border:2px solid var(--c, var(--cyan)); border-radius:50%;
+  display:block; opacity:.45; transition:.16s;
+}
+#boss-puzzle i.lit{
+  background:var(--c, var(--cyan)); opacity:1;
+  box-shadow:0 0 16px var(--c, var(--cyan));
+}
+
+#node-key{
+  position:absolute; left:38px; top:76px; display:flex; flex-direction:column; gap:6px;
+}
+#node-key[hidden]{ display:none; }
+#node-key span{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.18em; color:var(--c);
+  padding-left:16px; position:relative;
+}
+#node-key span::before{
+  content:''; position:absolute; left:0; top:50%; transform:translateY(-50%);
+  width:9px; height:9px; border-radius:50%; background:var(--c); box-shadow:0 0 8px var(--c);
+}
+
+/* ---------- campaign select ---------- */
+.camp-body{
+  padding:14px 6vw; overflow:auto; display:grid; gap:12px;
+  grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); align-content:start;
+}
+.camp-row{
+  display:grid; grid-template-columns:54px 1fr auto; gap:16px; align-items:center;
+  padding:14px 18px; border:1px solid var(--line); background:var(--panel);
+  text-align:left; transition:.18s;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+.camp-row:hover:not(:disabled){ border-color:var(--line-hot); transform:translateX(4px);
+  box-shadow:var(--glow-cyan); }
+.camp-row:disabled{ opacity:.4; }
+.camp-n{
+  font-family:var(--font-mono); font-size:20px; color:var(--amber);
+  text-align:center; font-variant-numeric:tabular-nums;
+}
+.camp-name{ font-size:15px; letter-spacing:.14em; color:#eafcff; }
+.camp-obj{ font-size:12px; color:var(--ink-dim); margin-top:4px; line-height:1.5; }
+.camp-state{ font-family:var(--font-mono); font-size:10px; letter-spacing:.16em; text-align:right; }
+.camp-state.cleared{ color:var(--lime); }
+.camp-state.locked{ color:rgba(108,139,160,.7); }
+.camp-state.next{ color:var(--amber); }
+.camp-row.boss{ border-color:rgba(255,94,168,.45); }
+.camp-row.boss .camp-n{ color:var(--magenta); }
+.camp-row.boss:hover:not(:disabled){ border-color:var(--magenta);
+  box-shadow:0 0 18px rgba(255,94,168,.35); }
+.camp-diff{ display:flex; gap:3px; margin-top:6px; }
+.camp-diff i{ width:12px; height:3px; background:rgba(255,180,84,.3); display:block; }
+.camp-diff i.on{ background:var(--amber); box-shadow:0 0 6px rgba(255,180,84,.6); }
+
+/* comms lines must clear the boss bar during the final mission */
+#fps-hud.boss-fight #subtitle{ bottom: 260px; }

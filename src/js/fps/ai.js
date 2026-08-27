@@ -161,6 +161,13 @@
 
     function damage(e, amount, dir) {
       if (e.dead) return false;
+      /* A shielded target takes nothing. The boss's shield comes down by
+         solving its phrase, not by shooting it. */
+      if (e.shielded) {
+        e.hitFlash = 0.5;
+        SF.audio.sfx.dryfire();
+        return false;
+      }
       e.hp -= amount;
       e.hitFlash = 1;
       e.alerted = true;

@@ -113,6 +113,19 @@
     </footer>
   </section>
 
+  <!-- ============ CAMPAIGN ============ -->
+  <section class="screen" id="screen-campaign">
+    <header class="screen-head">
+      <h2>CAMPAIGN &mdash; <span id="camp-who">&mdash;</span></h2>
+      <p>Ten missions, one route, bow to stern. Each opens where the last one closed.
+         Clear a mission to unlock the next.</p>
+    </header>
+    <div class="camp-body" id="camp-body"></div>
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="slots">&lsaquo; REGISTRY</button>
+    </footer>
+  </section>
+
   <!-- ============ BRIEFING ============ -->
   <section class="screen" id="screen-brief">
     <header class="screen-head">
@@ -121,7 +134,7 @@
     </header>
     <div class="brief-body" id="brief-body"></div>
     <footer class="screen-foot">
-      <button class="btn btn-ghost" data-go="slots">&lsaquo; ABORT</button>
+      <button class="btn btn-ghost" data-go="campaign">&lsaquo; BACK</button>
       <button class="btn btn-major" id="btn-drop">DROP</button>
     </footer>
   </section>
@@ -152,6 +165,19 @@
     <div class="hud-bar"><i id="ab-fill"></i></div>
     <div id="ab-key">Q / E</div>
   </div>
+
+  <div id="boss-bar" hidden>
+    <div class="boss-head">
+      <span id="boss-name">THE CONDUCTOR</span>
+      <span id="boss-shield" class="up">SHIELDED</span>
+      <span id="boss-hp-text">0 / 0</span>
+    </div>
+    <div class="boss-track"><i id="boss-fill"></i></div>
+    <div id="boss-phases"></div>
+    <div id="boss-sub"></div>
+    <div id="boss-puzzle" hidden></div>
+  </div>
+  <div id="node-key" hidden></div>
 
   <div class="hud-corner" id="ammo">
     <div class="hud-label">MAGAZINE</div>
@@ -226,6 +252,7 @@
 <script src="src/js/classes.js"></script>
 <script src="src/js/storage.js"></script>
 <script src="src/js/story.js"></script>
+<script src="src/js/fps/campaign.js"></script>
 <script src="src/js/fps/materials.js"></script>
 <script src="src/js/fps/lights.js"></script>
 <script src="src/js/fps/engine.js"></script>
@@ -234,6 +261,7 @@
 <script src="src/js/fps/weapons.js"></script>
 <script src="src/js/fps/ai.js"></script>
 <script src="src/js/fps/hud.js"></script>
+<script src="src/js/fps/boss.js"></script>
 <script src="src/js/fps/game.js"></script>
 <script src="src/js/ui.js"></script>
 <script src="src/js/main.js"></script>
