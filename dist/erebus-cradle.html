@@ -1798,6 +1798,111 @@ window.SF = window.SF || {};
 })(window.SF);
 
 
+/* ==== src/js/fps/lights.js ==== */
+/* ============================================================
+   Light pool.
+
+   three keys its shader programs partly on how many lights are in the
+   scene, so adding or removing one forces every material in the scene
+   to recompile. Doing that per bullet impact — eight times a shotgun
+   shell — stalls the frame badly.
+
+   So the scene gets a fixed number of point lights, once, and never
+   any more. Emitters (ceiling strips, muzzle impacts, enemy halos)
+   are just data; each frame the nearest ones are assigned to the
+   pooled lights. Constant light count, no recompiles, and only a
+   handful of lights to evaluate per fragment.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  function create(scene, poolSize) {
+    const size = poolSize || 8;
+    const pool = [];
+    for (let i = 0; i < size; i++) {
+      const l = new THREE.PointLight(0xffffff, 0, 10, 2);
+      l.position.set(0, -1000, 0);
+      scene.add(l);
+      pool.push(l);
+    }
+
+    const emitters = [];      // every light in the world, as plain data
+
+    function make(x, y, z, colour, intensity, distance, opts) {
+      const e = Object.assign({
+        x: x, y: y, z: z,
+        colour: colour, intensity: intensity, distance: distance,
+        ttl: 0, life: 0, dynamic: false, active: true, dead: false
+      }, opts || {});
+      emitters.push(e);
+      return e;
+    }
+
+    const api = {
+      /* Fixtures built into the level. */
+      addStatic(x, y, z, colour, intensity, distance) {
+        return make(x, y, z, colour, intensity, distance);
+      },
+
+      /* A brief flash — impacts, muzzle sparks. Expires on its own. */
+      flash(x, y, z, colour, intensity, distance, ttl) {
+        const e = make(x, y, z, colour, intensity, distance,
+                       { dynamic: true, ttl: ttl, life: ttl });
+        return e;
+      },
+
+      /* A light that follows something for as long as it lives. */
+      attach(colour, intensity, distance) {
+        const e = make(0, -1000, 0, colour, intensity, distance, { dynamic: true });
+        return {
+          set(x, y, z) { e.x = x; e.y = y; e.z = z; },
+          setIntensity(v) { e.intensity = v; },
+          release() { e.dead = true; }
+        };
+      },
+
+      /* Rank every live emitter and hand the best ones a real light. */
+      update(dt, viewPos) {
+        for (let i = emitters.length - 1; i >= 0; i--) {
+          const e = emitters[i];
+          if (e.ttl > 0) {
+            e.life -= dt;
+            if (e.life <= 0) e.dead = true;
+          }
+          if (e.dead) emitters.splice(i, 1);
+        }
+
+        for (const e of emitters) {
+          const dx = e.x - viewPos.x, dy = e.y - viewPos.y, dz = e.z - viewPos.z;
+          e._d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          // a flash right next to the player matters more than a distant fixture
+          e._score = e._d - (e.dynamic ? 22 : 0);
+        }
+        emitters.sort((a, b) => a._score - b._score);
+
+        for (let i = 0; i < size; i++) {
+          const l = pool[i];
+          const e = emitters[i];
+          if (!e || e._d > e.distance + 6) { l.intensity = 0; continue; }
+          l.position.set(e.x, e.y, e.z);
+          l.color.set(e.colour);
+          l.distance = e.distance;
+          // flashes fade out over their lifetime
+          l.intensity = e.ttl > 0 ? e.intensity * Math.max(0, e.life / e.ttl) : e.intensity;
+        }
+      },
+
+      get count() { return emitters.length; },
+      get poolSize() { return size; }
+    };
+
+    return api;
+  }
+
+  SF.lights = { create };
+})(window.SF);
+
+
 /* ==== src/js/fps/engine.js ==== */
 /* ============================================================
    Renderer, tone mapping and post-processing.
@@ -2019,7 +2124,11 @@ window.SF = window.SF || {};
   function build(scene) {
     const colliders = [];      // {min:{x,z}, max:{x,z}, top} — the player is blocked in XZ
     const group = new THREE.Group();
-    const lights = [];
+    /* Fixtures are recorded as data, not as THREE lights: the light pool
+       assigns a fixed set of real lights to whichever are nearest. */
+    const emitters = [];
+    const emit = (x, y, z, colour, intensity, distance) =>
+      emitters.push({ x, y, z, colour, intensity, distance });
     const zones = {};
     const props = [];
 
@@ -2127,10 +2236,7 @@ window.SF = window.SF || {};
         strip.position.set(px, s.h - 0.28, pz);
         group.add(strip);
 
-        const l = new THREE.PointLight(s.light, 2.6, 22, 2);
-        l.position.set(px, s.h - 0.7, pz);
-        group.add(l);
-        lights.push(l);
+        emit(px, s.h - 0.7, pz, s.light, 3.4, 24);
       }
     }
 
@@ -2168,9 +2274,7 @@ window.SF = window.SF || {};
       scr.position.set(x, 1.02, z);
       scr.rotation.set(-Math.PI / 3, ry || 0, 0);
       group.add(scr);
-      const l = new THREE.PointLight(colour || 0x5eeaff, 0.5, 5, 2);
-      l.position.set(x, 1.4, z);
-      group.add(l);
+      emit(x, 1.4, z, colour || 0x5eeaff, 0.9, 6);
     };
 
     // docking collar
@@ -2214,16 +2318,13 @@ window.SF = window.SF || {};
       SF.materials.emissive(0xff6a4a, 3.0));
     core.position.set(0, 3.1, 72);
     group.add(core);
-    const coreLight = new THREE.PointLight(0xff6a4a, 3.2, 30, 2);
-    coreLight.position.set(0, 3.4, 72);
-    group.add(coreLight);
-    lights.push(coreLight);
+    emit(0, 3.4, 72, 0xff6a4a, 4.2, 32);
     colliders.push({ min: { x: -2.4, z: 69.6 }, max: { x: 2.4, z: 74.4 }, top: 6.2, bottom: 0 });
 
     scene.add(group);
 
     return {
-      group, colliders, lights, zones, props,
+      group, colliders, emitters, zones, props,
       playerStart: new THREE.Vector3(0, 0, -40),
       bounds: { minX: -22, maxX: 22, minZ: -48, maxZ: 80 }
     };
@@ -2263,7 +2364,7 @@ window.SF = window.SF || {};
       eye: EYE_STAND,
       bob: 0, bobAmount: 0,
       recoil: new THREE.Vector2(),     // camera kick, decays back to zero
-      shake: 0,
+      shake: 0, shakePhase: 0,
       landDip: 0,
       alive: true
     };
@@ -2401,13 +2502,16 @@ window.SF = window.SF || {};
       const targetEye = state.crouching ? EYE_CROUCH : EYE_STAND;
       state.eye += (targetEye - state.eye) * Math.min(1, 12 * dt);
       state.landDip *= Math.max(0, 1 - 7 * dt);
-      state.shake *= Math.max(0, 1 - 5 * dt);
+      state.shake *= Math.max(0, 1 - 7 * dt);
       state.recoil.multiplyScalar(Math.max(0, 1 - 9 * dt));
 
       const bobY = Math.sin(state.bob) * 0.055 * state.bobAmount;
       const bobX = Math.cos(state.bob * 0.5) * 0.04 * state.bobAmount;
-      const shakeX = (Math.random() - 0.5) * state.shake * 0.06;
-      const shakeY = (Math.random() - 0.5) * state.shake * 0.06;
+      /* Smooth oscillation rather than per-frame noise: random offsets every
+         frame read as a rendering glitch, not as weight. */
+      state.shakePhase += dt * 34;
+      const shakeX = Math.sin(state.shakePhase) * state.shake * 0.035;
+      const shakeY = Math.cos(state.shakePhase * 1.7) * state.shake * 0.03;
 
       camera.position.set(
         state.pos.x + bobX + shakeX,
@@ -2423,7 +2527,7 @@ window.SF = window.SF || {};
     function addRecoil(pitch, yaw) {
       state.recoil.y += pitch;
       state.recoil.x += yaw;
-      state.yaw += yaw * 0.4;
+      state.yaw += yaw * 0.12;         // a nudge, not a permanent walk off target
     }
 
     return {
@@ -2491,7 +2595,7 @@ window.SF = window.SF || {};
   };
 
   function create(ctx) {
-    const { scene, camera, player, ai, hud } = ctx;
+    const { scene, camera, player, ai, hud, lights } = ctx;
     const spec = WEAPONS[ctx.classId];
     const ability = ABILITIES[ctx.classId];
 
@@ -2534,10 +2638,8 @@ window.SF = window.SF || {};
     const AIM = new THREE.Vector3(0, -0.082, -0.3);
     view.position.copy(HIP);
 
-    /* muzzle flash: a light plus a billboard, both flicked on for a frame or two */
-    const flashLight = new THREE.PointLight(spec.colour, 0, 9, 2);
-    flashLight.position.set(0, 0.02, -0.66);
-    view.add(flashLight);
+    /* muzzle flash: a pooled light plus a billboard, flicked on for a frame or two */
+    const flashLight = lights.attach(spec.colour, 0, 10);
     const flashMat = new THREE.SpriteMaterial({
       color: spec.colour, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false
@@ -2547,47 +2649,82 @@ window.SF = window.SF || {};
     flash.position.set(0, 0.02, -0.68);
     view.add(flash);
 
-    /* ---------- transient effects ---------- */
+    /* ---------- transient effects, all pre-allocated ----------
+       Firing must not allocate: building geometry or materials mid-burst
+       shows up as a hitch, and adding lights would recompile every shader
+       in the scene. Everything below is built once and recycled. */
+    const TRACERS = 32, SPARKS = 64;
+
     const tracers = [];
-    const impacts = [];
-    const tracerMat = new THREE.LineBasicMaterial({
-      color: spec.tracer, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending
-    });
+    for (let i = 0; i < TRACERS; i++) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+        color: spec.tracer, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      line.visible = false;
+      line.frustumCulled = false;
+      scene.add(line);
+      tracers.push({ line, life: 0 });
+    }
+    let tracerNext = 0;
+
     const sparkGeo = new THREE.SphereGeometry(0.035, 6, 6);
+    const sparkMat = new THREE.MeshBasicMaterial({
+      color: 0xffd9a0, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const sparks = [];
+    for (let i = 0; i < SPARKS; i++) {
+      const m = new THREE.Mesh(sparkGeo, sparkMat);
+      m.visible = false;
+      m.frustumCulled = false;
+      scene.add(m);
+      sparks.push({ mesh: m, life: 0, vel: new THREE.Vector3() });
+    }
+    let sparkNext = 0;
 
     function spawnTracer(from, to) {
-      const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
-      const line = new THREE.Line(geo, tracerMat.clone());
-      scene.add(line);
-      tracers.push({ line, life: 0.06 });
+      const t = tracers[tracerNext];
+      tracerNext = (tracerNext + 1) % TRACERS;
+      const pos = t.line.geometry.attributes.position;
+      pos.setXYZ(0, from.x, from.y, from.z);
+      pos.setXYZ(1, to.x, to.y, to.z);
+      pos.needsUpdate = true;
+      t.life = 0.06;
+      t.line.visible = true;
+      t.line.material.opacity = 0.9;
     }
 
     function spawnImpact(point, normal, colour) {
-      const mat = new THREE.MeshBasicMaterial({
-        color: colour || 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending
-      });
-      for (let i = 0; i < 5; i++) {
-        const s = new THREE.Mesh(sparkGeo, mat);
-        s.position.copy(point);
-        scene.add(s);
-        impacts.push({
-          mesh: s, life: 0.32,
-          vel: new THREE.Vector3(
-            normal.x + (Math.random() - 0.5) * 1.6,
-            normal.y + Math.random() * 1.4,
-            normal.z + (Math.random() - 0.5) * 1.6
-          ).multiplyScalar(2.4)
-        });
+      for (let i = 0; i < 4; i++) {
+        const s = sparks[sparkNext];
+        sparkNext = (sparkNext + 1) % SPARKS;
+        s.mesh.position.copy(point);
+        s.mesh.scale.setScalar(1);
+        s.mesh.visible = true;
+        s.life = 0.32;
+        s.vel.set(
+          normal.x + (Math.random() - 0.5) * 1.6,
+          normal.y + Math.random() * 1.4,
+          normal.z + (Math.random() - 0.5) * 1.6
+        ).multiplyScalar(2.4);
       }
-      const l = new THREE.PointLight(colour || 0xffb066, 1.6, 4, 2);
-      l.position.copy(point);
-      scene.add(l);
-      impacts.push({ mesh: l, life: 0.1, vel: new THREE.Vector3(), isLight: true });
+      lights.flash(point.x, point.y, point.z, colour || 0xffb066, 2.2, 5, 0.12);
     }
 
     /* ---------- firing ---------- */
-    const raycaster = new THREE.Raycaster();
-    raycaster.far = spec.range;
+    let muzzle = 0;                              // muzzle-flash decay, 1 -> 0
+    const muzzleWorld = new THREE.Vector3();
+    const muzzleDir = new THREE.Vector3();
+    const shotOrigin = new THREE.Vector3();
+    const shotDir = new THREE.Vector3();
+    const pelletDir = new THREE.Vector3();
+    const tracerFrom = new THREE.Vector3();
+    const IMPACT_N = new THREE.Vector3();
+    const camRight = new THREE.Vector3();
+    const camUp = new THREE.Vector3();
 
     function fire() {
       if (w.reloading || w.cool > 0) return;
@@ -2598,21 +2735,27 @@ window.SF = window.SF || {};
       w.shots++;
 
       const spread = (w.ads ? spec.adsSpread : spec.spread) * (player.state.sprinting ? 2.1 : 1);
-      const origin = player.eyePosition;
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
+      const eye = player.eyePosition;
+      shotOrigin.set(eye.x, eye.y, eye.z);
+      camera.getWorldDirection(shotDir);
+      camera.matrixWorld.extractBasis(camRight, camUp, muzzleDir);
+      tracerFrom.copy(shotOrigin)
+        .addScaledVector(shotDir, 0.75)
+        .addScaledVector(camRight, w.adsAmount > 0.5 ? 0.0 : 0.17)
+        .addScaledVector(camUp, w.adsAmount > 0.5 ? -0.02 : -0.13);
 
       let anyHit = false, anyHead = false;
       for (let p = 0; p < spec.pellets; p++) {
-        const dir = forward.clone();
-        dir.x += (Math.random() - 0.5) * spread * 2;
-        dir.y += (Math.random() - 0.5) * spread * 2;
-        dir.z += (Math.random() - 0.5) * spread * 2;
-        dir.normalize();
+        pelletDir.copy(shotDir);
+        pelletDir.x += (Math.random() - 0.5) * spread * 2;
+        pelletDir.y += (Math.random() - 0.5) * spread * 2;
+        pelletDir.z += (Math.random() - 0.5) * spread * 2;
+        pelletDir.normalize();
+        const dir = pelletDir;
 
-        const shot = ai.raycast(origin, dir, spec.range, ctx.level.colliders, spec.pierce);
-        const end = shot.point || origin.clone().add(dir.multiplyScalar(spec.range));
-        spawnTracer(origin.clone().add(forward.clone().multiplyScalar(0.6)), end);
+        const shot = ai.raycast(shotOrigin, dir, spec.range, ctx.level.colliders, spec.pierce);
+        const end = shot.point || shotOrigin.clone().addScaledVector(dir, spec.range);
+        spawnTracer(tracerFrom, end);
 
         if (shot.enemies && shot.enemies.length) {
           for (const h of shot.enemies) {
@@ -2622,10 +2765,10 @@ window.SF = window.SF || {};
             anyHit = true;
             if (h.head) anyHead = true;
             if (dead) { w.kills++; hud.killFeed(h.enemy.spec.name); }
-            spawnImpact(h.point, dir.clone().negate(), 0xff5a6a);
+            spawnImpact(h.point, IMPACT_N.copy(dir).negate(), 0xff5a6a);
           }
         } else if (shot.point) {
-          spawnImpact(shot.point, shot.normal || dir.clone().negate(), 0xffc07a);
+          spawnImpact(shot.point, shot.normal || IMPACT_N.copy(dir).negate(), 0xffc07a);
         }
       }
 
@@ -2633,9 +2776,9 @@ window.SF = window.SF || {};
 
       player.addRecoil(spec.recoil.pitch * (w.ads ? 0.6 : 1),
                        (Math.random() - 0.5) * spec.recoil.yaw * 2);
-      player.state.shake = Math.max(player.state.shake, spec.shake);
+      player.state.shake = Math.max(player.state.shake, spec.shake * 0.5);
 
-      flashLight.intensity = 4.5;
+      muzzle = 1;
       flashMat.opacity = 0.95;
       flash.material.rotation = Math.random() * Math.PI;
       view.position.z += 0.055;
@@ -2665,10 +2808,10 @@ window.SF = window.SF || {};
         player.state.shake = 2.2;
         hud.banner('SYSTEMS BREACH — ' + hitCount + ' STUNNED');
       } else {
-        const forward = new THREE.Vector3();
+        const forward = muzzleDir;
         camera.getWorldDirection(forward);
         forward.y = 0; forward.normalize();
-        const dest = player.position.clone().add(forward.multiplyScalar(6.5));
+        const dest = player.position.clone().addScaledVector(forward, 6.5);
         player.state.pos.x = dest.x; player.state.pos.z = dest.z;
         w.primed = true;
         ctx.onPhase(1.4);
@@ -2712,31 +2855,58 @@ window.SF = window.SF || {};
         camera.updateProjectionMatrix();
       }
 
-      flashLight.intensity *= Math.max(0, 1 - 22 * dt);
+      muzzle *= Math.max(0, 1 - 22 * dt);
       flashMat.opacity *= Math.max(0, 1 - 26 * dt);
+      // the muzzle light rides just in front of the barrel, in world space
+      camera.getWorldPosition(muzzleWorld);
+      camera.getWorldDirection(muzzleDir);
+      muzzleWorld.addScaledVector(muzzleDir, 0.8);
+      flashLight.set(muzzleWorld.x, muzzleWorld.y, muzzleWorld.z);
+      flashLight.setIntensity(muzzle * 5.5);
 
-      for (let i = tracers.length - 1; i >= 0; i--) {
-        const t = tracers[i];
+      for (const t of tracers) {
+        if (t.life <= 0) continue;
         t.life -= dt;
-        t.line.material.opacity = Math.max(0, t.life / 0.06) * 0.9;
-        if (t.life <= 0) { scene.remove(t.line); t.line.geometry.dispose(); tracers.splice(i, 1); }
+        if (t.life <= 0) { t.line.visible = false; continue; }
+        t.line.material.opacity = (t.life / 0.06) * 0.9;
       }
-      for (let i = impacts.length - 1; i >= 0; i--) {
-        const s = impacts[i];
+      for (const s of sparks) {
+        if (s.life <= 0) continue;
         s.life -= dt;
-        if (!s.isLight) {
-          s.mesh.position.addScaledVector(s.vel, dt);
-          s.vel.y -= 9 * dt;
-          s.mesh.material.opacity = Math.max(0, s.life / 0.32);
-        } else {
-          s.mesh.intensity = Math.max(0, s.life / 0.1) * 1.6;
-        }
-        if (s.life <= 0) { scene.remove(s.mesh); impacts.splice(i, 1); }
+        if (s.life <= 0) { s.mesh.visible = false; continue; }
+        s.mesh.position.addScaledVector(s.vel, dt);
+        s.vel.y -= 9 * dt;
+        s.mesh.scale.setScalar(s.life / 0.32);   // per-spark fade, material is shared
       }
     }
 
+    /* Three compiles a shader and uploads geometry the first time an object
+       is actually rendered. For pooled tracers and sparks that would land on
+       the first shot, as a hitch. Show them all for one frame up front so the
+       cost is paid during loading instead. */
+    function prewarm(renderer, sceneRef, cameraRef) {
+      const eye = player.eyePosition;
+      for (const t of tracers) {
+        const pos = t.line.geometry.attributes.position;
+        pos.setXYZ(0, eye.x, eye.y - 0.2, eye.z);
+        pos.setXYZ(1, eye.x + 0.01, eye.y - 0.2, eye.z + 0.01);
+        pos.needsUpdate = true;
+        t.line.material.opacity = 0.001;
+        t.line.visible = true;
+      }
+      for (const s2 of sparks) {
+        s2.mesh.position.set(eye.x, eye.y - 0.2, eye.z);
+        s2.mesh.visible = true;
+      }
+      sparkMat.opacity = 0.001;
+      renderer.compile(sceneRef, cameraRef);
+      renderer.render(sceneRef, cameraRef);
+      for (const t of tracers) { t.line.visible = false; t.life = 0; }
+      for (const s2 of sparks) { s2.mesh.visible = false; s2.life = 0; }
+    }
+
     return {
-      state: w, spec, ability, view,
+      state: w, spec, ability, view, prewarm,
       update, fire, reload, useAbility,
       setAds(v) { w.ads = v; },
       addReserve(n) { w.reserve += n; hud.refreshAmmo(w); }
@@ -2779,7 +2949,7 @@ window.SF = window.SF || {};
   };
 
   function create(ctx) {
-    const { scene, level } = ctx;
+    const { scene, level, lights } = ctx;
     const enemies = [];
     const projectiles = [];
     const tmp = new THREE.Vector3();
@@ -2788,7 +2958,8 @@ window.SF = window.SF || {};
     function buildRig(spec) {
       const g = new THREE.Group();
       const skin = new THREE.MeshStandardMaterial({
-        color: spec.colour, metalness: 0.7, roughness: 0.55
+        color: spec.colour, metalness: 0.7, roughness: 0.55,
+        emissive: new THREE.Color(0xff2222), emissiveIntensity: 0
       });
       const glow = new THREE.MeshStandardMaterial({
         color: 0x0a0a0c, emissive: new THREE.Color(spec.glow), emissiveIntensity: 2.4,
@@ -2822,11 +2993,10 @@ window.SF = window.SF || {};
         limbs.push({ ring });
       }
 
-      const halo = new THREE.PointLight(spec.glow, 0.9, 7, 2);
-      halo.position.y = h * 0.8;
-      g.add(halo);
-
       for (const c of g.children) { c.castShadow = true; c.receiveShadow = true; }
+      // the halo is a pooled light, not a child light: adding one per enemy
+      // would change the scene light count and recompile every shader
+      const halo = lights.attach(spec.glow, 1.1, 8);
       return { group: g, limbs, head, halo, materials: [skin, glow] };
     }
 
@@ -2919,7 +3089,7 @@ window.SF = window.SF || {};
       if (e.hp <= 0) {
         e.dead = true;
         e.deathT = 0;
-        e.rig.halo.intensity = 0;
+        e.rig.halo.setIntensity(0);
         SF.audio.sfx.enemyDown();
         ctx.onKill(e);
         return true;
@@ -2979,7 +3149,7 @@ window.SF = window.SF || {};
           toPlayer.y = 0;
           const dir = toPlayer.clone().normalize();
 
-          const stopAt = e.spec.ranged ? Math.min(e.spec.range * 0.55, 14) : e.spec.range * 0.75;
+          const stopAt = e.spec.ranged ? Math.min(e.spec.range * 0.55, 14) : e.spec.range * 0.95;
           if (dist > stopAt) {
             // avoidance: if the direct step is blocked, try fanned-out angles
             let move = dir.clone();
@@ -3015,6 +3185,19 @@ window.SF = window.SF || {};
         if (!blocked(nx, e.pos.z, e.spec.radius)) e.pos.x = nx; else e.vel.x = 0;
         if (!blocked(e.pos.x, nz, e.spec.radius)) e.pos.z = nz; else e.vel.z = 0;
 
+        /* Never let a body reach the camera: at contact range its geometry
+           clips through the near plane and fills the screen. Hold them at
+           arm's length instead. */
+        const sepX = e.pos.x - playerPos.x, sepZ = e.pos.z - playerPos.z;
+        const sep = Math.hypot(sepX, sepZ);
+        const minSep = e.spec.radius + 1.25;
+        if (sep > 0.001 && sep < minSep) {
+          const px = playerPos.x + (sepX / sep) * minSep;
+          const pz = playerPos.z + (sepZ / sep) * minSep;
+          if (!blocked(px, pz, e.spec.radius)) { e.pos.x = px; e.pos.z = pz; }
+          e.vel.x = 0; e.vel.z = 0;
+        }
+
         // pose
         e.bob += dt * (1.5 + e.vel.length() * 1.4);
         if (e.spec.flying) {
@@ -3030,10 +3213,10 @@ window.SF = window.SF || {};
           }
         }
         e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+        e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
 
-        // hit flash tints the emissive
-        e.rig.materials[0].emissive = new THREE.Color(0xff2222);
-        e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.6;
+        // hit flash rides the emissive intensity; the colour is set once at build
+        e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
       }
 
       stepProjectiles(dt, playerPos);
@@ -3042,48 +3225,69 @@ window.SF = window.SF || {};
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         if (e.dead && e.deathT > 1.4) {
+          e.rig.halo.release();
           scene.remove(e.rig.group);
           enemies.splice(i, 1);
         }
       }
     }
 
-    /* ---------- enemy projectiles ---------- */
+    /* ---------- enemy projectiles, pre-allocated ---------- */
+    const PROJECTILES = 24;
     const projGeo = new THREE.SphereGeometry(0.13, 8, 8);
+    const projFrom = new THREE.Vector3();
+    const projAim = new THREE.Vector3();
+
+    for (let i = 0; i < PROJECTILES; i++) {
+      const mesh = new THREE.Mesh(projGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      mesh.visible = false;
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+      projectiles.push({
+        mesh: mesh, dir: new THREE.Vector3(), speed: 24, life: 0, damage: 0,
+        light: lights.attach(0xffffff, 0, 7)
+      });
+    }
 
     function fireProjectile(e, playerPos) {
-      const mat = new THREE.MeshBasicMaterial({ color: e.spec.glow });
-      const m = new THREE.Mesh(projGeo, mat);
-      const from = new THREE.Vector3(e.pos.x, e.pos.y + e.spec.height * 0.62, e.pos.z);
-      m.position.copy(from);
-      scene.add(m);
-      const l = new THREE.PointLight(e.spec.glow, 1.1, 6, 2);
-      m.add(l);
+      const p = projectiles.find((q) => q.life <= 0);
+      if (!p) return;                       // every slot in flight; skip this shot
 
-      const aim = playerPos.clone();
-      aim.y += 1.2;
-      aim.x += (Math.random() - 0.5) * 1.4;
-      aim.y += (Math.random() - 0.5) * 0.7;
-      const dir = aim.sub(from).normalize();
-      projectiles.push({ mesh: m, dir, speed: 24, life: 3, damage: e.spec.damage });
+      projFrom.set(e.pos.x, e.pos.y + e.spec.height * 0.62, e.pos.z);
+      p.mesh.position.copy(projFrom);
+      p.mesh.material.color.set(e.spec.glow);
+      p.mesh.visible = true;
+
+      projAim.copy(playerPos);
+      projAim.y += 1.2;
+      projAim.x += (Math.random() - 0.5) * 1.4;
+      projAim.y += (Math.random() - 0.5) * 0.7;
+      p.dir.copy(projAim).sub(projFrom).normalize();
+      p.life = 3;
+      p.damage = e.spec.damage;
+      p.light.setIntensity(1.6);
       SF.audio.sfx.enemyShot();
     }
 
     function stepProjectiles(dt, playerPos) {
-      for (let i = projectiles.length - 1; i >= 0; i--) {
-        const p = projectiles[i];
+      for (const p of projectiles) {
+        if (p.life <= 0) continue;
         p.life -= dt;
         p.mesh.position.addScaledVector(p.dir, p.speed * dt);
+        p.light.set(p.mesh.position.x, p.mesh.position.y, p.mesh.position.z);
 
-        const hitPlayer = p.mesh.position.distanceTo(
-          new THREE.Vector3(playerPos.x, playerPos.y + 1.2, playerPos.z)) < 0.65;
-        const hitWall = blocked(p.mesh.position.x, p.mesh.position.z, 0.1) &&
-                        p.mesh.position.y < 4;
+        const dx = p.mesh.position.x - playerPos.x;
+        const dy = p.mesh.position.y - (playerPos.y + 1.2);
+        const dz = p.mesh.position.z - playerPos.z;
+        const hitPlayer = (dx * dx + dy * dy + dz * dz) < 0.42;
+        const hitWall = p.mesh.position.y < 4 &&
+                        blocked(p.mesh.position.x, p.mesh.position.z, 0.1);
 
         if (hitPlayer) ctx.onPlayerHit(p.damage, p.mesh.position);
         if (hitPlayer || hitWall || p.life <= 0) {
-          scene.remove(p.mesh);
-          projectiles.splice(i, 1);
+          p.life = 0;
+          p.mesh.visible = false;
+          p.light.setIntensity(0);
         }
       }
     }
@@ -3097,13 +3301,25 @@ window.SF = window.SF || {};
       return rayWalls(from, dir, dist, level.colliders).dist >= dist - 0.4;
     }
 
+    /* Same reason as the weapon pools: pay for the projectile shader and
+       geometry upload during loading, not on the first incoming shot. */
+    function prewarm(renderer, sceneRef, cameraRef) {
+      for (const p of projectiles) { p.mesh.position.set(0, -0.6, 0); p.mesh.visible = true; }
+      renderer.compile(sceneRef, cameraRef);
+      renderer.render(sceneRef, cameraRef);
+      for (const p of projectiles) p.mesh.visible = false;
+    }
+
     return {
-      enemies, spawn, step, damage, pulse, raycast, visible, TYPES,
+      enemies, spawn, step, damage, pulse, raycast, visible, prewarm, TYPES,
       get alive() { return enemies.filter((e) => !e.dead).length; },
       clear() {
-        for (const e of enemies) scene.remove(e.rig.group);
+        for (const e of enemies) { e.rig.halo.release(); scene.remove(e.rig.group); }
         enemies.length = 0;
-        for (const p of projectiles) scene.remove(p.mesh);
+        for (const p of projectiles) {
+          p.life = 0; p.mesh.visible = false; p.light.release();
+          scene.remove(p.mesh);
+        }
         projectiles.length = 0;
       }
     };
@@ -3289,6 +3505,12 @@ window.SF = window.SF || {};
     const { scene, camera } = eng;
 
     const level = SF.level.build(scene);
+
+    /* One fixed set of point lights for the whole mission. See fps/lights.js:
+       changing the scene's light count recompiles every shader, so nothing
+       ever adds or removes one after this. */
+    const lights = SF.lights.create(scene, 8);
+    for (const e of level.emitters) lights.addStatic(e.x, e.y, e.z, e.colour, e.intensity, e.distance);
     scene.add(new THREE.HemisphereLight(0x4a6479, 0x141a22, 0.95));
     const key = new THREE.DirectionalLight(0x9ec4dd, 0.6);
     key.position.set(8, 20, -12);
@@ -3310,7 +3532,7 @@ window.SF = window.SF || {};
     };
 
     const ai = SF.ai.create({
-      scene, level,
+      scene, level, lights,
       onPlayerHit(amount, from) {
         if (state.phase > 0 || state.over) return;
         let dmg = amount;
@@ -3336,7 +3558,7 @@ window.SF = window.SF || {};
     });
 
     const weapon = SF.weapons.create({
-      scene, camera, player, ai, hud, level,
+      scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
       onPhase(t) { state.phase = t; }
@@ -3519,7 +3741,11 @@ window.SF = window.SF || {};
       raf = requestAnimationFrame(frame);
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (!state.running || state.paused) { eng.render(now / 1000, state.damageFlash); return; }
+      if (!state.running || state.paused) {
+        lights.update(dt, camera.position);
+        eng.render(now / 1000, state.damageFlash);
+        return;
+      }
 
       state.time += dt;
       state.phase = Math.max(0, state.phase - dt);
@@ -3527,6 +3753,7 @@ window.SF = window.SF || {};
 
       player.update(dt);
       weapon.update(dt, firing);
+      lights.update(dt, camera.position);
 
       const eye = player.eyePosition;
       const visibleTargets = ai.enemies.some((e) => !e.dead && ai.visible(eye, e));
@@ -3552,6 +3779,9 @@ window.SF = window.SF || {};
     /* Build and render the world, but hold the mission until the player
        clicks to engage — that click is the gesture pointer lock needs. */
     function start() {
+      weapon.prewarm(eng.renderer, scene, camera);
+      ai.prewarm(eng.renderer, scene, camera);
+      eng.renderer.compile(scene, camera);
       hud.setVisible(true);
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);

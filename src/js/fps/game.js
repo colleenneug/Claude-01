@@ -74,6 +74,12 @@
     const { scene, camera } = eng;
 
     const level = SF.level.build(scene);
+
+    /* One fixed set of point lights for the whole mission. See fps/lights.js:
+       changing the scene's light count recompiles every shader, so nothing
+       ever adds or removes one after this. */
+    const lights = SF.lights.create(scene, 8);
+    for (const e of level.emitters) lights.addStatic(e.x, e.y, e.z, e.colour, e.intensity, e.distance);
     scene.add(new THREE.HemisphereLight(0x4a6479, 0x141a22, 0.95));
     const key = new THREE.DirectionalLight(0x9ec4dd, 0.6);
     key.position.set(8, 20, -12);
@@ -95,7 +101,7 @@
     };
 
     const ai = SF.ai.create({
-      scene, level,
+      scene, level, lights,
       onPlayerHit(amount, from) {
         if (state.phase > 0 || state.over) return;
         let dmg = amount;
@@ -121,7 +127,7 @@
     });
 
     const weapon = SF.weapons.create({
-      scene, camera, player, ai, hud, level,
+      scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
       onPhase(t) { state.phase = t; }
@@ -304,7 +310,11 @@
       raf = requestAnimationFrame(frame);
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (!state.running || state.paused) { eng.render(now / 1000, state.damageFlash); return; }
+      if (!state.running || state.paused) {
+        lights.update(dt, camera.position);
+        eng.render(now / 1000, state.damageFlash);
+        return;
+      }
 
       state.time += dt;
       state.phase = Math.max(0, state.phase - dt);
@@ -312,6 +322,7 @@
 
       player.update(dt);
       weapon.update(dt, firing);
+      lights.update(dt, camera.position);
 
       const eye = player.eyePosition;
       const visibleTargets = ai.enemies.some((e) => !e.dead && ai.visible(eye, e));
@@ -337,6 +348,9 @@
     /* Build and render the world, but hold the mission until the player
        clicks to engage — that click is the gesture pointer lock needs. */
     function start() {
+      weapon.prewarm(eng.renderer, scene, camera);
+      ai.prewarm(eng.renderer, scene, camera);
+      eng.renderer.compile(scene, camera);
       hud.setVisible(true);
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);

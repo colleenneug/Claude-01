@@ -42,7 +42,7 @@
   };
 
   function create(ctx) {
-    const { scene, camera, player, ai, hud } = ctx;
+    const { scene, camera, player, ai, hud, lights } = ctx;
     const spec = WEAPONS[ctx.classId];
     const ability = ABILITIES[ctx.classId];
 
@@ -85,10 +85,8 @@
     const AIM = new THREE.Vector3(0, -0.082, -0.3);
     view.position.copy(HIP);
 
-    /* muzzle flash: a light plus a billboard, both flicked on for a frame or two */
-    const flashLight = new THREE.PointLight(spec.colour, 0, 9, 2);
-    flashLight.position.set(0, 0.02, -0.66);
-    view.add(flashLight);
+    /* muzzle flash: a pooled light plus a billboard, flicked on for a frame or two */
+    const flashLight = lights.attach(spec.colour, 0, 10);
     const flashMat = new THREE.SpriteMaterial({
       color: spec.colour, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false
@@ -98,47 +96,82 @@
     flash.position.set(0, 0.02, -0.68);
     view.add(flash);
 
-    /* ---------- transient effects ---------- */
+    /* ---------- transient effects, all pre-allocated ----------
+       Firing must not allocate: building geometry or materials mid-burst
+       shows up as a hitch, and adding lights would recompile every shader
+       in the scene. Everything below is built once and recycled. */
+    const TRACERS = 32, SPARKS = 64;
+
     const tracers = [];
-    const impacts = [];
-    const tracerMat = new THREE.LineBasicMaterial({
-      color: spec.tracer, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending
-    });
+    for (let i = 0; i < TRACERS; i++) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+        color: spec.tracer, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      line.visible = false;
+      line.frustumCulled = false;
+      scene.add(line);
+      tracers.push({ line, life: 0 });
+    }
+    let tracerNext = 0;
+
     const sparkGeo = new THREE.SphereGeometry(0.035, 6, 6);
+    const sparkMat = new THREE.MeshBasicMaterial({
+      color: 0xffd9a0, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const sparks = [];
+    for (let i = 0; i < SPARKS; i++) {
+      const m = new THREE.Mesh(sparkGeo, sparkMat);
+      m.visible = false;
+      m.frustumCulled = false;
+      scene.add(m);
+      sparks.push({ mesh: m, life: 0, vel: new THREE.Vector3() });
+    }
+    let sparkNext = 0;
 
     function spawnTracer(from, to) {
-      const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
-      const line = new THREE.Line(geo, tracerMat.clone());
-      scene.add(line);
-      tracers.push({ line, life: 0.06 });
+      const t = tracers[tracerNext];
+      tracerNext = (tracerNext + 1) % TRACERS;
+      const pos = t.line.geometry.attributes.position;
+      pos.setXYZ(0, from.x, from.y, from.z);
+      pos.setXYZ(1, to.x, to.y, to.z);
+      pos.needsUpdate = true;
+      t.life = 0.06;
+      t.line.visible = true;
+      t.line.material.opacity = 0.9;
     }
 
     function spawnImpact(point, normal, colour) {
-      const mat = new THREE.MeshBasicMaterial({
-        color: colour || 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending
-      });
-      for (let i = 0; i < 5; i++) {
-        const s = new THREE.Mesh(sparkGeo, mat);
-        s.position.copy(point);
-        scene.add(s);
-        impacts.push({
-          mesh: s, life: 0.32,
-          vel: new THREE.Vector3(
-            normal.x + (Math.random() - 0.5) * 1.6,
-            normal.y + Math.random() * 1.4,
-            normal.z + (Math.random() - 0.5) * 1.6
-          ).multiplyScalar(2.4)
-        });
+      for (let i = 0; i < 4; i++) {
+        const s = sparks[sparkNext];
+        sparkNext = (sparkNext + 1) % SPARKS;
+        s.mesh.position.copy(point);
+        s.mesh.scale.setScalar(1);
+        s.mesh.visible = true;
+        s.life = 0.32;
+        s.vel.set(
+          normal.x + (Math.random() - 0.5) * 1.6,
+          normal.y + Math.random() * 1.4,
+          normal.z + (Math.random() - 0.5) * 1.6
+        ).multiplyScalar(2.4);
       }
-      const l = new THREE.PointLight(colour || 0xffb066, 1.6, 4, 2);
-      l.position.copy(point);
-      scene.add(l);
-      impacts.push({ mesh: l, life: 0.1, vel: new THREE.Vector3(), isLight: true });
+      lights.flash(point.x, point.y, point.z, colour || 0xffb066, 2.2, 5, 0.12);
     }
 
     /* ---------- firing ---------- */
-    const raycaster = new THREE.Raycaster();
-    raycaster.far = spec.range;
+    let muzzle = 0;                              // muzzle-flash decay, 1 -> 0
+    const muzzleWorld = new THREE.Vector3();
+    const muzzleDir = new THREE.Vector3();
+    const shotOrigin = new THREE.Vector3();
+    const shotDir = new THREE.Vector3();
+    const pelletDir = new THREE.Vector3();
+    const tracerFrom = new THREE.Vector3();
+    const IMPACT_N = new THREE.Vector3();
+    const camRight = new THREE.Vector3();
+    const camUp = new THREE.Vector3();
 
     function fire() {
       if (w.reloading || w.cool > 0) return;
@@ -149,21 +182,27 @@
       w.shots++;
 
       const spread = (w.ads ? spec.adsSpread : spec.spread) * (player.state.sprinting ? 2.1 : 1);
-      const origin = player.eyePosition;
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
+      const eye = player.eyePosition;
+      shotOrigin.set(eye.x, eye.y, eye.z);
+      camera.getWorldDirection(shotDir);
+      camera.matrixWorld.extractBasis(camRight, camUp, muzzleDir);
+      tracerFrom.copy(shotOrigin)
+        .addScaledVector(shotDir, 0.75)
+        .addScaledVector(camRight, w.adsAmount > 0.5 ? 0.0 : 0.17)
+        .addScaledVector(camUp, w.adsAmount > 0.5 ? -0.02 : -0.13);
 
       let anyHit = false, anyHead = false;
       for (let p = 0; p < spec.pellets; p++) {
-        const dir = forward.clone();
-        dir.x += (Math.random() - 0.5) * spread * 2;
-        dir.y += (Math.random() - 0.5) * spread * 2;
-        dir.z += (Math.random() - 0.5) * spread * 2;
-        dir.normalize();
+        pelletDir.copy(shotDir);
+        pelletDir.x += (Math.random() - 0.5) * spread * 2;
+        pelletDir.y += (Math.random() - 0.5) * spread * 2;
+        pelletDir.z += (Math.random() - 0.5) * spread * 2;
+        pelletDir.normalize();
+        const dir = pelletDir;
 
-        const shot = ai.raycast(origin, dir, spec.range, ctx.level.colliders, spec.pierce);
-        const end = shot.point || origin.clone().add(dir.multiplyScalar(spec.range));
-        spawnTracer(origin.clone().add(forward.clone().multiplyScalar(0.6)), end);
+        const shot = ai.raycast(shotOrigin, dir, spec.range, ctx.level.colliders, spec.pierce);
+        const end = shot.point || shotOrigin.clone().addScaledVector(dir, spec.range);
+        spawnTracer(tracerFrom, end);
 
         if (shot.enemies && shot.enemies.length) {
           for (const h of shot.enemies) {
@@ -173,10 +212,10 @@
             anyHit = true;
             if (h.head) anyHead = true;
             if (dead) { w.kills++; hud.killFeed(h.enemy.spec.name); }
-            spawnImpact(h.point, dir.clone().negate(), 0xff5a6a);
+            spawnImpact(h.point, IMPACT_N.copy(dir).negate(), 0xff5a6a);
           }
         } else if (shot.point) {
-          spawnImpact(shot.point, shot.normal || dir.clone().negate(), 0xffc07a);
+          spawnImpact(shot.point, shot.normal || IMPACT_N.copy(dir).negate(), 0xffc07a);
         }
       }
 
@@ -184,9 +223,9 @@
 
       player.addRecoil(spec.recoil.pitch * (w.ads ? 0.6 : 1),
                        (Math.random() - 0.5) * spec.recoil.yaw * 2);
-      player.state.shake = Math.max(player.state.shake, spec.shake);
+      player.state.shake = Math.max(player.state.shake, spec.shake * 0.5);
 
-      flashLight.intensity = 4.5;
+      muzzle = 1;
       flashMat.opacity = 0.95;
       flash.material.rotation = Math.random() * Math.PI;
       view.position.z += 0.055;
@@ -216,10 +255,10 @@
         player.state.shake = 2.2;
         hud.banner('SYSTEMS BREACH — ' + hitCount + ' STUNNED');
       } else {
-        const forward = new THREE.Vector3();
+        const forward = muzzleDir;
         camera.getWorldDirection(forward);
         forward.y = 0; forward.normalize();
-        const dest = player.position.clone().add(forward.multiplyScalar(6.5));
+        const dest = player.position.clone().addScaledVector(forward, 6.5);
         player.state.pos.x = dest.x; player.state.pos.z = dest.z;
         w.primed = true;
         ctx.onPhase(1.4);
@@ -263,31 +302,58 @@
         camera.updateProjectionMatrix();
       }
 
-      flashLight.intensity *= Math.max(0, 1 - 22 * dt);
+      muzzle *= Math.max(0, 1 - 22 * dt);
       flashMat.opacity *= Math.max(0, 1 - 26 * dt);
+      // the muzzle light rides just in front of the barrel, in world space
+      camera.getWorldPosition(muzzleWorld);
+      camera.getWorldDirection(muzzleDir);
+      muzzleWorld.addScaledVector(muzzleDir, 0.8);
+      flashLight.set(muzzleWorld.x, muzzleWorld.y, muzzleWorld.z);
+      flashLight.setIntensity(muzzle * 5.5);
 
-      for (let i = tracers.length - 1; i >= 0; i--) {
-        const t = tracers[i];
+      for (const t of tracers) {
+        if (t.life <= 0) continue;
         t.life -= dt;
-        t.line.material.opacity = Math.max(0, t.life / 0.06) * 0.9;
-        if (t.life <= 0) { scene.remove(t.line); t.line.geometry.dispose(); tracers.splice(i, 1); }
+        if (t.life <= 0) { t.line.visible = false; continue; }
+        t.line.material.opacity = (t.life / 0.06) * 0.9;
       }
-      for (let i = impacts.length - 1; i >= 0; i--) {
-        const s = impacts[i];
+      for (const s of sparks) {
+        if (s.life <= 0) continue;
         s.life -= dt;
-        if (!s.isLight) {
-          s.mesh.position.addScaledVector(s.vel, dt);
-          s.vel.y -= 9 * dt;
-          s.mesh.material.opacity = Math.max(0, s.life / 0.32);
-        } else {
-          s.mesh.intensity = Math.max(0, s.life / 0.1) * 1.6;
-        }
-        if (s.life <= 0) { scene.remove(s.mesh); impacts.splice(i, 1); }
+        if (s.life <= 0) { s.mesh.visible = false; continue; }
+        s.mesh.position.addScaledVector(s.vel, dt);
+        s.vel.y -= 9 * dt;
+        s.mesh.scale.setScalar(s.life / 0.32);   // per-spark fade, material is shared
       }
     }
 
+    /* Three compiles a shader and uploads geometry the first time an object
+       is actually rendered. For pooled tracers and sparks that would land on
+       the first shot, as a hitch. Show them all for one frame up front so the
+       cost is paid during loading instead. */
+    function prewarm(renderer, sceneRef, cameraRef) {
+      const eye = player.eyePosition;
+      for (const t of tracers) {
+        const pos = t.line.geometry.attributes.position;
+        pos.setXYZ(0, eye.x, eye.y - 0.2, eye.z);
+        pos.setXYZ(1, eye.x + 0.01, eye.y - 0.2, eye.z + 0.01);
+        pos.needsUpdate = true;
+        t.line.material.opacity = 0.001;
+        t.line.visible = true;
+      }
+      for (const s2 of sparks) {
+        s2.mesh.position.set(eye.x, eye.y - 0.2, eye.z);
+        s2.mesh.visible = true;
+      }
+      sparkMat.opacity = 0.001;
+      renderer.compile(sceneRef, cameraRef);
+      renderer.render(sceneRef, cameraRef);
+      for (const t of tracers) { t.line.visible = false; t.life = 0; }
+      for (const s2 of sparks) { s2.mesh.visible = false; s2.life = 0; }
+    }
+
     return {
-      state: w, spec, ability, view,
+      state: w, spec, ability, view, prewarm,
       update, fire, reload, useAbility,
       setAds(v) { w.ads = v; },
       addReserve(n) { w.reserve += n; hud.refreshAmmo(w); }

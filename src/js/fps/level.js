@@ -41,7 +41,11 @@
   function build(scene) {
     const colliders = [];      // {min:{x,z}, max:{x,z}, top} — the player is blocked in XZ
     const group = new THREE.Group();
-    const lights = [];
+    /* Fixtures are recorded as data, not as THREE lights: the light pool
+       assigns a fixed set of real lights to whichever are nearest. */
+    const emitters = [];
+    const emit = (x, y, z, colour, intensity, distance) =>
+      emitters.push({ x, y, z, colour, intensity, distance });
     const zones = {};
     const props = [];
 
@@ -149,10 +153,7 @@
         strip.position.set(px, s.h - 0.28, pz);
         group.add(strip);
 
-        const l = new THREE.PointLight(s.light, 2.6, 22, 2);
-        l.position.set(px, s.h - 0.7, pz);
-        group.add(l);
-        lights.push(l);
+        emit(px, s.h - 0.7, pz, s.light, 3.4, 24);
       }
     }
 
@@ -190,9 +191,7 @@
       scr.position.set(x, 1.02, z);
       scr.rotation.set(-Math.PI / 3, ry || 0, 0);
       group.add(scr);
-      const l = new THREE.PointLight(colour || 0x5eeaff, 0.5, 5, 2);
-      l.position.set(x, 1.4, z);
-      group.add(l);
+      emit(x, 1.4, z, colour || 0x5eeaff, 0.9, 6);
     };
 
     // docking collar
@@ -236,16 +235,13 @@
       SF.materials.emissive(0xff6a4a, 3.0));
     core.position.set(0, 3.1, 72);
     group.add(core);
-    const coreLight = new THREE.PointLight(0xff6a4a, 3.2, 30, 2);
-    coreLight.position.set(0, 3.4, 72);
-    group.add(coreLight);
-    lights.push(coreLight);
+    emit(0, 3.4, 72, 0xff6a4a, 4.2, 32);
     colliders.push({ min: { x: -2.4, z: 69.6 }, max: { x: 2.4, z: 74.4 }, top: 6.2, bottom: 0 });
 
     scene.add(group);
 
     return {
-      group, colliders, lights, zones, props,
+      group, colliders, emitters, zones, props,
       playerStart: new THREE.Vector3(0, 0, -40),
       bounds: { minX: -22, maxX: 22, minZ: -48, maxZ: 80 }
     };

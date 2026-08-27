@@ -66,6 +66,13 @@ normal map with a Sobel filter, and a roughness pass — which is what makes the
 as riveted plating and the deck as grating when a light moves across it. Enemies and the
 weapon viewmodel are procedural geometry.
 
+Lights are pooled. three keys its shader programs partly on how many lights are in the
+scene, so adding or removing one recompiles every material — doing that per bullet impact
+stalls the frame badly. Instead the scene gets a fixed set of point lights once, and each
+frame the nearest emitters (ceiling strips, impacts, enemy halos, projectiles) are
+assigned to them. Tracers, sparks and projectiles are pre-allocated and recycled, and
+pre-warmed during loading, so sustained fire allocates nothing at all.
+
 three's `EffectComposer` ships only as an ES module, so the post chain is hand-rolled:
 render to a target, threshold the bright pixels, blur them separably at half resolution,
 then composite with bloom, edge chromatic aberration, film grain, vignette and a damage
@@ -164,6 +171,7 @@ src/js/classes.js         the three doctrines and levelling
 src/js/storage.js         the three save slots
 src/js/story.js           briefing fiction and field codex
 src/js/fps/materials.js   procedural PBR textures (albedo / normal / roughness)
+src/js/fps/lights.js      fixed-size light pool (constant scene light count)
 src/js/fps/engine.js      renderer, tone mapping, hand-rolled post chain
 src/js/fps/level.js       ship interior, collision boxes, lighting, props
 src/js/fps/player.js      pointer-lock look, movement physics, collision

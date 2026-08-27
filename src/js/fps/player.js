@@ -27,7 +27,7 @@
       eye: EYE_STAND,
       bob: 0, bobAmount: 0,
       recoil: new THREE.Vector2(),     // camera kick, decays back to zero
-      shake: 0,
+      shake: 0, shakePhase: 0,
       landDip: 0,
       alive: true
     };
@@ -165,13 +165,16 @@
       const targetEye = state.crouching ? EYE_CROUCH : EYE_STAND;
       state.eye += (targetEye - state.eye) * Math.min(1, 12 * dt);
       state.landDip *= Math.max(0, 1 - 7 * dt);
-      state.shake *= Math.max(0, 1 - 5 * dt);
+      state.shake *= Math.max(0, 1 - 7 * dt);
       state.recoil.multiplyScalar(Math.max(0, 1 - 9 * dt));
 
       const bobY = Math.sin(state.bob) * 0.055 * state.bobAmount;
       const bobX = Math.cos(state.bob * 0.5) * 0.04 * state.bobAmount;
-      const shakeX = (Math.random() - 0.5) * state.shake * 0.06;
-      const shakeY = (Math.random() - 0.5) * state.shake * 0.06;
+      /* Smooth oscillation rather than per-frame noise: random offsets every
+         frame read as a rendering glitch, not as weight. */
+      state.shakePhase += dt * 34;
+      const shakeX = Math.sin(state.shakePhase) * state.shake * 0.035;
+      const shakeY = Math.cos(state.shakePhase * 1.7) * state.shake * 0.03;
 
       camera.position.set(
         state.pos.x + bobX + shakeX,
@@ -187,7 +190,7 @@
     function addRecoil(pitch, yaw) {
       state.recoil.y += pitch;
       state.recoil.x += yaw;
-      state.yaw += yaw * 0.4;
+      state.yaw += yaw * 0.12;         // a nudge, not a permanent walk off target
     }
 
     return {

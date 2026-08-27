@@ -29,7 +29,7 @@
   };
 
   function create(ctx) {
-    const { scene, level } = ctx;
+    const { scene, level, lights } = ctx;
     const enemies = [];
     const projectiles = [];
     const tmp = new THREE.Vector3();
@@ -38,7 +38,8 @@
     function buildRig(spec) {
       const g = new THREE.Group();
       const skin = new THREE.MeshStandardMaterial({
-        color: spec.colour, metalness: 0.7, roughness: 0.55
+        color: spec.colour, metalness: 0.7, roughness: 0.55,
+        emissive: new THREE.Color(0xff2222), emissiveIntensity: 0
       });
       const glow = new THREE.MeshStandardMaterial({
         color: 0x0a0a0c, emissive: new THREE.Color(spec.glow), emissiveIntensity: 2.4,
@@ -72,11 +73,10 @@
         limbs.push({ ring });
       }
 
-      const halo = new THREE.PointLight(spec.glow, 0.9, 7, 2);
-      halo.position.y = h * 0.8;
-      g.add(halo);
-
       for (const c of g.children) { c.castShadow = true; c.receiveShadow = true; }
+      // the halo is a pooled light, not a child light: adding one per enemy
+      // would change the scene light count and recompile every shader
+      const halo = lights.attach(spec.glow, 1.1, 8);
       return { group: g, limbs, head, halo, materials: [skin, glow] };
     }
 
@@ -169,7 +169,7 @@
       if (e.hp <= 0) {
         e.dead = true;
         e.deathT = 0;
-        e.rig.halo.intensity = 0;
+        e.rig.halo.setIntensity(0);
         SF.audio.sfx.enemyDown();
         ctx.onKill(e);
         return true;
@@ -229,7 +229,7 @@
           toPlayer.y = 0;
           const dir = toPlayer.clone().normalize();
 
-          const stopAt = e.spec.ranged ? Math.min(e.spec.range * 0.55, 14) : e.spec.range * 0.75;
+          const stopAt = e.spec.ranged ? Math.min(e.spec.range * 0.55, 14) : e.spec.range * 0.95;
           if (dist > stopAt) {
             // avoidance: if the direct step is blocked, try fanned-out angles
             let move = dir.clone();
@@ -265,6 +265,19 @@
         if (!blocked(nx, e.pos.z, e.spec.radius)) e.pos.x = nx; else e.vel.x = 0;
         if (!blocked(e.pos.x, nz, e.spec.radius)) e.pos.z = nz; else e.vel.z = 0;
 
+        /* Never let a body reach the camera: at contact range its geometry
+           clips through the near plane and fills the screen. Hold them at
+           arm's length instead. */
+        const sepX = e.pos.x - playerPos.x, sepZ = e.pos.z - playerPos.z;
+        const sep = Math.hypot(sepX, sepZ);
+        const minSep = e.spec.radius + 1.25;
+        if (sep > 0.001 && sep < minSep) {
+          const px = playerPos.x + (sepX / sep) * minSep;
+          const pz = playerPos.z + (sepZ / sep) * minSep;
+          if (!blocked(px, pz, e.spec.radius)) { e.pos.x = px; e.pos.z = pz; }
+          e.vel.x = 0; e.vel.z = 0;
+        }
+
         // pose
         e.bob += dt * (1.5 + e.vel.length() * 1.4);
         if (e.spec.flying) {
@@ -280,10 +293,10 @@
           }
         }
         e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+        e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
 
-        // hit flash tints the emissive
-        e.rig.materials[0].emissive = new THREE.Color(0xff2222);
-        e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.6;
+        // hit flash rides the emissive intensity; the colour is set once at build
+        e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
       }
 
       stepProjectiles(dt, playerPos);
@@ -292,48 +305,69 @@
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         if (e.dead && e.deathT > 1.4) {
+          e.rig.halo.release();
           scene.remove(e.rig.group);
           enemies.splice(i, 1);
         }
       }
     }
 
-    /* ---------- enemy projectiles ---------- */
+    /* ---------- enemy projectiles, pre-allocated ---------- */
+    const PROJECTILES = 24;
     const projGeo = new THREE.SphereGeometry(0.13, 8, 8);
+    const projFrom = new THREE.Vector3();
+    const projAim = new THREE.Vector3();
+
+    for (let i = 0; i < PROJECTILES; i++) {
+      const mesh = new THREE.Mesh(projGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      mesh.visible = false;
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+      projectiles.push({
+        mesh: mesh, dir: new THREE.Vector3(), speed: 24, life: 0, damage: 0,
+        light: lights.attach(0xffffff, 0, 7)
+      });
+    }
 
     function fireProjectile(e, playerPos) {
-      const mat = new THREE.MeshBasicMaterial({ color: e.spec.glow });
-      const m = new THREE.Mesh(projGeo, mat);
-      const from = new THREE.Vector3(e.pos.x, e.pos.y + e.spec.height * 0.62, e.pos.z);
-      m.position.copy(from);
-      scene.add(m);
-      const l = new THREE.PointLight(e.spec.glow, 1.1, 6, 2);
-      m.add(l);
+      const p = projectiles.find((q) => q.life <= 0);
+      if (!p) return;                       // every slot in flight; skip this shot
 
-      const aim = playerPos.clone();
-      aim.y += 1.2;
-      aim.x += (Math.random() - 0.5) * 1.4;
-      aim.y += (Math.random() - 0.5) * 0.7;
-      const dir = aim.sub(from).normalize();
-      projectiles.push({ mesh: m, dir, speed: 24, life: 3, damage: e.spec.damage });
+      projFrom.set(e.pos.x, e.pos.y + e.spec.height * 0.62, e.pos.z);
+      p.mesh.position.copy(projFrom);
+      p.mesh.material.color.set(e.spec.glow);
+      p.mesh.visible = true;
+
+      projAim.copy(playerPos);
+      projAim.y += 1.2;
+      projAim.x += (Math.random() - 0.5) * 1.4;
+      projAim.y += (Math.random() - 0.5) * 0.7;
+      p.dir.copy(projAim).sub(projFrom).normalize();
+      p.life = 3;
+      p.damage = e.spec.damage;
+      p.light.setIntensity(1.6);
       SF.audio.sfx.enemyShot();
     }
 
     function stepProjectiles(dt, playerPos) {
-      for (let i = projectiles.length - 1; i >= 0; i--) {
-        const p = projectiles[i];
+      for (const p of projectiles) {
+        if (p.life <= 0) continue;
         p.life -= dt;
         p.mesh.position.addScaledVector(p.dir, p.speed * dt);
+        p.light.set(p.mesh.position.x, p.mesh.position.y, p.mesh.position.z);
 
-        const hitPlayer = p.mesh.position.distanceTo(
-          new THREE.Vector3(playerPos.x, playerPos.y + 1.2, playerPos.z)) < 0.65;
-        const hitWall = blocked(p.mesh.position.x, p.mesh.position.z, 0.1) &&
-                        p.mesh.position.y < 4;
+        const dx = p.mesh.position.x - playerPos.x;
+        const dy = p.mesh.position.y - (playerPos.y + 1.2);
+        const dz = p.mesh.position.z - playerPos.z;
+        const hitPlayer = (dx * dx + dy * dy + dz * dz) < 0.42;
+        const hitWall = p.mesh.position.y < 4 &&
+                        blocked(p.mesh.position.x, p.mesh.position.z, 0.1);
 
         if (hitPlayer) ctx.onPlayerHit(p.damage, p.mesh.position);
         if (hitPlayer || hitWall || p.life <= 0) {
-          scene.remove(p.mesh);
-          projectiles.splice(i, 1);
+          p.life = 0;
+          p.mesh.visible = false;
+          p.light.setIntensity(0);
         }
       }
     }
@@ -347,13 +381,25 @@
       return rayWalls(from, dir, dist, level.colliders).dist >= dist - 0.4;
     }
 
+    /* Same reason as the weapon pools: pay for the projectile shader and
+       geometry upload during loading, not on the first incoming shot. */
+    function prewarm(renderer, sceneRef, cameraRef) {
+      for (const p of projectiles) { p.mesh.position.set(0, -0.6, 0); p.mesh.visible = true; }
+      renderer.compile(sceneRef, cameraRef);
+      renderer.render(sceneRef, cameraRef);
+      for (const p of projectiles) p.mesh.visible = false;
+    }
+
     return {
-      enemies, spawn, step, damage, pulse, raycast, visible, TYPES,
+      enemies, spawn, step, damage, pulse, raycast, visible, prewarm, TYPES,
       get alive() { return enemies.filter((e) => !e.dead).length; },
       clear() {
-        for (const e of enemies) scene.remove(e.rig.group);
+        for (const e of enemies) { e.rig.halo.release(); scene.remove(e.rig.group); }
         enemies.length = 0;
-        for (const p of projectiles) scene.remove(p.mesh);
+        for (const p of projectiles) {
+          p.life = 0; p.mesh.visible = false; p.light.release();
+          scene.remove(p.mesh);
+        }
         projectiles.length = 0;
       }
     };
