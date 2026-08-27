@@ -32,6 +32,7 @@ far below playable frame rates.
 | | |
 |---|---|
 | `W` `A` `S` `D` | Move |
+| Mouse / `←` `→` | Turn |
 | `Shift` | Sprint |
 | `Ctrl` / `C` | Crouch |
 | `Space` | Jump |
@@ -41,9 +42,11 @@ far below playable frame rates.
 | `Q` / `E` | Field ability |
 | `Esc` | Pause |
 
-Click **ENGAGE** to capture the pointer. Where pointer lock is unavailable — an
-embedded frame that does not allow it — the game falls back to unlocked mouse look
-rather than becoming unplayable.
+Click **ENGAGE** to capture the pointer. Where pointer lock is unavailable — an embedded
+frame that does not allow it — the game falls back to unlocked mouse look. In that mode
+the cursor runs out of screen before you finish a turn, so holding it near the left or
+right edge keeps rotating; the arrow keys turn too, in either mode. A full 360° is always
+reachable.
 
 ### Single-file build
 

@@ -817,7 +817,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="engage-ring"></div>
     <div class="engage-title">CLICK TO ENGAGE</div>
     <div class="engage-keys">
-      WASD MOVE &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
+      WASD MOVE &nbsp;·&nbsp; MOUSE / &larr; &rarr; TURN &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
       LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; ESC PAUSE
     </div>
   </div>
@@ -849,7 +849,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="lo-step" id="lo-step">ESTABLISHING LINK</div>
     <div class="lo-bar"><i id="lo-fill"></i></div>
     <div class="lo-hint">
-      WASD MOVE &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
+      WASD MOVE &nbsp;·&nbsp; MOUSE / &larr; &rarr; TURN &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
       LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; ESC PAUSE
     </div>
   </div>
@@ -2371,7 +2371,19 @@ window.SF = window.SF || {};
 
     const keys = Object.create(null);
     let sensitivity = 0.0022;
-    let locked = false;
+
+    /* Look modes:
+         'locked' — real pointer lock; raw mouse deltas, infinite travel.
+         'free'   — pointer lock unavailable (an embedded frame that denies
+                    it). Deltas still arrive while the cursor is over the
+                    view, but the cursor runs out of screen, so nearing an
+                    edge steers continuously. That is what makes a full turn
+                    possible without lock.
+         'off'    — paused or not yet engaged. */
+    let mode = 'off';
+    const pointer = { x: 0.5, y: 0.5, inside: false };
+    const TURN_RATE = 2.4;          // radians per second, keyboard and edge steer
+    const EDGE = 0.16;              // fraction of the viewport that steers
 
     /* ---------- input ---------- */
     const onKey = (e, down) => {
@@ -2383,12 +2395,39 @@ window.SF = window.SF || {};
     window.addEventListener('keyup', (e) => onKey(e, false));
 
     function onMouseMove(e) {
-      if (!locked) return;
+      pointer.x = e.clientX / window.innerWidth;
+      pointer.y = e.clientY / window.innerHeight;
+      pointer.inside = true;
+      if (mode === 'off') return;
       state.yaw   -= e.movementX * sensitivity;
       state.pitch -= e.movementY * sensitivity;
-      state.pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, state.pitch));
+      clampPitch();
     }
     document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseleave', () => { pointer.inside = false; });
+    document.addEventListener('mouseenter', () => { pointer.inside = true; });
+
+    function clampPitch() {
+      state.pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, state.pitch));
+    }
+
+    /* Continuous turn from the keyboard, and — when the cursor cannot travel
+       any further — from holding it against the edge of the view. */
+    function steer(dt) {
+      let turn = 0;
+      if (keys.ArrowLeft)  turn += 1;
+      if (keys.ArrowRight) turn -= 1;
+
+      if (mode === 'free' && pointer.inside) {
+        if (pointer.x < EDGE)          turn += (1 - pointer.x / EDGE);
+        else if (pointer.x > 1 - EDGE) turn -= (1 - (1 - pointer.x) / EDGE);
+      }
+      if (turn !== 0) state.yaw += turn * TURN_RATE * dt;
+
+      // keep yaw in [-PI, PI] so it never drifts into large-float territory
+      if (state.yaw > Math.PI) state.yaw -= Math.PI * 2;
+      else if (state.yaw < -Math.PI) state.yaw += Math.PI * 2;
+    }
 
     /* ---------- collision ---------- */
     /* Resolve the player's circle against every box, one axis at a time,
@@ -2428,6 +2467,7 @@ window.SF = window.SF || {};
 
     /* ---------- step ---------- */
     function update(dt) {
+      steer(dt);
       if (!state.alive) { applyCamera(dt); return; }
 
       state.crouching = !!(keys.ControlLeft || keys.KeyC);
@@ -2439,8 +2479,8 @@ window.SF = window.SF || {};
       let dx = 0, dz = 0;
       if (keys.KeyW || keys.ArrowUp)    { dx += fx; dz += fz; }
       if (keys.KeyS || keys.ArrowDown)  { dx -= fx; dz -= fz; }
-      if (keys.KeyD || keys.ArrowRight) { dx += rx; dz += rz; }
-      if (keys.KeyA || keys.ArrowLeft)  { dx -= rx; dz -= rz; }
+      if (keys.KeyD) { dx += rx; dz += rz; }
+      if (keys.KeyA) { dx -= rx; dz -= rz; }
       const len = Math.hypot(dx, dz);
       if (len > 0) { dx /= len; dz /= len; }
 
@@ -2535,7 +2575,11 @@ window.SF = window.SF || {};
       update, addRecoil,
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
-      setLocked(v) { locked = v; },
+      setMode(v) { mode = v; },
+      get mode() { return mode; },
+      /* Look state, for diagnostics: which mode is live and where the
+         cursor sits as a fraction of the viewport. */
+      get look() { return { mode: mode, x: pointer.x, y: pointer.y, inside: pointer.inside }; },
       setSensitivity(v) { sensitivity = v; },
       reset(pos) {
         state.pos.copy(pos || level.playerStart);
@@ -3601,26 +3645,37 @@ window.SF = window.SF || {};
 
     function onLockChange() {
       const locked = document.pointerLockElement === canvas;
-      player.setLocked(locked || !lockAvailable);
-      if (locked) hadLock = true;
-      else if (hadLock && state.running && !state.over) pause(true);
+      if (locked) { hadLock = true; applyLookMode(); return; }
+      // losing a lock we actually held means the player pressed Escape
+      if (hadLock && state.running && !state.over) pause(true);
+      else applyLookMode();
+    }
+
+    /* Locked when we hold the pointer, free-look (with edge steering) when
+       lock is unavailable, off while paused or before engaging. */
+    function applyLookMode() {
+      if (!state.running || state.paused || state.over) { player.setMode('off'); return; }
+      player.setMode(document.pointerLockElement === canvas ? 'locked' : 'free');
     }
     document.addEventListener('pointerlockchange', onLockChange);
 
     let lockAvailable = !!canvas.requestPointerLock;
     function onLockError() {
       lockAvailable = false;
-      player.setLocked(true);            // read raw mouse movement instead
-      hud.say('SYSTEM', 'Pointer lock unavailable here — look with the mouse over the view, click to fire.', 7000);
+      applyLookMode();
+      hud.say('SYSTEM', 'Pointer lock unavailable here — move the mouse to look, hold it near an ' +
+                        'edge to keep turning, or turn with the arrow keys.', 8000);
     }
     document.addEventListener('pointerlockerror', onLockError);
 
     function requestLock() {
-      if (!lockAvailable) { player.setLocked(true); return; }
+      if (!lockAvailable) { applyLookMode(); return; }
       try {
         const p = canvas.requestPointerLock();
         if (p && p.catch) p.catch(onLockError);
       } catch (err) { onLockError(); }
+      // if the request is ignored rather than refused, fall back anyway
+      setTimeout(() => { if (document.pointerLockElement !== canvas) applyLookMode(); }, 400);
     }
 
     /* ---------- mission flow ---------- */
@@ -3731,6 +3786,7 @@ window.SF = window.SF || {};
       $('#pause-menu').hidden = !on;
       firing = false;
       weapon.setAds(false);
+      applyLookMode();
     }
 
     /* ---------- frame ---------- */
@@ -3797,6 +3853,7 @@ window.SF = window.SF || {};
       state.paused = false;
       beginStep(0);
       requestLock();
+      applyLookMode();
       last = performance.now();
     }
 

@@ -34,7 +34,19 @@
 
     const keys = Object.create(null);
     let sensitivity = 0.0022;
-    let locked = false;
+
+    /* Look modes:
+         'locked' — real pointer lock; raw mouse deltas, infinite travel.
+         'free'   — pointer lock unavailable (an embedded frame that denies
+                    it). Deltas still arrive while the cursor is over the
+                    view, but the cursor runs out of screen, so nearing an
+                    edge steers continuously. That is what makes a full turn
+                    possible without lock.
+         'off'    — paused or not yet engaged. */
+    let mode = 'off';
+    const pointer = { x: 0.5, y: 0.5, inside: false };
+    const TURN_RATE = 2.4;          // radians per second, keyboard and edge steer
+    const EDGE = 0.16;              // fraction of the viewport that steers
 
     /* ---------- input ---------- */
     const onKey = (e, down) => {
@@ -46,12 +58,39 @@
     window.addEventListener('keyup', (e) => onKey(e, false));
 
     function onMouseMove(e) {
-      if (!locked) return;
+      pointer.x = e.clientX / window.innerWidth;
+      pointer.y = e.clientY / window.innerHeight;
+      pointer.inside = true;
+      if (mode === 'off') return;
       state.yaw   -= e.movementX * sensitivity;
       state.pitch -= e.movementY * sensitivity;
-      state.pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, state.pitch));
+      clampPitch();
     }
     document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseleave', () => { pointer.inside = false; });
+    document.addEventListener('mouseenter', () => { pointer.inside = true; });
+
+    function clampPitch() {
+      state.pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, state.pitch));
+    }
+
+    /* Continuous turn from the keyboard, and — when the cursor cannot travel
+       any further — from holding it against the edge of the view. */
+    function steer(dt) {
+      let turn = 0;
+      if (keys.ArrowLeft)  turn += 1;
+      if (keys.ArrowRight) turn -= 1;
+
+      if (mode === 'free' && pointer.inside) {
+        if (pointer.x < EDGE)          turn += (1 - pointer.x / EDGE);
+        else if (pointer.x > 1 - EDGE) turn -= (1 - (1 - pointer.x) / EDGE);
+      }
+      if (turn !== 0) state.yaw += turn * TURN_RATE * dt;
+
+      // keep yaw in [-PI, PI] so it never drifts into large-float territory
+      if (state.yaw > Math.PI) state.yaw -= Math.PI * 2;
+      else if (state.yaw < -Math.PI) state.yaw += Math.PI * 2;
+    }
 
     /* ---------- collision ---------- */
     /* Resolve the player's circle against every box, one axis at a time,
@@ -91,6 +130,7 @@
 
     /* ---------- step ---------- */
     function update(dt) {
+      steer(dt);
       if (!state.alive) { applyCamera(dt); return; }
 
       state.crouching = !!(keys.ControlLeft || keys.KeyC);
@@ -102,8 +142,8 @@
       let dx = 0, dz = 0;
       if (keys.KeyW || keys.ArrowUp)    { dx += fx; dz += fz; }
       if (keys.KeyS || keys.ArrowDown)  { dx -= fx; dz -= fz; }
-      if (keys.KeyD || keys.ArrowRight) { dx += rx; dz += rz; }
-      if (keys.KeyA || keys.ArrowLeft)  { dx -= rx; dz -= rz; }
+      if (keys.KeyD) { dx += rx; dz += rz; }
+      if (keys.KeyA) { dx -= rx; dz -= rz; }
       const len = Math.hypot(dx, dz);
       if (len > 0) { dx /= len; dz /= len; }
 
@@ -198,7 +238,11 @@
       update, addRecoil,
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
-      setLocked(v) { locked = v; },
+      setMode(v) { mode = v; },
+      get mode() { return mode; },
+      /* Look state, for diagnostics: which mode is live and where the
+         cursor sits as a fraction of the viewport. */
+      get look() { return { mode: mode, x: pointer.x, y: pointer.y, inside: pointer.inside }; },
       setSensitivity(v) { sensitivity = v; },
       reset(pos) {
         state.pos.copy(pos || level.playerStart);

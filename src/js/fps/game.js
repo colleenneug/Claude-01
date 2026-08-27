@@ -170,26 +170,37 @@
 
     function onLockChange() {
       const locked = document.pointerLockElement === canvas;
-      player.setLocked(locked || !lockAvailable);
-      if (locked) hadLock = true;
-      else if (hadLock && state.running && !state.over) pause(true);
+      if (locked) { hadLock = true; applyLookMode(); return; }
+      // losing a lock we actually held means the player pressed Escape
+      if (hadLock && state.running && !state.over) pause(true);
+      else applyLookMode();
+    }
+
+    /* Locked when we hold the pointer, free-look (with edge steering) when
+       lock is unavailable, off while paused or before engaging. */
+    function applyLookMode() {
+      if (!state.running || state.paused || state.over) { player.setMode('off'); return; }
+      player.setMode(document.pointerLockElement === canvas ? 'locked' : 'free');
     }
     document.addEventListener('pointerlockchange', onLockChange);
 
     let lockAvailable = !!canvas.requestPointerLock;
     function onLockError() {
       lockAvailable = false;
-      player.setLocked(true);            // read raw mouse movement instead
-      hud.say('SYSTEM', 'Pointer lock unavailable here — look with the mouse over the view, click to fire.', 7000);
+      applyLookMode();
+      hud.say('SYSTEM', 'Pointer lock unavailable here — move the mouse to look, hold it near an ' +
+                        'edge to keep turning, or turn with the arrow keys.', 8000);
     }
     document.addEventListener('pointerlockerror', onLockError);
 
     function requestLock() {
-      if (!lockAvailable) { player.setLocked(true); return; }
+      if (!lockAvailable) { applyLookMode(); return; }
       try {
         const p = canvas.requestPointerLock();
         if (p && p.catch) p.catch(onLockError);
       } catch (err) { onLockError(); }
+      // if the request is ignored rather than refused, fall back anyway
+      setTimeout(() => { if (document.pointerLockElement !== canvas) applyLookMode(); }, 400);
     }
 
     /* ---------- mission flow ---------- */
@@ -300,6 +311,7 @@
       $('#pause-menu').hidden = !on;
       firing = false;
       weapon.setAds(false);
+      applyLookMode();
     }
 
     /* ---------- frame ---------- */
@@ -366,6 +378,7 @@
       state.paused = false;
       beginStep(0);
       requestLock();
+      applyLookMode();
       last = performance.now();
     }
 
