@@ -76,7 +76,31 @@
     lose:    () => { [420, 330, 250, 160].forEach((f, i) => setTimeout(() => tone(f, 0.42, 'sawtooth', 0.15), i * 160)); },
     alarm:   () => { [0, 1, 2].forEach((i) => setTimeout(() => tone(760, 0.16, 'square', 0.13, 420), i * 220)); },
     boot:    () => tone(90, 0.6, 'sine', 0.12, 220),
-    open:    () => { tone(260, 0.3, 'triangle', 0.12, 620); noise(0.3, 0.14, 500); }
+    open:    () => { tone(260, 0.3, 'triangle', 0.12, 620); noise(0.3, 0.14, 500); },
+
+    /* --- first-person mission set --- */
+    shotHeavy:  () => { noise(0.26, 0.55, 1500); tone(96, 0.22, 'sawtooth', 0.3, 42);
+                        setTimeout(() => noise(0.12, 0.16, 700), 40); },
+    shotEnergy: () => { tone(1400, 0.12, 'sawtooth', 0.2, 320); tone(680, 0.16, 'square', 0.12, 180);
+                        noise(0.08, 0.14, 3000); },
+    shotQuiet:  () => { noise(0.09, 0.24, 1100); tone(230, 0.07, 'square', 0.13, 110); },
+    dryfire:    () => { noise(0.05, 0.18, 2600); tone(140, 0.05, 'square', 0.09); },
+    reload:     () => { noise(0.07, 0.2, 1800);
+                        setTimeout(() => { tone(180, 0.09, 'square', 0.14); noise(0.06, 0.16, 900); }, 260);
+                        setTimeout(() => { tone(320, 0.08, 'square', 0.12); noise(0.05, 0.2, 2200); }, 620); },
+    impact:     () => { noise(0.09, 0.26, 2400); tone(420, 0.06, 'square', 0.09, 180); },
+    hitmarker:  () => tone(1500, 0.045, 'square', 0.1),
+    hitmarkerHead: () => { tone(2000, 0.05, 'square', 0.13); setTimeout(() => tone(2600, 0.05, 'square', 0.1), 45); },
+    enemyShot:  () => { tone(520, 0.13, 'sawtooth', 0.13, 190); noise(0.07, 0.12, 800); },
+    enemyDown:  () => { tone(180, 0.4, 'sawtooth', 0.18, 55); noise(0.3, 0.24, 500); },
+    melee:      () => { noise(0.16, 0.34, 500); tone(120, 0.16, 'square', 0.18, 60); },
+    hurt:       () => { noise(0.2, 0.3, 700); tone(150, 0.2, 'sawtooth', 0.16, 80); },
+    step:       () => noise(0.055, 0.07, 380),
+    land:       () => { noise(0.14, 0.2, 320); tone(90, 0.12, 'sine', 0.12, 55); },
+    emp:        () => { tone(2200, 0.5, 'sawtooth', 0.22, 60); noise(0.45, 0.3, 4000); },
+    phase:      () => { tone(300, 0.24, 'sine', 0.16, 1700); noise(0.14, 0.1, 2400); },
+    comms:      () => { tone(1250, 0.045, 'square', 0.07); setTimeout(() => tone(950, 0.05, 'square', 0.06), 60); },
+    objective:  () => { [660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.11), i * 110)); }
   };
 
   SF.audio = {

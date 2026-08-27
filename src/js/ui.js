@@ -1,16 +1,19 @@
 /* ============================================================
-   Screens, the three character slots, enlistment, and the
-   in-mission HUD / story driver.
+   Menus: boot, title, crew registry (three slots), enlistment,
+   codex, mission briefing — and the handoff into the mission.
+
+   Everything outside a mission is cursor-driven; everything inside
+   one is pointer-locked. This module owns the seam between them.
    ============================================================ */
 (function (SF) {
   'use strict';
-  const { $, $$, el, clamp, pick, wait, toast, confirmDialog } = SF.util;
+  const { $, $$, el, pick, wait, toast, confirmDialog } = SF.util;
 
   let ch = null;          // active character
-  let slotIndex = -1;     // which registry bay it belongs to
-  let draftClass = null;  // doctrine selected during enlistment
+  let slotIndex = -1;
+  let draftClass = null;
   let sessionStart = 0;
-  let navToken = 0;       // guards against a passage resolving after the player moved on
+  let mission = null;     // live SF.game instance
   let bootAborted = false;
 
   /* ---------------- screens ---------------- */
@@ -20,7 +23,6 @@
     const target = $('#screen-' + name);
     if (target) target.classList.add('active');
     SF.cursor.reset();
-    window.scrollTo(0, 0);
   }
 
   /* ---------------- boot ---------------- */
@@ -29,7 +31,7 @@
     ['RECOVERY DIVISION FIELD TERMINAL — REV 9.4', 'dim'],
     ['POST ................................ <span class="ok">PASS</span>', ''],
     ['NEURAL HARNESS LINK ................. <span class="ok">PASS</span>', ''],
-    ['TRAUMA COCKTAIL RESERVOIR ........... <span class="ok">1 CHARGE</span>', ''],
+    ['WEAPON AUTHORISATION ................ <span class="ok">GRANTED</span>', ''],
     ['LONG-RANGE UPLINK ................... <span class="bad">NO CARRIER</span>', ''],
     ['', ''],
     ['MOUNTING MISSION PACKAGE 44-C ...', 'dim'],
@@ -53,7 +55,6 @@
       const row = el('div', cls, '');
       box.appendChild(row);
       if (line) {
-        // reveal each line character-wise, tags emitted whole
         let out = '', i = 0;
         while (i < line.length) {
           if (bootAborted) return;
@@ -73,7 +74,6 @@
     show('title');
   }
 
-  /* The player clicked or pressed through the POST sequence. */
   function skipBoot() {
     if (bootAborted || !document.body.classList.contains('booting')) return;
     bootAborted = true;
@@ -81,14 +81,13 @@
     show('title');
   }
 
-  /* ---------------- registry (3 slots) ---------------- */
+  /* ---------------- registry ---------------- */
 
   function renderSlots() {
     const grid = $('#slot-grid');
     grid.innerHTML = '';
-    const slots = SF.storage.all();
 
-    slots.forEach((data, i) => {
+    SF.storage.all().forEach((data, i) => {
       const card = el('div', 'slot' + (data ? '' : ' empty'));
       const bay = `<div class="bay">BAY ${String(i + 1).padStart(2, '0')} // ${data ? 'OCCUPIED' : 'VACANT'}</div>`;
 
@@ -97,22 +96,19 @@
           '<div class="slot-empty-mark">+</div>' +
           '<div class="slot-empty-txt">ENLIST OPERATIVE</div>';
         card.dataset.hover = 'ENLIST';
-        card.tabIndex = 0;
         card.addEventListener('click', () => openCreate(i));
       } else {
         const cls = SF.classes.CLASSES[data.cls];
-        const node = SF.story.NODES[data.node] || {};
+        const wep = SF.weapons.WEAPONS[data.cls];
         card.innerHTML = bay +
           `<div class="slot-glyph" style="color:${cls.accent};border-color:${cls.accent}">${cls.glyph}</div>` +
           `<div class="slot-name">${data.name}</div>` +
           `<div class="slot-class" style="color:${cls.accent}">${cls.name} · ${cls.role}</div>` +
           '<div class="slot-meta">' +
             `<div class="row"><span>RANK</span><b>${data.level}</b></div>` +
-            `<div class="row"><span>VITALS</span><b>${data.hp}/${data.maxHp}</b></div>` +
-            `<div class="row"><span>CHAPTER</span><b>${romanise(data.chapter || 1)}</b></div>` +
-            (data.completions
-              ? `<div class="row"><span>FILES CLOSED</span><b>${data.completions} · ${Object.keys(data.endings || {}).join(', ').toUpperCase()}</b></div>`
-              : `<div class="row"><span>POSITION</span><b>${(node.loc || 'UNKNOWN').split(' / ')[0]}</b></div>`) +
+            `<div class="row"><span>WEAPON</span><b>${wep.name}</b></div>` +
+            `<div class="row"><span>MISSIONS</span><b>${data.missions || 0}</b></div>` +
+            `<div class="row"><span>STATUS</span><b>${data.missions ? 'VETERAN' : 'UNBLOODED'}</b></div>` +
           '</div>' +
           '<div class="slot-actions">' +
             '<button class="btn btn-sm" data-act="deploy">DEPLOY</button>' +
@@ -120,9 +116,8 @@
               'data-hover="HOLD TO ERASE"><span class="hold-fill"></span>ERASE</button>' +
           '</div>';
 
-        card.querySelector('[data-act="deploy"]').addEventListener('click', () => deploy(i));
-        const eraseBtn = card.querySelector('[data-act="erase"]');
-        eraseBtn.addEventListener('holdcomplete', () => {
+        card.querySelector('[data-act="deploy"]').addEventListener('click', () => openBrief(i));
+        card.querySelector('[data-act="erase"]').addEventListener('holdcomplete', () => {
           SF.storage.erase(i);
           toast(`BAY ${i + 1} PURGED`, 'bad');
           renderSlots();
@@ -131,8 +126,6 @@
       grid.appendChild(card);
     });
   }
-
-  const romanise = (n) => ['—', 'I', 'II', 'III', 'IV'][n] || String(n);
 
   /* ---------------- enlistment ---------------- */
 
@@ -174,6 +167,8 @@
     draftClass = id;
     renderClassRack();
     const cls = SF.classes.CLASSES[id];
+    const wep = SF.weapons.WEAPONS[id];
+    const ab = SF.weapons.ABILITIES[id];
     const detail = $('#class-detail');
     detail.style.setProperty('--accent', cls.accent);
     detail.innerHTML =
@@ -181,44 +176,46 @@
       `<div class="cc-role" style="color:${cls.accent}">${cls.role}</div>` +
       `<div class="cd-flavor">${cls.flavor}</div>` +
 
-      '<div class="cd-sec">BASE PROFILE</div>' +
+      '<div class="cd-sec">ISSUED WEAPON</div>' +
+      '<div class="cd-ability">' +
+        `<div class="an">${wep.name}</div>` +
+        `<div class="ac">${wep.kind}</div>` +
+        `<div class="ad">${wep.desc}</div>` +
+      '</div>' +
       '<div class="cd-stats">' +
+        `<div><span class="k">DAMAGE</span><span class="v">${wep.damage}${wep.pellets > 1 ? ' ×' + wep.pellets : ''}</span></div>` +
+        `<div><span class="k">RPM</span><span class="v">${wep.rpm}</span></div>` +
+        `<div><span class="k">MAGAZINE</span><span class="v">${wep.mag}</span></div>` +
+        `<div><span class="k">HEAD SHOT</span><span class="v">×${wep.headMult}</span></div>` +
+        `<div><span class="k">RANGE</span><span class="v">${wep.range} m</span></div>` +
         `<div><span class="k">VITALS</span><span class="v">${cls.base.hp}</span></div>` +
-        `<div><span class="k">CORE</span><span class="v">${cls.base.energy}</span></div>` +
-        `<div><span class="k">MIGHT</span><span class="v">${cls.base.might}</span></div>` +
-        `<div><span class="k">SYNC</span><span class="v">${cls.base.sync}</span></div>` +
-        `<div><span class="k">GUILE</span><span class="v">${cls.base.guile}</span></div>` +
-        `<div><span class="k">FIELD SKILL</span><span class="v">${cls.skill}</span></div>` +
+      '</div>' +
+
+      '<div class="cd-sec">FIELD ABILITY — Q</div>' +
+      '<div class="cd-ability">' +
+        `<div class="an">${ab.name}</div>` +
+        `<div class="ac">${ab.cooldown}s COOLDOWN</div>` +
+        `<div class="ad">${ab.desc}</div>` +
       '</div>' +
 
       '<div class="cd-sec">PASSIVE — ' + cls.perk.name + '</div>' +
-      `<div class="cd-perk">${cls.perk.desc}</div>` +
-
-      '<div class="cd-sec">ABILITY SUITE</div>' +
-      cls.abilities.map((a) =>
-        '<div class="cd-ability">' +
-          `<div class="an">${a.name}${a.ultimate ? ' ★' : ''}</div>` +
-          `<div class="ac">${a.cost} CORE${a.cd ? ' · COOLDOWN ' + a.cd : ''}</div>` +
-          `<div class="ad">${a.desc}</div>` +
-        '</div>').join('');
+      `<div class="cd-perk">${cls.perk.desc}</div>`;
 
     SF.audio.sfx.confirm();
     validateEnlist();
   }
 
   function validateEnlist() {
-    const name = $('#name-input').value.trim();
-    $('#btn-enlist').disabled = !(draftClass && name.length >= 2);
+    $('#btn-enlist').disabled = !(draftClass && $('#name-input').value.trim().length >= 2);
   }
 
   function enlist() {
     const name = $('#name-input').value.trim().toUpperCase();
     if (!draftClass || name.length < 2) { SF.audio.sfx.deny(); return; }
-    const character = SF.classes.makeCharacter(name, draftClass);
-    SF.storage.save(slotIndex, character);
+    SF.storage.save(slotIndex, SF.classes.makeCharacter(name, draftClass));
     toast(`${name} REGISTERED TO BAY ${slotIndex + 1}`, 'good');
     SF.audio.sfx.confirm();
-    deploy(slotIndex);
+    openBrief(slotIndex);
   }
 
   /* ---------------- codex ---------------- */
@@ -228,208 +225,79 @@
       .map((e) => `<div class="codex-entry"><h4>${e.t}</h4><p>${e.b}</p></div>`).join('');
   }
 
-  /* ---------------- mission ---------------- */
+  /* ---------------- briefing ---------------- */
 
-  function deploy(i) {
+  function openBrief(i) {
     slotIndex = i;
     ch = SF.storage.get(i);
     if (!ch) return;
-    if (!ch.statuses) ch.statuses = {};
-    sessionStart = Date.now();
+    ch.slot = i;
 
     const cls = SF.classes.CLASSES[ch.cls];
-    document.documentElement.style.setProperty('--accent', cls.accent);
-    $('#hud-portrait').style.setProperty('--accent', cls.accent);
-    $('#portrait-glyph').textContent = cls.glyph;
-    $('#hud-name').textContent = ch.name;
-    $('#hud-class').textContent = cls.name + ' · ' + cls.role;
-    $('#log').innerHTML = '';
+    const wep = SF.weapons.WEAPONS[ch.cls];
+    $('#brief-body').innerHTML =
+      `<div class="brief-head" style="--accent:${cls.accent}">` +
+        `<div class="bh-glyph">${cls.glyph}</div>` +
+        `<div><div class="bh-name">${ch.name}</div>` +
+        `<div class="bh-cls">${cls.name} · ${cls.role} · RANK ${ch.level}</div>` +
+        `<div class="bh-kit">${wep.name} — ${wep.kind} &nbsp;·&nbsp; ${SF.weapons.ABILITIES[ch.cls].name}</div></div>` +
+      '</div>' +
+      `<div class="brief-text">${SF.story.BRIEF.body}</div>`;
 
     SF.audio.sfx.open();
-    SF.fx.warpPulse();
-    show('game');
-    refresh();
-    goNode(ch.node, true);
+    show('brief');
   }
 
-  function refresh() {
-    if (!ch) return;
-    setBar('#hp-fill', '#hp-text', ch.hp, ch.maxHp, `${ch.hp}/${ch.maxHp}`);
-    setBar('#sh-fill', '#sh-text', Math.min(ch.shield, 60), 60, String(ch.shield));
-    setBar('#en-fill', '#en-text', ch.energy, ch.maxEnergy, `${ch.energy}/${ch.maxEnergy}`);
-    const need = SF.classes.xpForLevel(ch.level);
-    setBar('#xp-fill', '#xp-text', ch.xp, need, `${ch.xp}/${need}`);
-    $('#lvl-text').textContent = ch.level;
+  /* ---------------- mission ---------------- */
 
-    $('#hud-attrs').innerHTML = SF.classes.ATTRS.map((a) =>
-      `<div class="attr" data-key="${a.key}" data-hover="${a.label} ${ch[a.key]}">` +
-      `<div class="an">${a.label}</div><div class="av">${ch[a.key]}</div></div>`).join('');
-
-    renderInventory();
-  }
-
-  function setBar(fillSel, textSel, value, max, label) {
-    const fill = $(fillSel);
-    const pct = max > 0 ? clamp((value / max) * 100, 0, 100) : 0;
-    if (fill.style.width !== pct + '%') {
-      fill.classList.add('bar-flash');
-      setTimeout(() => fill.classList.remove('bar-flash'), 420);
-    }
-    fill.style.width = pct + '%';
-    $(textSel).textContent = label;
-  }
-
-  function renderInventory() {
-    const box = $('#hud-inv');
-    const items = SF.combat.ITEMS;
-    const owned = Object.keys(items).filter((k) => (ch.items[k] || 0) > 0);
-    box.innerHTML = '<div class="inv-head">FIELD KIT</div>';
-    if (!owned.length) {
-      box.appendChild(el('div', 'inv-empty', 'KIT EMPTY'));
-      return;
-    }
-    for (const key of owned) {
-      const item = items[key];
-      const btn = el('button', 'inv-item');
-      btn.dataset.hover = SF.combat.isActive() ? 'USE ' + item.name : 'COMBAT ONLY';
-      btn.disabled = !SF.combat.isActive();
-      btn.innerHTML = `<span>${item.name}</span><span class="qty">×${ch.items[key]}</span>`;
-      btn.title = item.desc;
-      btn.addEventListener('click', () => SF.combat.useItem(key));
-      box.appendChild(btn);
-    }
-  }
-
-  /* ---------------- story driver ---------------- */
-
-  async function goNode(id, isEntry) {
-    const node = SF.story.NODES[id];
-    if (!node) { toast('NAVIGATION ERROR: ' + id, 'bad'); return; }
-    const my = ++navToken;
-
-    ch.node = id;
-    if (node.onEnter) node.onEnter(ch);
-    if (node.chapter) ch.chapter = Math.max(ch.chapter || 1, node.chapter);
-
-    $('#stage-chapter').textContent = 'CHAPTER ' + romanise(node.chapter || ch.chapter || 1);
-    $('#stage-loc').textContent = node.loc || '';
-    $('#objective').textContent = node.objective || '—';
-
-    if (!isEntry) SF.combat.log('▸ ' + (node.loc || id), 'story');
-
-    const html = typeof node.text === 'function' ? node.text(ch) : (node.text || '');
-    const choicesBox = $('#choices');
-    choicesBox.innerHTML = '';
-    $('#stage-scroll').scrollTop = 0;
-
-    await SF.fx.typeInto($('#narrative'), html, 7);
-    if (my !== navToken) return;
-    renderChoices(node);
-    autosave();
-  }
-
-  function renderChoices(node) {
-    const box = $('#choices');
-    box.innerHTML = '';
-
-    if (node.ending) {
-      const btn = el('button', 'choice', '<span class="tag">END</span>Return to the crew registry.');
-      btn.dataset.hover = 'REGISTRY';
-      btn.addEventListener('click', () => {
-        // The file is closed. The operative keeps their rank and can be sent
-        // back in — the ark resets, they do not.
-        ch.endings = ch.endings || {};
-        ch.endings[node.ending] = true;
-        ch.completions = (ch.completions || 0) + 1;
-        ch.node = 'act1_approach';
-        ch.chapter = 1;
-        ch.flags = {};
-        ch.hp = ch.maxHp;
-        autosave();
-        SF.audio.sfx.confirm();
-        renderSlots();
-        show('slots');
-      });
-      box.appendChild(btn);
-      SF.audio.sfx.win();
-      return;
-    }
-
-    for (const choice of (node.choices || [])) {
-      const locked = choice.req && choice.req.cls && choice.req.cls !== ch.cls;
-      const btn = el('button', 'choice' +
-        (choice.tag ? ' gated' : '') +
-        (choice.risky ? ' risky' : '') +
-        (locked ? ' locked' : ''));
-
-      const gateName = locked ? SF.classes.CLASSES[choice.req.cls].name : null;
-      btn.innerHTML = (choice.tag ? `<span class="tag">${choice.tag}</span>` : '') +
-        choice.text + (locked ? ` <em style="color:var(--ink-dim)">— ${gateName} ONLY</em>` : '');
-      btn.disabled = locked;
-      btn.dataset.hover = locked ? 'DOCTRINE LOCKED' : (choice.tag || 'SELECT');
-      if (!locked) btn.addEventListener('click', () => takeChoice(node, choice));
-      box.appendChild(btn);
-    }
-  }
-
-  function takeChoice(node, choice) {
-    SF.audio.sfx.click();
-
-    if (choice.flag) ch.flags[choice.flag] = true;
-    if (choice.xp) {
-      const ups = SF.classes.grantXp(ch, choice.xp);
-      SF.combat.log(`+${choice.xp} XP`, 'heal');
-      for (const u of ups) { SF.audio.sfx.levelup(); toast(u, 'good'); }
-    }
-    if (choice.give) {
-      for (const k of Object.keys(choice.give)) {
-        ch.items[k] = (ch.items[k] || 0) + choice.give[k];
-        toast(`ACQUIRED ${SF.combat.ITEMS[k].name} ×${choice.give[k]}`, 'good');
-      }
-    }
-    if (choice.restore) ch.hp = Math.max(1, Math.round(ch.maxHp * choice.restore));
-    if (choice.heal) ch.hp = clamp(ch.hp + choice.heal, 0, ch.maxHp);
-    if (choice.hurt) ch.hp = clamp(ch.hp - choice.hurt, 1, ch.maxHp);
-    if (choice.effect) choice.effect(ch);
-    refresh();
-
-    if (choice.combat && node.combat) {
-      const spec = node.combat;
-      SF.combat.start(spec, ch, {
-        onWin: () => { renderInventory(); goNode(spec.win); },
-        onLose: () => { renderInventory(); goNode(spec.lose); }
-      });
-      renderInventory();
-      return;
-    }
-
-    if (choice.to) goNode(choice.to);
-  }
-
-  /* ---------------- persistence ---------------- */
-
-  function autosave() {
-    if (!ch || slotIndex < 0) return;
-    ch.playtime = (ch.playtime || 0) + Math.round((Date.now() - sessionStart) / 1000);
-    sessionStart = Date.now();
-    SF.storage.save(slotIndex, ch);
-  }
-
-  function manualSave() {
-    autosave();
-    toast('DOSSIER WRITTEN TO REGISTRY', 'good');
+  async function drop() {
     SF.audio.sfx.confirm();
+    show('none');
+    $('#loading').hidden = false;
+
+    const steps = [
+      ['GENERATING HULL SURFACES', 0.25],
+      ['BUILDING DECK GEOMETRY', 0.5],
+      ['SEEDING HOSTILE PATTERNS', 0.72],
+      ['SPINNING UP OPTICS', 0.9],
+      ['LINK ESTABLISHED', 1]
+    ];
+    for (const [label, pct] of steps) {
+      $('#lo-step').textContent = label;
+      $('#lo-fill').style.width = (pct * 100) + '%';
+      await wait(140);
+    }
+
+    document.body.classList.add('in-mission');
+    $('#gl').hidden = false;
+    $('#weapon-name').textContent = SF.weapons.WEAPONS[ch.cls].name;
+
+    // one frame for the browser to paint the loading state before the build
+    await wait(60);
+    mission = SF.game.create(ch, exitMission);
+    window.__m = mission;               // handle for automated smoke tests
+    $('#loading').hidden = true;
+    mission.start();
+    $('#engage').hidden = false;
   }
 
-  async function quit() {
-    if (SF.combat.isActive()) { toast('CANNOT DISENGAGE MID-ENGAGEMENT', 'bad'); SF.audio.sfx.deny(); return; }
-    const ok = await confirmDialog('DISENGAGE',
-      'Progress is written to the registry at every waypoint. Return to the crew registry?', 'DISENGAGE');
-    if (!ok) return;
-    autosave();
-    SF.audio.sfx.back();
+  function exitMission() {
+    mission = null;
+    document.body.classList.remove('in-mission');
+    $('#gl').hidden = true;
+    $('#pause-menu').hidden = true;
+    $('#engage').hidden = true;
+    $('#screen-end').classList.remove('active');
     renderSlots();
     show('slots');
+  }
+
+  async function abandon() {
+    const ok = await confirmDialog('ABANDON MISSION',
+      'Progress on this insertion is lost. The operative keeps their rank.', 'ABANDON', true);
+    if (!ok) return;
+    SF.storage.save(slotIndex, ch);
+    mission.destroy();
   }
 
   /* ---------------- wiring ---------------- */
@@ -455,14 +323,29 @@
       validateEnlist();
     });
     $('#btn-enlist').addEventListener('click', enlist);
-    $('#btn-save').addEventListener('click', manualSave);
-    $('#btn-quit').addEventListener('click', quit);
+    $('#btn-drop').addEventListener('click', drop);
 
-    // click anywhere in the narrative to skip the typewriter
-    $('#stage-scroll').addEventListener('click', () => SF.fx.skipTyping());
-    window.addEventListener('beforeunload', autosave);
+    $('#engage').addEventListener('click', () => {
+      if (!mission) return;
+      $('#engage').hidden = true;
+      SF.audio.unlock();
+      mission.engage();
+    });
+
+    $('#btn-resume').addEventListener('click', () => {
+      if (!mission) return;
+      $('#pause-menu').hidden = true;
+      mission.pause(false);
+      mission.requestLock();
+    });
+    $('#btn-abandon').addEventListener('click', abandon);
+    $('#btn-debrief').addEventListener('click', () => { if (mission) mission.destroy(); });
+
+    window.addEventListener('beforeunload', () => {
+      if (ch && slotIndex >= 0) SF.storage.save(slotIndex, ch);
+    });
+    void sessionStart;
   }
 
-  SF.ui = { runBoot, skipBoot, bind, show, refresh, renderSlots, goNode,
-            get character() { return ch; } };
+  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, get character() { return ch; } };
 })(window.SF);

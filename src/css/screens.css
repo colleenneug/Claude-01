@@ -176,3 +176,28 @@
   .slot-grid{ grid-template-columns:1fr; }
   .create-body{ grid-template-columns:1fr; }
 }
+
+/* ---------- briefing ---------- */
+.brief-body{ padding:14px 6vw; overflow:auto; display:grid; gap:22px;
+  grid-template-columns: 300px 1fr; align-content:start; }
+.brief-head{ padding:22px; border:1px solid var(--accent); background:var(--panel);
+  display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px;
+  align-self:start;
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px); }
+.bh-glyph{ width:84px; height:84px; display:grid; place-items:center; font-size:38px;
+  color:var(--accent); border:1px solid var(--accent); border-radius:50%;
+  box-shadow: inset 0 0 26px color-mix(in srgb, var(--accent) 24%, transparent); }
+.bh-name{ font-size:21px; letter-spacing:.18em; color:#eafcff; }
+.bh-cls{ font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; color:var(--accent); margin-top:5px; }
+.bh-kit{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:.12em;
+  color:var(--ink-dim); margin-top:10px; line-height:1.7; }
+.brief-text{ max-width:70ch; }
+.brief-text p{ font-size:14.5px; line-height:1.9; color:var(--ink); margin:0 0 18px; }
+.brief-text p.sys{ font-family:var(--font-mono); font-size:12.5px; color:var(--lime);
+  border-left:2px solid var(--lime); padding-left:14px; line-height:1.8; }
+.brief-text p.voice{ font-family:var(--font-mono); font-size:13px; color:var(--magenta);
+  border-left:2px solid var(--magenta); padding-left:14px; line-height:1.8; }
+.brief-text p.alert{ font-family:var(--font-mono); font-size:12.5px; color:var(--blood);
+  border-left:2px solid var(--blood); padding-left:14px; letter-spacing:.08em; }
+.brief-text em{ color:#eafcff; font-style:italic; }
+@media (max-width: 900px){ .brief-body{ grid-template-columns:1fr; } }

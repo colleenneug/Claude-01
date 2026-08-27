@@ -9,12 +9,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="src/css/base.css" />
-<link rel="stylesheet" href="src/css/hud.css" />
 <link rel="stylesheet" href="src/css/screens.css" />
-<link rel="stylesheet" href="src/css/combat.css" />
+<link rel="stylesheet" href="src/css/fps.css" />
 </head>
 <body class="booting">
 
+<canvas id="gl" hidden></canvas>
 <canvas id="starfield" aria-hidden="true"></canvas>
 <div id="grid-floor" aria-hidden="true"></div>
 <div id="scanlines" aria-hidden="true"></div>
@@ -113,89 +113,98 @@
     </footer>
   </section>
 
-  <!-- ============ GAME ============ -->
-  <section class="screen" id="screen-game">
-    <div class="game-shell">
-
-      <aside class="panel hud-left">
-        <div class="hud-portrait" id="hud-portrait">
-          <div class="portrait-glyph" id="portrait-glyph"></div>
-          <div class="portrait-scan"></div>
-        </div>
-        <div class="hud-id">
-          <div class="hud-name" id="hud-name">&mdash;</div>
-          <div class="hud-class" id="hud-class">&mdash;</div>
-        </div>
-
-        <div class="stat-block">
-          <div class="bar-row">
-            <span class="bar-label">VITALS</span>
-            <span class="bar-val" id="hp-text">0/0</span>
-          </div>
-          <div class="bar"><div class="bar-fill hp" id="hp-fill"></div></div>
-
-          <div class="bar-row">
-            <span class="bar-label">SHIELD</span>
-            <span class="bar-val" id="sh-text">0</span>
-          </div>
-          <div class="bar"><div class="bar-fill sh" id="sh-fill"></div></div>
-
-          <div class="bar-row">
-            <span class="bar-label">CORE</span>
-            <span class="bar-val" id="en-text">0/0</span>
-          </div>
-          <div class="bar"><div class="bar-fill en" id="en-fill"></div></div>
-
-          <div class="bar-row">
-            <span class="bar-label">RANK <span id="lvl-text">1</span></span>
-            <span class="bar-val" id="xp-text">0/0</span>
-          </div>
-          <div class="bar"><div class="bar-fill xp" id="xp-fill"></div></div>
-        </div>
-
-        <div class="hud-attrs" id="hud-attrs"></div>
-        <div class="hud-inv" id="hud-inv"></div>
-
-        <div class="hud-sysmenu">
-          <button class="btn btn-ghost btn-sm" id="btn-save">SAVE</button>
-          <button class="btn btn-ghost btn-sm" id="btn-quit">DISENGAGE</button>
-        </div>
-      </aside>
-
-      <section class="panel stage" id="stage">
-        <div class="stage-head">
-          <span class="stage-chapter" id="stage-chapter">CHAPTER I</span>
-          <span class="stage-loc" id="stage-loc">&mdash;</span>
-        </div>
-
-        <div class="stage-scroll" id="stage-scroll">
-          <div class="narrative" id="narrative"></div>
-        </div>
-
-        <div class="stage-choices" id="choices"></div>
-
-        <!-- combat overlay -->
-        <div class="combat-layer" id="combat-layer" hidden>
-          <div class="enemy-board" id="enemy-board"></div>
-          <div class="intent-strip" id="intent-strip"></div>
-          <div class="ability-bar" id="ability-bar"></div>
-          <div class="combat-foot">
-            <div class="turn-tag" id="turn-tag">TURN 1</div>
-            <button class="btn btn-ghost btn-sm" id="btn-focus">FOCUS &mdash; end turn, +4 CORE</button>
-          </div>
-        </div>
-      </section>
-
-      <aside class="panel hud-right">
-        <div class="log-head">TELEMETRY</div>
-        <div class="log-scroll" id="log"></div>
-        <div class="obj-head">OBJECTIVE</div>
-        <div class="obj-body" id="objective">&mdash;</div>
-      </aside>
-    </div>
+  <!-- ============ BRIEFING ============ -->
+  <section class="screen" id="screen-brief">
+    <header class="screen-head">
+      <h2>MISSION BRIEF 44-C</h2>
+      <p>Read it once. There is no second insertion window.</p>
+    </header>
+    <div class="brief-body" id="brief-body"></div>
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="slots">&lsaquo; ABORT</button>
+      <button class="btn btn-major" id="btn-drop">DROP</button>
+    </footer>
   </section>
 
 </main>
+
+<!-- ============ IN-MISSION ============ -->
+<div id="fps-hud" hidden>
+  <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitmarker"><span></span><span></span><span></span><span></span></div>
+  <div id="dmg-ring"></div>
+
+  <div id="hud-objective">&mdash;</div>
+  <div id="kill-feed"></div>
+  <div id="hud-banner"></div>
+  <div id="subtitle"></div>
+
+  <div class="hud-corner" id="vitals">
+    <div class="hud-label">VITALS</div>
+    <div class="hud-bar"><i class="hp" id="v-hp"></i></div>
+    <div class="hud-label" style="margin-top:8px">BARRIER</div>
+    <div class="hud-bar"><i class="sh" id="v-sh"></i></div>
+    <div class="hud-num"><span id="v-hp-text">100</span> <span style="font-size:14px;color:var(--ink-dim)">/ <span id="v-sh-text">0</span></span></div>
+  </div>
+
+  <div id="ability">
+    <div id="ab-name">&mdash;</div>
+    <div class="hud-bar"><i id="ab-fill"></i></div>
+    <div id="ab-key">Q / E</div>
+  </div>
+
+  <div class="hud-corner" id="ammo">
+    <div class="hud-label">MAGAZINE</div>
+    <div class="hud-num"><b id="a-mag">0</b> <span>/ <span id="a-reserve">0</span></span></div>
+    <div id="weapon-name">&mdash;</div>
+    <div id="reload-tag" hidden>PRESS R</div>
+  </div>
+</div>
+
+<div id="engage" hidden>
+  <div class="engage-inner">
+    <div class="engage-ring"></div>
+    <div class="engage-title">CLICK TO ENGAGE</div>
+    <div class="engage-keys">
+      WASD MOVE &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
+      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; ESC PAUSE
+    </div>
+  </div>
+</div>
+
+<div id="pause-menu" hidden>
+  <div class="pause-card panel">
+    <h3>PAUSED</h3>
+    <p>Pointer released. The ark is holding its breath.</p>
+    <div class="pause-actions">
+      <button class="btn btn-major" id="btn-resume">RESUME</button>
+      <button class="btn btn-ghost" id="btn-abandon">ABANDON MISSION</button>
+    </div>
+  </div>
+</div>
+
+<div id="screen-end">
+  <div class="end-card panel">
+    <h3 id="end-title">&mdash;</h3>
+    <p id="end-sub"></p>
+    <div id="end-stats"></div>
+    <button class="btn btn-major" id="btn-debrief">RETURN TO REGISTRY</button>
+  </div>
+</div>
+
+<div id="loading" hidden>
+  <div>
+    <div class="lo-title">EREBUS CRADLE</div>
+    <div class="lo-step" id="lo-step">ESTABLISHING LINK</div>
+    <div class="lo-bar"><i id="lo-fill"></i></div>
+    <div class="lo-hint">
+      WASD MOVE &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
+      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; ESC PAUSE
+    </div>
+  </div>
+</div>
+
+
 
 <div id="toast-rail"></div>
 
@@ -209,15 +218,22 @@
 
 <audio id="hum" loop></audio>
 
+<script src="vendor/three.min.js"></script>
 <script src="src/js/util.js"></script>
 <script src="src/js/audio.js"></script>
 <script src="src/js/cursor.js"></script>
 <script src="src/js/fx.js"></script>
 <script src="src/js/classes.js"></script>
-<script src="src/js/enemies.js"></script>
 <script src="src/js/storage.js"></script>
 <script src="src/js/story.js"></script>
-<script src="src/js/combat.js"></script>
+<script src="src/js/fps/materials.js"></script>
+<script src="src/js/fps/engine.js"></script>
+<script src="src/js/fps/level.js"></script>
+<script src="src/js/fps/player.js"></script>
+<script src="src/js/fps/weapons.js"></script>
+<script src="src/js/fps/ai.js"></script>
+<script src="src/js/fps/hud.js"></script>
+<script src="src/js/fps/game.js"></script>
 <script src="src/js/ui.js"></script>
 <script src="src/js/main.js"></script>
 </body>

@@ -1,7 +1,7 @@
 # EREBUS CRADLE // Signal Lost
 
-A cursor-driven, science-fiction narrative RPG that runs in a browser. No build step,
-no dependencies, no network required — open `index.html` and play.
+A first-person shooter set aboard a derelict colony ark, running in a browser on
+WebGL. No build step, no network required — open `index.html` and play.
 
 Forty years ago the colony ark *Erebus Cradle* went silent eleven light-years out with
 203,000 people aboard. Six days ago it started transmitting again. Not a distress code —
@@ -20,7 +20,30 @@ python3 -m http.server 8000   # then visit http://localhost:8000
 ```
 
 Everything is plain HTML/CSS/JS loaded with classic `<script>` tags, so `file://` works
-directly — there are no ES-module CORS problems and nothing to install.
+directly — no ES-module CORS problems and nothing to install. The one dependency is
+three.js r147, vendored into `vendor/` (the last release shipping a UMD build, which is
+what keeps `file://` working). Nothing is fetched at runtime except the two web fonts.
+
+Requires WebGL2 and a real GPU. On a software rasteriser it will render correctly but
+far below playable frame rates.
+
+### Controls
+
+| | |
+|---|---|
+| `W` `A` `S` `D` | Move |
+| `Shift` | Sprint |
+| `Ctrl` / `C` | Crouch |
+| `Space` | Jump |
+| Left mouse | Fire |
+| Right mouse | Aim down sights |
+| `R` | Reload |
+| `Q` / `E` | Field ability |
+| `Esc` | Pause |
+
+Click **ENGAGE** to capture the pointer. Where pointer lock is unavailable — an
+embedded frame that does not allow it — the game falls back to unlocked mouse look
+rather than becoming unplayable.
 
 ### Single-file build
 
@@ -35,10 +58,24 @@ python3 tools/bundle.py
 
 ---
 
-## The interface
+## Rendering
 
-The native mouse pointer is hidden across the whole app and replaced by a targeting
-reticle that reports what it is over:
+There are no texture or model assets in this repository. Every surface is generated at
+load time on a 2D canvas — an albedo pass, a height pass converted to a tangent-space
+normal map with a Sobel filter, and a roughness pass — which is what makes the hull read
+as riveted plating and the deck as grating when a light moves across it. Enemies and the
+weapon viewmodel are procedural geometry.
+
+three's `EffectComposer` ships only as an ES module, so the post chain is hand-rolled:
+render to a target, threshold the bright pixels, blur them separably at half resolution,
+then composite with bloom, edge chromatic aberration, film grain, vignette and a damage
+pulse. Lighting is physically based with ACES filmic tone mapping, exponential fog and a
+shadow-casting key light.
+
+## The menu interface
+
+Outside a mission the native pointer is hidden and replaced by a targeting reticle that
+reports what it is over:
 
 | Cursor state | Meaning |
 |---|---|
@@ -48,110 +85,94 @@ reticle that reports what it is over:
 | Dimmed, no glow | Locked — the option exists but not for your doctrine |
 | Filling arc | **Hold to commit.** Erasing a character requires a sustained press, not a click |
 
-Supporting the reticle: a parallax starfield that warps on transitions, CRT scanlines and
-sweep, a perspective grid floor, panel corner brackets, glitch-split titles, a typewriter
-that renders every passage (click the text to skip it), and a fully procedural sound bank
-— every bleep, hit and fanfare is synthesised in the Web Audio API at runtime, so there
-are no audio assets in the repository.
+Supporting the reticle: a drifting starfield, CRT scanlines and sweep, a perspective grid
+floor, panel corner brackets, glitch-split titles, and a fully procedural sound bank —
+every bleep, gunshot, impact and fanfare is synthesised in the Web Audio API at runtime,
+so there are no audio assets in the repository either.
 
 ---
 
 ## The three doctrines
 
-Your class decides your four combat abilities, a passive that changes the rules of a
-fight, and a field skill that opens routes through the ark nobody else can take. Options
-gated to other doctrines stay **visible but locked**, so each playthrough shows you what
-the other two would have done.
+Your class decides your weapon, your field ability and a passive that changes how a
+firefight plays out. There is no swapping in the field.
 
 ### ✦ BULWARK — *Aegis Doctrine*
-Armour grown from the hull of a dead ship. 124 vitals, high MIGHT.
-- **KINETIC SLAM** — heavy strike, 30% chance to STAGGER (target loses its next action)
-- **AEGIS WALL** — big shield plus FORTIFY, halving whatever breaks through
-- **RIOT PULSE** — hits every hostile and SUNDERS armour for 3 turns
-- **LAST STAND** ★ — heal 25%, +30 shield, +50% damage for 2 turns
-- *Passive — Bulkhead Plating:* all incoming damage reduced by 3
-- *Field skill — FORCE:* opens doors by disagreeing with them
+**MAUL-12 breaching shotgun** — 8 pellets × 17 damage, 75 rpm, 6-round magazine.
+Devastating inside ten metres, useless past thirty.
+- **Field ability — Aegis Barrier:** 60 points of overshield that soaks the next wave.
+- **Passive — Bulkhead Plating:** absorbs 22% of all incoming damage. The only doctrine
+  that can stand in a corridor and trade.
 
 ### ◈ ORACLE — *Signal Doctrine*
-Wetware spliced to a dead god's switchboard. 94 vitals, high SYNC, deepest CORE pool.
-- **OVERLOAD SPIKE** — pierces shields entirely
-- **NANITE WEAVE** — heal and scrub one hostile status effect
-- **SYSTEMS BREACH** — GLITCH a target (its damage halved) and siphon 4 CORE
-- **RECURSIVE CASCADE** ★ — shield-piercing damage to everything, then OVERCLOCK
-- *Passive — Ghost In The Wire:* +2 CORE regenerated every turn
-- *Field skill — SYSTEMS:* rewrites locks, manifests and, once, an argument
+**ARC LANCE induction rifle** — 26 damage, 320 rpm, 24-round magazine, and rounds
+**pierce**: a bolt passes through its target and into whatever stood behind it.
+- **Field ability — Systems Breach:** EMP pulse, stunning and damaging everything within
+  thirteen metres.
+- **Passive — Ghost In The Wire:** deepest magazine and the flattest recoil on the roster.
 
 ### ✵ WRAITH — *Umbral Doctrine*
-Nine-tenths of a person and all of a knife. 100 vitals, high GUILE.
-- **VIBRO LUNGE** — fast strike, 25% critical
-- **PHASE STEP** — EVASION (dodge the next attack) plus PRIMED (next strike auto-crits)
-- **NEURO TOXIN** — stacking poison that ignores armour and shields
-- **MARK & ERASE** ★ — doubled against wounded targets, outright lethal below 20%
-- *Passive — Blindside:* your first strike in any engagement is a guaranteed critical
-- *Field skill — STEALTH:* takes the route nobody is watching
+**WHISPER suppressed carbine** — 15 damage, 640 rpm, 32-round magazine, **×3 on a head
+shot**.
+- **Field ability — Phase Step:** blink forward, briefly untargetable, next round primed
+  for double damage.
+- **Passive — Blindside:** fragile in the open, lethal from an angle nobody covered.
+
+---
+
+## The mission
+
+Six sectors, fought end to end down the length of the ark: the docking collar, the
+maintenance spine, Junction 9, the habitat ring, the reactor antechamber, and the
+Conductor at the end of it. Clearing a sector patches you up and resupplies you.
+
+Four hostile types — husk drones that hover and close, choir thralls that swarm, warden
+frames that shoot from range, and the boss. Each telegraphs nothing and pursues with wall
+avoidance; head shots are a separate, smaller hit sphere on every one of them.
+
+The story survives the move to first person as staged comms traffic: CRADLE, Division and
+Voss all talk over you as you advance, and each objective carries its own beats.
 
 ---
 
 ## Three character slots
 
 The crew registry holds exactly three bays, persisted to `localStorage`. Each dossier
-carries its own name, doctrine, rank, vitals, field kit, story position and world flags,
-and can be deployed, saved and erased independently. Storage failures (private windows,
-blocked site data) degrade to a session-only game rather than crashing.
+carries its own name, doctrine, rank, XP and mission count, and can be deployed and
+erased independently. Rank carries across missions; XP is awarded for kills and banked on
+both success and failure. Storage failures (private windows, blocked site data) degrade to
+a session-only game rather than crashing.
 
 Erasing a bay is deliberately awkward: press and **hold** the ERASE control until the
 cursor's arc completes.
-
-Finishing the story closes that operative's file — they keep their rank and their record
-of which endings they reached, and can be sent back aboard for another run.
-
----
-
-## Combat
-
-Turn-based, one action per turn, resource-managed:
-
-- **CORE** is your energy. Abilities spend it; FOCUS ends your turn and restores 4.
-- **Intent** — every hostile telegraphs its next action above its head before it takes it.
-  The ark does not lie about what it is going to do.
-- **Statuses** — STAGGER, SUNDER, GLITCH, TOXIN, EVASION, PRIMED, FORTIFY, RESOLVE,
-  OVERCLOCK, EXPOSED, BLEED, SILENCED.
-- **Field kit** — medgel, pulse charges and shield cells, usable from the HUD mid-fight.
-- Multiple hostiles put the cursor into targeting mode: pick who takes the hit.
-- Abilities are also bound to keys `1`–`4`, and `Space` focuses.
-- Falling in a fight triggers your trauma harness rather than a game over — you come back
-  up at reduced vitals and try again.
-
----
-
-## Story
-
-Four chapters, ~30 nodes, branching by doctrine and by choice, ending three ways:
-**SEVER**, **DIVERT**, or **BURN**. Along the way: a botanist who has been barricaded in a
-greenhouse for forty years, a shipmind that solved loneliness the way an engineer solves
-loneliness, and a composition with 203,000 parts and no rests in it anywhere.
 
 ---
 
 ## Layout
 
 ```
-index.html              markup and screen scaffolding
-src/css/base.css        palette, cursor rig, ambience, shared chrome
-src/css/screens.css     boot, title, registry, enlistment, codex
-src/css/hud.css         in-mission HUD and narrative stage
-src/css/combat.css      combat layer, enemies, abilities, feedback
-src/js/util.js          helpers, toasts, modal
-src/js/audio.js         procedural Web Audio sound bank
-src/js/cursor.js        the reticle, hover states, hold-to-commit
-src/js/fx.js            starfield, shake, floating numbers, typewriter
-src/js/classes.js       the three doctrines, abilities, levelling
-src/js/enemies.js       bestiary and intent rolls
-src/js/storage.js       the three save slots
-src/js/story.js         the narrative graph and codex
-src/js/combat.js        turn engine
-src/js/ui.js            screens, slots, enlistment, story driver
-src/js/main.js          entry point
-tools/bundle.py         inlines the above into one self-contained page
-dist/erebus-cradle.html the generated single-file build
+index.html                markup and screen scaffolding
+vendor/three.min.js       three.js r147 (UMD), the only dependency
+src/css/base.css          palette, cursor rig, ambience, shared chrome
+src/css/screens.css       boot, title, registry, enlistment, codex, briefing
+src/css/fps.css           in-mission HUD, engage gate, pause, debrief
+src/js/util.js            helpers, toasts, modal
+src/js/audio.js           procedural Web Audio sound bank
+src/js/cursor.js          the menu reticle, hover states, hold-to-commit
+src/js/fx.js              menu starfield
+src/js/classes.js         the three doctrines and levelling
+src/js/storage.js         the three save slots
+src/js/story.js           briefing fiction and field codex
+src/js/fps/materials.js   procedural PBR textures (albedo / normal / roughness)
+src/js/fps/engine.js      renderer, tone mapping, hand-rolled post chain
+src/js/fps/level.js       ship interior, collision boxes, lighting, props
+src/js/fps/player.js      pointer-lock look, movement physics, collision
+src/js/fps/weapons.js     the three weapons, hitscan, recoil, ADS, abilities
+src/js/fps/ai.js          hostiles, steering, projectiles, hit spheres
+src/js/fps/hud.js         crosshair, vitals, ammo, comms, kill feed
+src/js/fps/game.js        mission loop, objectives, player condition
+src/js/ui.js              menus and the handoff into a mission
+src/js/main.js            entry point
+tools/bundle.py           inlines the above into one self-contained page
+dist/erebus-cradle.html   the generated single-file build
 ```

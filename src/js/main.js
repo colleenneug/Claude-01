@@ -6,7 +6,6 @@
     SF.cursor.init();
     SF.fx.initStars();
     SF.ui.bind();
-    SF.combat.bind();
 
     // Browsers gate audio until the first gesture; unlock on any of them.
     const unlock = () => SF.audio.unlock();

@@ -11,12 +11,16 @@ root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else pathlib.Path(__file__)
 html = (root / 'index.html').read_text()
 
 css_files = re.findall(r'<link rel="stylesheet" href="(src/[^"]+)"', html)
-js_files  = re.findall(r'<script src="(src/[^"]+)"></script>', html)
+js_files  = re.findall(r'<script src="((?:vendor|src)/[^"]+)"></script>', html)
 
 css = '\n\n'.join(f'/* ==== {f} ==== */\n' + (root / f).read_text() for f in css_files)
 js  = '\n\n'.join(f'/* ==== {f} ==== */\n' + (root / f).read_text() for f in js_files)
 
 body = html.split('<body class="booting">', 1)[1].split('<script src=', 1)[0]
+# a vendored bundle must not contain a literal </script> or it would close the tag early
+for f in js_files:
+    if '</script' in (root / f).read_text().lower():
+        raise SystemExit(f'{f} contains a literal </script>; cannot inline safely')
 body = body.rsplit('\n', 1)[0].rstrip()
 
 fonts = re.search(r'<link href="https://fonts\.googleapis[^>]+>', html).group(0)
