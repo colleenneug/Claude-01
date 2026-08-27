@@ -88,6 +88,29 @@
 
       setVisible(v) { root.hidden = !v; },
 
+      /* ---------- death and respawn ---------- */
+      refreshHarness(left, max) {
+        const box = $('#harness');
+        box.hidden = max === 0;
+        if (!max) return;
+        if (box.childElementCount !== max + 1) {
+          box.innerHTML = '<span class="h-label">HARNESS</span>';
+          for (let i = 0; i < max; i++) box.appendChild(el('i'));
+        }
+        Array.from(box.querySelectorAll('i')).forEach((c, i) => c.classList.toggle('spent', i >= left));
+      },
+
+      deathOverlay(show, remaining, message) {
+        const o = $('#death');
+        o.hidden = !show;
+        if (!show) return;
+        $('#death-msg').textContent = message || 'TRAUMA HARNESS ENGAGING';
+        $('#death-sub').textContent = remaining > 0
+          ? remaining + (remaining === 1 ? ' CHARGE REMAINING' : ' CHARGES REMAINING')
+          : 'NO CHARGES REMAINING';
+        o.classList.toggle('final', !remaining);
+      },
+
       /* ---------- boss encounter ---------- */
       bossShow(name, sub) {
         $('#boss-bar').hidden = false;

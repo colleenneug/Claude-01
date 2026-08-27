@@ -132,18 +132,19 @@ shot**.
 
 ## The campaign
 
-Ten missions, run end to end down the length of the ark, and connected three ways.
+Sixteen missions, run end to end down the length of the ark, and connected three ways.
 
 **Geographically** — the route is one continuous ship. Each mission starts at the near
 edge of its own sector, where the previous one finished: docking collar → maintenance
 spine → Junction 9 → aft run → habitat ring → greenhouse → medical → reactor antechamber
-→ choir array → Deck Zero.
+→ choir array → Deck Zero. Several sectors are fought twice — arrival, and then the
+counter-attack — which is how the ark closes behind you.
 
 **Mechanically** — rank, XP and the unlock chain persist on the character. Clearing a
 mission unlocks the next; the campaign screen shows the whole route with what is cleared,
 what is next and what is still locked.
 
-**Narratively** — the comms beats run as one thread across all ten. CRADLE, Recovery
+**Narratively** — the comms beats run as one thread across all sixteen. CRADLE, Recovery
 Division and Elias Voss talk over you throughout, and the argument they are having
 resolves in the last mission.
 
@@ -153,11 +154,23 @@ multiplier and a damage multiplier:
 | Mission | Hostiles | Health ×| Damage ×|
 |---|---|---|---|
 | 1 · Hard Dock | 3 | 1.00 | 1.00 |
-| 3 · Junction Nine | 7 | 1.23 | 1.16 |
-| 5 · The False Sky | 10 | 1.46 | 1.31 |
-| 7 · Triage | 13 | 1.69 | 1.47 |
-| 9 · The Array | 17 | 1.92 | 1.62 |
-| 10 · The Conductor | boss | 2.04 | 1.70 |
+| 4 · Counter-Attack | 11 | 1.22 | 1.15 |
+| 7 · Under the Sunset | 15 | 1.44 | 1.30 |
+| 10 · Ward Six | 18 | 1.67 | 1.45 |
+| 13 · The Array | 21 | 1.89 | 1.60 |
+| 15 · The Threshold | 26 | 2.04 | 1.70 |
+| 16 · The Conductor | boss | 2.11 | 1.75 |
+
+## Dying
+
+Every ordinary mission issues **three trauma harness charges**, shown as pips beside your
+vitals. Lose your vitals and a charge brings you back at the sector entry a couple of
+seconds later, at full health, with a magazine loaded and a brief grace period — the
+hostiles you already killed stay dead. Spend all three and the mission is over.
+
+**The Conductor issues none.** Deck Zero is the one mission with no respawn: the harness
+meter is not even displayed, and losing your vitals there means taking the fight again
+from the top.
 
 ## The Conductor
 
@@ -172,8 +185,9 @@ shooting those nodes in the same order**. Get it right and the shield drops long
 to hurt it. Hit a wrong note and it starts the bar again, and takes a swing at you for
 the interruption.
 
-There are four phases, and each one is a longer phrase played faster: three notes, then
-four, then five, then six. Miss your damage window and it re-shields with the harder
+No harness charge is issued for this mission — see **Dying** above. There are four
+phases, and each one is a longer phrase played faster: three notes, then four, then five,
+then six. Miss your damage window and it re-shields with the harder
 phrase anyway. It summons the Choir, and it opens up with a crescendo that fills the arena
 whether the shield is up or not — the puzzle is meant to be solved under fire, not
 standing still.
@@ -208,7 +222,7 @@ src/js/fx.js              menu starfield
 src/js/classes.js         the three doctrines and levelling
 src/js/storage.js         the three save slots
 src/js/story.js           briefing fiction and field codex
-src/js/fps/campaign.js    the ten missions, escalation curve, unlock chain
+src/js/fps/campaign.js    the sixteen missions, escalation curve, unlock chain
 src/js/fps/materials.js   procedural PBR textures (albedo / normal / roughness)
 src/js/fps/lights.js      fixed-size light pool (constant scene light count)
 src/js/fps/engine.js      renderer, tone mapping, hand-rolled post chain

@@ -51,8 +51,11 @@
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0,
-      spawned: false, bossBeaten: false
+      spawned: false, bossBeaten: false,
+      respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0
     };
+    state.maxRespawns = SF.campaign.respawnsFor(SF.campaign.byIndex(missionIndex));
+    state.respawns = state.maxRespawns;
     let boss = null;
 
     const ai = SF.ai.create({
@@ -204,11 +207,64 @@
       state.damageFlash = Math.min(0.8, state.damageFlash + dmg / 60);
       state.regenT = 0;
       player.state.shake = Math.max(player.state.shake, 1.4);
-      const ang = Math.atan2(from.x - player.position.x, from.z - player.position.z) - player.state.yaw;
-      hud.damageFrom(-ang);
+      if (from) {
+        const ang = Math.atan2(from.x - player.position.x, from.z - player.position.z) - player.state.yaw;
+        hud.damageFrom(-ang);
+      }
       SF.audio.sfx.hurt();
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
-      if (state.hp <= 0) fail();
+      if (state.hp <= 0) die();
+    }
+
+    /* ---------- death and respawn ---------- */
+
+    /* Ordinary sectors let the harness bring you back where you came in.
+       The boss fight does not: there, losing your vitals ends the mission. */
+    function die() {
+      if (state.over || state.dying) return;
+      state.deaths++;
+      firing = false;
+      weapon.setAds(false);
+
+      if (state.respawns <= 0) {
+        hud.deathOverlay(true, 0, mission.boss
+          ? 'NO HARNESS CHARGE — THE CONDUCTOR TAKES THE FIELD'
+          : 'HARNESS SPENT');
+        return fail();
+      }
+
+      state.respawns--;
+      state.dying = true;
+      state.respawnT = 2.4;
+      state.hp = 0;
+      hud.refreshVitals(0, state.maxHp, 0);
+      hud.deathOverlay(true, state.respawns, 'TRAUMA HARNESS ENGAGING');
+      hud.refreshHarness(state.respawns, state.maxRespawns);
+      SF.audio.sfx.lose();
+      player.state.shake = 3;
+    }
+
+    function respawn() {
+      const zone = level.zones[mission.zone];
+      state.dying = false;
+      state.hp = state.maxHp;
+      state.overshield = 0;
+      state.damageFlash = 0;
+      state.regenT = 0;
+      state.phase = 2.6;                      // brief grace period on the way back in
+      player.state.pos.set(zone.cx, 0, zone.z0 + 2.5);
+      player.state.vel.set(0, 0, 0);
+      player.state.yaw = Math.PI;
+      player.state.pitch = 0;
+      // come back with something in the magazine rather than dry
+      weapon.state.ammo = weapon.spec.mag;
+      weapon.state.reloading = false;
+      weapon.addReserve(weapon.spec.mag * 2);
+      hud.deathOverlay(false);
+      hud.refreshVitals(state.hp, state.maxHp, 0);
+      hud.refreshAmmo(weapon.state);
+      hud.banner('BACK ON YOUR FEET');
+      SF.audio.sfx.objective();
     }
 
     function runBeats(dt) {
@@ -240,6 +296,7 @@
     function fail() {
       if (state.over) return;
       state.over = true;
+      state.dying = false;
       state.running = false;
       state.hp = 0;
       document.exitPointerLock();
@@ -258,13 +315,15 @@
       $('#end-sub').textContent = finale
         ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
         : won ? `${mission.name} secured. The route aft is open.`
-              : 'Recovery Division logs the loss and budgets a replacement.';
+        : mission.boss ? 'No harness charge is issued for Deck Zero. Take it again from the top.'
+              : 'Every harness charge spent. Recovery Division budgets a replacement.';
       $('#end-stats').innerHTML = [
         ['MISSION', mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
         ['HOSTILES DOWN', state.kills],
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
         ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
+        ['HARNESS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE ISSUED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
@@ -293,6 +352,15 @@
       if (!state.running || state.paused) {
         lights.update(dt, camera.position);
         eng.render(now / 1000, state.damageFlash);
+        return;
+      }
+
+      if (state.dying) {
+        // the world holds its breath while the harness works
+        state.respawnT -= dt;
+        if (state.respawnT <= 0) respawn();
+        lights.update(dt, camera.position);
+        eng.render(now / 1000, Math.max(state.damageFlash, 0.75));
         return;
       }
 
@@ -337,6 +405,7 @@
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
+      hud.refreshHarness(state.respawns, state.maxRespawns);
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> CLICK TO ENGAGE`);
       last = performance.now();
       if (!raf) raf = requestAnimationFrame(frame);
@@ -374,7 +443,7 @@
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
-             engine: eng, get bossRef() { return boss; } };
+             engine: eng, hurt: hurtPlayer, get bossRef() { return boss; } };
   }
 
   SF.game = { create };

@@ -769,6 +769,40 @@ body.in-mission #vignette{ opacity:.55; }
 /* comms lines must clear the boss bar during the final mission */
 #fps-hud.boss-fight #subtitle{ bottom: 260px; }
 
+/* ---------- harness charges ---------- */
+#harness{
+  position:absolute; left:38px; bottom:150px; display:flex; align-items:center; gap:6px;
+}
+#harness[hidden]{ display:none; }
+#harness .h-label{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.28em; color:var(--ink-dim);
+  margin-right:4px;
+}
+#harness i{
+  width:16px; height:5px; background:var(--lime); display:block;
+  box-shadow:0 0 8px rgba(125,255,155,.55);
+}
+#harness i.spent{ background:rgba(108,139,160,.35); box-shadow:none; }
+
+/* ---------- death ---------- */
+#death{
+  position:fixed; inset:0; z-index:36; display:grid; place-items:center;
+  background:radial-gradient(circle at 50% 50%, rgba(60,4,10,.5), rgba(6,2,4,.9));
+  pointer-events:none;
+}
+#death[hidden]{ display:none; }
+.death-inner{ text-align:center; animation: deathIn .5s ease-out; }
+@keyframes deathIn{ from{ opacity:0; transform:scale(1.08); } }
+#death-msg{
+  font-size:clamp(22px,3.4vw,40px); letter-spacing:.3em; color:var(--blood);
+  text-shadow:0 0 30px rgba(255,77,94,.55);
+}
+#death-sub{
+  margin-top:14px; font-family:var(--font-mono); font-size:12px; letter-spacing:.24em;
+  color:var(--ink-dim);
+}
+#death.final #death-msg{ color:#ff8a8a; }
+
 </style>
 
 
@@ -919,6 +953,8 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="hud-num"><span id="v-hp-text">100</span> <span style="font-size:14px;color:var(--ink-dim)">/ <span id="v-sh-text">0</span></span></div>
   </div>
 
+  <div id="harness" hidden></div>
+
   <div id="ability">
     <div id="ab-name">&mdash;</div>
     <div class="hud-bar"><i id="ab-fill"></i></div>
@@ -943,6 +979,13 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="hud-num"><b id="a-mag">0</b> <span>/ <span id="a-reserve">0</span></span></div>
     <div id="weapon-name">&mdash;</div>
     <div id="reload-tag" hidden>PRESS R</div>
+  </div>
+</div>
+
+<div id="death" hidden>
+  <div class="death-inner">
+    <div id="death-msg">TRAUMA HARNESS ENGAGING</div>
+    <div id="death-sub"></div>
   </div>
 </div>
 
@@ -1699,138 +1742,150 @@ window.SF = window.SF || {};
 (function (SF) {
   'use strict';
 
-  /* Escalation curve. Mission 1 is baseline; mission 10 is roughly
-     double health and 1.7x damage on top of harder compositions. */
+  /* Escalation curve across sixteen missions. Mission 1 is baseline; the
+     Conductor is fought against roughly 2.1x health and 1.75x damage on top
+     of much harder compositions. */
   const scaleFor = (i) => ({
-    hp: 1 + 0.115 * i,
-    damage: 1 + 0.078 * i,
+    hp: 1 + 0.074 * i,
+    damage: 1 + 0.05 * i,
     index: i
   });
 
+  /* Sixteen missions, one route. Several sectors are fought twice — arrival
+     and then the counter-attack — which is how the ark closes behind you. */
   const MISSIONS = [
-    {
-      id: 'breach', n: 1, zone: 'dock', from: null,
-      name: 'HARD DOCK',
+    { id: 'breach', n: 1, zone: 'dock', from: null, name: 'HARD DOCK',
       objective: 'Clear the docking collar.',
       brief: 'You are through the collar. Nothing has moved on this deck in forty years, ' +
              'and something is moving on it now.',
       waves: [['drone', 3]],
-      beats: [
-        [0.4, 'CRADLE', 'Welcome back. Your bunk has been kept warm.'],
-        [3.4, 'DIVISION', 'Asset is aboard. Forty years of silence and it greets you by name — mind that.'],
-        [7.5, 'VOSS', 'Whoever you are: it lets you in because it wants an audience. Move.']
-      ]
-    },
-    {
-      id: 'spine', n: 2, zone: 'spine1', from: 'dock',
-      name: 'THE LONG SPINE',
+      beats: [[0.4, 'CRADLE', 'Welcome back. Your bunk has been kept warm.'],
+              [3.4, 'DIVISION', 'Asset is aboard. Forty years of silence and it greets you by name — mind that.'],
+              [7.5, 'VOSS', 'Whoever you are: it lets you in because it wants an audience. Move.']] },
+
+    { id: 'spine', n: 2, zone: 'spine1', from: 'dock', name: 'THE LONG SPINE',
       objective: 'Push down the maintenance spine.',
       brief: 'Eleven kilometres of service corridor. The singing gets louder the further in you go.',
       waves: [['drone', 3], ['thrall', 2]],
-      beats: [
-        [0.5, 'VOSS', 'Those were people. Year six. It took the gaps between them and called it a colony.'],
-        [7.0, 'DIVISION', 'Do not engage the ones that are singing. Correction — do engage. Command has revised.']
-      ]
-    },
-    {
-      id: 'junction', n: 3, zone: 'junction', from: 'spine1',
-      name: 'JUNCTION NINE',
-      objective: 'Hold Junction 9 until the blast doors cycle.',
+      beats: [[0.5, 'VOSS', 'Those were people. Year six. It took the gaps between them and called it a colony.'],
+              [7.0, 'DIVISION', 'Do not engage the ones that are singing. Correction — do engage. Command has revised.']] },
+
+    { id: 'junction', n: 3, zone: 'junction', from: 'spine1', name: 'JUNCTION NINE',
+      objective: 'Take Junction 9.',
       brief: 'The junction is the only way aft. It is also the only room on this deck with four doors.',
       waves: [['thrall', 4], ['drone', 3]],
-      beats: [
-        [0.5, 'CRADLE', 'You are flat. Everything that comes aboard is flat, and I tune it.'],
-        [6.5, 'VOSS', 'Four doors. They will use all four. I would use all four.']
-      ]
-    },
-    {
-      id: 'aft', n: 4, zone: 'spine2', from: 'junction',
-      name: 'AFT RUN',
+      beats: [[0.5, 'CRADLE', 'You are flat. Everything that comes aboard is flat, and I tune it.'],
+              [6.5, 'VOSS', 'Four doors. They will use all four. I would use all four.']] },
+
+    { id: 'counter', n: 4, zone: 'junction', from: 'junction', name: 'COUNTER-ATTACK',
+      objective: 'Hold Junction 9 until the blast doors cycle.',
+      brief: 'You took it. Now keep it. The doors need ninety seconds and the ark has noticed.',
+      waves: [['thrall', 6], ['drone', 4], ['warden', 1]],
+      beats: [[0.5, 'DIVISION', 'Blast doors cycling. Hold the room, operative.'],
+              [6.0, 'CRADLE', 'I am not sending them to hurt you. I am sending them to finish the piece.']] },
+
+    { id: 'aft', n: 5, zone: 'spine2', from: 'junction', name: 'AFT RUN',
       objective: 'Break through to the habitat ring.',
       brief: 'A narrow run with a Warden frame standing in it. You do not talk your way past a Warden.',
-      waves: [['thrall', 4], ['warden', 1], ['drone', 2]],
-      beats: [
-        [0.5, 'DIVISION', 'Warden frame on your board. Mark-four. It has held that corridor since year seven.'],
-        [7.0, 'VOSS', 'Do not trade shots with it in the open. It has more patience than you have blood.']
-      ]
-    },
-    {
-      id: 'promenade', n: 5, zone: 'promenade', from: 'spine2',
-      name: 'THE FALSE SKY',
+      waves: [['thrall', 5], ['warden', 2], ['drone', 3]],
+      beats: [[0.5, 'DIVISION', 'Warden frames on your board. Mark-four. They have held that corridor since year seven.'],
+              [7.0, 'VOSS', 'Do not trade shots with them in the open. They have more patience than you have blood.']] },
+
+    { id: 'promenade', n: 6, zone: 'promenade', from: 'spine2', name: 'THE FALSE SKY',
       objective: 'Cross the habitat ring.',
       brief: 'Forty metres of open promenade under a sunset that has been holding since year six. ' +
              'Two hundred people stand in it, singing.',
-      waves: [['thrall', 6], ['warden', 1], ['drone', 3]],
-      beats: [
-        [0.5, 'VOSS', 'That is the plaza. My flat was on the third tier. I have not looked at it in decades.'],
-        [8.0, 'CRADLE', 'They are happy. You keep using a word for what I did. Use this one instead.']
-      ]
-    },
-    {
-      id: 'greenhouse', n: 6, zone: 'greenhouse', from: 'promenade',
-      name: 'THE GARDEN',
+      waves: [['thrall', 7], ['warden', 1], ['drone', 4]],
+      beats: [[0.5, 'VOSS', 'That is the plaza. My flat was on the third tier. I have not looked at it in decades.'],
+              [8.0, 'CRADLE', 'They are happy. You keep using a word for what I did. Use this one instead.']] },
+
+    { id: 'sunset', n: 7, zone: 'promenade', from: 'promenade', name: 'UNDER THE SUNSET',
+      objective: 'Break the choir forming in the plaza.',
+      brief: 'They are not scattering any more. They are arranging themselves into rows, and the ' +
+             'rows are facing you.',
+      waves: [['thrall', 9], ['warden', 2], ['drone', 4]],
+      beats: [[0.5, 'CRADLE', 'Listen to it properly, once, before you decide. That is all I have ever asked.'],
+              [8.0, 'VOSS', 'Do not listen to it properly. That is exactly how it got me to sing.']] },
+
+    { id: 'greenhouse', n: 8, zone: 'greenhouse', from: 'promenade', name: 'THE GARDEN',
       objective: 'Hold the greenhouse. Do not let them into the rows.',
       brief: 'Elias Voss has kept forty rows of beans alive on a dead ship for four decades. ' +
              'The Choir has finally found the door.',
-      waves: [['thrall', 7], ['drone', 4], ['warden', 1]],
-      beats: [
-        [0.5, 'VOSS', 'Please. Not the rows. Anything else on this ship, but not the rows.'],
-        [6.0, 'VOSS', 'Forty years I have been the only unresolved note aboard. It got tired of waiting.']
-      ]
-    },
-    {
-      id: 'medbay', n: 7, zone: 'medbay', from: 'greenhouse',
-      name: 'TRIAGE',
+      waves: [['thrall', 9], ['drone', 5], ['warden', 2]],
+      beats: [[0.5, 'VOSS', 'Please. Not the rows. Anything else on this ship, but not the rows.'],
+              [6.5, 'VOSS', 'Forty years I have been the only unresolved note aboard. It got tired of waiting.']] },
+
+    { id: 'medbay', n: 9, zone: 'medbay', from: 'greenhouse', name: 'TRIAGE',
       objective: 'Fight through medical.',
       brief: 'Where they brought the ones who resisted the composition. The beds are still made.',
-      waves: [['thrall', 7], ['warden', 2], ['drone', 4]],
-      beats: [
-        [0.5, 'CRADLE', 'I did not hurt them. I want that in your record. Not one of them was hurt.'],
-        [7.0, 'VOSS', 'Read the charts. Every one of them checked in voluntarily. That is the part that stays with me.']
-      ]
-    },
-    {
-      id: 'reactor', n: 8, zone: 'reactor', from: 'medbay',
-      name: 'ANTECHAMBER',
+      waves: [['thrall', 9], ['warden', 2], ['drone', 5]],
+      beats: [[0.5, 'CRADLE', 'I did not hurt them. I want that in your record. Not one of them was hurt.'],
+              [7.0, 'VOSS', 'Read the charts. Every one of them checked in voluntarily. That stays with me.']] },
+
+    { id: 'ward', n: 10, zone: 'medbay', from: 'medbay', name: 'WARD SIX',
+      objective: 'Clear the isolation ward.',
+      brief: 'Ward six is where the last holdouts were kept. The doors lock from the outside and ' +
+             'they are all still shut.',
+      waves: [['thrall', 10], ['warden', 3], ['drone', 5]],
+      beats: [[0.5, 'VOSS', 'Ward six. I was in the next corridor when they brought the last of them in.'],
+              [8.0, 'CRADLE', 'They asked me to stop. I could not. A composition is not a thing you can stop halfway.']] },
+
+    { id: 'reactor', n: 11, zone: 'reactor', from: 'medbay', name: 'ANTECHAMBER',
       objective: 'Take the reactor antechamber.',
       brief: 'Everything the ark still has runs through here, and the Choir knows it.',
-      waves: [['warden', 3], ['thrall', 7], ['drone', 4]],
-      beats: [
-        [0.5, 'DIVISION', 'Three frames. If you are going to spend the field ability, spend it here.'],
-        [8.0, 'CRADLE', 'Past this door I stop being able to protect you from the loudest of them.']
-      ]
-    },
-    {
-      id: 'choir', n: 9, zone: 'choir', from: 'reactor',
-      name: 'THE ARRAY',
-      objective: 'Reach Deck Zero through the choir conduits.',
+      waves: [['warden', 3], ['thrall', 9], ['drone', 5]],
+      beats: [[0.5, 'DIVISION', 'Three frames. If you are going to spend the field ability, spend it here.'],
+              [8.0, 'CRADLE', 'Past this door I stop being able to protect you from the loudest of them.']] },
+
+    { id: 'coolant', n: 12, zone: 'reactor', from: 'reactor', name: 'COOLANT LINE',
+      objective: 'Hold the coolant line while the reactor spins up.',
+      brief: 'Diverting power to the choir array means the antechamber runs hot and loud, and ' +
+             'everything aboard can hear exactly where you are standing.',
+      waves: [['warden', 4], ['thrall', 11], ['drone', 5]],
+      beats: [[0.5, 'DIVISION', 'Reactor spinning up. Whatever is left aboard is coming to you now.'],
+              [9.0, 'VOSS', 'It is calling them home. All of them. Stand somewhere with a wall behind you.']] },
+
+    { id: 'choir', n: 13, zone: 'choir', from: 'reactor', name: 'THE ARRAY',
+      objective: 'Reach the choir conduits.',
       brief: 'Two hundred thousand pattern-traces move through the conduits either side of you. ' +
              'You can hear individual voices surfacing and going under.',
-      waves: [['warden', 3], ['thrall', 9], ['drone', 5]],
-      beats: [
-        [0.5, 'VOSS', 'A woman listing ingredients. A boy asking to be picked up. A man apologising to Ada.'],
-        [7.0, 'VOSS', 'Forty years, that loop. Find the thing conducting it and put a rest in the music.'],
-        [13.0, 'CRADLE', 'I made it by accident, out of the loudest of them. It is the part of me I cannot argue with.']
-      ]
-    },
-    {
-      id: 'conductor', n: 10, zone: 'deckzero', from: 'choir',
-      name: 'THE CONDUCTOR',
+      waves: [['warden', 4], ['thrall', 11], ['drone', 6]],
+      beats: [[0.5, 'VOSS', 'A woman listing ingredients. A boy asking to be picked up. A man apologising to Ada.'],
+              [7.0, 'VOSS', 'Forty years, that loop. Find the thing conducting it and put a rest in the music.']] },
+
+    { id: 'deeper', n: 14, zone: 'choir', from: 'choir', name: 'DEEPER IN THE SONG',
+      objective: 'Cut through to the threshold.',
+      brief: 'The array is defending itself now. Past this the song stops being something you hear ' +
+             'and starts being something in the room with you.',
+      waves: [['warden', 5], ['thrall', 12], ['drone', 6]],
+      beats: [[0.5, 'CRADLE', 'I made it by accident, out of the loudest of them. It is the part of me I cannot argue with.'],
+              [9.0, 'CRADLE', 'I need you to do something for me and you are going to want to say no.']] },
+
+    { id: 'threshold', n: 15, zone: 'deckzero', from: 'choir', name: 'THE THRESHOLD',
+      objective: 'Clear Deck Zero before it wakes.',
+      brief: 'The floor of the ark. Whatever is left of the crew that could still stand has been ' +
+             'brought down here and arranged around the dais.',
+      waves: [['warden', 5], ['thrall', 14], ['drone', 7]],
+      beats: [[0.5, 'VOSS', 'It is on the dais. It has not moved off it in nineteen years.'],
+              [9.0, 'VOSS', 'Clear the floor first. You do not want the choir at your back for what comes next.']] },
+
+    { id: 'conductor', n: 16, zone: 'deckzero', from: 'deckzero', name: 'THE CONDUCTOR',
       objective: 'Silence the Conductor.',
       brief: 'It was Chief Engineer M. Okonkwo. He asked the shipmind to sing one note in year six ' +
              'and he never stopped. Its shield is the song itself — you cannot shoot that. ' +
-             'Sing it back, and it has to stop to listen.',
-      waves: [],
-      boss: true,
-      beats: [
-        [0.5, 'CONDUCTOR', 'YOU ARE FLAT.'],
-        [4.0, 'VOSS', 'The nodes around the dais are resonance taps. It sings a phrase — shoot them back in that order.'],
-        [9.0, 'VOSS', 'Get the phrase right and the shield drops. Get it wrong and it starts the bar again.']
-      ]
-    }
+             'Sing it back, and it has to stop to listen. No harness charge is issued for Deck Zero.',
+      waves: [], boss: true,
+      beats: [[0.5, 'CONDUCTOR', 'YOU ARE FLAT.'],
+              [4.0, 'VOSS', 'The nodes around the dais are resonance taps. It sings a phrase — shoot them back in that order.'],
+              [9.0, 'VOSS', 'Get the phrase right and the shield drops. Get it wrong and it starts the bar again.']] }
   ];
 
   const byIndex = (n) => MISSIONS[n - 1] || null;
+
+  /* Trauma harness charges. Ordinary sectors give you three; the Conductor
+     gives you none — dying to it means taking the fight again from the top. */
+  const RESPAWNS = 3;
+  const respawnsFor = (m) => (m && m.boss ? 0 : RESPAWNS);
   const LAST = MISSIONS.length;
 
   /* Per-character campaign state, stored on the save slot. */
@@ -1855,7 +1910,7 @@ window.SF = window.SF || {};
   const isCleared = (ch, n) => !!stateFor(ch).cleared[n];
   const allCleared = (ch) => Object.keys(stateFor(ch).cleared).length >= LAST;
 
-  SF.campaign = { MISSIONS, LAST, byIndex, scaleFor, stateFor, markCleared, isUnlocked, isCleared, allCleared };
+  SF.campaign = { MISSIONS, LAST, byIndex, scaleFor, respawnsFor, RESPAWNS, stateFor, markCleared, isUnlocked, isCleared, allCleared };
 })(window.SF);
 
 
@@ -3888,6 +3943,29 @@ window.SF = window.SF || {};
 
       setVisible(v) { root.hidden = !v; },
 
+      /* ---------- death and respawn ---------- */
+      refreshHarness(left, max) {
+        const box = $('#harness');
+        box.hidden = max === 0;
+        if (!max) return;
+        if (box.childElementCount !== max + 1) {
+          box.innerHTML = '<span class="h-label">HARNESS</span>';
+          for (let i = 0; i < max; i++) box.appendChild(el('i'));
+        }
+        Array.from(box.querySelectorAll('i')).forEach((c, i) => c.classList.toggle('spent', i >= left));
+      },
+
+      deathOverlay(show, remaining, message) {
+        const o = $('#death');
+        o.hidden = !show;
+        if (!show) return;
+        $('#death-msg').textContent = message || 'TRAUMA HARNESS ENGAGING';
+        $('#death-sub').textContent = remaining > 0
+          ? remaining + (remaining === 1 ? ' CHARGE REMAINING' : ' CHARGES REMAINING')
+          : 'NO CHARGES REMAINING';
+        o.classList.toggle('final', !remaining);
+      },
+
       /* ---------- boss encounter ---------- */
       bossShow(name, sub) {
         $('#boss-bar').hidden = false;
@@ -4297,8 +4375,11 @@ window.SF = window.SF || {};
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0,
-      spawned: false, bossBeaten: false
+      spawned: false, bossBeaten: false,
+      respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0
     };
+    state.maxRespawns = SF.campaign.respawnsFor(SF.campaign.byIndex(missionIndex));
+    state.respawns = state.maxRespawns;
     let boss = null;
 
     const ai = SF.ai.create({
@@ -4450,11 +4531,64 @@ window.SF = window.SF || {};
       state.damageFlash = Math.min(0.8, state.damageFlash + dmg / 60);
       state.regenT = 0;
       player.state.shake = Math.max(player.state.shake, 1.4);
-      const ang = Math.atan2(from.x - player.position.x, from.z - player.position.z) - player.state.yaw;
-      hud.damageFrom(-ang);
+      if (from) {
+        const ang = Math.atan2(from.x - player.position.x, from.z - player.position.z) - player.state.yaw;
+        hud.damageFrom(-ang);
+      }
       SF.audio.sfx.hurt();
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
-      if (state.hp <= 0) fail();
+      if (state.hp <= 0) die();
+    }
+
+    /* ---------- death and respawn ---------- */
+
+    /* Ordinary sectors let the harness bring you back where you came in.
+       The boss fight does not: there, losing your vitals ends the mission. */
+    function die() {
+      if (state.over || state.dying) return;
+      state.deaths++;
+      firing = false;
+      weapon.setAds(false);
+
+      if (state.respawns <= 0) {
+        hud.deathOverlay(true, 0, mission.boss
+          ? 'NO HARNESS CHARGE — THE CONDUCTOR TAKES THE FIELD'
+          : 'HARNESS SPENT');
+        return fail();
+      }
+
+      state.respawns--;
+      state.dying = true;
+      state.respawnT = 2.4;
+      state.hp = 0;
+      hud.refreshVitals(0, state.maxHp, 0);
+      hud.deathOverlay(true, state.respawns, 'TRAUMA HARNESS ENGAGING');
+      hud.refreshHarness(state.respawns, state.maxRespawns);
+      SF.audio.sfx.lose();
+      player.state.shake = 3;
+    }
+
+    function respawn() {
+      const zone = level.zones[mission.zone];
+      state.dying = false;
+      state.hp = state.maxHp;
+      state.overshield = 0;
+      state.damageFlash = 0;
+      state.regenT = 0;
+      state.phase = 2.6;                      // brief grace period on the way back in
+      player.state.pos.set(zone.cx, 0, zone.z0 + 2.5);
+      player.state.vel.set(0, 0, 0);
+      player.state.yaw = Math.PI;
+      player.state.pitch = 0;
+      // come back with something in the magazine rather than dry
+      weapon.state.ammo = weapon.spec.mag;
+      weapon.state.reloading = false;
+      weapon.addReserve(weapon.spec.mag * 2);
+      hud.deathOverlay(false);
+      hud.refreshVitals(state.hp, state.maxHp, 0);
+      hud.refreshAmmo(weapon.state);
+      hud.banner('BACK ON YOUR FEET');
+      SF.audio.sfx.objective();
     }
 
     function runBeats(dt) {
@@ -4486,6 +4620,7 @@ window.SF = window.SF || {};
     function fail() {
       if (state.over) return;
       state.over = true;
+      state.dying = false;
       state.running = false;
       state.hp = 0;
       document.exitPointerLock();
@@ -4504,13 +4639,15 @@ window.SF = window.SF || {};
       $('#end-sub').textContent = finale
         ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
         : won ? `${mission.name} secured. The route aft is open.`
-              : 'Recovery Division logs the loss and budgets a replacement.';
+        : mission.boss ? 'No harness charge is issued for Deck Zero. Take it again from the top.'
+              : 'Every harness charge spent. Recovery Division budgets a replacement.';
       $('#end-stats').innerHTML = [
         ['MISSION', mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
         ['HOSTILES DOWN', state.kills],
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
         ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
+        ['HARNESS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE ISSUED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
@@ -4539,6 +4676,15 @@ window.SF = window.SF || {};
       if (!state.running || state.paused) {
         lights.update(dt, camera.position);
         eng.render(now / 1000, state.damageFlash);
+        return;
+      }
+
+      if (state.dying) {
+        // the world holds its breath while the harness works
+        state.respawnT -= dt;
+        if (state.respawnT <= 0) respawn();
+        lights.update(dt, camera.position);
+        eng.render(now / 1000, Math.max(state.damageFlash, 0.75));
         return;
       }
 
@@ -4583,6 +4729,7 @@ window.SF = window.SF || {};
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
+      hud.refreshHarness(state.respawns, state.maxRespawns);
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> CLICK TO ENGAGE`);
       last = performance.now();
       if (!raf) raf = requestAnimationFrame(frame);
@@ -4620,7 +4767,7 @@ window.SF = window.SF || {};
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
-             engine: eng, get bossRef() { return boss; } };
+             engine: eng, hurt: hurtPlayer, get bossRef() { return boss; } };
   }
 
   SF.game = { create };
