@@ -339,3 +339,16 @@ body.in-mission #vignette{ opacity:.55; }
   color:var(--ink-dim);
 }
 #death.final #death-msg{ color:#ff8a8a; }
+
+/* ---------- pickup notice ---------- */
+#pickup-note{
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.18em;
+  color:var(--amber); margin-top:5px; opacity:0; text-shadow:0 0 10px rgba(255,180,84,.5);
+}
+#pickup-note.show{ animation: pickupFlash 1.4s ease-out; }
+@keyframes pickupFlash{
+  0%{ opacity:0; transform:translateY(6px); }
+  18%{ opacity:1; transform:translateY(0); }
+  70%{ opacity:1; }
+  100%{ opacity:0; }
+}

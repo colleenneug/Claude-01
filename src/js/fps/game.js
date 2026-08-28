@@ -68,6 +68,8 @@
       }
     });
 
+    const pickups = SF.pickups.create({ scene, level, lights, hud });
+
     const weapon = SF.weapons.create({
       scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
@@ -383,6 +385,7 @@
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
+      pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (boss) boss.update(dt, player.position);
       checkCleared();
@@ -429,6 +432,7 @@
       window.removeEventListener('keydown', onKeyDown);
       canvas.removeEventListener('contextmenu', onContext);
       document.removeEventListener('pointerlockchange', onLockChange);
+      pickups.destroy();
       if (boss) boss.destroy();
       hud.bossHide();
       hud.hideNodes();
@@ -443,7 +447,8 @@
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
-             engine: eng, hurt: hurtPlayer, get bossRef() { return boss; } };
+             engine: eng, hurt: hurtPlayer, pickupsRef: pickups,
+             get bossRef() { return boss; } };
   }
 
   SF.game = { create };

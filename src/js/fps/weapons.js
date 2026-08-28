@@ -367,7 +367,7 @@
       state: w, spec, ability, view, prewarm,
       update, fire, reload, useAbility,
       setAds(v) { w.ads = v; },
-      addReserve(n) { w.reserve += n; hud.refreshAmmo(w); }
+      addReserve(n) { w.reserve = Math.min(spec.reserve, w.reserve + n); hud.refreshAmmo(w); }
     };
   }
 

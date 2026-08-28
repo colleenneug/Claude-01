@@ -803,6 +803,19 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #death.final #death-msg{ color:#ff8a8a; }
 
+/* ---------- pickup notice ---------- */
+#pickup-note{
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.18em;
+  color:var(--amber); margin-top:5px; opacity:0; text-shadow:0 0 10px rgba(255,180,84,.5);
+}
+#pickup-note.show{ animation: pickupFlash 1.4s ease-out; }
+@keyframes pickupFlash{
+  0%{ opacity:0; transform:translateY(6px); }
+  18%{ opacity:1; transform:translateY(0); }
+  70%{ opacity:1; }
+  100%{ opacity:0; }
+}
+
 </style>
 
 
@@ -979,6 +992,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="hud-num"><b id="a-mag">0</b> <span>/ <span id="a-reserve">0</span></span></div>
     <div id="weapon-name">&mdash;</div>
     <div id="reload-tag" hidden>PRESS R</div>
+    <div id="pickup-note"></div>
   </div>
 </div>
 
@@ -1228,7 +1242,9 @@ window.SF = window.SF || {};
     emp:        () => { tone(2200, 0.5, 'sawtooth', 0.22, 60); noise(0.45, 0.3, 4000); },
     phase:      () => { tone(300, 0.24, 'sine', 0.16, 1700); noise(0.14, 0.1, 2400); },
     comms:      () => { tone(1250, 0.045, 'square', 0.07); setTimeout(() => tone(950, 0.05, 'square', 0.06), 60); },
-    objective:  () => { [660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.11), i * 110)); }
+    objective:  () => { [660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.11), i * 110)); },
+    pickup:     () => { tone(880, 0.07, 'square', 0.1); setTimeout(() => tone(1320, 0.09, 'square', 0.09), 70);
+                        noise(0.06, 0.1, 2600); }
   };
 
   SF.audio = {
@@ -3425,7 +3441,7 @@ window.SF = window.SF || {};
       state: w, spec, ability, view, prewarm,
       update, fire, reload, useAbility,
       setAds(v) { w.ads = v; },
-      addReserve(n) { w.reserve += n; hud.refreshAmmo(w); }
+      addReserve(n) { w.reserve = Math.min(spec.reserve, w.reserve + n); hud.refreshAmmo(w); }
     };
   }
 
@@ -3852,6 +3868,140 @@ window.SF = window.SF || {};
 })(window.SF);
 
 
+/* ==== src/js/fps/pickups.js ==== */
+/* ============================================================
+   Ammunition kits.
+
+   Scattered through every sector, keyed off the level's own collider
+   list so none of them end up inside a wall or a crate. Walk over one
+   to take it; they re-form after a while so a long fight cannot dry
+   you out completely, and they refuse to be spent when your reserve is
+   already full.
+
+   Like everything else in a firefight, they are pooled: the meshes are
+   built once and hidden, never created or destroyed mid-mission.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const RESPAWN = 32;        // seconds before a spent kit re-forms
+  const REACH = 1.5;         // metres — generous, this is a walk-over pickup
+
+  function create(ctx) {
+    const { scene, level, lights, hud } = ctx;
+
+    /* ---------- where they go ---------- */
+    function blocked(x, z, pad) {
+      for (const c of level.colliders) {
+        if (c.top < 0.5) continue;
+        if (x > c.min.x - pad && x < c.max.x + pad &&
+            z > c.min.z - pad && z < c.max.z + pad) return true;
+      }
+      return false;
+    }
+
+    /* A few per sector, spread out, tucked away from the centre line so
+       they read as supplies left against a wall rather than dropped loot. */
+    function placements() {
+      const out = [];
+      for (const id of Object.keys(level.zones)) {
+        const z = level.zones[id];
+        const area = (z.x1 - z.x0) * (z.z1 - z.z0);
+        const want = Math.max(2, Math.min(5, Math.round(area / 150)));
+        let tries = 0;
+        let placed = 0;
+        while (placed < want && tries < 150) {
+          tries++;
+          const x = z.x0 + 1.6 + Math.random() * (z.x1 - z.x0 - 3.2);
+          const zz = z.z0 + 1.6 + Math.random() * (z.z1 - z.z0 - 3.2);
+          if (blocked(x, zz, 0.9)) continue;
+          // keep them apart so they do not clump
+          if (out.some((p) => Math.hypot(p.x - x, p.z - zz) < 6)) continue;
+          out.push({ x: x, z: zz, zone: id });
+          placed++;
+        }
+      }
+      return out;
+    }
+
+    /* ---------- build ---------- */
+    const shell = new THREE.BoxGeometry(0.44, 0.3, 0.32);
+    const band = new THREE.BoxGeometry(0.46, 0.075, 0.34);
+    const caseMat = new THREE.MeshStandardMaterial({
+      color: 0x3c4450, metalness: 0.85, roughness: 0.45
+    });
+    const glowMat = new THREE.MeshStandardMaterial({
+      color: 0x0a0d12, emissive: new THREE.Color(0xffb454), emissiveIntensity: 2.6,
+      metalness: 0.3, roughness: 0.4
+    });
+
+    const kits = placements().map((p) => {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(shell, caseMat);
+      const stripe = new THREE.Mesh(band, glowMat);
+      stripe.position.y = 0.055;
+      body.castShadow = true;
+      g.add(body, stripe);
+      g.position.set(p.x, 0.75, p.z);
+      scene.add(g);
+
+      // low and short-ranged, so a kit only lights its own corner
+      const halo = lights.attach(0xffb454, 0.85, 4.5, { dynamic: false });
+      halo.set(p.x, 0.9, p.z);
+
+      return { group: g, halo, x: p.x, z: p.z, zone: p.zone, taken: 0, spin: Math.random() * 6.28 };
+    });
+
+    /* ---------- per-frame ---------- */
+    function update(dt, playerPos, weapon) {
+      for (const k of kits) {
+        if (k.taken > 0) {
+          k.taken -= dt;
+          if (k.taken <= 0) {                       // re-form
+            k.group.visible = true;
+            k.halo.setIntensity(0.85);
+            k.group.scale.setScalar(1);
+          }
+          continue;
+        }
+
+        k.spin += dt * 1.1;
+        k.group.rotation.y = k.spin;
+        k.group.position.y = 0.75 + Math.sin(k.spin * 1.6) * 0.07;
+        k.halo.set(k.x, k.group.position.y + 0.15, k.z);
+
+        const dx = playerPos.x - k.x, dz = playerPos.z - k.z;
+        const dy = playerPos.y - (k.group.position.y - 0.75);
+        if (dx * dx + dz * dz > REACH * REACH || Math.abs(dy) > 2.4) continue;
+
+        // full reserve? leave it where it is for later
+        if (weapon.state.reserve >= weapon.spec.reserve) {
+          hud.pickup('AMMO FULL');
+          continue;
+        }
+
+        const rounds = weapon.spec.mag * 2;
+        weapon.addReserve(rounds);
+        k.taken = RESPAWN;
+        k.group.visible = false;
+        k.halo.setIntensity(0);
+        hud.pickup('+' + rounds + ' ROUNDS');
+        SF.audio.sfx.pickup();
+      }
+    }
+
+    function destroy() {
+      for (const k of kits) { k.halo.release(); scene.remove(k.group); }
+      kits.length = 0;
+    }
+
+    return { kits, update, destroy, get count() { return kits.length; } };
+  }
+
+  SF.pickups = { create, RESPAWN };
+})(window.SF);
+
+
 /* ==== src/js/fps/hud.js ==== */
 /* ============================================================
    In-mission HUD. DOM over the canvas — cheaper than drawing it in
@@ -3925,6 +4075,16 @@ window.SF = window.SF || {};
       },
 
       objective(text) { $('#hud-objective').innerHTML = text; },
+
+      /* Brief line over the ammo counter when something is picked up. */
+      pickup(text) {
+        const n = $('#pickup-note');
+        if (n.textContent === text && n.classList.contains('show')) return;
+        n.textContent = text;
+        n.classList.remove('show');
+        void n.offsetWidth;
+        n.classList.add('show');
+      },
 
       /* Comms lines carry the story now that there is no dialogue screen. */
       say(speaker, text, ms) {
@@ -4392,6 +4552,8 @@ window.SF = window.SF || {};
       }
     });
 
+    const pickups = SF.pickups.create({ scene, level, lights, hud });
+
     const weapon = SF.weapons.create({
       scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
@@ -4707,6 +4869,7 @@ window.SF = window.SF || {};
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
+      pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (boss) boss.update(dt, player.position);
       checkCleared();
@@ -4753,6 +4916,7 @@ window.SF = window.SF || {};
       window.removeEventListener('keydown', onKeyDown);
       canvas.removeEventListener('contextmenu', onContext);
       document.removeEventListener('pointerlockchange', onLockChange);
+      pickups.destroy();
       if (boss) boss.destroy();
       hud.bossHide();
       hud.hideNodes();
@@ -4767,7 +4931,8 @@ window.SF = window.SF || {};
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
-             engine: eng, hurt: hurtPlayer, get bossRef() { return boss; } };
+             engine: eng, hurt: hurtPlayer, pickupsRef: pickups,
+             get bossRef() { return boss; } };
   }
 
   SF.game = { create };

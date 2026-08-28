@@ -100,7 +100,9 @@
     emp:        () => { tone(2200, 0.5, 'sawtooth', 0.22, 60); noise(0.45, 0.3, 4000); },
     phase:      () => { tone(300, 0.24, 'sine', 0.16, 1700); noise(0.14, 0.1, 2400); },
     comms:      () => { tone(1250, 0.045, 'square', 0.07); setTimeout(() => tone(950, 0.05, 'square', 0.06), 60); },
-    objective:  () => { [660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.11), i * 110)); }
+    objective:  () => { [660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.11), i * 110)); },
+    pickup:     () => { tone(880, 0.07, 'square', 0.1); setTimeout(() => tone(1320, 0.09, 'square', 0.09), 70);
+                        noise(0.06, 0.1, 2600); }
   };
 
   SF.audio = {

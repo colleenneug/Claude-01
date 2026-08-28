@@ -161,6 +161,14 @@ multiplier and a damage multiplier:
 | 15 · The Threshold | 26 | 2.04 | 1.70 |
 | 16 · The Conductor | boss | 2.11 | 1.75 |
 
+## Ammunition
+
+Ammo kits are scattered through every sector — thirty-odd across the ark, two to five per
+room, placed against the level's own collider list so none of them end up inside a wall.
+Walk over one for two magazines' worth of reserve. They re-form about half a minute after
+being taken, so a long fight cannot dry you out, and your reserve has a ceiling: at full
+capacity a kit is left where it is rather than wasted.
+
 ## Dying
 
 Every ordinary mission issues **three trauma harness charges**, shown as pips beside your

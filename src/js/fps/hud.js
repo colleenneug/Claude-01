@@ -71,6 +71,16 @@
 
       objective(text) { $('#hud-objective').innerHTML = text; },
 
+      /* Brief line over the ammo counter when something is picked up. */
+      pickup(text) {
+        const n = $('#pickup-note');
+        if (n.textContent === text && n.classList.contains('show')) return;
+        n.textContent = text;
+        n.classList.remove('show');
+        void n.offsetWidth;
+        n.classList.add('show');
+      },
+
       /* Comms lines carry the story now that there is no dialogue screen. */
       say(speaker, text, ms) {
         subtitle.innerHTML = `<b>${speaker}</b> ${text}`;
