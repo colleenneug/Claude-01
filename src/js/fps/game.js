@@ -10,12 +10,20 @@
   const { $, clamp } = SF.util;
 
   function create(character, missionIndex, onExit) {
+    /* A mission reference is either a campaign index or a destination id. */
+    const isPlanet = typeof missionIndex === 'string';
+    const mission = isPlanet ? SF.planets.asMission(SF.planets.byId(missionIndex))
+                             : SF.campaign.byIndex(missionIndex);
+    // destinations scale with the wave reached, not the mission number
+    let scale = SF.campaign.scaleFor(isPlanet ? 5 : missionIndex - 1);
+
     const canvas = $('#gl');
     const eng = SF.engine.create(canvas);
     const { scene, camera } = eng;
 
-    const level = SF.level.build(scene);
-    const missionSpec = SF.campaign.byIndex(missionIndex);
+    const level = isPlanet ? SF.planets.buildArena(scene, mission.planet)
+                           : SF.level.build(scene);
+    const missionSpec = mission;
 
     /* One fixed set of point lights for the whole mission. See fps/lights.js:
        changing the scene's light count recompiles every shader, so nothing
@@ -23,8 +31,11 @@
        a corridor, so it gets a few more slots. */
     const lights = SF.lights.create(scene, missionSpec.boss ? 12 : 8);
     for (const e of level.emitters) lights.addStatic(e.x, e.y, e.z, e.colour, e.intensity, e.distance);
-    scene.add(new THREE.HemisphereLight(0x4a6479, 0x141a22, 0.95));
-    const key = new THREE.DirectionalLight(0x9ec4dd, 0.6);
+    const lightSpec = isPlanet ? mission.planet.light
+                               : { key: 0x9ec4dd, keyI: 0.6, hemiSky: 0x4a6479,
+                                   hemiGround: 0x141a22, hemiI: 0.95 };
+    scene.add(new THREE.HemisphereLight(lightSpec.hemiSky, lightSpec.hemiGround, lightSpec.hemiI));
+    const key = new THREE.DirectionalLight(lightSpec.key, lightSpec.keyI);
     key.position.set(8, 20, -12);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
@@ -37,14 +48,16 @@
     /* Each mission opens where the last one closed: at the near edge of its
        own sector, facing down the ship. */
     (function placeStart() {
-      const zone = level.zones[SF.campaign.byIndex(missionIndex).zone];
+      if (isPlanet) {
+        player.state.pos.copy(level.playerStart);
+        player.state.yaw = Math.PI;
+        return;
+      }
+      const zone = level.zones[mission.zone];
       player.state.pos.set(zone.cx, 0, zone.z0 + 2.5);
       player.state.yaw = Math.PI;
     })();
     const hud = SF.hud.create();
-
-    const mission = SF.campaign.byIndex(missionIndex);
-    const scale = SF.campaign.scaleFor(missionIndex - 1);
 
     SF.gear.ensure(character);
     const armour = SF.gear.armourStats(character);
@@ -54,6 +67,7 @@
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
+      wave: 0, onPad: false, extractT: 0,
       spawned: false, bossBeaten: false,
       respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0
     };
@@ -67,7 +81,9 @@
       onPlayerHit(amount, from) { hurtPlayer(amount * scale.damage, from); },
       onKill(e) {
         state.kills++;
-        state.xp += Math.round(e.spec.xp * (1 + 0.1 * (missionIndex - 1)));
+        // a destination's reference is an id, not a number — use its tier instead
+        const tier = isPlanet ? 6 + state.wave : missionIndex;
+        state.xp += Math.round(e.spec.xp * (1 + 0.1 * (tier - 1)));
       }
     });
 
@@ -87,18 +103,23 @@
 
     /* ---------- input ---------- */
     let firing = false;
+    let extractHeld = false;
 
     function onMouseDown(e) {
       if (!state.running || state.paused) return;
       if (e.button === 0) firing = true;
       if (e.button === 2) weapon.setAds(true);
     }
+    function onKeyUp(e) { if (e.code === 'KeyF') extractHeld = false; }
+    window.addEventListener('keyup', onKeyUp);
+
     function onMouseUp(e) {
       if (e.button === 0) firing = false;
       if (e.button === 2) weapon.setAds(false);
     }
     function onKeyDown(e) {
       if (!state.running) return;
+      if (e.code === 'KeyF') extractHeld = true;
       if (e.code === 'KeyR') weapon.reload();
       if (e.code === 'KeyQ' || e.code === 'KeyE') weapon.useAbility();
       if (e.code === 'Escape' && !state.paused && !state.over) {
@@ -176,6 +197,7 @@
 
     function beginMission() {
       const zone = level.zones[mission.zone];
+      if (mission.survival) { state.wave = 0; nextWave(); state.spawned = true; SF.audio.sfx.objective(); return; }
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
       for (const [type, count] of mission.waves) {
@@ -274,6 +296,53 @@
       SF.audio.sfx.objective();
     }
 
+    /* Destinations run escalating waves rather than a fixed roster. */
+    function nextWave() {
+      state.wave++;
+      scale = SF.campaign.scaleFor(2 + state.wave * 1.35);
+      const budget = 3 + Math.round(state.wave * 1.7);
+      const mix = mission.planet.mix;
+      const zone = level.zones.arena;
+
+      for (let i = 0; i < budget; i++) {
+        let roll = Math.random(), type = mix[0][0];
+        for (const [t, w] of mix) { roll -= w; if (roll <= 0) { type = t; break; } }
+        // ring spawn, well clear of the extraction pad
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 26 + Math.random() * 26;
+        const e = ai.spawn(type, Math.cos(ang) * dist, Math.sin(ang) * dist);
+        e.maxHp = Math.round(e.maxHp * scale.hp);
+        e.hp = e.maxHp;
+        e.alerted = true;
+        void zone;
+      }
+      hud.objective(`<b>WAVE ${state.wave}</b> ${state.wave >= 5
+        ? 'Stand on the beacon to extract.' : 'Survive. Extraction opens at wave 5.'}`);
+      hud.banner('WAVE ' + state.wave);
+      SF.audio.sfx.alarm();
+    }
+
+    function survivalTick(dt) {
+      if (ai.alive === 0 && state.stepT > 1.2) {
+        state.xp += 40 * state.wave;
+        nextWave();
+        state.stepT = 0;
+      }
+      const onPad = state.wave >= 5 &&
+        Math.hypot(player.position.x, player.position.z) < 3.6;
+      if (onPad !== state.onPad) {
+        state.onPad = onPad;
+        hud.pickup(onPad ? 'HOLD F TO EXTRACT' : '');
+      }
+      if (onPad && extractHeld) {
+        state.extractT += dt;
+        hud.pickup('EXTRACTING ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
+        if (state.extractT >= 1.6) complete();
+      } else {
+        state.extractT = 0;
+      }
+    }
+
     function runBeats(dt) {
       state.stepT += dt;
       while (state.beatIdx < mission.beats.length && state.stepT >= mission.beats[state.beatIdx][0]) {
@@ -285,6 +354,7 @@
 
     function checkCleared() {
       if (mission.boss) return;                 // the boss ends its own mission
+      if (mission.survival) return;             // destinations end on extraction
       if (ai.alive === 0 && state.stepT > 2) complete();
     }
 
@@ -294,8 +364,14 @@
       state.running = false;
       document.exitPointerLock();
       const notes = SF.classes.grantXp(character, state.xp);
-      SF.campaign.markCleared(character, missionIndex, state.time);
-      state.drops = SF.gear.rollDrops(character, mission.n, !!mission.boss);
+      if (!isPlanet) SF.campaign.markCleared(character, missionIndex, state.time);
+      else {
+        character.expeditions = character.expeditions || {};
+        const best = character.expeditions[missionIndex] || 0;
+        character.expeditions[missionIndex] = Math.max(best, state.wave);
+      }
+      state.drops = SF.gear.rollDrops(character,
+        isPlanet ? Math.min(16, 4 + state.wave * 1.6) : mission.n, !!mission.boss);
       SF.gear.grant(character, state.drops);
       SF.storage.save(character.slot, character);
       SF.audio.sfx.win();
@@ -319,15 +395,19 @@
       const acc = weapon.state.shots ? Math.round((weapon.state.hits / weapon.state.shots) * 100) : 0;
       const finale = won && mission.boss;
       $('#end-title').textContent = finale ? 'THE ARK IS QUIET'
+                                  : won && mission.survival ? 'EXTRACTED'
                                   : won ? 'SECTOR CLEAR' : 'ASSET LOST';
       $('#end-title').className = won ? 'win' : 'lose';
       $('#end-sub').textContent = finale
         ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
+        : won && mission.survival ? `Cutter clear of ${mission.name} at wave ${state.wave}.`
         : won ? `${mission.name} secured. The route aft is open.`
         : mission.boss ? 'No harness charge is issued for Deck Zero. Take it again from the top.'
               : 'Every harness charge spent. Recovery Division budgets a replacement.';
       $('#end-stats').innerHTML = [
-        ['MISSION', mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
+        [mission.survival ? 'DESTINATION' : 'MISSION',
+         mission.survival ? mission.name + ' — WAVE ' + state.wave
+                          : mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
         ['HOSTILES DOWN', state.kills],
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
@@ -402,6 +482,7 @@
 
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
+      if (mission.survival) survivalTick(dt);
       if (boss) boss.update(dt, player.position);
       checkCleared();
 
@@ -424,7 +505,9 @@
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
       hud.refreshHarness(state.respawns, state.maxRespawns);
-      hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> CLICK TO ENGAGE`);
+      hud.objective(mission.survival
+        ? '<b>' + mission.name + '</b> CLICK TO ENGAGE'
+        : `<b>${mission.n}/${SF.campaign.LAST}</b> CLICK TO ENGAGE`);
       last = performance.now();
       if (!raf) raf = requestAnimationFrame(frame);
     }
@@ -445,6 +528,7 @@
       canvas.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
       canvas.removeEventListener('contextmenu', onContext);
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();

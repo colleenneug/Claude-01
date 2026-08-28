@@ -276,8 +276,54 @@
       body.appendChild(row);
     }
 
+    /* Orbital destinations open once the habitat ring is behind you. */
+    const skyOpen = SF.planets.unlocked(ch);
+    for (const dest of SF.planets.DESTINATIONS) {
+      const best = (ch.expeditions || {})[dest.id] || 0;
+      const row = el('button', 'camp-row destination');
+      row.disabled = !skyOpen;
+      row.dataset.hover = skyOpen ? 'BRIEF' : 'LOCKED';
+      row.innerHTML =
+        '<div class="camp-n">◎</div>' +
+        '<div>' +
+          `<div class="camp-name">${dest.name}</div>` +
+          `<div class="camp-obj">${dest.sub}</div>` +
+          '<div class="camp-diff">' + [1,2,3,4,5].map(() => '<i class="on"></i>').join('') + '</div>' +
+        '</div>' +
+        `<div class="camp-state ${skyOpen ? 'next' : 'locked'}">` +
+          (skyOpen ? (best ? 'BEST WAVE ' + best : 'OPEN')
+                   : 'CLEAR MISSION ' + SF.planets.UNLOCK_AFTER) +
+        '</div>';
+      if (skyOpen) row.addEventListener('click', () => openDestination(dest.id));
+      body.appendChild(row);
+    }
+
     SF.audio.sfx.open();
     show('campaign');
+  }
+
+  function openDestination(id) {
+    const dest = SF.planets.byId(id);
+    missionIndex = id;
+    const cls = SF.classes.CLASSES[ch.cls];
+    const wep = ch.equipped && ch.equipped.weapon;
+    $('#brief-body').innerHTML =
+      `<div class="brief-head" style="--accent:${cls.accent}">` +
+        `<div class="bh-glyph">${cls.glyph}</div>` +
+        `<div><div class="bh-name">${ch.name}</div>` +
+        `<div class="bh-cls">${cls.name} · RANK ${ch.level} · POWER ${SF.gear.powerOfCharacter(ch)}</div>` +
+        `<div class="bh-kit">${wep ? wep.name : SF.weapons.WEAPONS[ch.cls].name}</div></div>` +
+      '</div>' +
+      '<div class="brief-text">' +
+        `<p class="sys">ORBITAL DESTINATION — ${dest.name}<br>${dest.sub}<br>` +
+        'FORMAT: ENDLESS WAVES. EXTRACTION OPENS AT WAVE 5.<br>' +
+        'REWARD: SALVAGE SCALES WITH THE WAVE YOU REACH.</p>' +
+        `<p>${dest.brief}</p>` +
+        '<p class="alert">STAND ON THE BEACON AND HOLD F TO CALL THE CUTTER. ' +
+        'HARNESS CHARGES APPLY HERE.</p>' +
+      '</div>';
+    SF.audio.sfx.open();
+    show('brief');
   }
 
   /* ---------------- armoury ---------------- */

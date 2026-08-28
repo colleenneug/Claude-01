@@ -226,6 +226,24 @@ turn them around. Skin tone, hair style and hair colour are yours to set, and eq
 armour is plated in its own rarity colour, so an exotic helm reads as gold across the
 room. Hair sits under a helmet when one is equipped, as it would.
 
+## Orbital destinations
+
+Clearing mission 6 opens two worlds the cutter can reach: **Thresher's Reach**, a desert
+survey station the ark dropped four years before the singing started, and **Cold Lantern**,
+the frozen relay that carried the last clean message home. Both are open arenas rather
+than corridors — a horizon, scattered cover, and hostiles in escalating waves.
+
+They run endless: each cleared wave is larger and tougher than the last and pays XP, and
+from wave 5 you can stand on the extraction beacon and hold `F` to call the cutter. Salvage
+rolls against the wave you reached, so going deeper is how you get better gear. Harness
+charges apply, so death is survivable up to a point.
+
+Each destination looks for a backdrop image in `assets/` — `desert-planet-bg.webp` and
+`frozen-planet-bg.webp`. If the file is there it is used as the sky; if it is not, the sky
+is generated procedurally instead, so the destinations work either way. `tools/bundle.py`
+inlines anything under `assets/` as a data URI, so supplied art survives into the
+single-file build.
+
 ## Three character slots
 
 The crew registry holds exactly three bays, persisted to `localStorage`. Each dossier

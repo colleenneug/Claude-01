@@ -274,3 +274,8 @@
 }
 .es-drop .d-name{ font-size:12.5px; color:#eafcff; }
 .es-drop .d-meta{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; color:var(--rc); margin-top:3px; }
+
+.camp-row.destination{ border-color:rgba(255,180,84,.4); }
+.camp-row.destination .camp-n{ color:var(--amber); font-size:24px; }
+.camp-row.destination:hover:not(:disabled){
+  border-color:var(--amber); box-shadow:0 0 18px rgba(255,180,84,.3); }

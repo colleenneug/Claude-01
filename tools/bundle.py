@@ -4,7 +4,7 @@ The Artifact host supplies <!doctype>/<html>/<head>/<body>, so this emits only
 the page content: a <title>, the Google Fonts link, one <style>, the markup,
 and one <script>.
 """
-import re, pathlib, sys
+import re, pathlib, sys, json
 
 # usage: python3 tools/bundle.py [repo-root]   (defaults to this script's parent)
 root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else pathlib.Path(__file__).resolve().parent.parent)
@@ -25,6 +25,23 @@ body = body.rsplit('\n', 1)[0].rstrip()
 
 fonts = re.search(r'<link href="https://fonts\.googleapis[^>]+>', html).group(0)
 
+# Inline anything under assets/ as a data URI. The runtime looks its paths up in
+# window.__ASSETS first, so the same code works unbundled and bundled.
+import base64, mimetypes
+asset_dir = root / 'assets'
+assets = {}
+if asset_dir.is_dir():
+    for f in sorted(asset_dir.iterdir()):
+        if not f.is_file():
+            continue
+        mime = mimetypes.guess_type(f.name)[0] or 'application/octet-stream'
+        if f.name.endswith('.webp'):
+            mime = 'image/webp'
+        b64 = base64.b64encode(f.read_bytes()).decode('ascii')
+        assets[f'assets/{f.name}'] = f'data:{mime};base64,{b64}'
+asset_js = 'window.__ASSETS = ' + json.dumps(assets) + ';'
+print(f'  inlined {len(assets)} asset(s)')
+
 out = f"""<title>Erebus Cradle</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,6 +56,8 @@ out = f"""<title>Erebus Cradle</title>
 /* The host owns <body>, so the boot-screen state class is applied here
    rather than in markup. */
 document.body.classList.add('booting');
+
+{asset_js}
 
 {js}
 </script>
