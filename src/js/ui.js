@@ -326,6 +326,76 @@
     show('brief');
   }
 
+  /* ---------------- squad link ---------------- */
+
+  function openCoop() {
+    if (!ch) return;
+    renderCoop();
+    show('coop');
+    SF.audio.sfx.open();
+  }
+
+  function renderCoop() {
+    const net = SF.net;
+    const status = $('#coop-status');
+    const online = net.active;
+
+    status.className = 'coop-status' + (online ? ' online'
+      : net.status === 'connecting' ? ' connecting' : '');
+    status.textContent = online
+      ? `CONNECTED · ROOM ${net.room} · ${net.isHost ? 'HOSTING' : 'GUEST'}` +
+        (net.latency ? ` · ${net.latency}ms` : '')
+      : net.status === 'connecting' ? 'CONNECTING…' : 'OFFLINE';
+
+    $('#coop-code').hidden = !online;
+    $('#coop-code-value').textContent = online ? net.room : '—';
+    $('#btn-leave').hidden = !online;
+    $('#btn-host').disabled = online;
+    $('#btn-join').disabled = online;
+
+    $('#coop-note').innerHTML = online
+      ? 'Everyone in the room drops together — start a mission and your squad follows you in.'
+      : (location.protocol === 'file:'
+        ? 'Squad link needs the game served by its own server. Run <code>node server/server.js</code> ' +
+          'and open <code>http://localhost:8080</code>.'
+        : 'Open a room and share the code, or type a friend\'s code to join them. Up to four.');
+
+    const list = $('#squad-list');
+    list.innerHTML = '';
+    if (!online) { list.appendChild(el('div', 'squad-empty', 'NOT CONNECTED')); return; }
+
+    const rows = [{ id: net.id, name: ch.name, cls: ch.cls,
+                    power: SF.gear.powerOfCharacter(ch), isHost: net.isHost, self: true }]
+      .concat(net.roster());
+
+    for (const p of rows) {
+      const cls = SF.classes.CLASSES[p.cls] || SF.classes.CLASSES.bulwark;
+      const row = el('div', 'squad-row');
+      row.style.setProperty('--accent', cls.accent);
+      row.innerHTML =
+        `<div class="sq-glyph">${cls.glyph}</div>` +
+        `<div><div class="sq-name">${p.name}${p.self ? ' (YOU)' : ''}</div>` +
+        `<div class="sq-sub">${cls.name}${p.isHost ? ' · HOST' : ''}</div></div>` +
+        `<div class="sq-power">${p.power || 0}</div>`;
+      list.appendChild(row);
+    }
+  }
+
+  async function connectCoop(code) {
+    try {
+      $('#coop-status').className = 'coop-status connecting';
+      $('#coop-status').textContent = 'CONNECTING…';
+      await SF.net.connect(ch, code || null);
+      SF.audio.sfx.confirm();
+      toast('SQUAD LINK ESTABLISHED — ROOM ' + SF.net.room, 'good');
+    } catch (err) {
+      $('#coop-status').className = 'coop-status error';
+      $('#coop-status').textContent = 'NO LINK — ' + err.message.toUpperCase();
+      SF.audio.sfx.deny();
+    }
+    renderCoop();
+  }
+
   /* ---------------- armoury ---------------- */
 
   function openArmoury() {
@@ -490,6 +560,11 @@
       await wait(140);
     }
 
+    if (SF.net.active && SF.net.isHost) {
+      const m = (typeof missionIndex === 'string')
+        ? SF.planets.byId(missionIndex) : SF.campaign.byIndex(missionIndex);
+      SF.net.send({ t: 'mission', d: { id: missionIndex, name: m ? m.name : '' } });
+    }
     document.body.classList.add('in-mission');
     $('#gl').hidden = false;
     $('#weapon-name').textContent = (ch.equipped && ch.equipped.weapon)
@@ -534,6 +609,7 @@
         if (dest === 'codex') renderCodex();
         if (dest === 'campaign') { if (dossier) dossier.stop(); openCampaign(slotIndex); return; }
         if (dest === 'armoury') { openArmoury(); return; }
+        if (dest === 'coop') { openCoop(); return; }
         show(dest);
       });
     });
@@ -550,6 +626,28 @@
     $('#btn-enlist').addEventListener('click', enlist);
     $('#btn-drop').addEventListener('click', drop);
     $('#btn-armoury').addEventListener('click', openArmoury);
+    $('#btn-coop').addEventListener('click', openCoop);
+    $('#btn-host').addEventListener('click', () => connectCoop(null));
+    $('#btn-join').addEventListener('click', () =>
+      connectCoop(($('#room-input').value || '').trim().toUpperCase()));
+    $('#room-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') connectCoop(($('#room-input').value || '').trim().toUpperCase());
+    });
+    $('#btn-leave').addEventListener('click', () => {
+      SF.net.disconnect();
+      SF.audio.sfx.back();
+      renderCoop();
+    });
+
+    /* Roster changes and a squadmate's mission choice both land here. */
+    SF.net.on('players', () => { if ($('#screen-coop').classList.contains('active')) renderCoop(); });
+    SF.net.on('status', () => { if ($('#screen-coop').classList.contains('active')) renderCoop(); });
+    SF.net.on('mission', (d) => {
+      if (!ch || !d) return;
+      toast('SQUAD DROPPING — ' + (d.name || d.id), 'warn');
+      missionIndex = d.id;
+      drop();
+    });
 
     $('#engage').addEventListener('click', () => {
       if (!mission) return;
@@ -573,6 +671,6 @@
     void sessionStart;
   }
 
-  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury,
+  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury, openCoop,
             get character() { return ch; } };
 })(window.SF);

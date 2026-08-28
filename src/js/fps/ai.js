@@ -28,11 +28,17 @@
     }
   };
 
+  let uidSeq = 0;
+
   function create(ctx) {
     const { scene, level, lights } = ctx;
     const enemies = [];
     const projectiles = [];
     const tmp = new THREE.Vector3();
+    /* In co-op only the host simulates hostiles; everyone else renders the
+       host's snapshots. Proxies keep full hit geometry so shooting them works
+       exactly the same — the damage is just reported to the host to apply. */
+    let remote = false;
 
     /* ---------- construction ---------- */
     function buildRig(spec) {
@@ -87,6 +93,9 @@
       scene.add(rig.group);
 
       const e = {
+        /* Every hostile needs a stable identity: co-op snapshots and the
+           damage a client reports back are both keyed on it. */
+        uid: 'e' + (++uidSeq),
         type: typeId, spec, rig,
         pos: new THREE.Vector3(x, 0, z),
         vel: new THREE.Vector3(),
@@ -208,6 +217,7 @@
     }
 
     function step(dt, playerPos, playerVisible) {
+      if (remote) { stepProxies(dt); return; }
       for (const e of enemies) {
         if (e.dead) {
           e.deathT += dt;
@@ -379,6 +389,86 @@
       }
     }
 
+    /* ---------- co-op: snapshot in, snapshot out ---------- */
+
+    /* What the host puts on the wire, kept small: id, type, position,
+       facing, health and death. */
+    function snapshot() {
+      const out = [];
+      for (const e of enemies) {
+        out.push([e.uid, e.type,
+                  +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2),
+                  +e.rig.group.rotation.y.toFixed(2),
+                  Math.round(e.hp), e.dead ? 1 : 0]);
+      }
+      return out;
+    }
+
+    /* What a client does with it: spawn what is new, retire what is gone,
+       and steer the rest toward where the host says they are. */
+    function applySnapshot(list) {
+      const seen = new Set();
+      for (const row of list) {
+        const [uid, type, x, y, z, ry, hp, dead] = row;
+        seen.add(uid);
+        let e = enemies.find((q) => q.uid === uid);
+        if (!e) {
+          e = spawn(type, x, z);
+          e.uid = uid;
+          e.proxy = { x: x, y: y, z: z, ry: ry };
+        }
+        e.hp = hp;
+        e.proxy.x = x; e.proxy.y = y; e.proxy.z = z; e.proxy.ry = ry;
+        if (dead && !e.dead) { e.dead = true; e.deathT = 0; e.rig.halo.setIntensity(0); }
+      }
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (seen.has(e.uid)) continue;
+        e.rig.halo.release();
+        scene.remove(e.rig.group);
+        enemies.splice(i, 1);
+      }
+    }
+
+    function stepProxies(dt) {
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        e.hitFlash = Math.max(0, e.hitFlash - dt * 4);
+        e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
+
+        if (e.dead) {
+          e.deathT += dt;
+          const t = Math.min(1, e.deathT / 0.9);
+          e.rig.group.rotation.x = -t * 1.5;
+          e.rig.group.position.y = -t * 0.5;
+          for (const m of e.rig.materials) { m.transparent = true; m.opacity = 1 - t; }
+          if (e.deathT > 1.4) { e.rig.halo.release(); scene.remove(e.rig.group); enemies.splice(i, 1); }
+          continue;
+        }
+
+        const p = e.proxy;
+        if (!p) continue;
+        // ease toward the host's position rather than snapping to each packet
+        e.pos.x += (p.x - e.pos.x) * Math.min(1, 11 * dt);
+        e.pos.y += (p.y - e.pos.y) * Math.min(1, 11 * dt);
+        e.pos.z += (p.z - e.pos.z) * Math.min(1, 11 * dt);
+        e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+
+        let d = p.ry - e.rig.group.rotation.y;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        e.rig.group.rotation.y += d * Math.min(1, 12 * dt);
+
+        e.bob += dt * 2.4;
+        if (e.spec.flying && e.rig.limbs[0] && e.rig.limbs[0].ring) {
+          e.rig.limbs[0].ring.rotation.z += dt * 3.4;
+        }
+        e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
+      }
+    }
+
+    const byUid = (uid) => enemies.find((e) => e.uid === uid) || null;
+
     /* Line of sight from the player's eye to an enemy's chest. */
     function visible(from, e) {
       const to = bodyCentre(e);
@@ -399,6 +489,9 @@
 
     return {
       enemies, spawn, step, damage, pulse, raycast, visible, prewarm, TYPES,
+      snapshot, applySnapshot, byUid,
+      setRemote(v) { remote = !!v; },
+      get isRemote() { return remote; },
       get alive() { return enemies.filter((e) => !e.dead).length; },
       clear() {
         for (const e of enemies) { e.rig.halo.release(); scene.remove(e.rig.group); }

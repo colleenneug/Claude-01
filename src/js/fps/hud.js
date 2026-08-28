@@ -98,6 +98,20 @@
 
       setVisible(v) { root.hidden = !v; },
 
+      /* Squadmates and their vitals, during a co-op mission. */
+      squad(list) {
+        const box = $('#squad-hud');
+        box.hidden = !list || !list.length;
+        if (box.hidden) return;
+        box.innerHTML = list.map((p) => {
+          const cls = SF.classes.CLASSES[p.cls] || SF.classes.CLASSES.bulwark;
+          const hp = Math.max(0, Math.min(100, p.hp == null ? 100 : p.hp));
+          return `<div class="sq-live${hp <= 0 ? ' down' : ''}" style="--c:${cls.accent}">` +
+                 `<b>${p.name}</b>` +
+                 `<span class="sq-bar"><i style="width:${hp}%"></i></span></div>`;
+        }).join('');
+      },
+
       /* ---------- death and respawn ---------- */
       refreshHarness(left, max) {
         const box = $('#harness');

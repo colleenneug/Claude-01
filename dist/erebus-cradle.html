@@ -537,6 +537,48 @@ body.booting .screen:not(#screen-boot){ display:none !important; }
 .camp-row.destination:hover:not(:disabled){
   border-color:var(--amber); box-shadow:0 0 18px rgba(255,180,84,.3); }
 
+/* ---------- squad link ---------- */
+.coop-body{
+  padding:14px 6vw; display:grid; grid-template-columns:1fr 1fr; gap:22px;
+  align-content:start;
+}
+.coop-panel{ padding:22px 24px; }
+.coop-status{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.28em; color:var(--ink-dim);
+  border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:18px;
+}
+.coop-status.online{ color:var(--lime); }
+.coop-status.connecting{ color:var(--amber); }
+.coop-status.error{ color:var(--blood); }
+.coop-actions{ display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
+.coop-join{ display:flex; gap:8px; }
+.coop-join input{ width:150px; }
+.coop-code{ margin-top:20px; padding-top:16px; border-top:1px solid var(--line); }
+.cc-label{ display:block; font-family:var(--font-mono); font-size:9px; letter-spacing:.3em; color:var(--ink-dim); }
+.cc-value{
+  display:block; font-size:44px; letter-spacing:.28em; color:var(--amber);
+  text-shadow:0 0 22px rgba(255,180,84,.45); margin:6px 0 4px;
+}
+.cc-hint{ font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; color:var(--ink-dim); }
+.coop-note{ margin-top:18px; font-size:12.5px; line-height:1.7; color:var(--ink-dim); }
+.coop-note code{ font-family:var(--font-mono); color:var(--cyan); }
+.coop-head{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.3em; color:var(--amber);
+  border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:14px;
+}
+.squad-list{ display:flex; flex-direction:column; gap:8px; }
+.squad-row{
+  display:grid; grid-template-columns:34px 1fr auto; gap:12px; align-items:center;
+  padding:10px 12px; border:1px solid var(--line); border-left:3px solid var(--accent);
+  background:rgba(94,234,255,.04);
+}
+.sq-glyph{ font-size:18px; color:var(--accent); text-align:center; }
+.sq-name{ font-size:14px; letter-spacing:.1em; color:#eafcff; }
+.sq-sub{ font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; color:var(--ink-dim); margin-top:3px; }
+.sq-power{ font-family:var(--font-mono); font-size:11px; color:var(--amber); }
+.squad-empty{ font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:rgba(108,139,160,.7); }
+@media (max-width: 900px){ .coop-body{ grid-template-columns:1fr; } }
+
 
 /* ==== src/css/fps.css ==== */
 /* ============================================================
@@ -894,6 +936,20 @@ body.in-mission #vignette{ opacity:.55; }
   100%{ opacity:0; }
 }
 
+/* squad readout during a mission */
+#squad-hud{
+  position:absolute; top:76px; left:38px; display:flex; flex-direction:column; gap:5px;
+}
+#squad-hud[hidden]{ display:none; }
+.sq-live{
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.14em;
+  color:var(--ink-dim); display:flex; align-items:center; gap:8px;
+}
+.sq-live b{ color:var(--c); font-weight:400; }
+.sq-live .sq-bar{ width:46px; height:4px; background:rgba(255,255,255,.14); display:block; }
+.sq-live .sq-bar i{ display:block; height:100%; background:var(--lime); }
+.sq-live.down b{ color:var(--blood); }
+
 </style>
 
 
@@ -997,6 +1053,44 @@ body.in-mission #vignette{ opacity:.55; }
     </footer>
   </section>
 
+  <!-- ============ CO-OP ============ -->
+  <section class="screen" id="screen-coop">
+    <header class="screen-head">
+      <h2>SQUAD LINK</h2>
+      <p>Up to four operatives on one insertion. The first in the room runs the hostiles;
+         everyone else fights alongside them.</p>
+    </header>
+
+    <div class="coop-body">
+      <div class="coop-panel panel">
+        <div class="coop-status" id="coop-status">OFFLINE</div>
+        <div class="coop-actions">
+          <button class="btn btn-major" id="btn-host">OPEN A ROOM</button>
+          <div class="coop-join">
+            <input id="room-input" maxlength="6" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" />
+            <button class="btn" id="btn-join">JOIN</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-leave" hidden>LEAVE ROOM</button>
+        </div>
+        <div class="coop-code" id="coop-code" hidden>
+          <span class="cc-label">ROOM CODE</span>
+          <span class="cc-value" id="coop-code-value">&mdash;</span>
+          <span class="cc-hint">Give this to your squad.</span>
+        </div>
+        <div class="coop-note" id="coop-note"></div>
+      </div>
+
+      <div class="coop-panel panel">
+        <div class="coop-head">SQUAD</div>
+        <div class="squad-list" id="squad-list"></div>
+      </div>
+    </div>
+
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="campaign">&lsaquo; CAMPAIGN</button>
+    </footer>
+  </section>
+
   <!-- ============ ARMOURY ============ -->
   <section class="screen" id="screen-armoury">
     <header class="screen-head">
@@ -1034,6 +1128,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="camp-body" id="camp-body"></div>
     <footer class="screen-foot">
       <button class="btn btn-ghost" data-go="slots">&lsaquo; REGISTRY</button>
+      <button class="btn" id="btn-coop">SQUAD LINK</button>
       <button class="btn" id="btn-armoury">ARMOURY</button>
     </footer>
   </section>
@@ -1061,6 +1156,7 @@ body.in-mission #vignette{ opacity:.55; }
 
   <div id="hud-objective">&mdash;</div>
   <div id="kill-feed"></div>
+  <div id="squad-hud" hidden></div>
   <div id="hud-banner"></div>
   <div id="subtitle"></div>
 
@@ -1171,7 +1267,7 @@ body.in-mission #vignette{ opacity:.55; }
    rather than in markup. */
 document.body.classList.add('booting');
 
-window.__ASSETS = {};
+window.__ASSETS = {"assets/README.md": "data:text/markdown;base64,IyBCYWNrZHJvcCBhcnQKCkRyb3AgcGxhbmV0IGJhY2tkcm9wcyBoZXJlLiBUaGUgZ2FtZSBsb29rcyBmb3IgdGhlc2UgZXhhY3QgbmFtZXM6Cgp8IEZpbGUgfCBVc2VkIGJ5IHwKfC0tLXwtLS18CnwgYGRlc2VydC1wbGFuZXQtYmcud2VicGAgfCBUaHJlc2hlcidzIFJlYWNoIOKAlCB0aGUgZGVzZXJ0IGRlc3RpbmF0aW9uIHwKfCBgZnJvemVuLXBsYW5ldC1iZy53ZWJwYCB8IENvbGQgTGFudGVybiDigJQgdGhlIGZyb3plbiBkZXN0aW5hdGlvbiB8CgpUaGV5IGFyZSB1c2VkIGFzIHRoZSBza3kgZG9tZSwgc28gYSB3aWRlIHBhbm9yYW1pYyBpbWFnZSB3b3JrcyBiZXN0CigyOjEgaXMgaWRlYWwg4oCUIHRoZSBpbWFnZSBpcyB3cmFwcGVkIGFyb3VuZCB0aGUgaG9yaXpvbikuCgpOb3RoaW5nIGhlcmUgaXMgcmVxdWlyZWQuIFdoZW4gYSBmaWxlIGlzIG1pc3NpbmcgdGhlIHNreSBpcyBnZW5lcmF0ZWQKcHJvY2VkdXJhbGx5IGluc3RlYWQsIHNvIGJvdGggZGVzdGluYXRpb25zIHdvcmsgd2l0aCBhbiBlbXB0eSBmb2xkZXIuCgpgdG9vbHMvYnVuZGxlLnB5YCBpbmxpbmVzIGV2ZXJ5dGhpbmcgaW4gdGhpcyBkaXJlY3RvcnkgYXMgYSBkYXRhIFVSSSwgc28Kc3VwcGxpZWQgYXJ0IGFsc28gc3Vydml2ZXMgaW50byBgZGlzdC9lcmVidXMtY3JhZGxlLmh0bWxgLgo="};
 
 /* ==== vendor/three.min.js ==== */
 /**
@@ -1846,6 +1942,347 @@ window.SF = window.SF || {};
   ];
 
   SF.story = { BRIEF, CODEX };
+})(window.SF);
+
+
+/* ==== src/js/fps/net.js ==== */
+/* ============================================================
+   Co-op client.
+
+   Talks to server/server.js. The first player in a room is the host:
+   it simulates hostiles and broadcasts snapshots, and everyone else
+   renders those and reports damage back. Movement is always owned by
+   the client that is doing the moving.
+
+   The whole module is optional. With no server reachable the game runs
+   exactly as it always has — `active` stays false and nothing else in
+   the codebase changes behaviour.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const SEND_HZ = 15;
+
+  function defaultUrl() {
+    // the server hosts the game, so co-op lives on the same origin
+    if (location.protocol === 'file:') return null;
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return proto + '//' + location.host + '/ws';
+  }
+
+  const state = {
+    sock: null, active: false, id: null, room: null, hostId: null,
+    players: new Map(),          // id -> { id, name, cls, look, power, state }
+    lastSend: 0, status: 'offline', latency: 0
+  };
+
+  const handlers = {
+    players: [], enemies: [], mission: [], hit: [], event: [], status: []
+  };
+  const on = (evt, fn) => { (handlers[evt] || []).push(fn); };
+  const fire = (evt, arg) => { for (const fn of handlers[evt] || []) fn(arg); };
+
+  const isHost = () => state.active && state.id && state.id === state.hostId;
+
+  function setStatus(s) { state.status = s; fire('status', s); }
+
+  function connect(character, roomCode, url) {
+    return new Promise((resolve, reject) => {
+      const target = url || defaultUrl();
+      if (!target) { reject(new Error('No server reachable from file:// — run server/server.js')); return; }
+
+      let sock;
+      try { sock = new WebSocket(target); }
+      catch (err) { reject(err); return; }
+
+      const failTimer = setTimeout(() => {
+        try { sock.close(); } catch (e) { /* already closing */ }
+        reject(new Error('Connection timed out'));
+      }, 6000);
+
+      setStatus('connecting');
+
+      sock.onopen = () => {
+        sock.send(JSON.stringify({
+          t: 'hello', name: character.name, cls: character.cls,
+          look: character.look, power: SF.gear.powerOfCharacter(character),
+          room: roomCode || null
+        }));
+      };
+
+      sock.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch (err) { return; }
+
+        switch (msg.t) {
+          case 'welcome':
+            clearTimeout(failTimer);
+            state.sock = sock;
+            state.active = true;
+            state.id = msg.id;
+            state.room = msg.room;
+            state.hostId = msg.hostId;
+            state.players.clear();
+            for (const p of msg.players) state.players.set(p.id, p);
+            setStatus('connected');
+            fire('players', roster());
+            resolve({ room: msg.room, id: msg.id, host: isHost(), mission: msg.mission });
+            break;
+
+          case 'join':
+            state.players.set(msg.player.id, msg.player);
+            fire('players', roster());
+            break;
+
+          case 'leave':
+            state.players.delete(msg.id);
+            fire('players', roster());
+            break;
+
+          case 'host':
+            state.hostId = msg.id;
+            fire('players', roster());
+            break;
+
+          case 'states':
+            for (const id of Object.keys(msg.d)) {
+              const p = state.players.get(id);
+              if (p) p.state = msg.d[id];
+            }
+            break;
+
+          case 'enemies':  fire('enemies', msg.d); break;
+          case 'mission':  fire('mission', msg.d); break;
+          case 'hit':      fire('hit', { from: msg.from, d: msg.d }); break;
+          case 'event':    fire('event', { from: msg.from, d: msg.d }); break;
+          case 'pong':     state.latency = Date.now() - msg.at; break;
+          case 'error':
+            clearTimeout(failTimer);
+            reject(new Error(msg.reason || 'refused'));
+            break;
+          default: break;
+        }
+      };
+
+      sock.onclose = () => {
+        clearTimeout(failTimer);
+        if (state.active) {
+          state.active = false;
+          state.players.clear();
+          setStatus('disconnected');
+          fire('players', roster());
+        } else {
+          setStatus('offline');
+          reject(new Error('Could not reach the server'));
+        }
+      };
+
+      sock.onerror = () => { /* onclose reports it */ };
+    });
+  }
+
+  function disconnect() {
+    if (state.sock) { try { state.sock.close(); } catch (err) { /* ignore */ } }
+    state.sock = null;
+    state.active = false;
+    state.players.clear();
+    setStatus('offline');
+  }
+
+  function send(obj) {
+    if (!state.active || !state.sock || state.sock.readyState !== 1) return;
+    state.sock.send(JSON.stringify(obj));
+  }
+
+  /* Rate-limited player state; everything else goes out immediately. */
+  function sendState(s) {
+    const now = performance.now();
+    if (now - state.lastSend < 1000 / SEND_HZ) return;
+    state.lastSend = now;
+    send({ t: 'state', s: s });
+  }
+
+  const roster = () => Array.from(state.players.values()).map((p) =>
+    Object.assign({}, p, { isHost: p.id === state.hostId }));
+
+  setInterval(() => { if (state.active) send({ t: 'ping', at: Date.now() }); }, 5000);
+
+  SF.net = {
+    connect, disconnect, send, sendState, on,
+    get active() { return state.active; },
+    get isHost() { return isHost(); },
+    get id() { return state.id; },
+    get room() { return state.room; },
+    get status() { return state.status; },
+    get latency() { return state.latency; },
+    get players() { return state.players; },
+    roster, defaultUrl
+  };
+})(window.SF);
+
+
+/* ==== src/js/fps/remote.js ==== */
+/* ============================================================
+   Other operatives, drawn in your world.
+
+   Snapshots arrive at about 15 Hz, so every remote body is rendered
+   at an interpolated position a fraction of a second behind the wire
+   — chasing raw packets directly reads as teleporting. Each carries a
+   nameplate that turns to face you.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const LERP = 12;          // position smoothing
+  const NAME_SCALE = 0.0042;
+
+  function nameplate(text, colour) {
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 128;
+    const g = cv.getContext('2d');
+    g.font = '600 54px "Chakra Petch", system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineWidth = 8;
+    g.strokeStyle = 'rgba(0,0,0,.85)';
+    g.strokeText(text, 256, 64);
+    g.fillStyle = colour;
+    g.fillText(text, 256, 64);
+
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthTest: false, depthWrite: false
+    }));
+    sprite.scale.set(512 * NAME_SCALE, 128 * NAME_SCALE, 1);
+    return sprite;
+  }
+
+  function create(ctx) {
+    const { scene, lights } = ctx;
+    const bodies = new Map();          // playerId -> body
+
+    function build(info) {
+      const cls = SF.classes.CLASSES[info.cls] || SF.classes.CLASSES.bulwark;
+      const G = SF.gear;
+      const look = info.look || G.defaultLook();
+
+      const group = new THREE.Group();
+      const suit = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(cls.accent).multiplyScalar(0.34),
+        roughness: 0.6, metalness: 0.4
+      });
+      const skin = new THREE.MeshStandardMaterial({
+        color: G.SKINS[look.skin % G.SKINS.length], roughness: 0.75
+      });
+      const hair = new THREE.MeshStandardMaterial({
+        color: G.HAIR_COLOURS[look.hairColour % G.HAIR_COLOURS.length], roughness: 0.85
+      });
+
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.44, 4, 12), suit);
+      torso.position.y = 1.13;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 14), skin);
+      head.position.y = 1.6;
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.232, 16, 12,
+        0, Math.PI * 2, 0, Math.PI * 0.5), hair);
+      cap.position.y = 1.6;
+      const hips = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.1, 3, 10), suit);
+      hips.position.y = 0.82;
+
+      const limbs = [];
+      for (const side of [-1, 1]) {
+        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.46, 3, 8), suit);
+        arm.position.set(side * 0.34, 1.14, 0);
+        const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.5, 3, 8), suit);
+        leg.position.set(side * 0.13, 0.44, 0);
+        group.add(arm, leg);
+        limbs.push({ arm, leg, side });
+      }
+
+      // a stubby rifle so it is obvious which way they are facing
+      const gun = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.5),
+        new THREE.MeshStandardMaterial({ color: 0x20242c, metalness: 0.85, roughness: 0.4 }));
+      gun.position.set(0.22, 1.16, -0.34);
+
+      group.add(torso, head, cap, hips, gun);
+      for (const c of group.children) { c.castShadow = true; }
+
+      const plate = nameplate(info.name + (info.isHost ? '  ★' : ''), cls.accent);
+      plate.position.y = 2.12;
+      group.add(plate);
+
+      scene.add(group);
+      const halo = lights.attach(new THREE.Color(cls.accent).getHex(), 0.7, 6, { dynamic: false });
+
+      return {
+        group, limbs, gun, halo, plate,
+        pos: new THREE.Vector3(), target: new THREE.Vector3(),
+        yaw: 0, targetYaw: 0, bob: 0, firing: 0, hp: 100
+      };
+    }
+
+    /* Sync the set of bodies with the roster. */
+    function setRoster(list) {
+      const seen = new Set();
+      for (const info of list) {
+        seen.add(info.id);
+        if (!bodies.has(info.id)) bodies.set(info.id, build(info));
+      }
+      for (const [id, b] of Array.from(bodies.entries())) {
+        if (seen.has(id)) continue;
+        b.halo.release();
+        scene.remove(b.group);
+        bodies.delete(id);
+      }
+    }
+
+    function update(dt, players, cameraPos) {
+      for (const [id, b] of bodies) {
+        const info = players.get(id);
+        const s = info && info.state;
+        if (s) {
+          b.target.set(s.p[0], s.p[1], s.p[2]);
+          b.targetYaw = s.y;
+          b.hp = s.h;
+          if (s.f) b.firing = 0.12;
+        }
+
+        b.pos.lerp(b.target, Math.min(1, LERP * dt));
+        b.group.position.copy(b.pos);
+
+        // shortest-way-round yaw
+        let d = b.targetYaw - b.yaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        b.yaw += d * Math.min(1, 12 * dt);
+        b.group.rotation.y = b.yaw;
+
+        const speed = b.pos.distanceTo(b.target);
+        b.bob += dt * (2 + speed * 26);
+        const swing = Math.min(0.7, speed * 8);
+        for (const l of b.limbs) {
+          l.arm.rotation.x = Math.sin(b.bob) * swing * l.side;
+          l.leg.rotation.x = -Math.sin(b.bob) * swing * l.side;
+        }
+
+        b.firing = Math.max(0, b.firing - dt);
+        b.gun.position.z = -0.34 + b.firing * 0.3;
+
+        b.halo.set(b.pos.x, b.pos.y + 1.2, b.pos.z);
+        b.group.visible = b.hp > 0;
+        if (cameraPos) b.plate.lookAt(cameraPos);
+      }
+    }
+
+    function clear() {
+      for (const b of bodies.values()) { b.halo.release(); scene.remove(b.group); }
+      bodies.clear();
+    }
+
+    return { setRoster, update, clear, bodies };
+  }
+
+  SF.remote = { create };
 })(window.SF);
 
 
@@ -4117,7 +4554,12 @@ window.SF = window.SF || {};
           for (const h of shot.enemies) {
             let dmg = spec.damage * (h.head ? spec.headMult : 1);
             if (w.primed) { dmg *= 2; w.primed = false; }
-            const dead = ai.damage(h.enemy, dmg, dir);
+            /* In co-op a client does not own the hostiles: report the damage
+               to the host and let it decide. The hit marker is immediate
+               either way, so shooting still feels instant. */
+            const dead = ctx.reportDamage
+              ? ctx.reportDamage(h.enemy, dmg, dir)
+              : ai.damage(h.enemy, dmg, dir);
             anyHit = true;
             if (h.head) anyHead = true;
             if (dead) { w.kills++; hud.killFeed(h.enemy.spec.name); }
@@ -4265,6 +4707,10 @@ window.SF = window.SF || {};
       state: w, spec, ability, view, prewarm,
       update, fire, reload, useAbility,
       setAds(v) { w.ads = v; },
+      // used by the co-op smoke test to exercise the damage path directly
+      reportDamageTest(enemy, dmg) {
+        return ctx.reportDamage ? ctx.reportDamage(enemy, dmg, null) : ai.damage(enemy, dmg, null);
+      },
       addReserve(n) { w.reserve = Math.min(spec.reserve, w.reserve + n); hud.refreshAmmo(w); }
     };
   }
@@ -4304,11 +4750,17 @@ window.SF = window.SF || {};
     }
   };
 
+  let uidSeq = 0;
+
   function create(ctx) {
     const { scene, level, lights } = ctx;
     const enemies = [];
     const projectiles = [];
     const tmp = new THREE.Vector3();
+    /* In co-op only the host simulates hostiles; everyone else renders the
+       host's snapshots. Proxies keep full hit geometry so shooting them works
+       exactly the same — the damage is just reported to the host to apply. */
+    let remote = false;
 
     /* ---------- construction ---------- */
     function buildRig(spec) {
@@ -4363,6 +4815,9 @@ window.SF = window.SF || {};
       scene.add(rig.group);
 
       const e = {
+        /* Every hostile needs a stable identity: co-op snapshots and the
+           damage a client reports back are both keyed on it. */
+        uid: 'e' + (++uidSeq),
         type: typeId, spec, rig,
         pos: new THREE.Vector3(x, 0, z),
         vel: new THREE.Vector3(),
@@ -4484,6 +4939,7 @@ window.SF = window.SF || {};
     }
 
     function step(dt, playerPos, playerVisible) {
+      if (remote) { stepProxies(dt); return; }
       for (const e of enemies) {
         if (e.dead) {
           e.deathT += dt;
@@ -4655,6 +5111,86 @@ window.SF = window.SF || {};
       }
     }
 
+    /* ---------- co-op: snapshot in, snapshot out ---------- */
+
+    /* What the host puts on the wire, kept small: id, type, position,
+       facing, health and death. */
+    function snapshot() {
+      const out = [];
+      for (const e of enemies) {
+        out.push([e.uid, e.type,
+                  +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2),
+                  +e.rig.group.rotation.y.toFixed(2),
+                  Math.round(e.hp), e.dead ? 1 : 0]);
+      }
+      return out;
+    }
+
+    /* What a client does with it: spawn what is new, retire what is gone,
+       and steer the rest toward where the host says they are. */
+    function applySnapshot(list) {
+      const seen = new Set();
+      for (const row of list) {
+        const [uid, type, x, y, z, ry, hp, dead] = row;
+        seen.add(uid);
+        let e = enemies.find((q) => q.uid === uid);
+        if (!e) {
+          e = spawn(type, x, z);
+          e.uid = uid;
+          e.proxy = { x: x, y: y, z: z, ry: ry };
+        }
+        e.hp = hp;
+        e.proxy.x = x; e.proxy.y = y; e.proxy.z = z; e.proxy.ry = ry;
+        if (dead && !e.dead) { e.dead = true; e.deathT = 0; e.rig.halo.setIntensity(0); }
+      }
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (seen.has(e.uid)) continue;
+        e.rig.halo.release();
+        scene.remove(e.rig.group);
+        enemies.splice(i, 1);
+      }
+    }
+
+    function stepProxies(dt) {
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        e.hitFlash = Math.max(0, e.hitFlash - dt * 4);
+        e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
+
+        if (e.dead) {
+          e.deathT += dt;
+          const t = Math.min(1, e.deathT / 0.9);
+          e.rig.group.rotation.x = -t * 1.5;
+          e.rig.group.position.y = -t * 0.5;
+          for (const m of e.rig.materials) { m.transparent = true; m.opacity = 1 - t; }
+          if (e.deathT > 1.4) { e.rig.halo.release(); scene.remove(e.rig.group); enemies.splice(i, 1); }
+          continue;
+        }
+
+        const p = e.proxy;
+        if (!p) continue;
+        // ease toward the host's position rather than snapping to each packet
+        e.pos.x += (p.x - e.pos.x) * Math.min(1, 11 * dt);
+        e.pos.y += (p.y - e.pos.y) * Math.min(1, 11 * dt);
+        e.pos.z += (p.z - e.pos.z) * Math.min(1, 11 * dt);
+        e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+
+        let d = p.ry - e.rig.group.rotation.y;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        e.rig.group.rotation.y += d * Math.min(1, 12 * dt);
+
+        e.bob += dt * 2.4;
+        if (e.spec.flying && e.rig.limbs[0] && e.rig.limbs[0].ring) {
+          e.rig.limbs[0].ring.rotation.z += dt * 3.4;
+        }
+        e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
+      }
+    }
+
+    const byUid = (uid) => enemies.find((e) => e.uid === uid) || null;
+
     /* Line of sight from the player's eye to an enemy's chest. */
     function visible(from, e) {
       const to = bodyCentre(e);
@@ -4675,6 +5211,9 @@ window.SF = window.SF || {};
 
     return {
       enemies, spawn, step, damage, pulse, raycast, visible, prewarm, TYPES,
+      snapshot, applySnapshot, byUid,
+      setRemote(v) { remote = !!v; },
+      get isRemote() { return remote; },
       get alive() { return enemies.filter((e) => !e.dead).length; },
       clear() {
         for (const e of enemies) { e.rig.halo.release(); scene.remove(e.rig.group); }
@@ -4926,6 +5465,20 @@ window.SF = window.SF || {};
       },
 
       setVisible(v) { root.hidden = !v; },
+
+      /* Squadmates and their vitals, during a co-op mission. */
+      squad(list) {
+        const box = $('#squad-hud');
+        box.hidden = !list || !list.length;
+        if (box.hidden) return;
+        box.innerHTML = list.map((p) => {
+          const cls = SF.classes.CLASSES[p.cls] || SF.classes.CLASSES.bulwark;
+          const hp = Math.max(0, Math.min(100, p.hp == null ? 100 : p.hp));
+          return `<div class="sq-live${hp <= 0 ? ' down' : ''}" style="--c:${cls.accent}">` +
+                 `<b>${p.name}</b>` +
+                 `<span class="sq-bar"><i style="width:${hp}%"></i></span></div>`;
+        }).join('');
+      },
 
       /* ---------- death and respawn ---------- */
       refreshHarness(left, max) {
@@ -5395,12 +5948,42 @@ window.SF = window.SF || {};
       }
     });
 
+    /* ---------- co-op ---------- */
+    const online = SF.net && SF.net.active;
+    const hosting = online ? SF.net.isHost : true;
+    const remotes = online ? SF.remote.create({ scene, lights }) : null;
+    if (online) {
+      ai.setRemote(!hosting);           // only the host simulates hostiles
+      remotes.setRoster(SF.net.roster());
+      SF.net.on('players', (list) => remotes.setRoster(list));
+      SF.net.on('enemies', (snap) => { if (!hosting) ai.applySnapshot(snap); });
+      SF.net.on('hit', (m) => {
+        // a teammate's shot, applied here because this client owns the hostiles
+        if (!hosting) return;
+        const e = ai.byUid(m.d.uid);
+        if (e) ai.damage(e, m.d.dmg, null);
+      });
+      SF.net.on('event', (m) => {
+        if (m.d.kind === 'wave') { state.wave = m.d.wave; hud.banner('WAVE ' + m.d.wave); }
+        if (m.d.kind === 'objective') hud.objective(m.d.text);
+        if (m.d.kind === 'down') hud.killFeed((m.d.name || 'OPERATIVE') + ' IS DOWN');
+        if (m.d.kind === 'complete' && !state.over) complete();
+      });
+    }
+    let netAccum = 0;
+
     const pickups = SF.pickups.create({ scene, level, lights, hud });
 
     const weapon = SF.weapons.create({
       scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
       mods: SF.gear.weaponMods(character),
+      reportDamage: (enemy, dmg, dir) => {
+        if (hosting) return ai.damage(enemy, dmg, dir);
+        enemy.hitFlash = 1;                        // local feedback, host is authoritative
+        SF.net.send({ t: 'hit', d: { uid: enemy.uid, dmg: dmg } });
+        return false;
+      },
       itemName: character.equipped.weapon ? character.equipped.weapon.name : null,
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
@@ -5508,16 +6091,18 @@ window.SF = window.SF || {};
       if (mission.survival) { state.wave = 0; nextWave(); state.spawned = true; SF.audio.sfx.objective(); return; }
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
-      for (const [type, count] of mission.waves) {
-        for (let n = 0; n < count; n++) {
-          const at = spawnPointIn(zone);
-          const e = ai.spawn(type, at.x, at.z);
-          e.maxHp = Math.round(e.maxHp * scale.hp);        // later missions are tougher
-          e.hp = e.maxHp;
+      if (hosting) {
+        for (const [type, count] of mission.waves) {
+          for (let n = 0; n < count; n++) {
+            const at = spawnPointIn(zone);
+            const e = ai.spawn(type, at.x, at.z);
+            e.maxHp = Math.round(e.maxHp * scale.hp);      // later missions are tougher
+            e.hp = e.maxHp;
+          }
         }
       }
 
-      if (mission.boss) {
+      if (mission.boss && hosting) {
         boss = SF.boss.create({
           scene, level, lights, ai, hud, player,
           hpScale: scale.hp, dmgScale: scale.damage,
@@ -5606,6 +6191,7 @@ window.SF = window.SF || {};
 
     /* Destinations run escalating waves rather than a fixed roster. */
     function nextWave() {
+      if (!hosting) return;
       state.wave++;
       scale = SF.campaign.scaleFor(2 + state.wave * 1.35);
       const budget = 3 + Math.round(state.wave * 1.7);
@@ -5627,6 +6213,7 @@ window.SF = window.SF || {};
       hud.objective(`<b>WAVE ${state.wave}</b> ${state.wave >= 5
         ? 'Stand on the beacon to extract.' : 'Survive. Extraction opens at wave 5.'}`);
       hud.banner('WAVE ' + state.wave);
+      if (online) SF.net.send({ t: 'event', d: { kind: 'wave', wave: state.wave } });
       SF.audio.sfx.alarm();
     }
 
@@ -5663,7 +6250,11 @@ window.SF = window.SF || {};
     function checkCleared() {
       if (mission.boss) return;                 // the boss ends its own mission
       if (mission.survival) return;             // destinations end on extraction
-      if (ai.alive === 0 && state.stepT > 2) complete();
+      if (!hosting) return;                     // the host calls the sector clear
+      if (ai.alive === 0 && state.stepT > 2) {
+        if (online) SF.net.send({ t: 'event', d: { kind: 'complete' } });
+        complete();
+      }
     }
 
     function complete() {
@@ -5788,6 +6379,23 @@ window.SF = window.SF || {};
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
+      if (online) {
+        const eye = player.eyePosition;
+        SF.net.sendState({
+          p: [+player.position.x.toFixed(2), +player.position.y.toFixed(2), +player.position.z.toFixed(2)],
+          y: +player.state.yaw.toFixed(2), h: Math.round(state.hp), f: firing ? 1 : 0
+        });
+        remotes.update(dt, SF.net.players, eye);
+        hud.squad(SF.net.roster().map((p) => ({
+          name: p.name, cls: p.cls, hp: p.state ? p.state.h : 100
+        })));
+        netAccum += dt;
+        if (hosting && netAccum >= 0.08) {          // ~12 Hz world snapshots
+          netAccum = 0;
+          SF.net.send({ t: 'enemies', d: ai.snapshot() });
+        }
+      }
+
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (mission.survival) survivalTick(dt);
@@ -5841,8 +6449,10 @@ window.SF = window.SF || {};
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
       if (boss) boss.destroy();
+      if (remotes) remotes.clear();
       hud.bossHide();
       hud.hideNodes();
+      hud.squad([]);
       ai.clear();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
@@ -5854,7 +6464,7 @@ window.SF = window.SF || {};
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
-             engine: eng, hurt: hurtPlayer, pickupsRef: pickups,
+             engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
              get bossRef() { return boss; } };
   }
 
@@ -6191,6 +6801,76 @@ window.SF = window.SF || {};
     show('brief');
   }
 
+  /* ---------------- squad link ---------------- */
+
+  function openCoop() {
+    if (!ch) return;
+    renderCoop();
+    show('coop');
+    SF.audio.sfx.open();
+  }
+
+  function renderCoop() {
+    const net = SF.net;
+    const status = $('#coop-status');
+    const online = net.active;
+
+    status.className = 'coop-status' + (online ? ' online'
+      : net.status === 'connecting' ? ' connecting' : '');
+    status.textContent = online
+      ? `CONNECTED · ROOM ${net.room} · ${net.isHost ? 'HOSTING' : 'GUEST'}` +
+        (net.latency ? ` · ${net.latency}ms` : '')
+      : net.status === 'connecting' ? 'CONNECTING…' : 'OFFLINE';
+
+    $('#coop-code').hidden = !online;
+    $('#coop-code-value').textContent = online ? net.room : '—';
+    $('#btn-leave').hidden = !online;
+    $('#btn-host').disabled = online;
+    $('#btn-join').disabled = online;
+
+    $('#coop-note').innerHTML = online
+      ? 'Everyone in the room drops together — start a mission and your squad follows you in.'
+      : (location.protocol === 'file:'
+        ? 'Squad link needs the game served by its own server. Run <code>node server/server.js</code> ' +
+          'and open <code>http://localhost:8080</code>.'
+        : 'Open a room and share the code, or type a friend\'s code to join them. Up to four.');
+
+    const list = $('#squad-list');
+    list.innerHTML = '';
+    if (!online) { list.appendChild(el('div', 'squad-empty', 'NOT CONNECTED')); return; }
+
+    const rows = [{ id: net.id, name: ch.name, cls: ch.cls,
+                    power: SF.gear.powerOfCharacter(ch), isHost: net.isHost, self: true }]
+      .concat(net.roster());
+
+    for (const p of rows) {
+      const cls = SF.classes.CLASSES[p.cls] || SF.classes.CLASSES.bulwark;
+      const row = el('div', 'squad-row');
+      row.style.setProperty('--accent', cls.accent);
+      row.innerHTML =
+        `<div class="sq-glyph">${cls.glyph}</div>` +
+        `<div><div class="sq-name">${p.name}${p.self ? ' (YOU)' : ''}</div>` +
+        `<div class="sq-sub">${cls.name}${p.isHost ? ' · HOST' : ''}</div></div>` +
+        `<div class="sq-power">${p.power || 0}</div>`;
+      list.appendChild(row);
+    }
+  }
+
+  async function connectCoop(code) {
+    try {
+      $('#coop-status').className = 'coop-status connecting';
+      $('#coop-status').textContent = 'CONNECTING…';
+      await SF.net.connect(ch, code || null);
+      SF.audio.sfx.confirm();
+      toast('SQUAD LINK ESTABLISHED — ROOM ' + SF.net.room, 'good');
+    } catch (err) {
+      $('#coop-status').className = 'coop-status error';
+      $('#coop-status').textContent = 'NO LINK — ' + err.message.toUpperCase();
+      SF.audio.sfx.deny();
+    }
+    renderCoop();
+  }
+
   /* ---------------- armoury ---------------- */
 
   function openArmoury() {
@@ -6355,6 +7035,11 @@ window.SF = window.SF || {};
       await wait(140);
     }
 
+    if (SF.net.active && SF.net.isHost) {
+      const m = (typeof missionIndex === 'string')
+        ? SF.planets.byId(missionIndex) : SF.campaign.byIndex(missionIndex);
+      SF.net.send({ t: 'mission', d: { id: missionIndex, name: m ? m.name : '' } });
+    }
     document.body.classList.add('in-mission');
     $('#gl').hidden = false;
     $('#weapon-name').textContent = (ch.equipped && ch.equipped.weapon)
@@ -6399,6 +7084,7 @@ window.SF = window.SF || {};
         if (dest === 'codex') renderCodex();
         if (dest === 'campaign') { if (dossier) dossier.stop(); openCampaign(slotIndex); return; }
         if (dest === 'armoury') { openArmoury(); return; }
+        if (dest === 'coop') { openCoop(); return; }
         show(dest);
       });
     });
@@ -6415,6 +7101,28 @@ window.SF = window.SF || {};
     $('#btn-enlist').addEventListener('click', enlist);
     $('#btn-drop').addEventListener('click', drop);
     $('#btn-armoury').addEventListener('click', openArmoury);
+    $('#btn-coop').addEventListener('click', openCoop);
+    $('#btn-host').addEventListener('click', () => connectCoop(null));
+    $('#btn-join').addEventListener('click', () =>
+      connectCoop(($('#room-input').value || '').trim().toUpperCase()));
+    $('#room-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') connectCoop(($('#room-input').value || '').trim().toUpperCase());
+    });
+    $('#btn-leave').addEventListener('click', () => {
+      SF.net.disconnect();
+      SF.audio.sfx.back();
+      renderCoop();
+    });
+
+    /* Roster changes and a squadmate's mission choice both land here. */
+    SF.net.on('players', () => { if ($('#screen-coop').classList.contains('active')) renderCoop(); });
+    SF.net.on('status', () => { if ($('#screen-coop').classList.contains('active')) renderCoop(); });
+    SF.net.on('mission', (d) => {
+      if (!ch || !d) return;
+      toast('SQUAD DROPPING — ' + (d.name || d.id), 'warn');
+      missionIndex = d.id;
+      drop();
+    });
 
     $('#engage').addEventListener('click', () => {
       if (!mission) return;
@@ -6438,7 +7146,7 @@ window.SF = window.SF || {};
     void sessionStart;
   }
 
-  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury,
+  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury, openCoop,
             get character() { return ch; } };
 })(window.SF);
 

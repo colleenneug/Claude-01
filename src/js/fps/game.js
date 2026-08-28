@@ -87,12 +87,42 @@
       }
     });
 
+    /* ---------- co-op ---------- */
+    const online = SF.net && SF.net.active;
+    const hosting = online ? SF.net.isHost : true;
+    const remotes = online ? SF.remote.create({ scene, lights }) : null;
+    if (online) {
+      ai.setRemote(!hosting);           // only the host simulates hostiles
+      remotes.setRoster(SF.net.roster());
+      SF.net.on('players', (list) => remotes.setRoster(list));
+      SF.net.on('enemies', (snap) => { if (!hosting) ai.applySnapshot(snap); });
+      SF.net.on('hit', (m) => {
+        // a teammate's shot, applied here because this client owns the hostiles
+        if (!hosting) return;
+        const e = ai.byUid(m.d.uid);
+        if (e) ai.damage(e, m.d.dmg, null);
+      });
+      SF.net.on('event', (m) => {
+        if (m.d.kind === 'wave') { state.wave = m.d.wave; hud.banner('WAVE ' + m.d.wave); }
+        if (m.d.kind === 'objective') hud.objective(m.d.text);
+        if (m.d.kind === 'down') hud.killFeed((m.d.name || 'OPERATIVE') + ' IS DOWN');
+        if (m.d.kind === 'complete' && !state.over) complete();
+      });
+    }
+    let netAccum = 0;
+
     const pickups = SF.pickups.create({ scene, level, lights, hud });
 
     const weapon = SF.weapons.create({
       scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
       mods: SF.gear.weaponMods(character),
+      reportDamage: (enemy, dmg, dir) => {
+        if (hosting) return ai.damage(enemy, dmg, dir);
+        enemy.hitFlash = 1;                        // local feedback, host is authoritative
+        SF.net.send({ t: 'hit', d: { uid: enemy.uid, dmg: dmg } });
+        return false;
+      },
       itemName: character.equipped.weapon ? character.equipped.weapon.name : null,
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
@@ -200,16 +230,18 @@
       if (mission.survival) { state.wave = 0; nextWave(); state.spawned = true; SF.audio.sfx.objective(); return; }
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
-      for (const [type, count] of mission.waves) {
-        for (let n = 0; n < count; n++) {
-          const at = spawnPointIn(zone);
-          const e = ai.spawn(type, at.x, at.z);
-          e.maxHp = Math.round(e.maxHp * scale.hp);        // later missions are tougher
-          e.hp = e.maxHp;
+      if (hosting) {
+        for (const [type, count] of mission.waves) {
+          for (let n = 0; n < count; n++) {
+            const at = spawnPointIn(zone);
+            const e = ai.spawn(type, at.x, at.z);
+            e.maxHp = Math.round(e.maxHp * scale.hp);      // later missions are tougher
+            e.hp = e.maxHp;
+          }
         }
       }
 
-      if (mission.boss) {
+      if (mission.boss && hosting) {
         boss = SF.boss.create({
           scene, level, lights, ai, hud, player,
           hpScale: scale.hp, dmgScale: scale.damage,
@@ -298,6 +330,7 @@
 
     /* Destinations run escalating waves rather than a fixed roster. */
     function nextWave() {
+      if (!hosting) return;
       state.wave++;
       scale = SF.campaign.scaleFor(2 + state.wave * 1.35);
       const budget = 3 + Math.round(state.wave * 1.7);
@@ -319,6 +352,7 @@
       hud.objective(`<b>WAVE ${state.wave}</b> ${state.wave >= 5
         ? 'Stand on the beacon to extract.' : 'Survive. Extraction opens at wave 5.'}`);
       hud.banner('WAVE ' + state.wave);
+      if (online) SF.net.send({ t: 'event', d: { kind: 'wave', wave: state.wave } });
       SF.audio.sfx.alarm();
     }
 
@@ -355,7 +389,11 @@
     function checkCleared() {
       if (mission.boss) return;                 // the boss ends its own mission
       if (mission.survival) return;             // destinations end on extraction
-      if (ai.alive === 0 && state.stepT > 2) complete();
+      if (!hosting) return;                     // the host calls the sector clear
+      if (ai.alive === 0 && state.stepT > 2) {
+        if (online) SF.net.send({ t: 'event', d: { kind: 'complete' } });
+        complete();
+      }
     }
 
     function complete() {
@@ -480,6 +518,23 @@
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
+      if (online) {
+        const eye = player.eyePosition;
+        SF.net.sendState({
+          p: [+player.position.x.toFixed(2), +player.position.y.toFixed(2), +player.position.z.toFixed(2)],
+          y: +player.state.yaw.toFixed(2), h: Math.round(state.hp), f: firing ? 1 : 0
+        });
+        remotes.update(dt, SF.net.players, eye);
+        hud.squad(SF.net.roster().map((p) => ({
+          name: p.name, cls: p.cls, hp: p.state ? p.state.h : 100
+        })));
+        netAccum += dt;
+        if (hosting && netAccum >= 0.08) {          // ~12 Hz world snapshots
+          netAccum = 0;
+          SF.net.send({ t: 'enemies', d: ai.snapshot() });
+        }
+      }
+
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (mission.survival) survivalTick(dt);
@@ -533,8 +588,10 @@
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
       if (boss) boss.destroy();
+      if (remotes) remotes.clear();
       hud.bossHide();
       hud.hideNodes();
+      hud.squad([]);
       ai.clear();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
@@ -546,7 +603,7 @@
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
-             engine: eng, hurt: hurtPlayer, pickupsRef: pickups,
+             engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
              get bossRef() { return boss; } };
   }
 

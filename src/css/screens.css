@@ -279,3 +279,45 @@
 .camp-row.destination .camp-n{ color:var(--amber); font-size:24px; }
 .camp-row.destination:hover:not(:disabled){
   border-color:var(--amber); box-shadow:0 0 18px rgba(255,180,84,.3); }
+
+/* ---------- squad link ---------- */
+.coop-body{
+  padding:14px 6vw; display:grid; grid-template-columns:1fr 1fr; gap:22px;
+  align-content:start;
+}
+.coop-panel{ padding:22px 24px; }
+.coop-status{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.28em; color:var(--ink-dim);
+  border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:18px;
+}
+.coop-status.online{ color:var(--lime); }
+.coop-status.connecting{ color:var(--amber); }
+.coop-status.error{ color:var(--blood); }
+.coop-actions{ display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
+.coop-join{ display:flex; gap:8px; }
+.coop-join input{ width:150px; }
+.coop-code{ margin-top:20px; padding-top:16px; border-top:1px solid var(--line); }
+.cc-label{ display:block; font-family:var(--font-mono); font-size:9px; letter-spacing:.3em; color:var(--ink-dim); }
+.cc-value{
+  display:block; font-size:44px; letter-spacing:.28em; color:var(--amber);
+  text-shadow:0 0 22px rgba(255,180,84,.45); margin:6px 0 4px;
+}
+.cc-hint{ font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; color:var(--ink-dim); }
+.coop-note{ margin-top:18px; font-size:12.5px; line-height:1.7; color:var(--ink-dim); }
+.coop-note code{ font-family:var(--font-mono); color:var(--cyan); }
+.coop-head{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.3em; color:var(--amber);
+  border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:14px;
+}
+.squad-list{ display:flex; flex-direction:column; gap:8px; }
+.squad-row{
+  display:grid; grid-template-columns:34px 1fr auto; gap:12px; align-items:center;
+  padding:10px 12px; border:1px solid var(--line); border-left:3px solid var(--accent);
+  background:rgba(94,234,255,.04);
+}
+.sq-glyph{ font-size:18px; color:var(--accent); text-align:center; }
+.sq-name{ font-size:14px; letter-spacing:.1em; color:#eafcff; }
+.sq-sub{ font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; color:var(--ink-dim); margin-top:3px; }
+.sq-power{ font-family:var(--font-mono); font-size:11px; color:var(--amber); }
+.squad-empty{ font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:rgba(108,139,160,.7); }
+@media (max-width: 900px){ .coop-body{ grid-template-columns:1fr; } }

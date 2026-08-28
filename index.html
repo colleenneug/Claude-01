@@ -113,6 +113,44 @@
     </footer>
   </section>
 
+  <!-- ============ CO-OP ============ -->
+  <section class="screen" id="screen-coop">
+    <header class="screen-head">
+      <h2>SQUAD LINK</h2>
+      <p>Up to four operatives on one insertion. The first in the room runs the hostiles;
+         everyone else fights alongside them.</p>
+    </header>
+
+    <div class="coop-body">
+      <div class="coop-panel panel">
+        <div class="coop-status" id="coop-status">OFFLINE</div>
+        <div class="coop-actions">
+          <button class="btn btn-major" id="btn-host">OPEN A ROOM</button>
+          <div class="coop-join">
+            <input id="room-input" maxlength="6" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" />
+            <button class="btn" id="btn-join">JOIN</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-leave" hidden>LEAVE ROOM</button>
+        </div>
+        <div class="coop-code" id="coop-code" hidden>
+          <span class="cc-label">ROOM CODE</span>
+          <span class="cc-value" id="coop-code-value">&mdash;</span>
+          <span class="cc-hint">Give this to your squad.</span>
+        </div>
+        <div class="coop-note" id="coop-note"></div>
+      </div>
+
+      <div class="coop-panel panel">
+        <div class="coop-head">SQUAD</div>
+        <div class="squad-list" id="squad-list"></div>
+      </div>
+    </div>
+
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="campaign">&lsaquo; CAMPAIGN</button>
+    </footer>
+  </section>
+
   <!-- ============ ARMOURY ============ -->
   <section class="screen" id="screen-armoury">
     <header class="screen-head">
@@ -150,6 +188,7 @@
     <div class="camp-body" id="camp-body"></div>
     <footer class="screen-foot">
       <button class="btn btn-ghost" data-go="slots">&lsaquo; REGISTRY</button>
+      <button class="btn" id="btn-coop">SQUAD LINK</button>
       <button class="btn" id="btn-armoury">ARMOURY</button>
     </footer>
   </section>
@@ -177,6 +216,7 @@
 
   <div id="hud-objective">&mdash;</div>
   <div id="kill-feed"></div>
+  <div id="squad-hud" hidden></div>
   <div id="hud-banner"></div>
   <div id="subtitle"></div>
 
@@ -290,6 +330,8 @@
 <script src="src/js/classes.js"></script>
 <script src="src/js/storage.js"></script>
 <script src="src/js/story.js"></script>
+<script src="src/js/fps/net.js"></script>
+<script src="src/js/fps/remote.js"></script>
 <script src="src/js/fps/campaign.js"></script>
 <script src="src/js/fps/planets.js"></script>
 <script src="src/js/fps/gear.js"></script>

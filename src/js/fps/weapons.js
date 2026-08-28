@@ -231,7 +231,12 @@
           for (const h of shot.enemies) {
             let dmg = spec.damage * (h.head ? spec.headMult : 1);
             if (w.primed) { dmg *= 2; w.primed = false; }
-            const dead = ai.damage(h.enemy, dmg, dir);
+            /* In co-op a client does not own the hostiles: report the damage
+               to the host and let it decide. The hit marker is immediate
+               either way, so shooting still feels instant. */
+            const dead = ctx.reportDamage
+              ? ctx.reportDamage(h.enemy, dmg, dir)
+              : ai.damage(h.enemy, dmg, dir);
             anyHit = true;
             if (h.head) anyHead = true;
             if (dead) { w.kills++; hud.killFeed(h.enemy.spec.name); }
@@ -379,6 +384,10 @@
       state: w, spec, ability, view, prewarm,
       update, fire, reload, useAbility,
       setAds(v) { w.ads = v; },
+      // used by the co-op smoke test to exercise the damage path directly
+      reportDamageTest(enemy, dmg) {
+        return ctx.reportDamage ? ctx.reportDamage(enemy, dmg, null) : ai.damage(enemy, dmg, null);
+      },
       addReserve(n) { w.reserve = Math.min(spec.reserve, w.reserve + n); hud.refreshAmmo(w); }
     };
   }

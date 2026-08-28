@@ -48,6 +48,33 @@ the cursor runs out of screen before you finish a turn, so holding it near the l
 right edge keeps rotating; the arrow keys turn too, in either mode. A full 360° is always
 reachable.
 
+## Co-op
+
+The game ships with its own server. It serves the game *and* runs the multiplayer relay
+on one port, with no dependencies:
+
+```
+node server/server.js          # then open http://localhost:8080
+PORT=9000 node server/server.js
+```
+
+Open **SQUAD LINK** from the campaign screen, hit *Open a room*, and give the four-letter
+code to your squad — up to four operatives per insertion. When the host starts a mission,
+everyone in the room drops into it.
+
+**Authority.** The first player in a room hosts: it simulates every hostile and broadcasts
+world snapshots at about 12 Hz, and everyone else renders those and reports the damage they
+deal back for the host to apply. Movement is always owned by the client doing the moving,
+and remote bodies are interpolated a fraction of a second behind the wire so they glide
+rather than teleport. If the host leaves, the next player is promoted automatically.
+
+`server/ws.js` is a small RFC 6455 implementation — handshake, framing, ping/pong, close —
+so co-op does not cost the project its "clone it and run it" property. There is no
+`npm install`.
+
+Co-op needs a server, so it is unavailable in the published single-file build (a static
+page has nothing to connect to). Everything else in the game runs identically there.
+
 ### Single-file build
 
 `dist/erebus-cradle.html` is the whole game inlined into one page — every

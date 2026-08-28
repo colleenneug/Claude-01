@@ -352,3 +352,17 @@ body.in-mission #vignette{ opacity:.55; }
   70%{ opacity:1; }
   100%{ opacity:0; }
 }
+
+/* squad readout during a mission */
+#squad-hud{
+  position:absolute; top:76px; left:38px; display:flex; flex-direction:column; gap:5px;
+}
+#squad-hud[hidden]{ display:none; }
+.sq-live{
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.14em;
+  color:var(--ink-dim); display:flex; align-items:center; gap:8px;
+}
+.sq-live b{ color:var(--c); font-weight:400; }
+.sq-live .sq-bar{ width:46px; height:4px; background:rgba(255,255,255,.14); display:block; }
+.sq-live .sq-bar i{ display:block; height:100%; background:var(--lime); }
+.sq-live.down b{ color:var(--blood); }
