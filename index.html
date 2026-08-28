@@ -113,6 +113,33 @@
     </footer>
   </section>
 
+  <!-- ============ ARMOURY ============ -->
+  <section class="screen" id="screen-armoury">
+    <header class="screen-head">
+      <h2>ARMOURY &mdash; <span id="arm-who">&mdash;</span></h2>
+      <p>Salvage recovered in the field, and the operative wearing it. Better gear is the
+         other half of getting stronger; rank is the first.</p>
+    </header>
+
+    <div class="arm-body">
+      <aside class="arm-preview panel">
+        <canvas id="dossier-canvas"></canvas>
+        <div class="arm-power">
+          <span class="ap-label">POWER</span>
+          <span class="ap-value" id="arm-power">0</span>
+          <span class="ap-sub" id="arm-power-sub">&mdash;</span>
+        </div>
+        <div class="arm-look" id="arm-look"></div>
+      </aside>
+
+      <section class="arm-gear" id="arm-gear"></section>
+    </div>
+
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="campaign">&lsaquo; CAMPAIGN</button>
+    </footer>
+  </section>
+
   <!-- ============ CAMPAIGN ============ -->
   <section class="screen" id="screen-campaign">
     <header class="screen-head">
@@ -123,6 +150,7 @@
     <div class="camp-body" id="camp-body"></div>
     <footer class="screen-foot">
       <button class="btn btn-ghost" data-go="slots">&lsaquo; REGISTRY</button>
+      <button class="btn" id="btn-armoury">ARMOURY</button>
     </footer>
   </section>
 
@@ -263,6 +291,8 @@
 <script src="src/js/storage.js"></script>
 <script src="src/js/story.js"></script>
 <script src="src/js/fps/campaign.js"></script>
+<script src="src/js/fps/gear.js"></script>
+<script src="src/js/fps/dossier.js"></script>
 <script src="src/js/fps/materials.js"></script>
 <script src="src/js/fps/lights.js"></script>
 <script src="src/js/fps/engine.js"></script>

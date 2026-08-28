@@ -43,7 +43,19 @@
 
   function create(ctx) {
     const { scene, camera, player, ai, hud, lights } = ctx;
-    const spec = WEAPONS[ctx.classId];
+    /* The issued weapon is the baseline; the equipped item multiplies it. */
+    const base = WEAPONS[ctx.classId];
+    const mods = ctx.mods || { damage: 1, mag: 1, rpm: 1, reload: 1, spread: 1 };
+    const spec = Object.assign({}, base, {
+      damage: base.damage * mods.damage,
+      mag: Math.max(1, Math.round(base.mag * mods.mag)),
+      reserve: Math.round(base.reserve * mods.mag),
+      rpm: Math.round(base.rpm * mods.rpm),
+      reload: base.reload * mods.reload,
+      spread: base.spread * mods.spread,
+      adsSpread: base.adsSpread * mods.spread,
+      displayName: ctx.itemName || base.name
+    });
     const ability = ABILITIES[ctx.classId];
 
     const w = {

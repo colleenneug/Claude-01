@@ -15,6 +15,7 @@
   let sessionStart = 0;
   let mission = null;     // live SF.game instance
   let missionIndex = 1;   // which campaign mission is being flown
+  let dossier = null;     // live 3D operative preview on the armoury screen
   let bootAborted = false;
 
   /* ---------------- screens ---------------- */
@@ -243,8 +244,10 @@
     ch.slot = i;
     SF.campaign.stateFor(ch);
 
+    SF.gear.ensure(ch);
     const cls = SF.classes.CLASSES[ch.cls];
-    $('#camp-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
+    $('#camp-who').textContent =
+      `${ch.name} · ${cls.name} · RANK ${ch.level} · POWER ${SF.gear.powerOfCharacter(ch)}`;
 
     const body = $('#camp-body');
     body.innerHTML = '';
@@ -275,6 +278,118 @@
 
     SF.audio.sfx.open();
     show('campaign');
+  }
+
+  /* ---------------- armoury ---------------- */
+
+  function openArmoury() {
+    if (!ch) return;
+    SF.gear.ensure(ch);
+    const cls = SF.classes.CLASSES[ch.cls];
+    $('#arm-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
+    show('armoury');
+
+    if (!dossier) dossier = SF.dossier.create($('#dossier-canvas'));
+    dossier.start();
+    renderArmoury();
+    SF.audio.sfx.open();
+  }
+
+  function renderArmoury() {
+    const G = SF.gear;
+    $('#arm-power').textContent = G.powerOfCharacter(ch);
+    const a = G.armourStats(ch);
+    $('#arm-power-sub').textContent =
+      `+${a.hp} VITALS · ${a.resist.toFixed(0)}% RESIST · RANK ${ch.level}`;
+
+    /* ---- equipment, one block per slot ---- */
+    const gearBox = $('#arm-gear');
+    gearBox.innerHTML = '';
+    for (const slot of G.SLOTS) {
+      const owned = ch.inventory.filter((it) => it.slot === slot.id)
+                               .sort((x, y) => y.power - x.power);
+      const equipped = ch.equipped[slot.id];
+      const block = el('div', 'slot-block');
+      block.innerHTML =
+        `<div class="slot-head"><span>${slot.name}</span>` +
+        `<span class="sh-equipped">${equipped ? equipped.name : 'NOTHING EQUIPPED'}</span></div>`;
+
+      const list = el('div', 'item-list');
+      if (!owned.length) list.appendChild(el('div', 'item-empty', 'NO SALVAGE OF THIS TYPE YET'));
+
+      for (const it of owned) {
+        const r = G.rarityOf(it.rarity);
+        const on = equipped && equipped.uid === it.uid;
+        const btn = el('button', 'item' + (on ? ' on' : ''));
+        btn.style.setProperty('--rc', r.colour);
+        btn.dataset.hover = on ? 'EQUIPPED' : 'EQUIP';
+        btn.innerHTML =
+          `<span class="item-pow">${it.power}</span>` +
+          `<div class="item-name">${it.name}</div>` +
+          `<div class="item-meta">${r.name}${it.tier > 1 ? ' · TIER ' + it.tier : ''}</div>` +
+          (it.affixes.length
+            ? `<div class="item-affix">${it.affixes.map((x) => '› ' + x.label).join('<br>')}</div>`
+            : '');
+        btn.addEventListener('click', () => {
+          ch.equipped[slot.id] = it;
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.confirm();
+          renderArmoury();
+          dossier.setLook(ch);
+        });
+        list.appendChild(btn);
+      }
+      block.appendChild(list);
+      gearBox.appendChild(block);
+    }
+
+    /* ---- appearance ---- */
+    const look = $('#arm-look');
+    look.innerHTML = '';
+
+    const swatchRow = (label, colours, key) => {
+      const row = el('div', 'look-row');
+      row.innerHTML = `<span class="lr-label">${label}</span>`;
+      const box = el('div', 'swatches');
+      colours.forEach((c, i) => {
+        const sw = el('button', 'swatch' + (ch.look[key] === i ? ' on' : ''));
+        sw.style.setProperty('--c', c);
+        sw.dataset.hover = label;
+        sw.addEventListener('click', () => {
+          ch.look[key] = i;
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.click();
+          renderArmoury();
+          dossier.setLook(ch);
+        });
+        box.appendChild(sw);
+      });
+      row.appendChild(box);
+      return row;
+    };
+
+    look.appendChild(swatchRow('SKIN TONE', SF.gear.SKINS, 'skin'));
+    look.appendChild(swatchRow('HAIR COLOUR', SF.gear.HAIR_COLOURS, 'hairColour'));
+
+    const styles = el('div', 'look-row');
+    styles.innerHTML = '<span class="lr-label">HAIR STYLE</span>';
+    const sBox = el('div', 'swatches');
+    SF.gear.HAIR_STYLES.forEach((st, i) => {
+      const btn = el('button', 'style-btn' + (ch.look.hair === i ? ' on' : ''), st.name);
+      btn.dataset.hover = st.name;
+      btn.addEventListener('click', () => {
+        ch.look.hair = i;
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.click();
+        renderArmoury();
+        dossier.setLook(ch);
+      });
+      sBox.appendChild(btn);
+    });
+    styles.appendChild(sBox);
+    look.appendChild(styles);
+
+    dossier.setLook(ch);
   }
 
   /* ---------------- briefing ---------------- */
@@ -331,7 +446,8 @@
 
     document.body.classList.add('in-mission');
     $('#gl').hidden = false;
-    $('#weapon-name').textContent = SF.weapons.WEAPONS[ch.cls].name;
+    $('#weapon-name').textContent = (ch.equipped && ch.equipped.weapon)
+      ? ch.equipped.weapon.name : SF.weapons.WEAPONS[ch.cls].name;
 
     // one frame for the browser to paint the loading state before the build
     await wait(60);
@@ -370,7 +486,8 @@
         SF.audio.sfx[dest === 'title' ? 'back' : 'click']();
         if (dest === 'slots') renderSlots();
         if (dest === 'codex') renderCodex();
-        if (dest === 'campaign') { openCampaign(slotIndex); return; }
+        if (dest === 'campaign') { if (dossier) dossier.stop(); openCampaign(slotIndex); return; }
+        if (dest === 'armoury') { openArmoury(); return; }
         show(dest);
       });
     });
@@ -386,6 +503,7 @@
     });
     $('#btn-enlist').addEventListener('click', enlist);
     $('#btn-drop').addEventListener('click', drop);
+    $('#btn-armoury').addEventListener('click', openArmoury);
 
     $('#engage').addEventListener('click', () => {
       if (!mission) return;
@@ -409,6 +527,6 @@
     void sessionStart;
   }
 
-  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign,
+  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury,
             get character() { return ch; } };
 })(window.SF);

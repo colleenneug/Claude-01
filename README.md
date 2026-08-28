@@ -202,6 +202,30 @@ standing still.
 
 ---
 
+## Gear, rarity and power
+
+Every cleared mission pays out salvage. Items roll on a five-tier ladder — **common,
+uncommon, rare, epic, exotic** — and the tier sets both a flat stat multiplier and how
+many affixes the item carries. The odds tilt with how deep you are: mission 1 rolls about
+55% common and 1% exotic, mission 16 rolls 18% common and 13% exotic. The Conductor never
+pays out junk.
+
+Weapons multiply your doctrine's issued gun rather than replacing it — damage, magazine,
+rate of fire, reload and spread — so a WRAITH always carries a WHISPER, but an exotic one
+hits nearly twice as hard. Armour fills three slots (helm, plate, greaves) and grants
+vitals, damage resistance and regeneration. A straight upgrade equips itself so the reward
+lands immediately; everything else is swapped in the armoury.
+
+**Power** is the single number that summarises an operative: rank plus everything
+equipped. Raising it is the point — rank comes from XP, the rest comes from salvage.
+
+## Your operative
+
+The armoury has a live 3D preview of the character you are actually building — drag to
+turn them around. Skin tone, hair style and hair colour are yours to set, and equipped
+armour is plated in its own rarity colour, so an exotic helm reads as gold across the
+room. Hair sits under a helmet when one is equipped, as it would.
+
 ## Three character slots
 
 The crew registry holds exactly three bays, persisted to `localStorage`. Each dossier

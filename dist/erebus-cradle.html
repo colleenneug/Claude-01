@@ -459,6 +459,79 @@ body.booting .screen:not(#screen-boot){ display:none !important; }
 .brief-text em{ color:#eafcff; font-style:italic; }
 @media (max-width: 900px){ .brief-body{ grid-template-columns:1fr; } }
 
+/* ---------- armoury ---------- */
+.arm-body{
+  padding:14px 6vw; display:grid; grid-template-columns:320px 1fr; gap:22px;
+  flex:1; min-height:0;
+}
+.arm-preview{ padding:16px; display:flex; flex-direction:column; gap:12px; }
+#dossier-canvas{
+  width:100%; height:360px; display:block; cursor:none;
+  background:radial-gradient(circle at 50% 35%, rgba(94,234,255,.10), transparent 68%);
+  border:1px solid var(--line);
+}
+.arm-power{ text-align:center; border-top:1px solid var(--line); padding-top:12px; }
+.ap-label{ display:block; font-family:var(--font-mono); font-size:9px; letter-spacing:.3em; color:var(--ink-dim); }
+.ap-value{
+  display:block; font-size:42px; line-height:1.1; color:var(--amber);
+  text-shadow:0 0 22px rgba(255,180,84,.4); font-variant-numeric:tabular-nums;
+}
+.ap-sub{ display:block; font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; color:var(--ink-dim); }
+
+.arm-look{ display:flex; flex-direction:column; gap:12px; }
+.look-row .lr-label{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.26em; color:var(--ink-dim);
+  display:block; margin-bottom:6px;
+}
+.swatches{ display:flex; flex-wrap:wrap; gap:6px; }
+.swatch{
+  width:26px; height:26px; border:1px solid rgba(108,139,160,.4); background:var(--c);
+  transition:.14s;
+}
+.swatch:hover{ transform:scale(1.12); border-color:var(--line-hot); }
+.swatch.on{ border-color:var(--amber); box-shadow:0 0 12px rgba(255,180,84,.5); transform:scale(1.12); }
+.style-btn{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.12em; padding:5px 9px;
+  border:1px solid var(--line); background:transparent; color:var(--ink-dim); transition:.14s;
+}
+.style-btn:hover{ color:var(--cyan); border-color:var(--line-hot); }
+.style-btn.on{ color:var(--amber); border-color:var(--amber); background:rgba(255,180,84,.1); }
+
+.arm-gear{ overflow:auto; display:flex; flex-direction:column; gap:18px; min-height:0; }
+.slot-block{ border:1px solid var(--line); background:var(--panel); padding:14px 16px; }
+.slot-head{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.26em; color:var(--amber);
+  border-bottom:1px solid var(--line); padding-bottom:8px; margin-bottom:10px;
+}
+.slot-head .sh-equipped{ color:var(--ink-dim); letter-spacing:.1em; }
+.item-list{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:8px; }
+.item{
+  text-align:left; padding:10px 12px; border:1px solid var(--line);
+  border-left:3px solid var(--rc, var(--ink-dim));
+  background:rgba(94,234,255,.03); transition:.15s;
+}
+.item:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(94,234,255,.1); transform:translateX(3px); }
+.item.on{ border-color:var(--rc); background:color-mix(in srgb, var(--rc) 14%, transparent); }
+.item-name{ font-size:13px; letter-spacing:.06em; color:#eafcff; line-height:1.35; }
+.item-meta{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; margin-top:4px;
+  color:var(--rc);
+}
+.item-affix{ font-family:var(--font-mono); font-size:10.5px; color:var(--lime); margin-top:5px; line-height:1.6; }
+.item-pow{ float:right; font-family:var(--font-mono); font-size:11px; color:var(--amber); }
+.item-empty{ font-family:var(--font-mono); font-size:11px; color:rgba(108,139,160,.65); letter-spacing:.12em; }
+
+@media (max-width: 900px){ .arm-body{ grid-template-columns:1fr; } }
+
+/* drops on the debrief */
+.es-drop{
+  margin-top:8px; padding:8px 10px; border-left:3px solid var(--rc);
+  background:rgba(255,255,255,.03); text-align:left;
+}
+.es-drop .d-name{ font-size:12.5px; color:#eafcff; }
+.es-drop .d-meta{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; color:var(--rc); margin-top:3px; }
+
 
 /* ==== src/css/fps.css ==== */
 /* ============================================================
@@ -919,6 +992,33 @@ body.in-mission #vignette{ opacity:.55; }
     </footer>
   </section>
 
+  <!-- ============ ARMOURY ============ -->
+  <section class="screen" id="screen-armoury">
+    <header class="screen-head">
+      <h2>ARMOURY &mdash; <span id="arm-who">&mdash;</span></h2>
+      <p>Salvage recovered in the field, and the operative wearing it. Better gear is the
+         other half of getting stronger; rank is the first.</p>
+    </header>
+
+    <div class="arm-body">
+      <aside class="arm-preview panel">
+        <canvas id="dossier-canvas"></canvas>
+        <div class="arm-power">
+          <span class="ap-label">POWER</span>
+          <span class="ap-value" id="arm-power">0</span>
+          <span class="ap-sub" id="arm-power-sub">&mdash;</span>
+        </div>
+        <div class="arm-look" id="arm-look"></div>
+      </aside>
+
+      <section class="arm-gear" id="arm-gear"></section>
+    </div>
+
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="campaign">&lsaquo; CAMPAIGN</button>
+    </footer>
+  </section>
+
   <!-- ============ CAMPAIGN ============ -->
   <section class="screen" id="screen-campaign">
     <header class="screen-head">
@@ -929,6 +1029,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="camp-body" id="camp-body"></div>
     <footer class="screen-foot">
       <button class="btn btn-ghost" data-go="slots">&lsaquo; REGISTRY</button>
+      <button class="btn" id="btn-armoury">ARMOURY</button>
     </footer>
   </section>
 
@@ -1927,6 +2028,473 @@ window.SF = window.SF || {};
   const allCleared = (ch) => Object.keys(stateFor(ch).cleared).length >= LAST;
 
   SF.campaign = { MISSIONS, LAST, byIndex, scaleFor, respawnsFor, RESPAWNS, stateFor, markCleared, isUnlocked, isCleared, allCleared };
+})(window.SF);
+
+
+/* ==== src/js/fps/gear.js ==== */
+/* ============================================================
+   Gear: rarity, drops, armour, appearance and power.
+
+   Every mission you clear pays out salvage. Items roll on a five-tier
+   rarity ladder; the tier sets a flat stat multiplier and how many
+   affixes the item carries, and the odds shift toward the top of the
+   ladder the further down the ark you are fighting.
+
+   Power is the single number that summarises an operative: rank plus
+   everything equipped. It is what "getting stronger" means here.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const RARITY = [
+    { id: 'common',   name: 'COMMON',   colour: '#9fb0c0', mult: 1.00, affixes: 0, weight: 100 },
+    { id: 'uncommon', name: 'UNCOMMON', colour: '#7dff9b', mult: 1.10, affixes: 1, weight: 52 },
+    { id: 'rare',     name: 'RARE',     colour: '#5eeaff', mult: 1.22, affixes: 2, weight: 24 },
+    { id: 'epic',     name: 'EPIC',     colour: '#b98cff', mult: 1.40, affixes: 3, weight: 8 },
+    { id: 'exotic',   name: 'EXOTIC',   colour: '#ffb454', mult: 1.65, affixes: 4, weight: 2 }
+  ];
+  const rarityOf = (id) => RARITY.find((r) => r.id === id) || RARITY[0];
+  const rarityRank = (id) => RARITY.findIndex((r) => r.id === id);
+
+  /* Later missions bias the roll upward: by the Conductor, common is rare
+     and exotic is a real possibility. */
+  function rollRarity(missionN) {
+    const tilt = Math.max(0, (missionN - 1) / 15);          // 0 at mission 1, 1 at 16
+    const weights = RARITY.map((r, i) => r.weight * Math.pow(2.4, i * tilt));
+    let total = weights.reduce((a, w) => a + w, 0);
+    let pick = Math.random() * total;
+    for (let i = 0; i < RARITY.length; i++) {
+      pick -= weights[i];
+      if (pick <= 0) return RARITY[i].id;
+    }
+    return 'common';
+  }
+
+  /* ---------- naming ---------- */
+  const PREFIX = ['SALVAGED', 'MARK-VII', 'COLONIAL', 'ARK-PATTERN', 'RECLAIMED', 'DIVISION',
+                  'HOLLOWED', 'QUIET', 'LONG-CROSSING', 'YEAR-SIX'];
+  const SUFFIX = ['OF THE GARDEN', 'OF DECK ZERO', 'OF THE LONG SPINE', 'OF THE FALSE SKY',
+                  'OF THE CHOIR', 'OF WARD SIX', 'OF THE THRESHOLD'];
+  const EXOTIC_NAMES = ['LULLABY', 'THE GREEN DOOR', 'NINE HOURS', 'ADA', 'ONE NOTE', 'REST'];
+
+  /* ---------- affixes ---------- */
+  const WEAPON_AFFIXES = [
+    { id: 'dmg',    label: '+{v}% damage',        stat: 'damage', min: 4,  max: 14 },
+    { id: 'mag',    label: '+{v}% magazine',      stat: 'mag',    min: 8,  max: 26 },
+    { id: 'rpm',    label: '+{v}% rate of fire',  stat: 'rpm',    min: 5,  max: 16 },
+    { id: 'reload', label: '-{v}% reload time',   stat: 'reload', min: 8,  max: 24 },
+    { id: 'spread', label: '-{v}% spread',        stat: 'spread', min: 10, max: 30 }
+  ];
+  const ARMOUR_AFFIXES = [
+    { id: 'hp',     label: '+{v} vitals',         stat: 'hp',     min: 6,  max: 22 },
+    { id: 'resist', label: '+{v}% resistance',    stat: 'resist', min: 2,  max: 7 },
+    { id: 'regen',  label: '+{v}% vital regen',   stat: 'regen',  min: 8,  max: 25 }
+  ];
+
+  const SLOTS = [
+    { id: 'weapon', name: 'WEAPON' },
+    { id: 'head',   name: 'HELM' },
+    { id: 'chest',  name: 'PLATE' },
+    { id: 'legs',   name: 'GREAVES' }
+  ];
+
+  let nextId = 1;
+
+  function rollAffixes(pool, count) {
+    const chosen = [];
+    const bag = pool.slice();
+    for (let i = 0; i < count && bag.length; i++) {
+      const a = bag.splice(Math.floor(Math.random() * bag.length), 1)[0];
+      const v = a.min + Math.floor(Math.random() * (a.max - a.min + 1));
+      chosen.push({ id: a.id, stat: a.stat, value: v, label: a.label.replace('{v}', v) });
+    }
+    return chosen;
+  }
+
+  function powerOf(item) {
+    if (!item) return 0;
+    const base = 12 + rarityRank(item.rarity) * 9;
+    const affix = item.affixes.reduce((a, x) => a + x.value * 0.6, 0);
+    return Math.round((base + affix) * (1 + (item.tier || 1) * 0.06));
+  }
+
+  /* ---------- item construction ---------- */
+
+  function makeWeapon(classId, rarityId, tier) {
+    const spec = SF.weapons.WEAPONS[classId];
+    const r = rarityOf(rarityId);
+    const affixes = rollAffixes(WEAPON_AFFIXES, r.affixes);
+    const item = {
+      uid: 'w' + (nextId++), kind: 'weapon', slot: 'weapon', cls: classId,
+      rarity: rarityId, tier: tier || 1, base: spec.name, affixes: affixes,
+      name: rarityId === 'exotic'
+        ? '"' + EXOTIC_NAMES[Math.floor(Math.random() * EXOTIC_NAMES.length)] + '" ' + spec.name
+        : (rarityId === 'common' ? 'ISSUED ' + spec.name
+           : PREFIX[Math.floor(Math.random() * PREFIX.length)] + ' ' + spec.name +
+             (rarityId === 'epic' ? ' ' + SUFFIX[Math.floor(Math.random() * SUFFIX.length)] : ''))
+    };
+    item.power = powerOf(item);
+    return item;
+  }
+
+  function makeArmour(slot, rarityId, tier) {
+    const r = rarityOf(rarityId);
+    const item = {
+      uid: 'a' + (nextId++), kind: 'armour', slot: slot,
+      rarity: rarityId, tier: tier || 1,
+      affixes: rollAffixes(ARMOUR_AFFIXES, Math.max(1, r.affixes)),
+      name: (rarityId === 'exotic'
+        ? '"' + EXOTIC_NAMES[Math.floor(Math.random() * EXOTIC_NAMES.length)] + '" '
+        : PREFIX[Math.floor(Math.random() * PREFIX.length)] + ' ') +
+        SLOTS.find((s) => s.id === slot).name
+    };
+    item.power = powerOf(item);
+    return item;
+  }
+
+  /* One or two pieces of salvage per cleared mission, better the deeper
+     you are, and the boss always pays out. */
+  function rollDrops(character, missionN, isBoss) {
+    const drops = [];
+    const count = isBoss ? 3 : (Math.random() < 0.45 ? 2 : 1);
+    for (let i = 0; i < count; i++) {
+      let rarity = rollRarity(missionN);
+      if (isBoss && rarityRank(rarity) < 2) rarity = 'rare';     // no junk from the Conductor
+      if (Math.random() < 0.4) drops.push(makeWeapon(character.cls, rarity, missionN));
+      else drops.push(makeArmour(['head', 'chest', 'legs'][Math.floor(Math.random() * 3)],
+                                 rarity, missionN));
+    }
+    return drops;
+  }
+
+  /* ---------- equipped stats ---------- */
+
+  /* Multipliers the weapon module applies over its base spec. */
+  function weaponMods(character) {
+    const item = character.equipped && character.equipped.weapon;
+    const mods = { damage: 1, mag: 1, rpm: 1, reload: 1, spread: 1 };
+    if (!item) return mods;
+    const r = rarityOf(item.rarity);
+    mods.damage = r.mult;
+    for (const a of item.affixes) {
+      if (a.stat === 'damage') mods.damage *= 1 + a.value / 100;
+      if (a.stat === 'mag')    mods.mag    *= 1 + a.value / 100;
+      if (a.stat === 'rpm')    mods.rpm    *= 1 + a.value / 100;
+      if (a.stat === 'reload') mods.reload *= 1 - a.value / 100;
+      if (a.stat === 'spread') mods.spread *= 1 - a.value / 100;
+    }
+    return mods;
+  }
+
+  /* Flat bonuses from the three armour slots. */
+  function armourStats(character) {
+    const out = { hp: 0, resist: 0, regen: 0 };
+    const eq = character.equipped || {};
+    for (const slot of ['head', 'chest', 'legs']) {
+      const item = eq[slot];
+      if (!item) continue;
+      const r = rarityOf(item.rarity);
+      out.hp += Math.round(8 * r.mult);
+      out.resist += 1.5 * r.mult;
+      for (const a of item.affixes) {
+        if (a.stat === 'hp') out.hp += a.value;
+        if (a.stat === 'resist') out.resist += a.value;
+        if (a.stat === 'regen') out.regen += a.value;
+      }
+    }
+    out.resist = Math.min(55, out.resist);          // never immune
+    return out;
+  }
+
+  const powerOfCharacter = (ch) => {
+    const eq = ch.equipped || {};
+    return Math.round(ch.level * 8 +
+      ['weapon', 'head', 'chest', 'legs'].reduce((a, s) => a + powerOf(eq[s]), 0));
+  };
+
+  /* ---------- appearance ---------- */
+
+  const SKINS = ['#f0d0b8', '#e0b394', '#c89272', '#a06a48', '#7a4a30', '#5a3520', '#3d2418'];
+  const HAIR_COLOURS = ['#141210', '#3a2a1e', '#6b4a2a', '#a8722f', '#c9a227', '#8a8a8a',
+                        '#e8e8e8', '#5eeaff', '#ff5ea8', '#7dff9b'];
+  const HAIR_STYLES = [
+    { id: 'shaved',  name: 'SHAVED' },
+    { id: 'crop',    name: 'CROP' },
+    { id: 'braids',  name: 'BRAIDS' },
+    { id: 'tail',    name: 'TIED BACK' },
+    { id: 'locs',    name: 'LOCS' },
+    { id: 'mohawk',  name: 'CREST' },
+    { id: 'long',    name: 'LOOSE' }
+  ];
+
+  const defaultLook = () => ({
+    skin: Math.floor(Math.random() * SKINS.length),
+    hair: Math.floor(Math.random() * HAIR_STYLES.length),
+    hairColour: Math.floor(Math.random() * 7)
+  });
+
+  /* Bring an older save up to date without losing it. */
+  function ensure(ch) {
+    if (!ch.look) ch.look = defaultLook();
+    if (!ch.inventory) ch.inventory = [];
+    if (!ch.equipped) ch.equipped = { weapon: null, head: null, chest: null, legs: null };
+    if (!ch.equipped.weapon) {
+      const starter = makeWeapon(ch.cls, 'common', 1);
+      ch.inventory.push(starter);
+      ch.equipped.weapon = starter;
+    }
+    return ch;
+  }
+
+  function grant(ch, items) {
+    ensure(ch);
+    for (const it of items) {
+      ch.inventory.push(it);
+      // auto-equip a straight upgrade so the reward is felt immediately
+      const cur = ch.equipped[it.slot];
+      if (!cur || it.power > cur.power) ch.equipped[it.slot] = it;
+    }
+    if (ch.inventory.length > 60) ch.inventory = ch.inventory.slice(-60);
+    return ch;
+  }
+
+  SF.gear = {
+    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES,
+    rarityOf, rarityRank, rollRarity, rollDrops, makeWeapon, makeArmour,
+    weaponMods, armourStats, powerOf, powerOfCharacter, ensure, grant, defaultLook
+  };
+})(window.SF);
+
+
+/* ==== src/js/fps/dossier.js ==== */
+/* ============================================================
+   The operative preview.
+
+   A small three.js scene on the armoury screen showing the character
+   you are actually building: skin tone, hair style and colour, and the
+   armour you have equipped, plated in its rarity colour. First person
+   means you never see yourself in the field, so this is where
+   customisation has to read.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  function create(canvas) {
+    const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 40);
+    camera.position.set(0, 1.45, 4.2);
+    camera.lookAt(0, 1.35, 0);
+
+    scene.add(new THREE.HemisphereLight(0x5a7a92, 0x0d1118, 1.1));
+    const key = new THREE.DirectionalLight(0xdff0ff, 1.5);
+    key.position.set(2.4, 4, 3);
+    scene.add(key);
+    const rim = new THREE.PointLight(0x5eeaff, 12, 9, 2);
+    rim.position.set(-2.2, 2.4, -1.8);
+    scene.add(rim);
+
+    const root = new THREE.Group();
+    scene.add(root);
+
+    /* ---------- figure ---------- */
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0b394, roughness: 0.72, metalness: 0.02 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x2a1d14, roughness: 0.85, metalness: 0.05 });
+    const suitMat = new THREE.MeshStandardMaterial({ color: 0x1d232c, roughness: 0.62, metalness: 0.35 });
+    const plateMats = {
+      head:  new THREE.MeshStandardMaterial({ color: 0x8894a4, roughness: 0.4, metalness: 0.85 }),
+      chest: new THREE.MeshStandardMaterial({ color: 0x8894a4, roughness: 0.4, metalness: 0.85 }),
+      legs:  new THREE.MeshStandardMaterial({ color: 0x8894a4, roughness: 0.4, metalness: 0.85 })
+    };
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 24, 20), skinMat);
+    head.position.y = 1.62;
+    head.scale.set(1, 1.12, 0.95);
+
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.14, 12), skinMat);
+    neck.position.y = 1.44;
+
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.44, 4, 16), suitMat);
+    torso.position.y = 1.13;
+
+    const hips = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.12, 3, 12), suitMat);
+    hips.position.y = 0.82;
+
+    const arms = [-1, 1].map((side) => {
+      const a = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.5, 3, 10), suitMat);
+      a.position.set(side * 0.36, 1.14, 0);
+      a.rotation.z = side * 0.09;
+      return a;
+    });
+    const hands = [-1, 1].map((side) => {
+      const h = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), skinMat);
+      h.position.set(side * 0.4, 0.83, 0);
+      return h;
+    });
+    const legs = [-1, 1].map((side) => {
+      const l = new THREE.Mesh(new THREE.CapsuleGeometry(0.105, 0.56, 3, 10), suitMat);
+      l.position.set(side * 0.13, 0.42, 0);
+      return l;
+    });
+
+    root.add(head, neck, torso, hips, ...arms, ...hands, ...legs);
+
+    /* ---------- armour plates, shown only when equipped ---------- */
+    const helm = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 16,
+      0, Math.PI * 2, 0, Math.PI * 0.58), plateMats.head);
+    helm.position.y = 1.63;
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x06131b, emissive: new THREE.Color(0x5eeaff),
+                                       emissiveIntensity: 2.2, roughness: 0.3 }));
+    visor.position.set(0, 1.605, 0.2);
+
+    const chestPlate = new THREE.Mesh(new THREE.CapsuleGeometry(0.29, 0.36, 4, 16), plateMats.chest);
+    chestPlate.position.y = 1.16;
+    const pauldrons = [-1, 1].map((side) => {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10,
+        0, Math.PI * 2, 0, Math.PI * 0.6), plateMats.chest);
+      m.position.set(side * 0.36, 1.32, 0);
+      return m;
+    });
+    const greaves = [-1, 1].map((side) => {
+      const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.125, 0.34, 3, 10), plateMats.legs);
+      m.position.set(side * 0.13, 0.5, 0);
+      return m;
+    });
+
+    root.add(helm, visor, chestPlate, ...pauldrons, ...greaves);
+
+    /* ---------- hair ---------- */
+    const hairGroup = new THREE.Group();
+    hairGroup.position.y = 1.62;
+    root.add(hairGroup);
+
+    function buildHair(styleId) {
+      hairGroup.clear();
+      const cap = () => {
+        const m = new THREE.Mesh(new THREE.SphereGeometry(0.243, 20, 16,
+          0, Math.PI * 2, 0, Math.PI * 0.52), hairMat);
+        m.scale.set(1, 1.1, 0.97);
+        return m;
+      };
+      switch (styleId) {
+        case 'shaved':
+          break;
+        case 'crop':
+          hairGroup.add(cap());
+          break;
+        case 'braids': {
+          hairGroup.add(cap());
+          for (let i = 0; i < 5; i++) {
+            const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.028, 0.3, 3, 6), hairMat);
+            b.position.set(-0.16 + i * 0.08, -0.18, -0.14);
+            hairGroup.add(b);
+          }
+          break;
+        }
+        case 'tail': {
+          hairGroup.add(cap());
+          const t = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.34, 4, 10), hairMat);
+          t.position.set(0, -0.14, -0.24);
+          t.rotation.x = 0.45;
+          hairGroup.add(t);
+          break;
+        }
+        case 'locs': {
+          hairGroup.add(cap());
+          for (let i = 0; i < 10; i++) {
+            const ang = (i / 10) * Math.PI * 2;
+            const l = new THREE.Mesh(new THREE.CapsuleGeometry(0.033, 0.36, 3, 6), hairMat);
+            l.position.set(Math.cos(ang) * 0.19, -0.2, Math.sin(ang) * 0.17);
+            hairGroup.add(l);
+          }
+          break;
+        }
+        case 'mohawk': {
+          for (let i = 0; i < 7; i++) {
+            const h = 0.1 + Math.sin((i / 6) * Math.PI) * 0.16;
+            const m = new THREE.Mesh(new THREE.BoxGeometry(0.07, h, 0.075), hairMat);
+            m.position.set(0, 0.2 + h * 0.35, 0.16 - i * 0.055);
+            hairGroup.add(m);
+          }
+          break;
+        }
+        case 'long': {
+          hairGroup.add(cap());
+          const back = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.34, 4, 12), hairMat);
+          back.position.set(0, -0.24, -0.09);
+          back.scale.set(1, 1, 0.72);
+          hairGroup.add(back);
+          break;
+        }
+        default: hairGroup.add(cap());
+      }
+    }
+
+    let current = null;
+
+    function setLook(character) {
+      const G = SF.gear;
+      const look = character.look || G.defaultLook();
+      skinMat.color.set(G.SKINS[look.skin % G.SKINS.length]);
+      hairMat.color.set(G.HAIR_COLOURS[look.hairColour % G.HAIR_COLOURS.length]);
+
+      const style = G.HAIR_STYLES[look.hair % G.HAIR_STYLES.length].id;
+      if (style !== current) { buildHair(style); current = style; }
+
+      const eq = character.equipped || {};
+      helm.visible = visor.visible = !!eq.head;
+      chestPlate.visible = !!eq.chest;
+      for (const p of pauldrons) p.visible = !!eq.chest;
+      for (const g of greaves) g.visible = !!eq.legs;
+      // hair disappears under a helmet, as it would
+      hairGroup.visible = !eq.head;
+
+      for (const slot of ['head', 'chest', 'legs']) {
+        if (eq[slot]) plateMats[slot].color.set(G.rarityOf(eq[slot].rarity).colour);
+      }
+      const cls = SF.classes.CLASSES[character.cls];
+      suitMat.color.set(cls ? cls.accent : '#1d232c');
+      suitMat.color.multiplyScalar(0.32);
+    }
+
+    let spin = 0.6, raf = 0, dragging = false, lastX = 0;
+
+    canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; });
+    window.addEventListener('pointerup', () => { dragging = false; });
+    window.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      spin += (e.clientX - lastX) * 0.01;
+      lastX = e.clientX;
+    });
+
+    function resize() {
+      const w = canvas.clientWidth || 320, h = canvas.clientHeight || 420;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    function frame() {
+      raf = requestAnimationFrame(frame);
+      if (!dragging) spin += 0.0035;
+      root.rotation.y = spin;
+      renderer.render(scene, camera);
+    }
+
+    function start() { resize(); if (!raf) frame(); }
+    function stop() { cancelAnimationFrame(raf); raf = 0; }
+
+    buildHair('crop');
+    return { setLook, start, stop, resize };
+  }
+
+  SF.dossier = { create };
 })(window.SF);
 
 
@@ -3117,7 +3685,19 @@ window.SF = window.SF || {};
 
   function create(ctx) {
     const { scene, camera, player, ai, hud, lights } = ctx;
-    const spec = WEAPONS[ctx.classId];
+    /* The issued weapon is the baseline; the equipped item multiplies it. */
+    const base = WEAPONS[ctx.classId];
+    const mods = ctx.mods || { damage: 1, mag: 1, rpm: 1, reload: 1, spread: 1 };
+    const spec = Object.assign({}, base, {
+      damage: base.damage * mods.damage,
+      mag: Math.max(1, Math.round(base.mag * mods.mag)),
+      reserve: Math.round(base.reserve * mods.mag),
+      rpm: Math.round(base.rpm * mods.rpm),
+      reload: base.reload * mods.reload,
+      spread: base.spread * mods.spread,
+      adsSpread: base.adsSpread * mods.spread,
+      displayName: ctx.itemName || base.name
+    });
     const ability = ABILITIES[ctx.classId];
 
     const w = {
@@ -4530,11 +5110,14 @@ window.SF = window.SF || {};
     const mission = SF.campaign.byIndex(missionIndex);
     const scale = SF.campaign.scaleFor(missionIndex - 1);
 
+    SF.gear.ensure(character);
+    const armour = SF.gear.armourStats(character);
+
     const state = {
-      hp: 100, maxHp: 100, shield: 0, overshield: 0,
+      hp: 100 + armour.hp, maxHp: 100 + armour.hp, shield: 0, overshield: 0,
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
-      xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0,
+      xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
       spawned: false, bossBeaten: false,
       respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0
     };
@@ -4557,6 +5140,8 @@ window.SF = window.SF || {};
     const weapon = SF.weapons.create({
       scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
+      mods: SF.gear.weaponMods(character),
+      itemName: character.equipped.weapon ? character.equipped.weapon.name : null,
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
       onNode: (i) => { if (boss) boss.hitNode(i); },
@@ -4683,7 +5268,7 @@ window.SF = window.SF || {};
 
     function hurtPlayer(amount, from) {
       if (state.phase > 0 || state.over) return;
-      let dmg = amount;
+      let dmg = amount * (1 - armour.resist / 100);       // armour resistance
       if (character.cls === 'bulwark') dmg *= 0.78;
       if (state.overshield > 0) {
         const absorbed = Math.min(state.overshield, dmg);
@@ -4774,6 +5359,8 @@ window.SF = window.SF || {};
       document.exitPointerLock();
       const notes = SF.classes.grantXp(character, state.xp);
       SF.campaign.markCleared(character, missionIndex, state.time);
+      state.drops = SF.gear.rollDrops(character, mission.n, !!mission.boss);
+      SF.gear.grant(character, state.drops);
       SF.storage.save(character.slot, character);
       SF.audio.sfx.win();
       showEnd(true, notes);
@@ -4813,7 +5400,15 @@ window.SF = window.SF || {};
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
-        notes.map((n) => `<div class="es-up">${n}</div>`).join('');
+        notes.map((n) => `<div class="es-up">${n}</div>`).join('') +
+        (state.drops && state.drops.length
+          ? '<div class="es-up">SALVAGE RECOVERED</div>' + state.drops.map((d) => {
+              const r = SF.gear.rarityOf(d.rarity);
+              return `<div class="es-drop" style="--rc:${r.colour}">` +
+                     `<div class="d-name">${d.name}</div>` +
+                     `<div class="d-meta">${r.name} · POWER ${d.power}</div></div>`;
+            }).join('')
+          : '');
       $('#screen-end').classList.add('active');
       hud.setVisible(false);
     }
@@ -4865,7 +5460,7 @@ window.SF = window.SF || {};
       // out-of-combat regeneration keeps the pace moving
       state.regenT += dt;
       if (state.regenT > 5 && state.hp < state.maxHp) {
-        state.hp = Math.min(state.maxHp, state.hp + 14 * dt);
+        state.hp = Math.min(state.maxHp, state.hp + 14 * (1 + armour.regen / 100) * dt);
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
@@ -4957,6 +5552,7 @@ window.SF = window.SF || {};
   let sessionStart = 0;
   let mission = null;     // live SF.game instance
   let missionIndex = 1;   // which campaign mission is being flown
+  let dossier = null;     // live 3D operative preview on the armoury screen
   let bootAborted = false;
 
   /* ---------------- screens ---------------- */
@@ -5185,8 +5781,10 @@ window.SF = window.SF || {};
     ch.slot = i;
     SF.campaign.stateFor(ch);
 
+    SF.gear.ensure(ch);
     const cls = SF.classes.CLASSES[ch.cls];
-    $('#camp-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
+    $('#camp-who').textContent =
+      `${ch.name} · ${cls.name} · RANK ${ch.level} · POWER ${SF.gear.powerOfCharacter(ch)}`;
 
     const body = $('#camp-body');
     body.innerHTML = '';
@@ -5217,6 +5815,118 @@ window.SF = window.SF || {};
 
     SF.audio.sfx.open();
     show('campaign');
+  }
+
+  /* ---------------- armoury ---------------- */
+
+  function openArmoury() {
+    if (!ch) return;
+    SF.gear.ensure(ch);
+    const cls = SF.classes.CLASSES[ch.cls];
+    $('#arm-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
+    show('armoury');
+
+    if (!dossier) dossier = SF.dossier.create($('#dossier-canvas'));
+    dossier.start();
+    renderArmoury();
+    SF.audio.sfx.open();
+  }
+
+  function renderArmoury() {
+    const G = SF.gear;
+    $('#arm-power').textContent = G.powerOfCharacter(ch);
+    const a = G.armourStats(ch);
+    $('#arm-power-sub').textContent =
+      `+${a.hp} VITALS · ${a.resist.toFixed(0)}% RESIST · RANK ${ch.level}`;
+
+    /* ---- equipment, one block per slot ---- */
+    const gearBox = $('#arm-gear');
+    gearBox.innerHTML = '';
+    for (const slot of G.SLOTS) {
+      const owned = ch.inventory.filter((it) => it.slot === slot.id)
+                               .sort((x, y) => y.power - x.power);
+      const equipped = ch.equipped[slot.id];
+      const block = el('div', 'slot-block');
+      block.innerHTML =
+        `<div class="slot-head"><span>${slot.name}</span>` +
+        `<span class="sh-equipped">${equipped ? equipped.name : 'NOTHING EQUIPPED'}</span></div>`;
+
+      const list = el('div', 'item-list');
+      if (!owned.length) list.appendChild(el('div', 'item-empty', 'NO SALVAGE OF THIS TYPE YET'));
+
+      for (const it of owned) {
+        const r = G.rarityOf(it.rarity);
+        const on = equipped && equipped.uid === it.uid;
+        const btn = el('button', 'item' + (on ? ' on' : ''));
+        btn.style.setProperty('--rc', r.colour);
+        btn.dataset.hover = on ? 'EQUIPPED' : 'EQUIP';
+        btn.innerHTML =
+          `<span class="item-pow">${it.power}</span>` +
+          `<div class="item-name">${it.name}</div>` +
+          `<div class="item-meta">${r.name}${it.tier > 1 ? ' · TIER ' + it.tier : ''}</div>` +
+          (it.affixes.length
+            ? `<div class="item-affix">${it.affixes.map((x) => '› ' + x.label).join('<br>')}</div>`
+            : '');
+        btn.addEventListener('click', () => {
+          ch.equipped[slot.id] = it;
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.confirm();
+          renderArmoury();
+          dossier.setLook(ch);
+        });
+        list.appendChild(btn);
+      }
+      block.appendChild(list);
+      gearBox.appendChild(block);
+    }
+
+    /* ---- appearance ---- */
+    const look = $('#arm-look');
+    look.innerHTML = '';
+
+    const swatchRow = (label, colours, key) => {
+      const row = el('div', 'look-row');
+      row.innerHTML = `<span class="lr-label">${label}</span>`;
+      const box = el('div', 'swatches');
+      colours.forEach((c, i) => {
+        const sw = el('button', 'swatch' + (ch.look[key] === i ? ' on' : ''));
+        sw.style.setProperty('--c', c);
+        sw.dataset.hover = label;
+        sw.addEventListener('click', () => {
+          ch.look[key] = i;
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.click();
+          renderArmoury();
+          dossier.setLook(ch);
+        });
+        box.appendChild(sw);
+      });
+      row.appendChild(box);
+      return row;
+    };
+
+    look.appendChild(swatchRow('SKIN TONE', SF.gear.SKINS, 'skin'));
+    look.appendChild(swatchRow('HAIR COLOUR', SF.gear.HAIR_COLOURS, 'hairColour'));
+
+    const styles = el('div', 'look-row');
+    styles.innerHTML = '<span class="lr-label">HAIR STYLE</span>';
+    const sBox = el('div', 'swatches');
+    SF.gear.HAIR_STYLES.forEach((st, i) => {
+      const btn = el('button', 'style-btn' + (ch.look.hair === i ? ' on' : ''), st.name);
+      btn.dataset.hover = st.name;
+      btn.addEventListener('click', () => {
+        ch.look.hair = i;
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.click();
+        renderArmoury();
+        dossier.setLook(ch);
+      });
+      sBox.appendChild(btn);
+    });
+    styles.appendChild(sBox);
+    look.appendChild(styles);
+
+    dossier.setLook(ch);
   }
 
   /* ---------------- briefing ---------------- */
@@ -5273,7 +5983,8 @@ window.SF = window.SF || {};
 
     document.body.classList.add('in-mission');
     $('#gl').hidden = false;
-    $('#weapon-name').textContent = SF.weapons.WEAPONS[ch.cls].name;
+    $('#weapon-name').textContent = (ch.equipped && ch.equipped.weapon)
+      ? ch.equipped.weapon.name : SF.weapons.WEAPONS[ch.cls].name;
 
     // one frame for the browser to paint the loading state before the build
     await wait(60);
@@ -5312,7 +6023,8 @@ window.SF = window.SF || {};
         SF.audio.sfx[dest === 'title' ? 'back' : 'click']();
         if (dest === 'slots') renderSlots();
         if (dest === 'codex') renderCodex();
-        if (dest === 'campaign') { openCampaign(slotIndex); return; }
+        if (dest === 'campaign') { if (dossier) dossier.stop(); openCampaign(slotIndex); return; }
+        if (dest === 'armoury') { openArmoury(); return; }
         show(dest);
       });
     });
@@ -5328,6 +6040,7 @@ window.SF = window.SF || {};
     });
     $('#btn-enlist').addEventListener('click', enlist);
     $('#btn-drop').addEventListener('click', drop);
+    $('#btn-armoury').addEventListener('click', openArmoury);
 
     $('#engage').addEventListener('click', () => {
       if (!mission) return;
@@ -5351,7 +6064,7 @@ window.SF = window.SF || {};
     void sessionStart;
   }
 
-  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign,
+  SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury,
             get character() { return ch; } };
 })(window.SF);
 

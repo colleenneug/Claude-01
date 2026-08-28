@@ -46,11 +46,14 @@
     const mission = SF.campaign.byIndex(missionIndex);
     const scale = SF.campaign.scaleFor(missionIndex - 1);
 
+    SF.gear.ensure(character);
+    const armour = SF.gear.armourStats(character);
+
     const state = {
-      hp: 100, maxHp: 100, shield: 0, overshield: 0,
+      hp: 100 + armour.hp, maxHp: 100 + armour.hp, shield: 0, overshield: 0,
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
-      xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0,
+      xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
       spawned: false, bossBeaten: false,
       respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0
     };
@@ -73,6 +76,8 @@
     const weapon = SF.weapons.create({
       scene, camera, player, ai, hud, level, lights,
       classId: character.cls,
+      mods: SF.gear.weaponMods(character),
+      itemName: character.equipped.weapon ? character.equipped.weapon.name : null,
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
       onNode: (i) => { if (boss) boss.hitNode(i); },
@@ -199,7 +204,7 @@
 
     function hurtPlayer(amount, from) {
       if (state.phase > 0 || state.over) return;
-      let dmg = amount;
+      let dmg = amount * (1 - armour.resist / 100);       // armour resistance
       if (character.cls === 'bulwark') dmg *= 0.78;
       if (state.overshield > 0) {
         const absorbed = Math.min(state.overshield, dmg);
@@ -290,6 +295,8 @@
       document.exitPointerLock();
       const notes = SF.classes.grantXp(character, state.xp);
       SF.campaign.markCleared(character, missionIndex, state.time);
+      state.drops = SF.gear.rollDrops(character, mission.n, !!mission.boss);
+      SF.gear.grant(character, state.drops);
       SF.storage.save(character.slot, character);
       SF.audio.sfx.win();
       showEnd(true, notes);
@@ -329,7 +336,15 @@
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
-        notes.map((n) => `<div class="es-up">${n}</div>`).join('');
+        notes.map((n) => `<div class="es-up">${n}</div>`).join('') +
+        (state.drops && state.drops.length
+          ? '<div class="es-up">SALVAGE RECOVERED</div>' + state.drops.map((d) => {
+              const r = SF.gear.rarityOf(d.rarity);
+              return `<div class="es-drop" style="--rc:${r.colour}">` +
+                     `<div class="d-name">${d.name}</div>` +
+                     `<div class="d-meta">${r.name} · POWER ${d.power}</div></div>`;
+            }).join('')
+          : '');
       $('#screen-end').classList.add('active');
       hud.setVisible(false);
     }
@@ -381,7 +396,7 @@
       // out-of-combat regeneration keeps the pace moving
       state.regenT += dt;
       if (state.regenT > 5 && state.hp < state.maxHp) {
-        state.hp = Math.min(state.maxHp, state.hp + 14 * dt);
+        state.hp = Math.min(state.maxHp, state.hp + 14 * (1 + armour.regen / 100) * dt);
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
