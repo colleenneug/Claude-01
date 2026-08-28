@@ -25,8 +25,12 @@
              'singing started. The relay still answers. Nothing else does. Whatever came up ' +
              'out of the shelf has had a long time to get used to the heat.',
       image: 'assets/desert-planet-bg.webp',
-      sky: { top: '#3a2418', mid: '#c9763a', low: '#f0b46a', sun: '#fff0c0', haze: 0xd08a4a },
-      ground: '#8a5a32', rockTint: '#6d4527', fog: 0xc4864a, fogDensity: 0.011,
+      /* Violet sky, twin moons, a far-off spire city — matching the supplied
+         backdrop closely enough that the generated fallback is not jarring. */
+      sky: { top: '#2a1038', mid: '#7b3f7a', low: '#e0975c', sun: '#ffd9a0', haze: 0xb066a0,
+             style: 'twin-moons', city: '#3a2246', ground: '#c2703a' },
+      cover: 'ruin',
+      ground: '#b06a38', rockTint: '#8a5a3c', fog: 0xa9663f, fogDensity: 0.010,
       light: { key: 0xffd8a0, keyI: 2.2, hemiSky: 0xffb877, hemiGround: 0x4a2f18, hemiI: 1.1 },
       mix: [['drone', 0.45], ['warden', 0.2], ['thrall', 0.35]]
     },
@@ -39,9 +43,14 @@
              'crossing. It is still transmitting on a loop, into a sky that has not changed ' +
              'in forty years. Something down there learned the loop.',
       image: 'assets/frozen-planet-bg.webp',
-      sky: { top: '#0a1830', mid: '#4a7fa8', low: '#cfe6f5', sun: '#eaf6ff', haze: 0x8fc2e0 },
-      ground: '#c8dceb', rockTint: '#9fc0d8', fog: 0xa8cfe6, fogDensity: 0.014,
-      light: { key: 0xdcefff, keyI: 2.0, hemiSky: 0xbfe0ff, hemiGround: 0x3a4a5a, hemiI: 1.25 },
+      /* Night sky and stars with a banded gas giant, over a pale ice field. */
+      sky: { top: '#050a18', mid: '#132743', low: '#8fb4cc', sun: '#dfeeff', haze: 0x6fa8d0,
+             style: 'gas-giant', ground: '#c6dbe8' },
+      cover: 'crystal',
+      /* Snow is a bright albedo under a strong key: dial both back or the
+         whole field blows out to white and takes the HUD with it. */
+      ground: '#93aec2', rockTint: '#7fb4d4', fog: 0x86b0cc, fogDensity: 0.012,
+      light: { key: 0xdcefff, keyI: 1.05, hemiSky: 0xbfe0ff, hemiGround: 0x2f3d4a, hemiI: 0.7 },
       mix: [['thrall', 0.5], ['drone', 0.3], ['warden', 0.2]]
     }
   ];
@@ -74,51 +83,123 @@
   }
 
   function proceduralSky(spec) {
-    const S = 1024;
+    const S = 2048, H = S / 2;
     const cv = document.createElement('canvas');
-    cv.width = S; cv.height = S / 2;
+    cv.width = S; cv.height = H;
     const g = cv.getContext('2d');
+    const sky = spec.sky;
 
-    const grad = g.createLinearGradient(0, 0, 0, cv.height);
-    grad.addColorStop(0, spec.sky.top);
-    grad.addColorStop(0.55, spec.sky.mid);
-    grad.addColorStop(1, spec.sky.low);
+    const grad = g.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, sky.top);
+    grad.addColorStop(0.52, sky.mid);
+    grad.addColorStop(0.82, sky.low);
+    grad.addColorStop(1, sky.ground || sky.low);
     g.fillStyle = grad;
-    g.fillRect(0, 0, cv.width, cv.height);
+    g.fillRect(0, 0, S, H);
 
-    // a sun low on the horizon
-    const sx = S * 0.66, sy = cv.height * 0.62;
-    const halo = g.createRadialGradient(sx, sy, 0, sx, sy, 190);
-    halo.addColorStop(0, spec.sky.sun);
-    halo.addColorStop(0.18, spec.sky.sun);
-    halo.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = halo;
-    g.fillRect(sx - 200, sy - 200, 400, 400);
+    const horizon = H * 0.80;
 
-    /* A companion world, kept well below the zenith: the dome maps the top of
-       this canvas to the pole, where anything round gets smeared. */
-    const px = S * 0.22, py = cv.height * 0.6, pr = 58;
-    const disc = g.createRadialGradient(px - pr * 0.35, py - pr * 0.35, pr * 0.1, px, py, pr);
-    disc.addColorStop(0, '#ffffff');
-    disc.addColorStop(0.35, spec.sky.mid);
-    disc.addColorStop(1, spec.sky.top);
-    g.fillStyle = disc;
-    g.beginPath(); g.arc(px, py, pr, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = 'rgba(255,255,255,.16)';
-    g.lineWidth = 5;
-    g.lineWidth = 4;
-    g.beginPath(); g.ellipse(px, py, pr * 1.8, pr * 0.3, -0.35, 0, Math.PI * 2); g.stroke();
+    /* a banded, ringed world, drawn with its terminator on the correct side */
+    const gasGiant = (cx, cy, r) => {
+      g.save();
+      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.clip();
+      const body = g.createLinearGradient(cx - r, cy, cx + r, cy);
+      body.addColorStop(0, '#f2e4cf');
+      body.addColorStop(0.55, '#d8c1a0');
+      body.addColorStop(1, '#6a5340');
+      g.fillStyle = body;
+      g.fillRect(cx - r, cy - r, r * 2, r * 2);
+      // latitude bands
+      for (let i = -8; i <= 8; i++) {
+        const y = cy + (i / 9) * r;
+        g.globalAlpha = 0.16 + Math.random() * 0.14;
+        g.fillStyle = i % 2 ? '#a8764a' : '#fff3e0';
+        g.fillRect(cx - r, y, r * 2, r * (0.055 + Math.random() * 0.05));
+      }
+      // a storm
+      g.globalAlpha = 0.5;
+      g.fillStyle = '#c4632f';
+      g.beginPath(); g.ellipse(cx + r * 0.24, cy + r * 0.22, r * 0.2, r * 0.11, 0.2, 0, 6.28); g.fill();
+      g.globalAlpha = 1;
+      g.restore();
+      // limb shading
+      const shade = g.createRadialGradient(cx - r * 0.4, cy - r * 0.4, r * 0.2, cx, cy, r);
+      shade.addColorStop(0, 'rgba(0,0,0,0)');
+      shade.addColorStop(1, 'rgba(0,0,0,.55)');
+      g.fillStyle = shade;
+      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+    };
 
-    // banded cloud / dust
-    g.globalAlpha = 0.12;
-    for (let i = 0; i < 90; i++) {
-      const y = Math.random() * cv.height * 0.85;
-      g.fillStyle = i % 2 ? '#ffffff' : spec.sky.top;
-      g.fillRect(0, y, S, 1 + Math.random() * 7);
+    const moon = (cx, cy, r, tint) => {
+      const d = g.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.15, cx, cy, r);
+      d.addColorStop(0, '#ffffff');
+      d.addColorStop(0.6, tint);
+      d.addColorStop(1, 'rgba(20,14,30,.9)');
+      g.fillStyle = d;
+      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(60,40,70,.28)';
+      for (let i = 0; i < 7; i++) {
+        const a = Math.random() * 6.28, rr = Math.random() * r * 0.7;
+        g.beginPath();
+        g.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, r * (0.06 + Math.random() * 0.12), 0, 6.28);
+        g.fill();
+      }
+    };
+
+    if (sky.style === 'gas-giant') {
+      // stars, thicker toward the zenith
+      for (let i = 0; i < 900; i++) {
+        const y = Math.pow(Math.random(), 1.5) * horizon;
+        const a = 0.25 + Math.random() * 0.75;
+        g.fillStyle = `rgba(255,255,255,${a * (1 - y / horizon) * 0.9})`;
+        g.fillRect(Math.random() * S, y, Math.random() < 0.15 ? 2 : 1, Math.random() < 0.15 ? 2 : 1);
+      }
+      gasGiant(S * 0.5, H * 0.5, H * 0.21);
+      // faint aurora over the ice
+      const au = g.createLinearGradient(0, horizon - 120, 0, horizon);
+      au.addColorStop(0, 'rgba(120,220,255,0)');
+      au.addColorStop(1, 'rgba(120,220,255,.16)');
+      g.fillStyle = au;
+      g.fillRect(0, horizon - 120, S, 120);
+    } else {
+      // twin moons over a violet sky
+      moon(S * 0.34, H * 0.5, H * 0.095, '#e8e2ea');
+      moon(S * 0.44, H * 0.57, H * 0.052, '#d8cfe0');
+      for (let i = 0; i < 260; i++) {
+        const y = Math.pow(Math.random(), 1.7) * horizon * 0.8;
+        g.fillStyle = `rgba(255,235,255,${0.1 + Math.random() * 0.3})`;
+        g.fillRect(Math.random() * S, y, 1, 1);
+      }
+      // a spire city on the horizon, far right
+      g.fillStyle = sky.city || '#3a2246';
+      const baseX = S * 0.7;
+      for (let i = 0; i < 16; i++) {
+        const w = 6 + Math.random() * 22;
+        const h = 26 + Math.random() * 96;
+        const x = baseX + i * 26 + Math.random() * 10;
+        g.fillRect(x, horizon - h, w, h);
+        if (Math.random() < 0.4) {                       // a slender tower
+          g.fillRect(x + w * 0.35, horizon - h - 40 - Math.random() * 60, 3, 60);
+        }
+      }
+      g.globalAlpha = 0.5;
+      g.fillStyle = '#7fe3ff';
+      for (let i = 0; i < 40; i++) {                      // lit windows
+        g.fillRect(baseX + Math.random() * 430, horizon - Math.random() * 120, 2, 2);
+      }
+      g.globalAlpha = 1;
     }
-    g.globalAlpha = 1;
 
-    return new THREE.CanvasTexture(cv);
+    // haze where the sky meets the ground
+    const haze = g.createLinearGradient(0, horizon - 90, 0, horizon + 20);
+    haze.addColorStop(0, 'rgba(255,255,255,0)');
+    haze.addColorStop(1, sky.low);
+    g.fillStyle = haze;
+    g.fillRect(0, horizon - 90, S, 110);
+
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
   }
 
   function buildSky(scene, spec, onReady) {
@@ -130,7 +211,6 @@
 
     const applyProcedural = () => {
       const t = proceduralSky(spec);
-      t.encoding = THREE.sRGBEncoding;
       mat.map = t;
       mat.needsUpdate = true;
       if (onReady) onReady('generated');
@@ -173,30 +253,52 @@
     ground.receiveShadow = true;
     group.add(ground);
 
-    /* cover: rocks and spires, all solid */
+    /* Cover, in each world's own material: ice crystals that glow from
+       within, or the weathered pillars of whatever stood on the shelf. */
     const rockMat = SF.materials.painted(spec.rockTint, { repeat: [2, 2] });
+    const crystalMat = new THREE.MeshStandardMaterial({
+      color: 0x7fc0dc, emissive: new THREE.Color(0x2f9fd0), emissiveIntensity: 0.45,
+      metalness: 0.1, roughness: 0.12, transparent: true, opacity: 0.86
+    });
+
     const rock = (x, z, r, h) => {
-      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), rockMat);
-      m.position.set(x, h * 0.35, z);
-      m.scale.set(1, h / r, 1);
-      m.rotation.set(Math.random(), Math.random() * 6.28, Math.random());
+      let m;
+      if (spec.cover === 'crystal') {
+        m = new THREE.Mesh(new THREE.ConeGeometry(r * 0.8, h, 6), crystalMat);
+        m.position.set(x, h * 0.5, z);
+        m.rotation.set((Math.random() - 0.5) * 0.24, Math.random() * 6.28, (Math.random() - 0.5) * 0.24);
+      } else if (spec.cover === 'ruin' && h > 5) {
+        m = new THREE.Mesh(new THREE.BoxGeometry(r * 1.5, h, r * 1.5), rockMat);
+        m.position.set(x, h * 0.5, z);
+        m.rotation.y = Math.random() * 6.28;
+      } else {
+        m = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), rockMat);
+        m.position.set(x, h * 0.35, z);
+        m.scale.set(1, h / r, 1);
+        m.rotation.set(Math.random(), Math.random() * 6.28, Math.random());
+      }
       m.castShadow = m.receiveShadow = true;
       group.add(m);
       colliders.push({ min: { x: x - r * 0.8, z: z - r * 0.8 },
                        max: { x: x + r * 0.8, z: z + r * 0.8 },
                        top: h, bottom: 0 });
+      return m;
     };
 
     for (let i = 0; i < 44; i++) {
       const ang = Math.random() * Math.PI * 2;
       const dist = 9 + Math.random() * (R - 14);
       const r = 1.1 + Math.random() * 2.6;
-      rock(Math.cos(ang) * dist, Math.sin(ang) * dist, r, r * (1.2 + Math.random() * 2.2));
+      const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+      rock(x, z, r, r * (1.2 + Math.random() * 2.2));
+      if (spec.cover === 'crystal' && i % 6 === 0) {
+        emitters.push({ x: x, y: 2.2, z: z, colour: 0x5ec8ff, intensity: 1.6, distance: 12 });
+      }
     }
     // a ring of larger spires marking the edge of the playable ground
     for (let i = 0; i < 26; i++) {
       const ang = (i / 26) * Math.PI * 2 + Math.random() * 0.1;
-      rock(Math.cos(ang) * (R + 3), Math.sin(ang) * (R + 3), 4 + Math.random() * 2.5, 14);
+      rock(Math.cos(ang) * (R + 3), Math.sin(ang) * (R + 3), 3.4 + Math.random() * 2, 8.5);
     }
 
     /* the extraction beacon you stand on to leave */

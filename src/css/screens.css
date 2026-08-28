@@ -179,7 +179,10 @@
 
 /* ---------- briefing ---------- */
 .brief-body{ padding:14px 6vw; overflow:auto; display:grid; gap:22px;
-  grid-template-columns: 300px 1fr; align-content:start; }
+  grid-template-columns: 300px 1fr; align-content:start;
+  /* must be allowed to shrink: a long briefing otherwise overflows the flex
+     column and covers the DROP button underneath it */
+  flex:1 1 auto; min-height:0; }
 .brief-head{ padding:22px; border:1px solid var(--accent); background:var(--panel);
   display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px;
   align-self:start;
