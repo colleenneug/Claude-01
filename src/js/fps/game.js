@@ -67,7 +67,7 @@
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
-      wave: 0, onPad: false, extractT: 0, events: 0,
+      wave: 0, onPad: false, extractT: 0, events: 0, parts: 0,
       spawned: false, bossBeaten: false,
       respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0, started: false
     };
@@ -128,6 +128,13 @@
         return false;
       },
       itemName: character.equipped.weapon ? character.equipped.weapon.name : null,
+      /* Riding, the shot leaves from a point on the camera's centre line
+         rather than from the eye, so the crosshair still means something
+         with the camera sitting behind the rider. */
+      originOverride: () => (runner && runner.mounted ? runner.shotOrigin() : null),
+      spreadScale: () => (runner && runner.mounted
+        ? (runner.boosting ? 3.2 : 1.8)      // one hand on the bars
+        : null),
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
       onNode: (i) => { if (boss) boss.hitNode(i); },
@@ -144,7 +151,10 @@
       if (e.button === 0) firing = true;
       if (e.button === 2) weapon.setAds(true);
     }
-    function onKeyUp(e) { if (e.code === 'KeyF') extractHeld = false; }
+    function onKeyUp(e) {
+      if (e.code === 'KeyF') extractHeld = false;
+      if (e.code === 'ShiftLeft' && runner) runner.setBoost(false);
+    }
     window.addEventListener('keyup', onKeyUp);
 
     function onMouseUp(e) {
@@ -155,6 +165,7 @@
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
       if (e.code === 'KeyV' && runner) runner.toggle();
+      if (e.code === 'ShiftLeft' && runner) runner.setBoost(true);
       if (e.code === 'KeyR') weapon.reload();
       if (e.code === 'KeyQ' || e.code === 'KeyE') weapon.useAbility();
       if (e.code === 'Escape' && !state.paused && !state.over) {
@@ -240,6 +251,9 @@
           onReward: (tier, name) => {
             const drops = SF.gear.rollDrops(character, Math.min(16, 6 + tier * 3), tier > 1);
             SF.gear.grant(character, drops);
+            const parts = SF.gear.rollParts(1 + tier);
+            SF.gear.grantParts(character, parts);
+            state.parts += Object.keys(parts).reduce((a, k) => a + parts[k], 0);
             state.xp += 120 * tier;
             state.events++;
             SF.storage.save(character.slot, character);
@@ -249,17 +263,28 @@
         });
         /* Open ground: a frame to cross it on, and crates worth crossing it for. */
         runner = SF.runner.create({
-          camera, player, hud, lights, character,
-          isOpenZone: true, baseSpeedScale: 2.1
+          scene, camera, player, hud, lights, character,
+          isOpenZone: true, baseSpeedScale: 2.1,
+          // the first-person weapon has no place in a third-person view
+          onMount: (on) => { weapon.view.visible = !on; },
+          onCrash: (dmg) => hurtPlayer(dmg, null)
         });
         chests = SF.chests.create({
           scene, level, lights, hud, player,
           onOpen: (kind, count, tierBonus) => {
             const drops = SF.gear.rollDrops(character, Math.min(16, 9 + tierBonus), count > 1);
             SF.gear.grant(character, drops);
+            /* Crates are where runner parts come from. That closes the loop:
+               ride out to a crate, and the crate pays for a better ride. */
+            const parts = SF.gear.rollParts(count > 1 ? 3 : 1 + (Math.random() < 0.4 ? 1 : 0));
+            SF.gear.grantParts(character, parts);
+            state.parts += Object.keys(parts).reduce((a, k) => a + parts[k], 0);
             state.xp += 60 + tierBonus * 20;
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
+            for (const k of Object.keys(parts)) {
+              if (parts[k]) hud.killFeed('PARTS — ' + parts[k] + '× ' + SF.gear.partOf(k).name);
+            }
             hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
@@ -470,6 +495,7 @@
         ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
         ['HARNESS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE ISSUED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
+        ...(state.parts ? [['RUNNER PARTS', state.parts]] : []),
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
         notes.map((n) => `<div class="es-up">${n}</div>`).join('') +
@@ -522,7 +548,7 @@
       state.damageFlash = Math.max(0, state.damageFlash - dt * 2.2);
 
       player.update(dt);
-      weapon.update(dt, firing && !(runner && runner.mounted));
+      weapon.update(dt, firing);
       lights.update(dt, camera.position);
 
       const eye = player.eyePosition;

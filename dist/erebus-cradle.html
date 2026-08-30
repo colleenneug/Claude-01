@@ -463,11 +463,16 @@ body.booting .screen:not(#screen-boot){ display:none !important; }
 @media (max-width: 900px){ .brief-body{ grid-template-columns:1fr; } }
 
 /* ---------- armoury ---------- */
+/* The row has to be allowed to be shorter than its content, or a long gear
+   list (the bench made these much longer) grows the grid past the flex box
+   and paints over the footer buttons underneath it. */
 .arm-body{
-  padding:14px 6vw; display:grid; grid-template-columns:320px 1fr; gap:22px;
+  padding:14px 6vw; display:grid; grid-template-columns:320px 1fr;
+  grid-template-rows:minmax(0, 1fr); gap:22px;
   flex:1; min-height:0;
 }
-.arm-preview{ padding:16px; display:flex; flex-direction:column; gap:12px; }
+.arm-preview{ padding:16px; display:flex; flex-direction:column; gap:12px;
+              min-height:0; overflow:auto; }
 #dossier-canvas{
   width:100%; height:360px; display:block; cursor:none;
   background:radial-gradient(circle at 50% 35%, rgba(94,234,255,.10), transparent 68%);
@@ -524,6 +529,53 @@ body.booting .screen:not(#screen-boot){ display:none !important; }
 .item-affix{ font-family:var(--font-mono); font-size:10.5px; color:var(--lime); margin-top:5px; line-height:1.6; }
 .item-pow{ float:right; font-family:var(--font-mono); font-size:11px; color:var(--amber); }
 .item-empty{ font-family:var(--font-mono); font-size:11px; color:rgba(108,139,160,.65); letter-spacing:.12em; }
+
+/* ---------- the runner bench ---------- */
+/* Sits under the runner list inside its own slot block, so fitting a part
+   reads as something you do to the frame above it. */
+.bench{ margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }
+.bench-head{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.24em;
+  color:var(--cyan); margin-bottom:10px;
+}
+.bench-head .bh-stock{ color:var(--amber); letter-spacing:.14em; }
+.bench-rows{ display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:8px; }
+.bench-row{
+  display:flex; gap:12px; align-items:flex-start; justify-content:space-between;
+  border:1px solid var(--line); border-left:3px solid var(--lime);
+  background:rgba(125,255,155,.04); padding:10px 12px;
+}
+.bench-row.blocked{ border-left-color:rgba(108,139,160,.45); background:rgba(255,255,255,.02); }
+.br-main{ min-width:0; }
+.br-name{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; color:#eafcff;
+}
+.br-name .br-have{ color:var(--amber); margin-left:8px; }
+.br-desc{ font-size:11px; line-height:1.5; color:var(--ink-dim); margin-top:4px; }
+.br-gain{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.1em;
+  color:var(--lime); margin-top:5px;
+}
+.bench-row.blocked .br-gain{ color:rgba(108,139,160,.7); }
+.br-side{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex:0 0 auto; }
+.br-pips{ display:flex; gap:3px; }
+.br-pips i{ width:7px; height:12px; background:rgba(255,255,255,.14); display:block; }
+.br-pips i.on{ background:var(--lime); box-shadow:0 0 8px rgba(125,255,155,.6); }
+.br-fit{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; padding:5px 10px;
+  border:1px solid var(--line); background:transparent; color:var(--lime); transition:.14s;
+  white-space:nowrap;
+}
+.br-fit:hover:not(:disabled){ border-color:var(--lime); background:rgba(125,255,155,.12); }
+.br-fit:disabled{ color:rgba(108,139,160,.6); border-color:rgba(108,139,160,.25); }
+.bench-strip{
+  margin-top:10px; width:100%; font-family:var(--font-mono); font-size:10px;
+  letter-spacing:.2em; padding:8px; border:1px solid var(--line);
+  background:transparent; color:var(--ink-dim); transition:.14s;
+}
+.bench-strip:hover:not(:disabled){ color:var(--amber); border-color:var(--amber); }
+.bench-strip:disabled{ opacity:.4; }
 
 @media (max-width: 900px){ .arm-body{ grid-template-columns:1fr; } }
 
@@ -970,6 +1022,21 @@ body.in-mission #vignette{ opacity:.55; }
   font-style:normal; font-size:10px; letter-spacing:.22em;
   color:var(--ink-dim); margin-left:6px;
 }
+/* the boost cell: the bar you actually watch while riding */
+.rn-cell{
+  width:132px; height:5px; margin-top:8px;
+  background:rgba(255,255,255,.13); overflow:hidden;
+}
+.rn-cell i{
+  display:block; height:100%; width:100%; background:var(--cyan);
+  box-shadow:0 0 10px rgba(94,234,255,.6); transition:width .08s linear;
+}
+.rn-cell i.burning{ background:var(--amber); box-shadow:0 0 14px rgba(255,180,84,.85); }
+.rn-cell i.dry{ background:var(--blood); box-shadow:none; }
+.rn-hint{
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.2em;
+  color:rgba(108,139,160,.72); margin-top:6px;
+}
 #runner-name{
   font-family:var(--font-mono); font-size:11px; letter-spacing:.2em;
   color:var(--cyan); margin-top:7px;
@@ -1214,8 +1281,10 @@ body.in-mission #vignette{ opacity:.55; }
 
   <div id="runner-panel" hidden>
     <div class="rn-speed"><span id="runner-speed">0</span><i>KM/H</i></div>
+    <div class="rn-cell"><i id="runner-cell"></i></div>
     <div id="runner-name">&mdash;</div>
     <div id="runner-kind"></div>
+    <div class="rn-hint">SHIFT BOOST</div>
   </div>
 
   <div id="event-panel" hidden>
@@ -1282,7 +1351,8 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="engage-title">CLICK TO ENGAGE</div>
     <div class="engage-keys">
       WASD MOVE &nbsp;·&nbsp; MOUSE / &larr; &rarr; TURN &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
-      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; V RUNNER &nbsp;·&nbsp; F USE &nbsp;·&nbsp; ESC PAUSE
+      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; F USE<br>
+      V RUNNER &nbsp;·&nbsp; SHIFT BOOST WHILE RIDING &nbsp;·&nbsp; ESC PAUSE
     </div>
   </div>
 </div>
@@ -1314,7 +1384,8 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="lo-bar"><i id="lo-fill"></i></div>
     <div class="lo-hint">
       WASD MOVE &nbsp;·&nbsp; MOUSE / &larr; &rarr; TURN &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
-      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; V RUNNER &nbsp;·&nbsp; F USE &nbsp;·&nbsp; ESC PAUSE
+      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; F USE<br>
+      V RUNNER &nbsp;·&nbsp; SHIFT BOOST WHILE RIDING &nbsp;·&nbsp; ESC PAUSE
     </div>
   </div>
 </div>
@@ -3018,6 +3089,29 @@ window.SF = window.SF || {};
     { id: 'regen',  label: '+{v}% vital regen',   stat: 'regen',  min: 8,  max: 25 }
   ];
 
+  /* ---------- runner parts ---------- */
+  /* Parts are the one thing in the game you spend rather than equip. They
+     come out of crates and events, they stack in a pool, and you bolt them
+     onto a runner at the bench. A part is worth the same on any frame, so
+     the choice is which frame you commit them to — and a frame's rarity is
+     what caps how many it will take of each. */
+  const PARTS = [
+    { id: 'thrust', name: 'THRUST COIL', stat: 'speed', per: 6,
+      line: '+{v}% top speed',    desc: 'Wound coil off a cutter drive. Adds top end.' },
+    { id: 'brace',  name: 'FRAME BRACE', stat: 'accel', per: 9,
+      line: '+{v}% acceleration', desc: 'Stiffens the spine so the drive stops flexing away from it.' },
+    { id: 'grip',   name: 'GRIP PLATE',  stat: 'turn',  per: 8,
+      line: '+{v}% handling',     desc: 'A field plate that bites the ground through the turn.' },
+    { id: 'cell',   name: 'BOOST CELL',  stat: 'boost', per: 7,
+      line: '+{v}% boost',        desc: 'Holds a bigger charge, so the burn runs longer and harder.' }
+  ];
+  const partOf = (id) => PARTS.find((p) => p.id === id) || PARTS[0];
+
+  /* How many of each part a frame will take, by rarity. A common runner is
+     worth upgrading; an exotic one is worth hunting parts for. */
+  const PART_CAP = { common: 2, uncommon: 3, rare: 4, epic: 5, exotic: 7 };
+  const partCap = (item) => (item ? PART_CAP[item.rarity] || 2 : 0);
+
   const SLOTS = [
     { id: 'weapon', name: 'WEAPON' },
     { id: 'head',   name: 'HELM' },
@@ -3066,7 +3160,70 @@ window.SF = window.SF || {};
     if (!item) return 0;
     const base = 12 + rarityRank(item.rarity) * 9;
     const affix = item.affixes.reduce((a, x) => a + x.value * 0.6, 0);
-    return Math.round((base + affix) * (1 + (item.tier || 1) * 0.06));
+    // parts bolted on read as power too, so the bench shows its work
+    const fitted = item.upgrades
+      ? Object.keys(item.upgrades).reduce((a, k) => a + item.upgrades[k], 0) * 5
+      : 0;
+    return Math.round((base + affix) * (1 + (item.tier || 1) * 0.06)) + fitted;
+  }
+
+  /* ---------- the bench ---------- */
+  /* Older runners predate the upgrade table; give them an empty one rather
+     than letting the bench read undefined. */
+  function ensureUpgrades(item) {
+    if (item && item.slot === 'runner' && !item.upgrades) {
+      item.upgrades = { thrust: 0, brace: 0, grip: 0, cell: 0 };
+    }
+    return item;
+  }
+
+  function fittedCount(item, partId) {
+    ensureUpgrades(item);
+    return item && item.upgrades ? (item.upgrades[partId] || 0) : 0;
+  }
+
+  /* Why a part cannot go on, in words the bench can print. Null means it can. */
+  function partBlocker(ch, item, partId) {
+    if (!item) return 'NO RUNNER EQUIPPED';
+    if (!(ch.parts && ch.parts[partId] > 0)) return 'NONE IN STOCK';
+    if (fittedCount(item, partId) >= partCap(item)) return 'FRAME IS FULL';
+    return null;
+  }
+
+  function installPart(ch, item, partId) {
+    if (partBlocker(ch, item, partId)) return false;
+    ensureUpgrades(item);
+    item.upgrades[partId]++;
+    ch.parts[partId]--;
+    item.power = powerOf(item);
+    return true;
+  }
+
+  /* Strip a frame back to nothing and get every part back. Nothing is lost,
+     so moving your stock onto a better frame costs only the trip. */
+  function stripParts(ch, item) {
+    ensureUpgrades(item);
+    let n = 0;
+    for (const p of PARTS) {
+      n += item.upgrades[p.id];
+      ch.parts[p.id] += item.upgrades[p.id];
+      item.upgrades[p.id] = 0;
+    }
+    item.power = powerOf(item);
+    return n;
+  }
+
+  /* Crates and events pay out parts as well as gear. */
+  function rollParts(count) {
+    const out = { thrust: 0, brace: 0, grip: 0, cell: 0 };
+    for (let i = 0; i < count; i++) out[PARTS[Math.floor(Math.random() * PARTS.length)].id]++;
+    return out;
+  }
+
+  function grantParts(ch, bundle) {
+    ensure(ch);
+    for (const k of Object.keys(bundle)) ch.parts[k] = (ch.parts[k] || 0) + bundle[k];
+    return ch;
   }
 
   /* ---------- item construction ---------- */
@@ -3109,6 +3266,7 @@ window.SF = window.SF || {};
     const item = {
       uid: 'r' + (nextId++), kind: 'runner', slot: 'runner', family: fam.id,
       rarity: rarityId, tier: tier || 1,
+      upgrades: { thrust: 0, brace: 0, grip: 0, cell: 0 },
       affixes: rollAffixes(RUNNER_AFFIXES, Math.max(1, r.affixes)),
       name: (rarityId === 'exotic'
         ? '"' + EXOTIC_NAMES[Math.floor(Math.random() * EXOTIC_NAMES.length)] + '" '
@@ -3137,6 +3295,14 @@ window.SF = window.SF || {};
       if (a.stat === 'turn')  out.turn  *= 1 + a.value / 100;
       if (a.stat === 'boost') out.boost *= 1 + a.value / 100;
     }
+    // and then whatever is bolted to it
+    ensureUpgrades(item);
+    for (const p of PARTS) {
+      const n = item.upgrades ? (item.upgrades[p.id] || 0) : 0;
+      if (n) out[p.stat] *= 1 + (n * p.per) / 100;
+    }
+    out.parts = item.upgrades ? Object.assign({}, item.upgrades) : null;
+    out.cap = partCap(item);
     return out;
   }
 
@@ -3240,6 +3406,25 @@ window.SF = window.SF || {};
       ch.inventory.push(ride);
       ch.equipped.runner = ride;
     }
+    if (!ch.parts) ch.parts = { thrust: 0, brace: 0, grip: 0, cell: 0 };
+    for (const p of PARTS) if (typeof ch.parts[p.id] !== 'number') ch.parts[p.id] = 0;
+
+    /* A save round-trips through JSON, which turns the equipped item and its
+       inventory entry into two objects that merely look alike. That was
+       harmless while items were read-only, but a runner carries fitted parts
+       now: re-equipping it from the list would hand back the stale copy and
+       the parts would appear to vanish. Re-link them by uid on load, so
+       there is exactly one object per item again. */
+    for (const slot of SLOTS) {
+      const eq = ch.equipped[slot.id];
+      if (!eq) continue;
+      // the equipped copy is the one the bench mutates, so it is the truth
+      const i = ch.inventory.findIndex((it) => it.uid === eq.uid);
+      if (i >= 0) ch.inventory[i] = eq;
+      else ch.inventory.push(eq);
+    }
+    for (const it of ch.inventory) ensureUpgrades(it);
+    ensureUpgrades(ch.equipped.runner);
     return ch;
   }
 
@@ -3256,9 +3441,10 @@ window.SF = window.SF || {};
   }
 
   SF.gear = {
-    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES, RUNNERS,
+    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES, RUNNERS, PARTS,
     rarityOf, rarityRank, rollRarity, rollDrops, makeWeapon, makeArmour,
-    makeRunner, runnerStats,
+    makeRunner, runnerStats, partOf, partCap, fittedCount, partBlocker,
+    installPart, stripParts, rollParts, grantParts,
     weaponMods, armourStats, powerOf, powerOfCharacter, ensure, grant, defaultLook
   };
 })(window.SF);
@@ -4480,6 +4666,11 @@ window.SF = window.SF || {};
   function create(camera, level) {
     let speedScale = 1;
     let turnScale = 1;
+    /* Third person, for when you are riding something. `want` is what the
+       ride asks for; `cur` is what the world will actually allow, eased so
+       the camera does not snap in and out as scenery passes behind you. */
+    const chase = { want: 0, height: 0, cur: 0 };
+    const CB_R = new THREE.Vector3(), CB_U = new THREE.Vector3(), CB_BACK = new THREE.Vector3();
     const state = {
       pos: level.playerStart.clone(),
       vel: new THREE.Vector3(),
@@ -4493,6 +4684,7 @@ window.SF = window.SF || {};
       bob: 0, bobAmount: 0,
       recoil: new THREE.Vector2(),     // camera kick, decays back to zero
       shake: 0, shakePhase: 0, turnRate: 0,
+      moveInput: 0,                    // how hard the player is asking to move, 0..1
       landDip: 0,
       alive: true
     };
@@ -4592,6 +4784,31 @@ window.SF = window.SF || {};
       next.z = Math.max(b.minZ + RADIUS, Math.min(b.maxZ - RADIUS, next.z));
     }
 
+    /* How far back the camera can sit before it is inside something. Walk
+       the line out in steps and stop at the first blocked one — a box test
+       per step is cheap and a camera that stops short reads better than one
+       that clips through a rock. */
+    const CAM_R = 0.34;
+    function chaseClearance(ox, oy, oz, dx, dy, dz, want) {
+      const candidates = level.space ? level.space.near(ox + dx * want * 0.5,
+                                                        oz + dz * want * 0.5, want + CAM_R)
+                                     : level.colliders;
+      const steps = 8;
+      for (let i = 1; i <= steps; i++) {
+        const t = (want * i) / steps;
+        const x = ox + dx * t, y = oy + dy * t, z = oz + dz * t;
+        if (y < 0.5) return Math.max(0, t - want / steps);
+        for (const c of candidates) {
+          if (y > c.top + CAM_R || y < c.bottom - CAM_R) continue;
+          if (x > c.min.x - CAM_R && x < c.max.x + CAM_R &&
+              z > c.min.z - CAM_R && z < c.max.z + CAM_R) {
+            return Math.max(0, t - want / steps);
+          }
+        }
+      }
+      return want;
+    }
+
     /* Highest surface under the player, used as the floor. */
     function groundHeight(x, z) {
       let best = 0;
@@ -4623,6 +4840,7 @@ window.SF = window.SF || {};
       const len = Math.hypot(dx, dz);
       if (len > 0) { dx /= len; dz /= len; }
 
+      state.moveInput = len;
       state.sprinting = wantSprint && len > 0 && (keys.KeyW || keys.ArrowUp);
 
       const target = (state.crouching ? SPEED.crouch
@@ -4644,10 +4862,18 @@ window.SF = window.SF || {};
 
       state.vel.y -= GRAVITY * dt;
 
+      /* Resolve the horizontal step in pieces no longer than the player's
+         own radius. At walking pace this is always one piece; on a boosting
+         runner a frame can carry you several metres, and a single test would
+         step clean through anything thinner than that. */
       const next = state.pos.clone();
-      next.x += state.vel.x * dt;
-      next.z += state.vel.z * dt;
-      collide(next);
+      const travel = Math.hypot(state.vel.x, state.vel.z) * dt;
+      const steps = Math.min(8, Math.max(1, Math.ceil(travel / RADIUS)));
+      for (let i = 0; i < steps; i++) {
+        next.x += (state.vel.x * dt) / steps;
+        next.z += (state.vel.z * dt) / steps;
+        collide(next);
+      }
       next.y += state.vel.y * dt;
 
       const gh = groundHeight(next.x, next.z);
@@ -4702,6 +4928,28 @@ window.SF = window.SF || {};
       camera.rotateY(state.yaw);
       camera.rotateX(state.pitch + state.recoil.y);
       camera.rotateZ(Math.cos(state.bob * 0.5) * 0.012 * state.bobAmount + state.recoil.x * 0.35);
+
+      /* Pull the eye straight backwards along the view axis — not off to a
+         shoulder, and not a fixed horizontal offset either. Backing up along
+         the true axis keeps the eye point on the camera's centre line, so a
+         shot fired from the rider still leaves through the crosshair at any
+         pitch, and looking down shortens the pull instead of burying the
+         camera in the ground. */
+      if (chase.want > 0 || chase.cur > 0.001) {
+        camera.updateMatrixWorld();
+        camera.matrixWorld.extractBasis(CB_R, CB_U, CB_BACK);   // third column is +Z: backwards
+        const px = camera.position.x, py = camera.position.y, pz = camera.position.z;
+        const allowed = chase.want > 0
+          ? chaseClearance(px, py, pz, CB_BACK.x, CB_BACK.y, CB_BACK.z, chase.want)
+          : 0;
+        // snap in fast when something crowds the camera, ease out gently
+        chase.cur += (allowed - chase.cur) * Math.min(1, (allowed < chase.cur ? 26 : 9) * dt);
+        if (chase.want === 0 && chase.cur < 0.02) chase.cur = 0;
+        const lift = chase.height * (chase.want > 0 ? Math.min(1, chase.cur / chase.want) : 0);
+        camera.position.set(px + CB_BACK.x * chase.cur,
+                            py + CB_BACK.y * chase.cur + lift,
+                            pz + CB_BACK.z * chase.cur);
+      }
     }
 
     function addRecoil(pitch, yaw) {
@@ -4716,6 +4964,9 @@ window.SF = window.SF || {};
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
       setSpeedScale(v) { speedScale = v || 1; },
+      /* Ask for a chase camera. dist 0 puts it back on the eye. */
+      setChase(dist, height) { chase.want = dist || 0; chase.height = height || 0; },
+      get chaseDistance() { return chase.cur; },
       setTurnScale(v) { turnScale = v || 1; },
       setMode(v) { mode = v; },
       get mode() { return mode; },
@@ -4932,9 +5183,14 @@ window.SF = window.SF || {};
       w.cool = 60 / spec.rpm;
       w.shots++;
 
-      const spread = (w.ads ? spec.adsSpread : spec.spread) * (player.state.sprinting ? 2.1 : 1);
-      const eye = player.eyePosition;
-      shotOrigin.set(eye.x, eye.y, eye.z);
+      /* Riding widens the group and moves the muzzle: see originOverride.
+         The ride's figure replaces the sprint penalty rather than stacking
+         with it — you are not also running. */
+      const ride = ctx.spreadScale ? ctx.spreadScale() : null;
+      const spread = (w.ads ? spec.adsSpread : spec.spread)
+                   * (ride || (player.state.sprinting ? 2.1 : 1));
+      const from = (ctx.originOverride && ctx.originOverride()) || player.eyePosition;
+      shotOrigin.set(from.x, from.y, from.z);
       camera.getWorldDirection(shotDir);
       camera.matrixWorld.extractBasis(camRight, camUp, muzzleDir);
       tracerFrom.copy(shotOrigin)
@@ -5071,10 +5327,15 @@ window.SF = window.SF || {};
 
       muzzle *= Math.max(0, 1 - 22 * dt);
       flashMat.opacity *= Math.max(0, 1 - 26 * dt);
-      // the muzzle light rides just in front of the barrel, in world space
-      camera.getWorldPosition(muzzleWorld);
+      // the muzzle light rides just in front of the barrel, in world space —
+      // which is the overridden muzzle, if something is carrying the gun for us
       camera.getWorldDirection(muzzleDir);
-      muzzleWorld.addScaledVector(muzzleDir, 0.8);
+      const held = ctx.originOverride && ctx.originOverride();
+      if (held) muzzleWorld.copy(held);
+      else {
+        camera.getWorldPosition(muzzleWorld);
+        muzzleWorld.addScaledVector(muzzleDir, 0.8);
+      }
       flashLight.set(muzzleWorld.x, muzzleWorld.y, muzzleWorld.z);
       flashLight.setIntensity(muzzle * 5.5);
 
@@ -5841,63 +6102,164 @@ window.SF = window.SF || {};
    flat plate that hovers a hand off the deck: slower flat out, but it
    goes where you point it and it stops when you ask.
 
-   Mounted you cannot shoot, and a solid hit throws you off. The frame
-   itself is drawn in first person, hanging off the camera the way the
-   weapon does.
+   Mounting drops the camera back behind you, because at this speed you
+   need to see the frame and what it is about to hit. You keep your
+   weapon — firing from the saddle is wide, but it is allowed. Hold
+   shift to burn the boost cell; it empties fast and fills back slowly.
+   A solid hit still throws you off.
+
+   Parts fitted at the bench land here through gear.runnerStats, so a
+   frame you have worked on rides differently from the one you found.
    ============================================================ */
 (function (SF) {
   'use strict';
 
   const SUMMON_TIME = 0.9;         // it has to arrive before you can ride it
+  const CHASE_DIST = 4.6;          // how far back the camera sits, riding
+  const CHASE_LIFT = 0.8;          // and how far above the rider's head
+  const BOOST_DRAIN = 0.42;        // a full cell is a little over two seconds
+  const BOOST_FILL = 0.22;         // and about four and a half to refill
+  const BOOST_RESET = 0.85;        // burn it dry and it wants most of a charge back
+  const CRASH_SPEED = 11;          // how fast you have to be going for a wall to count
 
   function create(ctx) {
-    const { camera, player, hud, lights, character } = ctx;
+    const { scene, camera, player, hud, lights, character } = ctx;
 
     const stats = SF.gear.runnerStats(character);
-    const state = { mounted: false, summoning: 0, speed: 0, lean: 0, boost: 0, available: !!stats };
-    if (!stats) return { update() {}, toggle() {}, destroy() {}, get mounted() { return false; },
-                         get available() { return false; } };
+    const state = {
+      mounted: false, summoning: 0, speed: 0, last: 0, lean: 0,
+      cell: 1, boosting: false, wantBoost: false, locked: false, available: !!stats
+    };
+    if (!stats) {
+      return { update() {}, toggle() {}, destroy() {}, onHit() {}, dismount() {},
+               setBoost() {}, shotOrigin() { return null; },
+               get mounted() { return false; }, get available() { return false; },
+               get stats() { return null; } };
+    }
 
     const isSkiff = stats.family === 'skiff';
     const rarity = SF.gear.rarityOf(character.equipped.runner.rarity);
+    const tint = new THREE.Color(rarity.colour);
 
-    /* ---------- the frame, drawn in first person ---------- */
-    const view = new THREE.Group();
-    camera.add(view);
+    /* ---------- the frame and its rider, in the world ---------- */
+    /* Third person means both are real objects standing on the ground, not
+       a viewmodel hung off the camera. The group carries the player's yaw;
+       the rider leans with it. */
+    const group = new THREE.Group();
+    group.visible = false;
+    scene.add(group);
 
+    /* Read at four metres in daylight, not just under a muzzle flash: a
+       near-black chrome frame is a silhouette from behind and nothing else. */
     const shell = new THREE.MeshStandardMaterial({
-      color: 0x2b3038, metalness: 0.9, roughness: 0.35
+      color: 0x6d7684, metalness: 0.55, roughness: 0.42
     });
     const trim = new THREE.MeshStandardMaterial({
-      color: 0x0a0d12, emissive: new THREE.Color(rarity.colour), emissiveIntensity: 1.9,
+      color: 0x0a0d12, emissive: tint, emissiveIntensity: 1.9,
       metalness: 0.5, roughness: 0.4
     });
 
-    if (isSkiff) {
-      const deck = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.09, 2.4), shell);
-      deck.position.set(0, -1.15, -0.35);
-      const lip = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.05, 0.16), trim);
-      lip.position.set(0, -1.1, -1.5);
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 2.3), trim);
-      rail.position.set(0.72, -1.1, -0.35);
-      const rail2 = rail.clone();
-      rail2.position.x = -0.72;
-      view.add(deck, lip, rail, rail2);
-    } else {
-      const spine = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 2.6), shell);
-      spine.position.set(0, -0.95, -0.9);
-      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.9, 8), shell);
-      nose.rotation.x = -Math.PI / 2;
-      nose.position.set(0, -0.92, -2.3);
-      const bars = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.07, 0.07), shell);
-      bars.position.set(0, -0.62, -1.15);
-      const glow = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.07, 1.9), trim);
-      glow.position.set(0, -0.84, -0.9);
-      view.add(spine, nose, bars, glow);
-    }
-    view.visible = false;
+    const chassis = new THREE.Group();
+    group.add(chassis);
 
-    const thruster = lights.attach(new THREE.Color(rarity.colour).getHex(), 0, 12);
+    if (isSkiff) {
+      // a plate, wide and low, with a lip at the nose and lit rails
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.12, 2.6), shell);
+      deck.position.y = 0.42;
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.07, 0.3), trim);
+      lip.position.set(0, 0.5, -1.36);
+      chassis.add(deck, lip);
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 2.4), trim);
+        rail.position.set(side * 0.5, 0.49, 0);
+        chassis.add(rail);
+      }
+    } else {
+      // a single rail: spine, cowl, bars, and a lit strip down the flank
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 2.9), shell);
+      spine.position.y = 0.6;
+      const cowl = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.0, 8), shell);
+      cowl.rotation.x = -Math.PI / 2;
+      cowl.position.set(0, 0.62, -1.75);
+      const bars = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.08, 0.08), shell);
+      bars.position.set(0, 0.92, -1.0);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 2.1), trim);
+      strip.position.set(0, 0.78, 0.1);
+      chassis.add(spine, cowl, bars, strip);
+      // outriggers, so the frame has a width to read from directly behind
+      for (const side of [-1, 1]) {
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 1.1), trim);
+        fin.position.set(side * 0.42, 0.5, 0.45);
+        fin.rotation.z = side * 0.25;
+        const stay = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.07, 0.09), shell);
+        stay.position.set(side * 0.26, 0.52, 0.9);
+        chassis.add(fin, stay);
+      }
+    }
+
+    /* The thrust plume out the back, scaled by speed and lit by the boost.
+       It sits between the rider and a chase camera, so it stays small and
+       thin — an additive cone pointed down the lens washes out the whole
+       lower half of the screen. */
+    const plume = new THREE.Mesh(
+      new THREE.ConeGeometry(isSkiff ? 0.22 : 0.15, 0.9, 8, 1, true),
+      new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.3,
+                                    blending: THREE.AdditiveBlending, depthWrite: false }));
+    plume.rotation.x = Math.PI / 2;          // apex trailing, mouth at the vents
+    plume.position.set(0, isSkiff ? 0.42 : 0.58, 1.55);
+    plume.scale.set(1, 0.25, 1);
+    chassis.add(plume);
+
+    /* ---------- the rider ---------- */
+    /* Same build as a squadmate's body, so your own operative reads the way
+       theirs does — and so your skin, hair and class colour show at last. */
+    const rider = new THREE.Group();
+    group.add(rider);
+    {
+      const G = SF.gear;
+      const cls = SF.classes.CLASSES[character.cls] || SF.classes.CLASSES.bulwark;
+      const look = character.look || G.defaultLook();
+      const suit = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(cls.accent).multiplyScalar(0.34), roughness: 0.6, metalness: 0.4 });
+      const skin = new THREE.MeshStandardMaterial({
+        color: G.SKINS[look.skin % G.SKINS.length], roughness: 0.75 });
+      const hair = new THREE.MeshStandardMaterial({
+        color: G.HAIR_COLOURS[look.hairColour % G.HAIR_COLOURS.length], roughness: 0.85 });
+
+      const seatY = isSkiff ? 0.5 : 0.78;
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 0.4, 4, 10), suit);
+      torso.position.set(0, seatY + 0.62, isSkiff ? 0 : 0.1);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 12), skin);
+      head.position.set(0, seatY + 1.06, isSkiff ? 0 : 0.06);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.212, 14, 10,
+        0, Math.PI * 2, 0, Math.PI * 0.5), hair);
+      cap.position.copy(head.position);
+      rider.add(torso, head, cap);
+
+      for (const side of [-1, 1]) {
+        /* A courser rider is stretched out with both hands on the bars, so
+           the arm lies almost flat along -Z; a skiff rider has nothing to
+           hold and just drops their arms for balance. */
+        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.42, 3, 6), suit);
+        if (isSkiff) {
+          arm.position.set(side * 0.3, seatY + 0.6, -0.05);
+          arm.rotation.z = side * -0.28;
+        } else {
+          arm.position.set(side * 0.25, seatY + 0.5, -0.42);
+          arm.rotation.x = -2.0;
+        }
+        const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.4, 3, 6), suit);
+        leg.position.set(side * (isSkiff ? 0.24 : 0.2), seatY + 0.02, isSkiff ? 0.4 : 0.46);
+        leg.rotation.x = isSkiff ? 0.25 : 0.9;
+        rider.add(arm, leg);
+      }
+      // riding stance: folded over the frame, more so on a courser
+      rider.rotation.x = isSkiff ? 0.14 : 0.3;
+      for (const c of rider.children) c.castShadow = true;
+    }
+    for (const c of chassis.children) c.castShadow = true;
+
+    const thruster = lights.attach(tint.getHex(), 0, 14);
 
     /* ---------- mounting ---------- */
     function canRide() {
@@ -5916,20 +6278,27 @@ window.SF = window.SF || {};
     function mount() {
       state.mounted = true;
       state.speed = 0;
-      view.visible = true;
+      state.last = 0;
+      group.visible = true;
       player.setSpeedScale(stats.speed);
       player.setTurnScale(isSkiff ? 1 : 0.62);   // a courser fights the corner
+      player.setChase(CHASE_DIST, CHASE_LIFT);
+      if (ctx.onMount) ctx.onMount(true);
       hud.runner(stats.name, stats.kind);
+      hud.runnerCell(state.cell, false);
       SF.audio.sfx.open();
     }
 
     function dismount(why) {
       if (!state.mounted) return;
       state.mounted = false;
-      view.visible = false;
+      state.boosting = false;
+      group.visible = false;
       thruster.setIntensity(0);
       player.setSpeedScale(ctx.baseSpeedScale || 1);
       player.setTurnScale(1);
+      player.setChase(0, 0);
+      if (ctx.onMount) ctx.onMount(false);
       hud.runner(null);
       if (why) hud.pickup(why);
       SF.audio.sfx.back();
@@ -5940,29 +6309,104 @@ window.SF = window.SF || {};
       if (state.mounted && amount > 8) dismount('THROWN');
     }
 
+    /* Shift asks for boost; the cell decides whether it gets it. Running the
+       cell to empty locks it out until it has recovered a little, so mashing
+       shift is worse than spending the charge in one run. */
+    function setBoost(on) { state.wantBoost = !!on; }
+
+    /* The muzzle sits on the camera's centre line so the crosshair stays
+       honest from the saddle — the camera is behind the rider, but the shot
+       still leaves through the middle of the screen. */
+    const originV = new THREE.Vector3();
+    const fwdV = new THREE.Vector3();
+    function shotOrigin() {
+      if (!state.mounted) return null;
+      camera.getWorldPosition(originV);
+      camera.getWorldDirection(fwdV);
+      return originV.addScaledVector(fwdV, player.chaseDistance + 0.9);
+    }
+
     function update(dt) {
       if (state.summoning > 0) {
         state.summoning -= dt;
         if (state.summoning <= 0) mount();
         return;
       }
-      if (!state.mounted) return;
-
+      if (!state.mounted) {
+        // the cell recovers whether you are on it or not
+        state.cell = Math.min(1, state.cell + BOOST_FILL * dt);
+        return;
+      }
       if (!canRide()) { dismount('STOWED'); return; }
 
+      /* ---- boost ----
+         Running the cell to empty locks it out. Letting go of the key clears
+         the lock straight away; holding it down does not, or a held key would
+         stutter the burn on and off every time the charge crept over the line. */
+      const wants = !!state.wantBoost;
+      if (!wants) state.locked = false;
+      if (state.boosting) {
+        state.cell -= BOOST_DRAIN * dt;
+        if (!wants || state.cell <= 0) {
+          state.boosting = false;
+          state.cell = Math.max(0, state.cell);
+          if (state.cell <= 0) { state.locked = true; hud.pickup('CELL DRY'); }
+        }
+      } else {
+        state.cell = Math.min(1, state.cell + BOOST_FILL * dt);
+        if (state.locked && state.cell >= BOOST_RESET) state.locked = false;
+        if (wants && !state.locked && state.cell > 0.05) {
+          state.boosting = true;
+          SF.audio.sfx.phase();
+        }
+      }
+      player.setSpeedScale(stats.speed * (state.boosting ? stats.boost : 1));
+      hud.runnerCell(state.cell, state.boosting);
+
+      /* ---- the frame follows the player, one step behind ---- */
       const moving = Math.hypot(player.state.vel.x, player.state.vel.z);
+
+      /* Hitting something at speed throws you over the bars. Without this a
+         rock just pins you in place with the throttle open, which reads as
+         the controls having stopped working.
+
+         It has to be an impact and not a stop: the test is a large drop
+         between one frame and the next while the throttle is still open.
+         Letting go of the key sheds speed just as fast, and that is braking,
+         not a crash. */
+      if (state.last > CRASH_SPEED && moving < state.last * 0.45 &&
+          player.state.moveInput > 0) {
+        const force = state.last;
+        state.last = 0;
+        dismount('CRASHED');
+        player.state.shake = Math.max(player.state.shake, 2.4);
+        if (ctx.onCrash) ctx.onCrash(Math.min(26, force * 0.9));
+        return;
+      }
+      state.last = moving;
       state.speed += (moving - state.speed) * Math.min(1, stats.accel * 0.4 * dt);
 
-      // the frame leans into the turn and dips under acceleration
+      group.position.set(player.position.x, player.position.y, player.position.z);
+      group.rotation.y = player.state.yaw;   // both the model and the player face -Z
+
+      // lean into the turn and squat under the burn
       const turnRate = player.state.turnRate || 0;
       state.lean += (-turnRate * (isSkiff ? 0.5 : 0.32) - state.lean) * Math.min(1, 8 * dt);
-      view.rotation.z = state.lean;
-      view.position.y = Math.sin(performance.now() / 260) * 0.02 - state.speed * 0.002;
+      chassis.rotation.z = state.lean;
+      rider.rotation.z = state.lean * 0.7;
+      const hover = Math.sin(performance.now() / 260) * 0.02;
+      chassis.position.y = hover - (state.boosting ? 0.05 : 0);
+      rider.position.y = hover;
+      rider.rotation.x = (isSkiff ? 0.14 : 0.3) + (state.boosting ? 0.16 : 0)
+                       + Math.min(0.12, state.speed * 0.004);
 
-      const world = new THREE.Vector3();
-      camera.getWorldPosition(world);
-      thruster.set(world.x, world.y - 1, world.z);
-      thruster.setIntensity(1.2 + Math.min(2.2, state.speed * 0.12));
+      // the plume grows with speed and flares on the boost
+      const heat = Math.min(1, state.speed / 16) + (state.boosting ? 0.7 : 0);
+      plume.scale.set(1 + heat * 0.25, 0.25 + heat * 0.85, 1 + heat * 0.25);
+      plume.material.opacity = 0.16 + heat * 0.2;
+
+      thruster.set(player.position.x, player.position.y + 0.6, player.position.z);
+      thruster.setIntensity(0.9 + heat * 2.6);
 
       hud.runnerSpeed(Math.round(moving * 3.6));   // km/h reads better than m/s
     }
@@ -5970,16 +6414,18 @@ window.SF = window.SF || {};
     function destroy() {
       dismount(null);
       thruster.release();
-      camera.remove(view);
-      view.traverse((o) => {
+      scene.remove(group);
+      group.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         if (o.material) o.material.dispose();
       });
     }
 
     return {
-      update, toggle, destroy, onHit, dismount,
+      update, toggle, destroy, onHit, dismount, setBoost, shotOrigin,
       get mounted() { return state.mounted; },
+      get boosting() { return state.boosting; },
+      get cell() { return state.cell; },
       get available() { return true; },
       get stats() { return stats; }
     };
@@ -6578,6 +7024,14 @@ window.SF = window.SF || {};
         const el = $('#runner-speed');
         if (el) el.textContent = kmh;
       },
+      /* The boost cell: how much charge is left, and whether it is burning. */
+      runnerCell(frac, burning) {
+        const el = $('#runner-cell');
+        if (!el) return;
+        el.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+        el.classList.toggle('burning', !!burning);
+        el.classList.toggle('dry', frac < 0.18);
+      },
 
       /* Squadmates and their vitals, during a co-op mission. */
       squad(list) {
@@ -7041,7 +7495,7 @@ window.SF = window.SF || {};
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
-      wave: 0, onPad: false, extractT: 0, events: 0,
+      wave: 0, onPad: false, extractT: 0, events: 0, parts: 0,
       spawned: false, bossBeaten: false,
       respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0, started: false
     };
@@ -7102,6 +7556,13 @@ window.SF = window.SF || {};
         return false;
       },
       itemName: character.equipped.weapon ? character.equipped.weapon.name : null,
+      /* Riding, the shot leaves from a point on the camera's centre line
+         rather than from the eye, so the crosshair still means something
+         with the camera sitting behind the rider. */
+      originOverride: () => (runner && runner.mounted ? runner.shotOrigin() : null),
+      spreadScale: () => (runner && runner.mounted
+        ? (runner.boosting ? 3.2 : 1.8)      // one hand on the bars
+        : null),
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
       onNode: (i) => { if (boss) boss.hitNode(i); },
@@ -7118,7 +7579,10 @@ window.SF = window.SF || {};
       if (e.button === 0) firing = true;
       if (e.button === 2) weapon.setAds(true);
     }
-    function onKeyUp(e) { if (e.code === 'KeyF') extractHeld = false; }
+    function onKeyUp(e) {
+      if (e.code === 'KeyF') extractHeld = false;
+      if (e.code === 'ShiftLeft' && runner) runner.setBoost(false);
+    }
     window.addEventListener('keyup', onKeyUp);
 
     function onMouseUp(e) {
@@ -7129,6 +7593,7 @@ window.SF = window.SF || {};
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
       if (e.code === 'KeyV' && runner) runner.toggle();
+      if (e.code === 'ShiftLeft' && runner) runner.setBoost(true);
       if (e.code === 'KeyR') weapon.reload();
       if (e.code === 'KeyQ' || e.code === 'KeyE') weapon.useAbility();
       if (e.code === 'Escape' && !state.paused && !state.over) {
@@ -7214,6 +7679,9 @@ window.SF = window.SF || {};
           onReward: (tier, name) => {
             const drops = SF.gear.rollDrops(character, Math.min(16, 6 + tier * 3), tier > 1);
             SF.gear.grant(character, drops);
+            const parts = SF.gear.rollParts(1 + tier);
+            SF.gear.grantParts(character, parts);
+            state.parts += Object.keys(parts).reduce((a, k) => a + parts[k], 0);
             state.xp += 120 * tier;
             state.events++;
             SF.storage.save(character.slot, character);
@@ -7223,17 +7691,28 @@ window.SF = window.SF || {};
         });
         /* Open ground: a frame to cross it on, and crates worth crossing it for. */
         runner = SF.runner.create({
-          camera, player, hud, lights, character,
-          isOpenZone: true, baseSpeedScale: 2.1
+          scene, camera, player, hud, lights, character,
+          isOpenZone: true, baseSpeedScale: 2.1,
+          // the first-person weapon has no place in a third-person view
+          onMount: (on) => { weapon.view.visible = !on; },
+          onCrash: (dmg) => hurtPlayer(dmg, null)
         });
         chests = SF.chests.create({
           scene, level, lights, hud, player,
           onOpen: (kind, count, tierBonus) => {
             const drops = SF.gear.rollDrops(character, Math.min(16, 9 + tierBonus), count > 1);
             SF.gear.grant(character, drops);
+            /* Crates are where runner parts come from. That closes the loop:
+               ride out to a crate, and the crate pays for a better ride. */
+            const parts = SF.gear.rollParts(count > 1 ? 3 : 1 + (Math.random() < 0.4 ? 1 : 0));
+            SF.gear.grantParts(character, parts);
+            state.parts += Object.keys(parts).reduce((a, k) => a + parts[k], 0);
             state.xp += 60 + tierBonus * 20;
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
+            for (const k of Object.keys(parts)) {
+              if (parts[k]) hud.killFeed('PARTS — ' + parts[k] + '× ' + SF.gear.partOf(k).name);
+            }
             hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
@@ -7444,6 +7923,7 @@ window.SF = window.SF || {};
         ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
         ['HARNESS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE ISSUED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
+        ...(state.parts ? [['RUNNER PARTS', state.parts]] : []),
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
         notes.map((n) => `<div class="es-up">${n}</div>`).join('') +
@@ -7496,7 +7976,7 @@ window.SF = window.SF || {};
       state.damageFlash = Math.max(0, state.damageFlash - dt * 2.2);
 
       player.update(dt);
-      weapon.update(dt, firing && !(runner && runner.mounted));
+      weapon.update(dt, firing);
       lights.update(dt, camera.position);
 
       const eye = player.eyePosition;
@@ -8056,6 +8536,77 @@ window.SF = window.SF || {};
   }
 
   function renderArmoury() {
+    /* ---- the bench ----
+       Parts are a pool, not a slot: you hold a stock of coils, braces,
+       plates and cells, and you decide which frame gets them. What a frame
+       will take is capped by its rarity, so a better frame is worth more
+       than its own numbers. Stripping gives everything back, so committing
+       parts is never a mistake you cannot undo. */
+    function buildBench(ch, runner) {
+      const G = SF.gear;
+      const bench = el('div', 'bench');
+      const stock = ch.parts || {};
+      const held = G.PARTS.reduce((a, p) => a + (stock[p.id] || 0), 0);
+
+      const head = el('div', 'bench-head');
+      head.innerHTML = '<span>UPGRADE BENCH</span>' +
+        `<span class="bh-stock">${held} PART${held === 1 ? '' : 'S'} IN STOCK</span>`;
+      bench.appendChild(head);
+
+      if (!runner) {
+        bench.appendChild(el('div', 'item-empty', 'EQUIP A RUNNER TO FIT PARTS'));
+        return bench;
+      }
+
+      const cap = G.partCap(runner);
+      const rows = el('div', 'bench-rows');
+      for (const part of G.PARTS) {
+        const fitted = G.fittedCount(runner, part.id);
+        const have = stock[part.id] || 0;
+        const blocker = G.partBlocker(ch, runner, part.id);
+
+        const row = el('div', 'bench-row' + (blocker ? ' blocked' : ''));
+        const pips = Array.from({ length: cap }, (_, i) =>
+          `<i class="${i < fitted ? 'on' : ''}"></i>`).join('');
+        row.innerHTML =
+          `<div class="br-main">` +
+            `<div class="br-name">${part.name}<span class="br-have">×${have}</span></div>` +
+            `<div class="br-desc">${part.desc}</div>` +
+            `<div class="br-gain">${part.line.replace('{v}', part.per)} each &nbsp;·&nbsp; ` +
+              `NOW ${part.line.replace('{v}', fitted * part.per)}</div>` +
+          `</div>` +
+          `<div class="br-side"><div class="br-pips">${pips}</div></div>`;
+
+        const fit = el('button', 'br-fit');
+        fit.textContent = blocker || 'FIT';
+        fit.disabled = !!blocker;
+        fit.dataset.hover = blocker || 'FIT ONE';
+        fit.addEventListener('click', () => {
+          if (!G.installPart(ch, runner, part.id)) return;
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.confirm();
+          renderArmoury();
+        });
+        row.querySelector('.br-side').appendChild(fit);
+        rows.appendChild(row);
+      }
+      bench.appendChild(rows);
+
+      const total = G.PARTS.reduce((a, p) => a + G.fittedCount(runner, p.id), 0);
+      const strip = el('button', 'bench-strip');
+      strip.textContent = total ? 'STRIP FRAME — RECOVER ' + total : 'NOTHING FITTED';
+      strip.disabled = !total;
+      strip.dataset.hover = 'RECOVER EVERY PART';
+      strip.addEventListener('click', () => {
+        G.stripParts(ch, runner);
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.back();
+        renderArmoury();
+      });
+      bench.appendChild(strip);
+      return bench;
+    }
+
     const G = SF.gear;
     $('#arm-power').textContent = G.powerOfCharacter(ch);
     const a = G.armourStats(ch);
@@ -8086,7 +8637,11 @@ window.SF = window.SF || {};
         btn.innerHTML =
           `<span class="item-pow">${it.power}</span>` +
           `<div class="item-name">${it.name}</div>` +
-          `<div class="item-meta">${r.name}${it.tier > 1 ? ' · TIER ' + it.tier : ''}</div>` +
+          `<div class="item-meta">${r.name}${it.tier > 1 ? ' · TIER ' + it.tier : ''}` +
+            (it.slot === 'runner'
+              ? ' · ' + G.PARTS.reduce((a, p) => a + G.fittedCount(it, p.id), 0) +
+                '/' + (G.partCap(it) * G.PARTS.length) + ' PARTS'
+              : '') + `</div>` +
           (it.affixes.length
             ? `<div class="item-affix">${it.affixes.map((x) => '› ' + x.label).join('<br>')}</div>`
             : '');
@@ -8100,6 +8655,7 @@ window.SF = window.SF || {};
         list.appendChild(btn);
       }
       block.appendChild(list);
+      if (slot.id === 'runner') block.appendChild(buildBench(ch, equipped));
       gearBox.appendChild(block);
     }
 

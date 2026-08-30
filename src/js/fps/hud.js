@@ -126,6 +126,14 @@
         const el = $('#runner-speed');
         if (el) el.textContent = kmh;
       },
+      /* The boost cell: how much charge is left, and whether it is burning. */
+      runnerCell(frac, burning) {
+        const el = $('#runner-cell');
+        if (!el) return;
+        el.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+        el.classList.toggle('burning', !!burning);
+        el.classList.toggle('dry', frac < 0.18);
+      },
 
       /* Squadmates and their vitals, during a co-op mission. */
       squad(list) {

@@ -193,9 +193,14 @@
       w.cool = 60 / spec.rpm;
       w.shots++;
 
-      const spread = (w.ads ? spec.adsSpread : spec.spread) * (player.state.sprinting ? 2.1 : 1);
-      const eye = player.eyePosition;
-      shotOrigin.set(eye.x, eye.y, eye.z);
+      /* Riding widens the group and moves the muzzle: see originOverride.
+         The ride's figure replaces the sprint penalty rather than stacking
+         with it — you are not also running. */
+      const ride = ctx.spreadScale ? ctx.spreadScale() : null;
+      const spread = (w.ads ? spec.adsSpread : spec.spread)
+                   * (ride || (player.state.sprinting ? 2.1 : 1));
+      const from = (ctx.originOverride && ctx.originOverride()) || player.eyePosition;
+      shotOrigin.set(from.x, from.y, from.z);
       camera.getWorldDirection(shotDir);
       camera.matrixWorld.extractBasis(camRight, camUp, muzzleDir);
       tracerFrom.copy(shotOrigin)
@@ -332,10 +337,15 @@
 
       muzzle *= Math.max(0, 1 - 22 * dt);
       flashMat.opacity *= Math.max(0, 1 - 26 * dt);
-      // the muzzle light rides just in front of the barrel, in world space
-      camera.getWorldPosition(muzzleWorld);
+      // the muzzle light rides just in front of the barrel, in world space —
+      // which is the overridden muzzle, if something is carrying the gun for us
       camera.getWorldDirection(muzzleDir);
-      muzzleWorld.addScaledVector(muzzleDir, 0.8);
+      const held = ctx.originOverride && ctx.originOverride();
+      if (held) muzzleWorld.copy(held);
+      else {
+        camera.getWorldPosition(muzzleWorld);
+        muzzleWorld.addScaledVector(muzzleDir, 0.8);
+      }
       flashLight.set(muzzleWorld.x, muzzleWorld.y, muzzleWorld.z);
       flashLight.setIntensity(muzzle * 5.5);
 

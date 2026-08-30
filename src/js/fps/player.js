@@ -19,6 +19,11 @@
   function create(camera, level) {
     let speedScale = 1;
     let turnScale = 1;
+    /* Third person, for when you are riding something. `want` is what the
+       ride asks for; `cur` is what the world will actually allow, eased so
+       the camera does not snap in and out as scenery passes behind you. */
+    const chase = { want: 0, height: 0, cur: 0 };
+    const CB_R = new THREE.Vector3(), CB_U = new THREE.Vector3(), CB_BACK = new THREE.Vector3();
     const state = {
       pos: level.playerStart.clone(),
       vel: new THREE.Vector3(),
@@ -32,6 +37,7 @@
       bob: 0, bobAmount: 0,
       recoil: new THREE.Vector2(),     // camera kick, decays back to zero
       shake: 0, shakePhase: 0, turnRate: 0,
+      moveInput: 0,                    // how hard the player is asking to move, 0..1
       landDip: 0,
       alive: true
     };
@@ -131,6 +137,31 @@
       next.z = Math.max(b.minZ + RADIUS, Math.min(b.maxZ - RADIUS, next.z));
     }
 
+    /* How far back the camera can sit before it is inside something. Walk
+       the line out in steps and stop at the first blocked one — a box test
+       per step is cheap and a camera that stops short reads better than one
+       that clips through a rock. */
+    const CAM_R = 0.34;
+    function chaseClearance(ox, oy, oz, dx, dy, dz, want) {
+      const candidates = level.space ? level.space.near(ox + dx * want * 0.5,
+                                                        oz + dz * want * 0.5, want + CAM_R)
+                                     : level.colliders;
+      const steps = 8;
+      for (let i = 1; i <= steps; i++) {
+        const t = (want * i) / steps;
+        const x = ox + dx * t, y = oy + dy * t, z = oz + dz * t;
+        if (y < 0.5) return Math.max(0, t - want / steps);
+        for (const c of candidates) {
+          if (y > c.top + CAM_R || y < c.bottom - CAM_R) continue;
+          if (x > c.min.x - CAM_R && x < c.max.x + CAM_R &&
+              z > c.min.z - CAM_R && z < c.max.z + CAM_R) {
+            return Math.max(0, t - want / steps);
+          }
+        }
+      }
+      return want;
+    }
+
     /* Highest surface under the player, used as the floor. */
     function groundHeight(x, z) {
       let best = 0;
@@ -162,6 +193,7 @@
       const len = Math.hypot(dx, dz);
       if (len > 0) { dx /= len; dz /= len; }
 
+      state.moveInput = len;
       state.sprinting = wantSprint && len > 0 && (keys.KeyW || keys.ArrowUp);
 
       const target = (state.crouching ? SPEED.crouch
@@ -183,10 +215,18 @@
 
       state.vel.y -= GRAVITY * dt;
 
+      /* Resolve the horizontal step in pieces no longer than the player's
+         own radius. At walking pace this is always one piece; on a boosting
+         runner a frame can carry you several metres, and a single test would
+         step clean through anything thinner than that. */
       const next = state.pos.clone();
-      next.x += state.vel.x * dt;
-      next.z += state.vel.z * dt;
-      collide(next);
+      const travel = Math.hypot(state.vel.x, state.vel.z) * dt;
+      const steps = Math.min(8, Math.max(1, Math.ceil(travel / RADIUS)));
+      for (let i = 0; i < steps; i++) {
+        next.x += (state.vel.x * dt) / steps;
+        next.z += (state.vel.z * dt) / steps;
+        collide(next);
+      }
       next.y += state.vel.y * dt;
 
       const gh = groundHeight(next.x, next.z);
@@ -241,6 +281,28 @@
       camera.rotateY(state.yaw);
       camera.rotateX(state.pitch + state.recoil.y);
       camera.rotateZ(Math.cos(state.bob * 0.5) * 0.012 * state.bobAmount + state.recoil.x * 0.35);
+
+      /* Pull the eye straight backwards along the view axis — not off to a
+         shoulder, and not a fixed horizontal offset either. Backing up along
+         the true axis keeps the eye point on the camera's centre line, so a
+         shot fired from the rider still leaves through the crosshair at any
+         pitch, and looking down shortens the pull instead of burying the
+         camera in the ground. */
+      if (chase.want > 0 || chase.cur > 0.001) {
+        camera.updateMatrixWorld();
+        camera.matrixWorld.extractBasis(CB_R, CB_U, CB_BACK);   // third column is +Z: backwards
+        const px = camera.position.x, py = camera.position.y, pz = camera.position.z;
+        const allowed = chase.want > 0
+          ? chaseClearance(px, py, pz, CB_BACK.x, CB_BACK.y, CB_BACK.z, chase.want)
+          : 0;
+        // snap in fast when something crowds the camera, ease out gently
+        chase.cur += (allowed - chase.cur) * Math.min(1, (allowed < chase.cur ? 26 : 9) * dt);
+        if (chase.want === 0 && chase.cur < 0.02) chase.cur = 0;
+        const lift = chase.height * (chase.want > 0 ? Math.min(1, chase.cur / chase.want) : 0);
+        camera.position.set(px + CB_BACK.x * chase.cur,
+                            py + CB_BACK.y * chase.cur + lift,
+                            pz + CB_BACK.z * chase.cur);
+      }
     }
 
     function addRecoil(pitch, yaw) {
@@ -255,6 +317,9 @@
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
       setSpeedScale(v) { speedScale = v || 1; },
+      /* Ask for a chase camera. dist 0 puts it back on the eye. */
+      setChase(dist, height) { chase.want = dist || 0; chase.height = height || 0; },
+      get chaseDistance() { return chase.cur; },
       setTurnScale(v) { turnScale = v || 1; },
       setMode(v) { mode = v; },
       get mode() { return mode; },

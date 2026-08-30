@@ -384,6 +384,21 @@ body.in-mission #vignette{ opacity:.55; }
   font-style:normal; font-size:10px; letter-spacing:.22em;
   color:var(--ink-dim); margin-left:6px;
 }
+/* the boost cell: the bar you actually watch while riding */
+.rn-cell{
+  width:132px; height:5px; margin-top:8px;
+  background:rgba(255,255,255,.13); overflow:hidden;
+}
+.rn-cell i{
+  display:block; height:100%; width:100%; background:var(--cyan);
+  box-shadow:0 0 10px rgba(94,234,255,.6); transition:width .08s linear;
+}
+.rn-cell i.burning{ background:var(--amber); box-shadow:0 0 14px rgba(255,180,84,.85); }
+.rn-cell i.dry{ background:var(--blood); box-shadow:none; }
+.rn-hint{
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.2em;
+  color:rgba(108,139,160,.72); margin-top:6px;
+}
 #runner-name{
   font-family:var(--font-mono); font-size:11px; letter-spacing:.2em;
   color:var(--cyan); margin-top:7px;

@@ -57,6 +57,29 @@
     { id: 'regen',  label: '+{v}% vital regen',   stat: 'regen',  min: 8,  max: 25 }
   ];
 
+  /* ---------- runner parts ---------- */
+  /* Parts are the one thing in the game you spend rather than equip. They
+     come out of crates and events, they stack in a pool, and you bolt them
+     onto a runner at the bench. A part is worth the same on any frame, so
+     the choice is which frame you commit them to — and a frame's rarity is
+     what caps how many it will take of each. */
+  const PARTS = [
+    { id: 'thrust', name: 'THRUST COIL', stat: 'speed', per: 6,
+      line: '+{v}% top speed',    desc: 'Wound coil off a cutter drive. Adds top end.' },
+    { id: 'brace',  name: 'FRAME BRACE', stat: 'accel', per: 9,
+      line: '+{v}% acceleration', desc: 'Stiffens the spine so the drive stops flexing away from it.' },
+    { id: 'grip',   name: 'GRIP PLATE',  stat: 'turn',  per: 8,
+      line: '+{v}% handling',     desc: 'A field plate that bites the ground through the turn.' },
+    { id: 'cell',   name: 'BOOST CELL',  stat: 'boost', per: 7,
+      line: '+{v}% boost',        desc: 'Holds a bigger charge, so the burn runs longer and harder.' }
+  ];
+  const partOf = (id) => PARTS.find((p) => p.id === id) || PARTS[0];
+
+  /* How many of each part a frame will take, by rarity. A common runner is
+     worth upgrading; an exotic one is worth hunting parts for. */
+  const PART_CAP = { common: 2, uncommon: 3, rare: 4, epic: 5, exotic: 7 };
+  const partCap = (item) => (item ? PART_CAP[item.rarity] || 2 : 0);
+
   const SLOTS = [
     { id: 'weapon', name: 'WEAPON' },
     { id: 'head',   name: 'HELM' },
@@ -105,7 +128,70 @@
     if (!item) return 0;
     const base = 12 + rarityRank(item.rarity) * 9;
     const affix = item.affixes.reduce((a, x) => a + x.value * 0.6, 0);
-    return Math.round((base + affix) * (1 + (item.tier || 1) * 0.06));
+    // parts bolted on read as power too, so the bench shows its work
+    const fitted = item.upgrades
+      ? Object.keys(item.upgrades).reduce((a, k) => a + item.upgrades[k], 0) * 5
+      : 0;
+    return Math.round((base + affix) * (1 + (item.tier || 1) * 0.06)) + fitted;
+  }
+
+  /* ---------- the bench ---------- */
+  /* Older runners predate the upgrade table; give them an empty one rather
+     than letting the bench read undefined. */
+  function ensureUpgrades(item) {
+    if (item && item.slot === 'runner' && !item.upgrades) {
+      item.upgrades = { thrust: 0, brace: 0, grip: 0, cell: 0 };
+    }
+    return item;
+  }
+
+  function fittedCount(item, partId) {
+    ensureUpgrades(item);
+    return item && item.upgrades ? (item.upgrades[partId] || 0) : 0;
+  }
+
+  /* Why a part cannot go on, in words the bench can print. Null means it can. */
+  function partBlocker(ch, item, partId) {
+    if (!item) return 'NO RUNNER EQUIPPED';
+    if (!(ch.parts && ch.parts[partId] > 0)) return 'NONE IN STOCK';
+    if (fittedCount(item, partId) >= partCap(item)) return 'FRAME IS FULL';
+    return null;
+  }
+
+  function installPart(ch, item, partId) {
+    if (partBlocker(ch, item, partId)) return false;
+    ensureUpgrades(item);
+    item.upgrades[partId]++;
+    ch.parts[partId]--;
+    item.power = powerOf(item);
+    return true;
+  }
+
+  /* Strip a frame back to nothing and get every part back. Nothing is lost,
+     so moving your stock onto a better frame costs only the trip. */
+  function stripParts(ch, item) {
+    ensureUpgrades(item);
+    let n = 0;
+    for (const p of PARTS) {
+      n += item.upgrades[p.id];
+      ch.parts[p.id] += item.upgrades[p.id];
+      item.upgrades[p.id] = 0;
+    }
+    item.power = powerOf(item);
+    return n;
+  }
+
+  /* Crates and events pay out parts as well as gear. */
+  function rollParts(count) {
+    const out = { thrust: 0, brace: 0, grip: 0, cell: 0 };
+    for (let i = 0; i < count; i++) out[PARTS[Math.floor(Math.random() * PARTS.length)].id]++;
+    return out;
+  }
+
+  function grantParts(ch, bundle) {
+    ensure(ch);
+    for (const k of Object.keys(bundle)) ch.parts[k] = (ch.parts[k] || 0) + bundle[k];
+    return ch;
   }
 
   /* ---------- item construction ---------- */
@@ -148,6 +234,7 @@
     const item = {
       uid: 'r' + (nextId++), kind: 'runner', slot: 'runner', family: fam.id,
       rarity: rarityId, tier: tier || 1,
+      upgrades: { thrust: 0, brace: 0, grip: 0, cell: 0 },
       affixes: rollAffixes(RUNNER_AFFIXES, Math.max(1, r.affixes)),
       name: (rarityId === 'exotic'
         ? '"' + EXOTIC_NAMES[Math.floor(Math.random() * EXOTIC_NAMES.length)] + '" '
@@ -176,6 +263,14 @@
       if (a.stat === 'turn')  out.turn  *= 1 + a.value / 100;
       if (a.stat === 'boost') out.boost *= 1 + a.value / 100;
     }
+    // and then whatever is bolted to it
+    ensureUpgrades(item);
+    for (const p of PARTS) {
+      const n = item.upgrades ? (item.upgrades[p.id] || 0) : 0;
+      if (n) out[p.stat] *= 1 + (n * p.per) / 100;
+    }
+    out.parts = item.upgrades ? Object.assign({}, item.upgrades) : null;
+    out.cap = partCap(item);
     return out;
   }
 
@@ -279,6 +374,25 @@
       ch.inventory.push(ride);
       ch.equipped.runner = ride;
     }
+    if (!ch.parts) ch.parts = { thrust: 0, brace: 0, grip: 0, cell: 0 };
+    for (const p of PARTS) if (typeof ch.parts[p.id] !== 'number') ch.parts[p.id] = 0;
+
+    /* A save round-trips through JSON, which turns the equipped item and its
+       inventory entry into two objects that merely look alike. That was
+       harmless while items were read-only, but a runner carries fitted parts
+       now: re-equipping it from the list would hand back the stale copy and
+       the parts would appear to vanish. Re-link them by uid on load, so
+       there is exactly one object per item again. */
+    for (const slot of SLOTS) {
+      const eq = ch.equipped[slot.id];
+      if (!eq) continue;
+      // the equipped copy is the one the bench mutates, so it is the truth
+      const i = ch.inventory.findIndex((it) => it.uid === eq.uid);
+      if (i >= 0) ch.inventory[i] = eq;
+      else ch.inventory.push(eq);
+    }
+    for (const it of ch.inventory) ensureUpgrades(it);
+    ensureUpgrades(ch.equipped.runner);
     return ch;
   }
 
@@ -295,9 +409,10 @@
   }
 
   SF.gear = {
-    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES, RUNNERS,
+    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES, RUNNERS, PARTS,
     rarityOf, rarityRank, rollRarity, rollDrops, makeWeapon, makeArmour,
-    makeRunner, runnerStats,
+    makeRunner, runnerStats, partOf, partCap, fittedCount, partBlocker,
+    installPart, stripParts, rollParts, grantParts,
     weaponMods, armourStats, powerOf, powerOfCharacter, ensure, grant, defaultLook
   };
 })(window.SF);

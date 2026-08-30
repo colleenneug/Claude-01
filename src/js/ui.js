@@ -412,6 +412,77 @@
   }
 
   function renderArmoury() {
+    /* ---- the bench ----
+       Parts are a pool, not a slot: you hold a stock of coils, braces,
+       plates and cells, and you decide which frame gets them. What a frame
+       will take is capped by its rarity, so a better frame is worth more
+       than its own numbers. Stripping gives everything back, so committing
+       parts is never a mistake you cannot undo. */
+    function buildBench(ch, runner) {
+      const G = SF.gear;
+      const bench = el('div', 'bench');
+      const stock = ch.parts || {};
+      const held = G.PARTS.reduce((a, p) => a + (stock[p.id] || 0), 0);
+
+      const head = el('div', 'bench-head');
+      head.innerHTML = '<span>UPGRADE BENCH</span>' +
+        `<span class="bh-stock">${held} PART${held === 1 ? '' : 'S'} IN STOCK</span>`;
+      bench.appendChild(head);
+
+      if (!runner) {
+        bench.appendChild(el('div', 'item-empty', 'EQUIP A RUNNER TO FIT PARTS'));
+        return bench;
+      }
+
+      const cap = G.partCap(runner);
+      const rows = el('div', 'bench-rows');
+      for (const part of G.PARTS) {
+        const fitted = G.fittedCount(runner, part.id);
+        const have = stock[part.id] || 0;
+        const blocker = G.partBlocker(ch, runner, part.id);
+
+        const row = el('div', 'bench-row' + (blocker ? ' blocked' : ''));
+        const pips = Array.from({ length: cap }, (_, i) =>
+          `<i class="${i < fitted ? 'on' : ''}"></i>`).join('');
+        row.innerHTML =
+          `<div class="br-main">` +
+            `<div class="br-name">${part.name}<span class="br-have">×${have}</span></div>` +
+            `<div class="br-desc">${part.desc}</div>` +
+            `<div class="br-gain">${part.line.replace('{v}', part.per)} each &nbsp;·&nbsp; ` +
+              `NOW ${part.line.replace('{v}', fitted * part.per)}</div>` +
+          `</div>` +
+          `<div class="br-side"><div class="br-pips">${pips}</div></div>`;
+
+        const fit = el('button', 'br-fit');
+        fit.textContent = blocker || 'FIT';
+        fit.disabled = !!blocker;
+        fit.dataset.hover = blocker || 'FIT ONE';
+        fit.addEventListener('click', () => {
+          if (!G.installPart(ch, runner, part.id)) return;
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.confirm();
+          renderArmoury();
+        });
+        row.querySelector('.br-side').appendChild(fit);
+        rows.appendChild(row);
+      }
+      bench.appendChild(rows);
+
+      const total = G.PARTS.reduce((a, p) => a + G.fittedCount(runner, p.id), 0);
+      const strip = el('button', 'bench-strip');
+      strip.textContent = total ? 'STRIP FRAME — RECOVER ' + total : 'NOTHING FITTED';
+      strip.disabled = !total;
+      strip.dataset.hover = 'RECOVER EVERY PART';
+      strip.addEventListener('click', () => {
+        G.stripParts(ch, runner);
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.back();
+        renderArmoury();
+      });
+      bench.appendChild(strip);
+      return bench;
+    }
+
     const G = SF.gear;
     $('#arm-power').textContent = G.powerOfCharacter(ch);
     const a = G.armourStats(ch);
@@ -442,7 +513,11 @@
         btn.innerHTML =
           `<span class="item-pow">${it.power}</span>` +
           `<div class="item-name">${it.name}</div>` +
-          `<div class="item-meta">${r.name}${it.tier > 1 ? ' · TIER ' + it.tier : ''}</div>` +
+          `<div class="item-meta">${r.name}${it.tier > 1 ? ' · TIER ' + it.tier : ''}` +
+            (it.slot === 'runner'
+              ? ' · ' + G.PARTS.reduce((a, p) => a + G.fittedCount(it, p.id), 0) +
+                '/' + (G.partCap(it) * G.PARTS.length) + ' PARTS'
+              : '') + `</div>` +
           (it.affixes.length
             ? `<div class="item-affix">${it.affixes.map((x) => '› ' + x.label).join('<br>')}</div>`
             : '');
@@ -456,6 +531,7 @@
         list.appendChild(btn);
       }
       block.appendChild(list);
+      if (slot.id === 'runner') block.appendChild(buildBench(ch, equipped));
       gearBox.appendChild(block);
     }
 
