@@ -953,6 +953,32 @@ body.in-mission #vignette{ opacity:.55; }
 .sq-live .sq-bar i{ display:block; height:100%; background:var(--lime); }
 .sq-live.down b{ color:var(--blood); }
 
+/* ---------- runner readout ---------- */
+/* Bottom-left, opposite the ammo block: the speed is the part you read at
+   a glance, so it is the only thing here that is large. */
+#runner-panel{
+  position:absolute; left:38px; bottom:118px; text-align:left;
+  border-left:2px solid var(--cyan); padding:6px 0 6px 12px;
+}
+#runner-panel[hidden]{ display:none; }
+.rn-speed{
+  font-family:var(--font-mono); color:#eafcff; line-height:1;
+  font-size:30px; font-variant-numeric:tabular-nums;
+  text-shadow:0 0 14px rgba(94,234,255,.55);
+}
+.rn-speed i{
+  font-style:normal; font-size:10px; letter-spacing:.22em;
+  color:var(--ink-dim); margin-left:6px;
+}
+#runner-name{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.2em;
+  color:var(--cyan); margin-top:7px;
+}
+#runner-kind{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.2em;
+  color:var(--ink-dim); margin-top:2px;
+}
+
 /* ---------- public events ---------- */
 #event-panel{
   position:absolute; right:38px; top:150px; width:260px;
@@ -1186,6 +1212,12 @@ body.in-mission #vignette{ opacity:.55; }
   <div id="kill-feed"></div>
   <div id="squad-hud" hidden></div>
 
+  <div id="runner-panel" hidden>
+    <div class="rn-speed"><span id="runner-speed">0</span><i>KM/H</i></div>
+    <div id="runner-name">&mdash;</div>
+    <div id="runner-kind"></div>
+  </div>
+
   <div id="event-panel" hidden>
     <div class="ev-head">
       <span class="ev-tag">PUBLIC EVENT</span>
@@ -1250,7 +1282,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="engage-title">CLICK TO ENGAGE</div>
     <div class="engage-keys">
       WASD MOVE &nbsp;·&nbsp; MOUSE / &larr; &rarr; TURN &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
-      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; ESC PAUSE
+      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; V RUNNER &nbsp;·&nbsp; F USE &nbsp;·&nbsp; ESC PAUSE
     </div>
   </div>
 </div>
@@ -1282,7 +1314,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="lo-bar"><i id="lo-fill"></i></div>
     <div class="lo-hint">
       WASD MOVE &nbsp;·&nbsp; MOUSE / &larr; &rarr; TURN &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
-      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; ESC PAUSE
+      LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; V RUNNER &nbsp;·&nbsp; F USE &nbsp;·&nbsp; ESC PAUSE
     </div>
   </div>
 </div>
@@ -2990,7 +3022,31 @@ window.SF = window.SF || {};
     { id: 'weapon', name: 'WEAPON' },
     { id: 'head',   name: 'HELM' },
     { id: 'chest',  name: 'PLATE' },
-    { id: 'legs',   name: 'GREAVES' }
+    { id: 'legs',   name: 'GREAVES' },
+    { id: 'runner', name: 'RUNNER' }
+  ];
+
+  /* Runners: the salvaged transit frames Division issues for open ground.
+     Two families that handle nothing alike. */
+  const RUNNERS = {
+    courser: {
+      id: 'courser', name: 'COURSER', kind: 'SPEED FRAME',
+      speed: 4.4, accel: 5.5, turn: 1.5, boost: 1.5,
+      desc: 'A single-rail frame built for the straight line. Enormous top end, ' +
+            'turns like an argument.'
+    },
+    skiff: {
+      id: 'skiff', name: 'SKIFF', kind: 'PLATE FRAME',
+      speed: 3.3, accel: 11, turn: 2.6, boost: 1.25,
+      desc: 'A flat plate that hovers a hand off the ground. Slower flat out, but ' +
+            'it goes where you point it and it stops when you ask.'
+    }
+  };
+  const RUNNER_AFFIXES = [
+    { id: 'top',   label: '+{v}% top speed',    stat: 'speed', min: 4,  max: 15 },
+    { id: 'acc',   label: '+{v}% acceleration', stat: 'accel', min: 8,  max: 26 },
+    { id: 'grip',  label: '+{v}% handling',     stat: 'turn',  min: 8,  max: 24 },
+    { id: 'boost', label: '+{v}% boost',        stat: 'boost', min: 6,  max: 20 }
   ];
 
   let nextId = 1;
@@ -3047,6 +3103,43 @@ window.SF = window.SF || {};
     return item;
   }
 
+  function makeRunner(familyId, rarityId, tier) {
+    const fam = RUNNERS[familyId] || RUNNERS.courser;
+    const r = rarityOf(rarityId);
+    const item = {
+      uid: 'r' + (nextId++), kind: 'runner', slot: 'runner', family: fam.id,
+      rarity: rarityId, tier: tier || 1,
+      affixes: rollAffixes(RUNNER_AFFIXES, Math.max(1, r.affixes)),
+      name: (rarityId === 'exotic'
+        ? '"' + EXOTIC_NAMES[Math.floor(Math.random() * EXOTIC_NAMES.length)] + '" '
+        : rarityId === 'common' ? 'ISSUED '
+        : PREFIX[Math.floor(Math.random() * PREFIX.length)] + ' ') + fam.name
+    };
+    item.power = powerOf(item);
+    return item;
+  }
+
+  /* The numbers the ride actually uses, after rarity and affixes. */
+  function runnerStats(character) {
+    const item = character.equipped && character.equipped.runner;
+    if (!item) return null;
+    const fam = RUNNERS[item.family] || RUNNERS.courser;
+    const r = rarityOf(item.rarity);
+    const out = {
+      family: fam.id, name: item.name, kind: fam.kind,
+      speed: fam.speed * (1 + (r.mult - 1) * 0.6),
+      accel: fam.accel * (1 + (r.mult - 1) * 0.6),
+      turn: fam.turn, boost: fam.boost
+    };
+    for (const a of item.affixes) {
+      if (a.stat === 'speed') out.speed *= 1 + a.value / 100;
+      if (a.stat === 'accel') out.accel *= 1 + a.value / 100;
+      if (a.stat === 'turn')  out.turn  *= 1 + a.value / 100;
+      if (a.stat === 'boost') out.boost *= 1 + a.value / 100;
+    }
+    return out;
+  }
+
   /* One or two pieces of salvage per cleared mission, better the deeper
      you are, and the boss always pays out. */
   function rollDrops(character, missionN, isBoss) {
@@ -3055,7 +3148,10 @@ window.SF = window.SF || {};
     for (let i = 0; i < count; i++) {
       let rarity = rollRarity(missionN);
       if (isBoss && rarityRank(rarity) < 2) rarity = 'rare';     // no junk from the Conductor
-      if (Math.random() < 0.4) drops.push(makeWeapon(character.cls, rarity, missionN));
+      const roll = Math.random();
+      if (roll < 0.34) drops.push(makeWeapon(character.cls, rarity, missionN));
+      else if (roll < 0.46) drops.push(makeRunner(
+        Math.random() < 0.5 ? 'courser' : 'skiff', rarity, missionN));
       else drops.push(makeArmour(['head', 'chest', 'legs'][Math.floor(Math.random() * 3)],
                                  rarity, missionN));
     }
@@ -3103,6 +3199,7 @@ window.SF = window.SF || {};
 
   const powerOfCharacter = (ch) => {
     const eq = ch.equipped || {};
+    // a runner is transport, not firepower: it does not inflate your power
     return Math.round(ch.level * 8 +
       ['weapon', 'head', 'chest', 'legs'].reduce((a, s) => a + powerOf(eq[s]), 0));
   };
@@ -3138,6 +3235,11 @@ window.SF = window.SF || {};
       ch.inventory.push(starter);
       ch.equipped.weapon = starter;
     }
+    if (!ch.equipped.runner) {                 // everyone gets something to ride
+      const ride = makeRunner('courser', 'common', 1);
+      ch.inventory.push(ride);
+      ch.equipped.runner = ride;
+    }
     return ch;
   }
 
@@ -3154,8 +3256,9 @@ window.SF = window.SF || {};
   }
 
   SF.gear = {
-    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES,
+    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES, RUNNERS,
     rarityOf, rarityRank, rollRarity, rollDrops, makeWeapon, makeArmour,
+    makeRunner, runnerStats,
     weaponMods, armourStats, powerOf, powerOfCharacter, ensure, grant, defaultLook
   };
 })(window.SF);
@@ -4376,6 +4479,7 @@ window.SF = window.SF || {};
 
   function create(camera, level) {
     let speedScale = 1;
+    let turnScale = 1;
     const state = {
       pos: level.playerStart.clone(),
       vel: new THREE.Vector3(),
@@ -4388,7 +4492,7 @@ window.SF = window.SF || {};
       eye: EYE_STAND,
       bob: 0, bobAmount: 0,
       recoil: new THREE.Vector2(),     // camera kick, decays back to zero
-      shake: 0, shakePhase: 0,
+      shake: 0, shakePhase: 0, turnRate: 0,
       landDip: 0,
       alive: true
     };
@@ -4423,7 +4527,9 @@ window.SF = window.SF || {};
       pointer.y = e.clientY / window.innerHeight;
       pointer.inside = true;
       if (mode === 'off') return;
-      state.yaw   -= e.movementX * sensitivity;
+      const dYaw = e.movementX * sensitivity * turnScale;
+      state.yaw   -= dYaw;
+      state.turnRate = dYaw;
       state.pitch -= e.movementY * sensitivity;
       clampPitch();
     }
@@ -4446,7 +4552,13 @@ window.SF = window.SF || {};
         if (pointer.x < EDGE)          turn += (1 - pointer.x / EDGE);
         else if (pointer.x > 1 - EDGE) turn -= (1 - (1 - pointer.x) / EDGE);
       }
-      if (turn !== 0) state.yaw += turn * TURN_RATE * dt;
+      if (turn !== 0) {
+        const d = turn * TURN_RATE * turnScale * dt;
+        state.yaw += d;
+        state.turnRate = -d;
+      } else {
+        state.turnRate *= Math.max(0, 1 - 8 * dt);
+      }
 
       // keep yaw in [-PI, PI] so it never drifts into large-float territory
       if (state.yaw > Math.PI) state.yaw -= Math.PI * 2;
@@ -4604,6 +4716,7 @@ window.SF = window.SF || {};
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
       setSpeedScale(v) { speedScale = v || 1; },
+      setTurnScale(v) { turnScale = v || 1; },
       setMode(v) { mode = v; },
       get mode() { return mode; },
       /* Look state, for diagnostics: which mode is live and where the
@@ -5719,6 +5832,313 @@ window.SF = window.SF || {};
 })(window.SF);
 
 
+/* ==== src/js/fps/runner.js ==== */
+/* ============================================================
+   Runners — the transit frames you ride across open ground.
+
+   Two families that handle nothing alike. A COURSER is a single-rail
+   speed frame: enormous top end, turns like an argument. A SKIFF is a
+   flat plate that hovers a hand off the deck: slower flat out, but it
+   goes where you point it and it stops when you ask.
+
+   Mounted you cannot shoot, and a solid hit throws you off. The frame
+   itself is drawn in first person, hanging off the camera the way the
+   weapon does.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const SUMMON_TIME = 0.9;         // it has to arrive before you can ride it
+
+  function create(ctx) {
+    const { camera, player, hud, lights, character } = ctx;
+
+    const stats = SF.gear.runnerStats(character);
+    const state = { mounted: false, summoning: 0, speed: 0, lean: 0, boost: 0, available: !!stats };
+    if (!stats) return { update() {}, toggle() {}, destroy() {}, get mounted() { return false; },
+                         get available() { return false; } };
+
+    const isSkiff = stats.family === 'skiff';
+    const rarity = SF.gear.rarityOf(character.equipped.runner.rarity);
+
+    /* ---------- the frame, drawn in first person ---------- */
+    const view = new THREE.Group();
+    camera.add(view);
+
+    const shell = new THREE.MeshStandardMaterial({
+      color: 0x2b3038, metalness: 0.9, roughness: 0.35
+    });
+    const trim = new THREE.MeshStandardMaterial({
+      color: 0x0a0d12, emissive: new THREE.Color(rarity.colour), emissiveIntensity: 1.9,
+      metalness: 0.5, roughness: 0.4
+    });
+
+    if (isSkiff) {
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.09, 2.4), shell);
+      deck.position.set(0, -1.15, -0.35);
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.05, 0.16), trim);
+      lip.position.set(0, -1.1, -1.5);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 2.3), trim);
+      rail.position.set(0.72, -1.1, -0.35);
+      const rail2 = rail.clone();
+      rail2.position.x = -0.72;
+      view.add(deck, lip, rail, rail2);
+    } else {
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 2.6), shell);
+      spine.position.set(0, -0.95, -0.9);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.9, 8), shell);
+      nose.rotation.x = -Math.PI / 2;
+      nose.position.set(0, -0.92, -2.3);
+      const bars = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.07, 0.07), shell);
+      bars.position.set(0, -0.62, -1.15);
+      const glow = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.07, 1.9), trim);
+      glow.position.set(0, -0.84, -0.9);
+      view.add(spine, nose, bars, glow);
+    }
+    view.visible = false;
+
+    const thruster = lights.attach(new THREE.Color(rarity.colour).getHex(), 0, 12);
+
+    /* ---------- mounting ---------- */
+    function canRide() {
+      return !!ctx.isOpenZone;               // only out on the ground, not in the ship
+    }
+
+    function toggle() {
+      if (!canRide()) { hud.pickup('NO ROOM TO RIDE HERE'); return; }
+      if (state.mounted) { dismount('STOWED'); return; }
+      if (state.summoning > 0) return;
+      state.summoning = SUMMON_TIME;
+      hud.pickup('SUMMONING ' + stats.name);
+      SF.audio.sfx.phase();
+    }
+
+    function mount() {
+      state.mounted = true;
+      state.speed = 0;
+      view.visible = true;
+      player.setSpeedScale(stats.speed);
+      player.setTurnScale(isSkiff ? 1 : 0.62);   // a courser fights the corner
+      hud.runner(stats.name, stats.kind);
+      SF.audio.sfx.open();
+    }
+
+    function dismount(why) {
+      if (!state.mounted) return;
+      state.mounted = false;
+      view.visible = false;
+      thruster.setIntensity(0);
+      player.setSpeedScale(ctx.baseSpeedScale || 1);
+      player.setTurnScale(1);
+      hud.runner(null);
+      if (why) hud.pickup(why);
+      SF.audio.sfx.back();
+    }
+
+    /* A hit hard enough throws you off. */
+    function onHit(amount) {
+      if (state.mounted && amount > 8) dismount('THROWN');
+    }
+
+    function update(dt) {
+      if (state.summoning > 0) {
+        state.summoning -= dt;
+        if (state.summoning <= 0) mount();
+        return;
+      }
+      if (!state.mounted) return;
+
+      if (!canRide()) { dismount('STOWED'); return; }
+
+      const moving = Math.hypot(player.state.vel.x, player.state.vel.z);
+      state.speed += (moving - state.speed) * Math.min(1, stats.accel * 0.4 * dt);
+
+      // the frame leans into the turn and dips under acceleration
+      const turnRate = player.state.turnRate || 0;
+      state.lean += (-turnRate * (isSkiff ? 0.5 : 0.32) - state.lean) * Math.min(1, 8 * dt);
+      view.rotation.z = state.lean;
+      view.position.y = Math.sin(performance.now() / 260) * 0.02 - state.speed * 0.002;
+
+      const world = new THREE.Vector3();
+      camera.getWorldPosition(world);
+      thruster.set(world.x, world.y - 1, world.z);
+      thruster.setIntensity(1.2 + Math.min(2.2, state.speed * 0.12));
+
+      hud.runnerSpeed(Math.round(moving * 3.6));   // km/h reads better than m/s
+    }
+
+    function destroy() {
+      dismount(null);
+      thruster.release();
+      camera.remove(view);
+      view.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+    }
+
+    return {
+      update, toggle, destroy, onHit, dismount,
+      get mounted() { return state.mounted; },
+      get available() { return true; },
+      get stats() { return stats; }
+    };
+  }
+
+  SF.runner = { create };
+})(window.SF);
+
+
+/* ==== src/js/fps/chests.js ==== */
+/* ============================================================
+   Cached salvage.
+
+   Crates left across a patrol zone by whoever was here before. Most
+   are Division caches, dropped and never collected; a few are sealed
+   survey vaults worth going out of your way for. Walk up and hold F.
+
+   Opened crates stay open for the session — this is loot you find, so
+   finding it again would be worthless.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const REACH = 3.2;
+  const OPEN_TIME = 1.1;
+
+  const KINDS = {
+    cache: { name: 'DIVISION CACHE', colour: 0x7dff9b, tierBonus: 0, drops: 1, weight: 0.78 },
+    vault: { name: 'SURVEY VAULT',   colour: 0xb98cff, tierBonus: 5, drops: 2, weight: 0.22 }
+  };
+
+  function create(ctx) {
+    const { scene, level, lights, hud, player } = ctx;
+    if (!level.radius) return { update() {}, destroy() {}, get count() { return 0; } };
+
+    const R = level.radius;
+
+    function blocked(x, z, pad) {
+      const list = level.space ? level.space.near(x, z, pad + 1) : level.colliders;
+      for (const c of list) {
+        if (c.top < 0.5) continue;
+        if (x > c.min.x - pad && x < c.max.x + pad &&
+            z > c.min.z - pad && z < c.max.z + pad) return true;
+      }
+      return false;
+    }
+
+    /* ---------- placement ---------- */
+    const bodyGeo = new THREE.BoxGeometry(1.15, 0.78, 0.85);
+    const lidGeo = new THREE.BoxGeometry(1.2, 0.14, 0.9);
+    const shell = new THREE.MeshStandardMaterial({ color: 0x39424e, metalness: 0.8, roughness: 0.45 });
+
+    const chests = [];
+    const want = Math.min(40, Math.round((Math.PI * R * R) / 42000));
+
+    for (let i = 0, tries = 0; i < want && tries < want * 60; tries++) {
+      const ang = Math.random() * Math.PI * 2;
+      const dist = 40 + Math.sqrt(Math.random()) * (R - 60);
+      const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+      if (blocked(x, z, 1.6)) continue;
+      if (chests.some((c) => Math.hypot(c.x - x, c.z - z) < 70)) continue;
+
+      const kind = Math.random() < KINDS.vault.weight ? KINDS.vault : KINDS.cache;
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(bodyGeo, shell);
+      body.position.y = 0.39;
+      const lid = new THREE.Mesh(lidGeo, new THREE.MeshStandardMaterial({
+        color: 0x0a0d12, emissive: new THREE.Color(kind.colour), emissiveIntensity: 2.2,
+        metalness: 0.4, roughness: 0.4
+      }));
+      lid.position.y = 0.82;
+      body.castShadow = lid.castShadow = true;
+      g.add(body, lid);
+      g.position.set(x, 0, z);
+      g.rotation.y = Math.random() * 6.28;
+      scene.add(g);
+
+      /* A beam so a crate reads from a distance — this is a big zone and a
+         crate is a small thing in it. */
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.5, 0.5, 26, 8, 1, true),
+        new THREE.MeshBasicMaterial({ color: kind.colour, transparent: true, opacity: 0.14,
+                                      blending: THREE.AdditiveBlending, depthWrite: false,
+                                      side: THREE.DoubleSide }));
+      beam.position.set(x, 13, z);
+      scene.add(beam);
+
+      const halo = lights.attach(kind.colour, 1.1, 10, { dynamic: false });
+      halo.set(x, 1.2, z);
+
+      chests.push({ group: g, lid, beam, halo, x, z, kind, opened: false, charge: 0 });
+      i++;
+    }
+
+    /* ---------- interaction ---------- */
+    let prompting = false;
+
+    function update(dt, holding) {
+      let nearest = null, nd = REACH;
+      for (const c of chests) {
+        if (c.opened) continue;
+        const d = Math.hypot(c.x - player.position.x, c.z - player.position.z);
+        if (d < nd) { nd = d; nearest = c; }
+        c.beam.material.opacity = 0.10 + Math.sin(performance.now() / 700 + c.x) * 0.04;
+      }
+
+      if (!nearest) {
+        if (prompting) { hud.pickup(''); prompting = false; }
+        for (const c of chests) if (!c.opened) c.charge = 0;
+        return;
+      }
+
+      prompting = true;
+      if (holding) {
+        nearest.charge += dt;
+        hud.pickup('OPENING ' + nearest.kind.name + ' ' +
+                   Math.max(0, OPEN_TIME - nearest.charge).toFixed(1) + 's');
+        if (nearest.charge >= OPEN_TIME) open(nearest);
+      } else {
+        nearest.charge = 0;
+        hud.pickup('HOLD F — ' + nearest.kind.name);
+      }
+    }
+
+    function open(c) {
+      c.opened = true;
+      c.lid.rotation.x = -1.1;
+      c.lid.position.z = -0.42;
+      c.lid.position.y = 0.92;
+      c.lid.material.emissiveIntensity = 0.25;
+      c.beam.visible = false;
+      c.halo.setIntensity(0);
+      hud.pickup('');
+      SF.audio.sfx.pickup();
+      if (ctx.onOpen) ctx.onOpen(c.kind, c.kind.drops, c.kind.tierBonus);
+    }
+
+    function destroy() {
+      for (const c of chests) {
+        c.halo.release();
+        scene.remove(c.group);
+        scene.remove(c.beam);
+        c.lid.material.dispose();
+        c.beam.geometry.dispose();
+        c.beam.material.dispose();
+      }
+      bodyGeo.dispose();
+      lidGeo.dispose();
+      shell.dispose();
+      chests.length = 0;
+    }
+
+    return { update, destroy, chests, get count() { return chests.length; } };
+  }
+
+  SF.chests = { create, KINDS };
+})(window.SF);
+
+
 /* ==== src/js/fps/patrol.js ==== */
 /* ============================================================
    Patrol zones.
@@ -6145,6 +6565,19 @@ window.SF = window.SF || {};
         if (d) d.textContent = m + 'm';
       },
       clearEvent() { $('#event-panel').hidden = true; },
+
+      /* ---------- runner ---------- */
+      runner(name, kind) {
+        const box = $('#runner-panel');
+        box.hidden = !name;
+        if (!name) return;
+        $('#runner-name').textContent = name;
+        $('#runner-kind').textContent = kind || '';
+      },
+      runnerSpeed(kmh) {
+        const el = $('#runner-speed');
+        if (el) el.textContent = kmh;
+      },
 
       /* Squadmates and their vitals, during a co-op mission. */
       squad(list) {
@@ -6616,6 +7049,8 @@ window.SF = window.SF || {};
     state.respawns = state.maxRespawns;
     let boss = null;
     let patrol = null;
+    let runner = null;                  // the transit frame, on open ground only
+    let chests = null;
 
     const ai = SF.ai.create({
       scene, level, lights,
@@ -6693,6 +7128,7 @@ window.SF = window.SF || {};
     function onKeyDown(e) {
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
+      if (e.code === 'KeyV' && runner) runner.toggle();
       if (e.code === 'KeyR') weapon.reload();
       if (e.code === 'KeyQ' || e.code === 'KeyE') weapon.useAbility();
       if (e.code === 'Escape' && !state.paused && !state.over) {
@@ -6785,6 +7221,23 @@ window.SF = window.SF || {};
             hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
           }
         });
+        /* Open ground: a frame to cross it on, and crates worth crossing it for. */
+        runner = SF.runner.create({
+          camera, player, hud, lights, character,
+          isOpenZone: true, baseSpeedScale: 2.1
+        });
+        chests = SF.chests.create({
+          scene, level, lights, hud, player,
+          onOpen: (kind, count, tierBonus) => {
+            const drops = SF.gear.rollDrops(character, Math.min(16, 9 + tierBonus), count > 1);
+            SF.gear.grant(character, drops);
+            state.xp += 60 + tierBonus * 20;
+            SF.storage.save(character.slot, character);
+            for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
+            hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
+          }
+        });
+
         hud.objective('<b>PATROL</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
@@ -6835,6 +7288,7 @@ window.SF = window.SF || {};
         hud.damageFrom(-ang);
       }
       SF.audio.sfx.hurt();
+      if (runner) runner.onHit(dmg);
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       if (state.hp <= 0) die();
     }
@@ -6848,6 +7302,7 @@ window.SF = window.SF || {};
       state.deaths++;
       firing = false;
       weapon.setAds(false);
+      if (runner) runner.dismount(null);      // you do not keep the frame through a death
 
       if (state.respawns <= 0) {
         hud.deathOverlay(true, 0, mission.boss
@@ -6899,13 +7354,18 @@ window.SF = window.SF || {};
         state.onPad = onPad;
         hud.pickup(onPad ? 'HOLD F TO LEAVE' : '');
       }
-      if (onPad && extractHeld) {
-        state.extractT += dt;
-        hud.pickup('CALLING CUTTER ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
-        if (state.extractT >= 1.6) complete();
-      } else {
-        state.extractT = 0;
+      if (onPad) {
+        if (extractHeld) {
+          state.extractT += dt;
+          hud.pickup('CALLING CUTTER ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
+          if (state.extractT >= 1.6) complete();
+        } else {
+          state.extractT = 0;
+        }
+        return;
       }
+      state.extractT = 0;
+      if (chests) chests.update(dt, extractHeld);
     }
 
     function runBeats(dt) {
@@ -7036,7 +7496,7 @@ window.SF = window.SF || {};
       state.damageFlash = Math.max(0, state.damageFlash - dt * 2.2);
 
       player.update(dt);
-      weapon.update(dt, firing);
+      weapon.update(dt, firing && !(runner && runner.mounted));
       lights.update(dt, camera.position);
 
       const eye = player.eyePosition;
@@ -7067,6 +7527,7 @@ window.SF = window.SF || {};
         }
       }
 
+      if (runner) runner.update(dt);
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (mission.patrol) patrolTick(dt);
@@ -7147,6 +7608,9 @@ window.SF = window.SF || {};
       document.removeEventListener('keydown', onEngageInput);
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
+      if (runner) runner.destroy();
+      if (chests) chests.destroy();
+      hud.runner(null);
       if (patrol) patrol.destroy();
       if (boss) boss.destroy();
       if (remotes) remotes.clear();
@@ -7168,6 +7632,8 @@ window.SF = window.SF || {};
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
              engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
              get patrolRef() { return patrol; },
+             get runnerRef() { return runner; },
+             get chestsRef() { return chests; },
              get bossRef() { return boss; } };
   }
 

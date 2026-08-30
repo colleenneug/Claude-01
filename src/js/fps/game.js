@@ -75,6 +75,8 @@
     state.respawns = state.maxRespawns;
     let boss = null;
     let patrol = null;
+    let runner = null;                  // the transit frame, on open ground only
+    let chests = null;
 
     const ai = SF.ai.create({
       scene, level, lights,
@@ -152,6 +154,7 @@
     function onKeyDown(e) {
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
+      if (e.code === 'KeyV' && runner) runner.toggle();
       if (e.code === 'KeyR') weapon.reload();
       if (e.code === 'KeyQ' || e.code === 'KeyE') weapon.useAbility();
       if (e.code === 'Escape' && !state.paused && !state.over) {
@@ -244,6 +247,23 @@
             hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
           }
         });
+        /* Open ground: a frame to cross it on, and crates worth crossing it for. */
+        runner = SF.runner.create({
+          camera, player, hud, lights, character,
+          isOpenZone: true, baseSpeedScale: 2.1
+        });
+        chests = SF.chests.create({
+          scene, level, lights, hud, player,
+          onOpen: (kind, count, tierBonus) => {
+            const drops = SF.gear.rollDrops(character, Math.min(16, 9 + tierBonus), count > 1);
+            SF.gear.grant(character, drops);
+            state.xp += 60 + tierBonus * 20;
+            SF.storage.save(character.slot, character);
+            for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
+            hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
+          }
+        });
+
         hud.objective('<b>PATROL</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
@@ -294,6 +314,7 @@
         hud.damageFrom(-ang);
       }
       SF.audio.sfx.hurt();
+      if (runner) runner.onHit(dmg);
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       if (state.hp <= 0) die();
     }
@@ -307,6 +328,7 @@
       state.deaths++;
       firing = false;
       weapon.setAds(false);
+      if (runner) runner.dismount(null);      // you do not keep the frame through a death
 
       if (state.respawns <= 0) {
         hud.deathOverlay(true, 0, mission.boss
@@ -358,13 +380,18 @@
         state.onPad = onPad;
         hud.pickup(onPad ? 'HOLD F TO LEAVE' : '');
       }
-      if (onPad && extractHeld) {
-        state.extractT += dt;
-        hud.pickup('CALLING CUTTER ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
-        if (state.extractT >= 1.6) complete();
-      } else {
-        state.extractT = 0;
+      if (onPad) {
+        if (extractHeld) {
+          state.extractT += dt;
+          hud.pickup('CALLING CUTTER ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
+          if (state.extractT >= 1.6) complete();
+        } else {
+          state.extractT = 0;
+        }
+        return;
       }
+      state.extractT = 0;
+      if (chests) chests.update(dt, extractHeld);
     }
 
     function runBeats(dt) {
@@ -495,7 +522,7 @@
       state.damageFlash = Math.max(0, state.damageFlash - dt * 2.2);
 
       player.update(dt);
-      weapon.update(dt, firing);
+      weapon.update(dt, firing && !(runner && runner.mounted));
       lights.update(dt, camera.position);
 
       const eye = player.eyePosition;
@@ -526,6 +553,7 @@
         }
       }
 
+      if (runner) runner.update(dt);
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (mission.patrol) patrolTick(dt);
@@ -606,6 +634,9 @@
       document.removeEventListener('keydown', onEngageInput);
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
+      if (runner) runner.destroy();
+      if (chests) chests.destroy();
+      hud.runner(null);
       if (patrol) patrol.destroy();
       if (boss) boss.destroy();
       if (remotes) remotes.clear();
@@ -627,6 +658,8 @@
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
              engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
              get patrolRef() { return patrol; },
+             get runnerRef() { return runner; },
+             get chestsRef() { return chests; },
              get bossRef() { return boss; } };
   }
 

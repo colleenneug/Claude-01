@@ -61,7 +61,31 @@
     { id: 'weapon', name: 'WEAPON' },
     { id: 'head',   name: 'HELM' },
     { id: 'chest',  name: 'PLATE' },
-    { id: 'legs',   name: 'GREAVES' }
+    { id: 'legs',   name: 'GREAVES' },
+    { id: 'runner', name: 'RUNNER' }
+  ];
+
+  /* Runners: the salvaged transit frames Division issues for open ground.
+     Two families that handle nothing alike. */
+  const RUNNERS = {
+    courser: {
+      id: 'courser', name: 'COURSER', kind: 'SPEED FRAME',
+      speed: 4.4, accel: 5.5, turn: 1.5, boost: 1.5,
+      desc: 'A single-rail frame built for the straight line. Enormous top end, ' +
+            'turns like an argument.'
+    },
+    skiff: {
+      id: 'skiff', name: 'SKIFF', kind: 'PLATE FRAME',
+      speed: 3.3, accel: 11, turn: 2.6, boost: 1.25,
+      desc: 'A flat plate that hovers a hand off the ground. Slower flat out, but ' +
+            'it goes where you point it and it stops when you ask.'
+    }
+  };
+  const RUNNER_AFFIXES = [
+    { id: 'top',   label: '+{v}% top speed',    stat: 'speed', min: 4,  max: 15 },
+    { id: 'acc',   label: '+{v}% acceleration', stat: 'accel', min: 8,  max: 26 },
+    { id: 'grip',  label: '+{v}% handling',     stat: 'turn',  min: 8,  max: 24 },
+    { id: 'boost', label: '+{v}% boost',        stat: 'boost', min: 6,  max: 20 }
   ];
 
   let nextId = 1;
@@ -118,6 +142,43 @@
     return item;
   }
 
+  function makeRunner(familyId, rarityId, tier) {
+    const fam = RUNNERS[familyId] || RUNNERS.courser;
+    const r = rarityOf(rarityId);
+    const item = {
+      uid: 'r' + (nextId++), kind: 'runner', slot: 'runner', family: fam.id,
+      rarity: rarityId, tier: tier || 1,
+      affixes: rollAffixes(RUNNER_AFFIXES, Math.max(1, r.affixes)),
+      name: (rarityId === 'exotic'
+        ? '"' + EXOTIC_NAMES[Math.floor(Math.random() * EXOTIC_NAMES.length)] + '" '
+        : rarityId === 'common' ? 'ISSUED '
+        : PREFIX[Math.floor(Math.random() * PREFIX.length)] + ' ') + fam.name
+    };
+    item.power = powerOf(item);
+    return item;
+  }
+
+  /* The numbers the ride actually uses, after rarity and affixes. */
+  function runnerStats(character) {
+    const item = character.equipped && character.equipped.runner;
+    if (!item) return null;
+    const fam = RUNNERS[item.family] || RUNNERS.courser;
+    const r = rarityOf(item.rarity);
+    const out = {
+      family: fam.id, name: item.name, kind: fam.kind,
+      speed: fam.speed * (1 + (r.mult - 1) * 0.6),
+      accel: fam.accel * (1 + (r.mult - 1) * 0.6),
+      turn: fam.turn, boost: fam.boost
+    };
+    for (const a of item.affixes) {
+      if (a.stat === 'speed') out.speed *= 1 + a.value / 100;
+      if (a.stat === 'accel') out.accel *= 1 + a.value / 100;
+      if (a.stat === 'turn')  out.turn  *= 1 + a.value / 100;
+      if (a.stat === 'boost') out.boost *= 1 + a.value / 100;
+    }
+    return out;
+  }
+
   /* One or two pieces of salvage per cleared mission, better the deeper
      you are, and the boss always pays out. */
   function rollDrops(character, missionN, isBoss) {
@@ -126,7 +187,10 @@
     for (let i = 0; i < count; i++) {
       let rarity = rollRarity(missionN);
       if (isBoss && rarityRank(rarity) < 2) rarity = 'rare';     // no junk from the Conductor
-      if (Math.random() < 0.4) drops.push(makeWeapon(character.cls, rarity, missionN));
+      const roll = Math.random();
+      if (roll < 0.34) drops.push(makeWeapon(character.cls, rarity, missionN));
+      else if (roll < 0.46) drops.push(makeRunner(
+        Math.random() < 0.5 ? 'courser' : 'skiff', rarity, missionN));
       else drops.push(makeArmour(['head', 'chest', 'legs'][Math.floor(Math.random() * 3)],
                                  rarity, missionN));
     }
@@ -174,6 +238,7 @@
 
   const powerOfCharacter = (ch) => {
     const eq = ch.equipped || {};
+    // a runner is transport, not firepower: it does not inflate your power
     return Math.round(ch.level * 8 +
       ['weapon', 'head', 'chest', 'legs'].reduce((a, s) => a + powerOf(eq[s]), 0));
   };
@@ -209,6 +274,11 @@
       ch.inventory.push(starter);
       ch.equipped.weapon = starter;
     }
+    if (!ch.equipped.runner) {                 // everyone gets something to ride
+      const ride = makeRunner('courser', 'common', 1);
+      ch.inventory.push(ride);
+      ch.equipped.runner = ride;
+    }
     return ch;
   }
 
@@ -225,8 +295,9 @@
   }
 
   SF.gear = {
-    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES,
+    RARITY, SLOTS, SKINS, HAIR_COLOURS, HAIR_STYLES, RUNNERS,
     rarityOf, rarityRank, rollRarity, rollDrops, makeWeapon, makeArmour,
+    makeRunner, runnerStats,
     weaponMods, armourStats, powerOf, powerOfCharacter, ensure, grant, defaultLook
   };
 })(window.SF);

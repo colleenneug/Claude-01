@@ -18,6 +18,7 @@
 
   function create(camera, level) {
     let speedScale = 1;
+    let turnScale = 1;
     const state = {
       pos: level.playerStart.clone(),
       vel: new THREE.Vector3(),
@@ -30,7 +31,7 @@
       eye: EYE_STAND,
       bob: 0, bobAmount: 0,
       recoil: new THREE.Vector2(),     // camera kick, decays back to zero
-      shake: 0, shakePhase: 0,
+      shake: 0, shakePhase: 0, turnRate: 0,
       landDip: 0,
       alive: true
     };
@@ -65,7 +66,9 @@
       pointer.y = e.clientY / window.innerHeight;
       pointer.inside = true;
       if (mode === 'off') return;
-      state.yaw   -= e.movementX * sensitivity;
+      const dYaw = e.movementX * sensitivity * turnScale;
+      state.yaw   -= dYaw;
+      state.turnRate = dYaw;
       state.pitch -= e.movementY * sensitivity;
       clampPitch();
     }
@@ -88,7 +91,13 @@
         if (pointer.x < EDGE)          turn += (1 - pointer.x / EDGE);
         else if (pointer.x > 1 - EDGE) turn -= (1 - (1 - pointer.x) / EDGE);
       }
-      if (turn !== 0) state.yaw += turn * TURN_RATE * dt;
+      if (turn !== 0) {
+        const d = turn * TURN_RATE * turnScale * dt;
+        state.yaw += d;
+        state.turnRate = -d;
+      } else {
+        state.turnRate *= Math.max(0, 1 - 8 * dt);
+      }
 
       // keep yaw in [-PI, PI] so it never drifts into large-float territory
       if (state.yaw > Math.PI) state.yaw -= Math.PI * 2;
@@ -246,6 +255,7 @@
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
       setSpeedScale(v) { speedScale = v || 1; },
+      setTurnScale(v) { turnScale = v || 1; },
       setMode(v) { mode = v; },
       get mode() { return mode; },
       /* Look state, for diagnostics: which mode is live and where the

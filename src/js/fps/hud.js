@@ -114,6 +114,19 @@
       },
       clearEvent() { $('#event-panel').hidden = true; },
 
+      /* ---------- runner ---------- */
+      runner(name, kind) {
+        const box = $('#runner-panel');
+        box.hidden = !name;
+        if (!name) return;
+        $('#runner-name').textContent = name;
+        $('#runner-kind').textContent = kind || '';
+      },
+      runnerSpeed(kmh) {
+        const el = $('#runner-speed');
+        if (el) el.textContent = kmh;
+      },
+
       /* Squadmates and their vitals, during a co-op mission. */
       squad(list) {
         const box = $('#squad-hud');

@@ -367,6 +367,32 @@ body.in-mission #vignette{ opacity:.55; }
 .sq-live .sq-bar i{ display:block; height:100%; background:var(--lime); }
 .sq-live.down b{ color:var(--blood); }
 
+/* ---------- runner readout ---------- */
+/* Bottom-left, opposite the ammo block: the speed is the part you read at
+   a glance, so it is the only thing here that is large. */
+#runner-panel{
+  position:absolute; left:38px; bottom:118px; text-align:left;
+  border-left:2px solid var(--cyan); padding:6px 0 6px 12px;
+}
+#runner-panel[hidden]{ display:none; }
+.rn-speed{
+  font-family:var(--font-mono); color:#eafcff; line-height:1;
+  font-size:30px; font-variant-numeric:tabular-nums;
+  text-shadow:0 0 14px rgba(94,234,255,.55);
+}
+.rn-speed i{
+  font-style:normal; font-size:10px; letter-spacing:.22em;
+  color:var(--ink-dim); margin-left:6px;
+}
+#runner-name{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.2em;
+  color:var(--cyan); margin-top:7px;
+}
+#runner-kind{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.2em;
+  color:var(--ink-dim); margin-top:2px;
+}
+
 /* ---------- public events ---------- */
 #event-panel{
   position:absolute; right:38px; top:150px; width:260px;
