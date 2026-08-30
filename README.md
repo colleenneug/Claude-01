@@ -260,9 +260,17 @@ missions: you drop in, and what you do there is up to you. Nothing pushes you al
 nothing ends the trip except you — stand on the landing pad and hold `F` whenever you want
 to leave.
 
-**A living population.** Each zone keeps a dozen hostiles roaming it, topped up as you
-thin them out, so the place stays inhabited however long you stay. They spawn well away
-from wherever you are standing.
+**They are big.** Each zone is 620 m in radius — 1.21 km², about 1.24 km across, a hundred
+times the ground area of a mission sector. Roughly 1,900 pieces of cover are scattered
+across it, drawn as three instanced meshes rather than nineteen hundred draw calls, and
+collision runs through a spatial hash so a hostile tests a handful of nearby rocks instead
+of the whole world. Sprint speed is raised on patrol, which puts a crossing at about eighty
+seconds. `ZONE_R` in `fps/planets.js` is the single number that sets all of it.
+
+**A living population.** Hostiles are streamed rather than placed: sixteen live in a band
+55–150 m around you, anything left more than 260 m behind is retired, and the band refills
+around wherever you walk to. The zone stays inhabited without ever simulating a kilometre
+of empty ground.
 
 **Different enemies on each world.** The desert belongs to **The Reclaimed** — scarab
 drones, marauders, and dust colossi. The ice belongs to **The Stilled** — frost motes,

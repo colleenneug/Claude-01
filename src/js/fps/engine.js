@@ -95,7 +95,7 @@
     scene.background = new THREE.Color(0x05070b);
     scene.fog = new THREE.FogExp2(0x0a1018, 0.019);
 
-    const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 300);
+    const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 3200);
 
     const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
                      format: THREE.RGBAFormat, encoding: THREE.sRGBEncoding };

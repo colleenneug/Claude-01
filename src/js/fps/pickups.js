@@ -21,7 +21,8 @@
 
     /* ---------- where they go ---------- */
     function blocked(x, z, pad) {
-      for (const c of level.colliders) {
+      const candidates = level.space ? level.space.near(x, z, pad + 1) : level.colliders;
+      for (const c of candidates) {
         if (c.top < 0.5) continue;
         if (x > c.min.x - pad && x < c.max.x + pad &&
             z > c.min.z - pad && z < c.max.z + pad) return true;
@@ -33,19 +34,24 @@
        they read as supplies left against a wall rather than dropped loot. */
     function placements() {
       const out = [];
+      const open = !!level.radius;                  // a patrol zone, not the ship
       for (const id of Object.keys(level.zones)) {
         const z = level.zones[id];
         const area = (z.x1 - z.x0) * (z.z1 - z.z0);
-        const want = Math.max(2, Math.min(5, Math.round(area / 150)));
+        // one kit per ~9,000 m2 outdoors; the ship stays hand-placed
+        const want = open ? Math.min(140, Math.round(area / 9000))
+                          : Math.max(2, Math.min(5, Math.round(area / 150)));
         let tries = 0;
         let placed = 0;
-        while (placed < want && tries < 150) {
+        const budget = open ? want * 40 : 150;
+        while (placed < want && tries < budget) {
           tries++;
           const x = z.x0 + 1.6 + Math.random() * (z.x1 - z.x0 - 3.2);
           const zz = z.z0 + 1.6 + Math.random() * (z.z1 - z.z0 - 3.2);
           if (blocked(x, zz, 0.9)) continue;
           // keep them apart so they do not clump
-          if (out.some((p) => Math.hypot(p.x - x, p.z - zz) < 6)) continue;
+          const gap = open ? 45 : 6;
+          if (out.some((p) => Math.hypot(p.x - x, p.z - zz) < gap)) continue;
           out.push({ x: x, z: zz, zone: id });
           placed++;
         }

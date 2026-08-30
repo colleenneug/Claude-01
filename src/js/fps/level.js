@@ -332,6 +332,7 @@
     return {
       group, colliders, emitters, zones, props,
       nodeAnchors: nodeAnchors,
+      space: SF.spatial.create(colliders, 12),
       playerStart: new THREE.Vector3(0, 0, -40),
       bounds: { minX: -26, maxX: 26, minZ: -48, maxZ: 182 }
     };

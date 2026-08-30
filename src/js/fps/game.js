@@ -230,6 +230,7 @@
     function beginMission() {
       const zone = level.zones[mission.zone];
       if (mission.patrol) {
+        player.setSpeedScale(2.1);        // a kilometre of ground needs the legs
         patrol = SF.patrol.create({
           scene, level, ai, hud, player, lights, net: SF.net,
           spec: mission.planet, hosting: hosting, hpScale: scale.hp,

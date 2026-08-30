@@ -12,9 +12,12 @@
   const GRAVITY = 22;
   const JUMP_V = 7.2;
 
+  /* Base speeds. An open zone multiplies these — see setSpeedScale — because
+     a kilometre-wide world at corridor pace is a walking simulator. */
   const SPEED = { walk: 4.6, sprint: 7.4, crouch: 2.3, air: 1.6 };
 
   function create(camera, level) {
+    let speedScale = 1;
     const state = {
       pos: level.playerStart.clone(),
       vel: new THREE.Vector3(),
@@ -97,7 +100,9 @@
        so sliding along a wall feels right instead of sticking. */
     function collide(next) {
       const feet = state.pos.y;
-      for (const c of level.colliders) {
+      const candidates = level.space ? level.space.near(next.x, next.z, RADIUS + 1)
+                                     : level.colliders;
+      for (const c of candidates) {
         if (c.top <= feet + 0.35 || c.bottom >= feet + state.eye) continue;  // steppable / overhead
         const minX = c.min.x - RADIUS, maxX = c.max.x + RADIUS;
         const minZ = c.min.z - RADIUS, maxZ = c.max.z + RADIUS;
@@ -120,7 +125,8 @@
     /* Highest surface under the player, used as the floor. */
     function groundHeight(x, z) {
       let best = 0;
-      for (const c of level.colliders) {
+      const candidates = level.space ? level.space.near(x, z, RADIUS) : level.colliders;
+      for (const c of candidates) {
         if (x < c.min.x - RADIUS * 0.5 || x > c.max.x + RADIUS * 0.5) continue;
         if (z < c.min.z - RADIUS * 0.5 || z > c.max.z + RADIUS * 0.5) continue;
         if (c.top <= state.pos.y + 0.55 && c.top > best) best = c.top;
@@ -149,7 +155,8 @@
 
       state.sprinting = wantSprint && len > 0 && (keys.KeyW || keys.ArrowUp);
 
-      const target = state.crouching ? SPEED.crouch : state.sprinting ? SPEED.sprint : SPEED.walk;
+      const target = (state.crouching ? SPEED.crouch
+                    : state.sprinting ? SPEED.sprint : SPEED.walk) * speedScale;
       const accel = state.onGround ? 52 : 12;
       state.vel.x += (dx * target - state.vel.x) * Math.min(1, accel * dt);
       state.vel.z += (dz * target - state.vel.z) * Math.min(1, accel * dt);
@@ -238,6 +245,7 @@
       update, addRecoil,
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
+      setSpeedScale(v) { speedScale = v || 1; },
       setMode(v) { mode = v; },
       get mode() { return mode; },
       /* Look state, for diagnostics: which mode is live and where the

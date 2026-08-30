@@ -15,6 +15,12 @@
 
   const UNLOCK_AFTER = 6;            // clear mission 6 to open the sky
 
+  /* Zone radius in metres. The zone covers ZONE_R^2 * pi of ground — at 620
+     that is a hundred times the area of the original arena, about 1.24 km
+     across. Everything below scales off this one number: cover density,
+     event sites, ammunition, view distance and the sky. */
+  const ZONE_R = 620;
+
   const DESTINATIONS = [
     {
       id: 'desert',
@@ -36,7 +42,7 @@
         name: 'THE RECLAIMED',
         mix: [['scarab', 0.44], ['marauder', 0.42], ['colossus', 0.14]],
         elite: 'colossus',
-        population: 12
+        population: 16
       }
     },
     {
@@ -60,7 +66,7 @@
         name: 'THE STILLED',
         mix: [['mote', 0.4], ['revenant', 0.46], ['hoarfrost', 0.14]],
         elite: 'hoarfrost',
-        population: 12
+        population: 16
       }
     }
   ];
@@ -214,7 +220,7 @@
   }
 
   function buildSky(scene, spec, onReady) {
-    const geo = new THREE.SphereGeometry(240, 40, 24);
+    const geo = new THREE.SphereGeometry(2600, 48, 28);
     const mat = new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false });
     const dome = new THREE.Mesh(geo, mat);
     dome.rotation.y = Math.PI * 0.25;
@@ -251,106 +257,153 @@
     const colliders = [];
     const emitters = [];
     const group = new THREE.Group();
-    const R = 62;                                   // playable radius
+    const R = ZONE_R;
 
     scene.background = new THREE.Color(spec.sky.mid);
-    scene.fog = new THREE.FogExp2(spec.fog, spec.fogDensity);
+    /* Thin the fog right out: at this scale the old density was a wall two
+       hundred metres away. */
+    scene.fog = new THREE.FogExp2(spec.fog, spec.fogDensity * 0.12);
     buildSky(scene, spec);
 
-    /* ground: a wide slab with a scattered rubble texture */
-    const groundMat = SF.materials.painted(spec.ground, { repeat: [14, 14] });
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(R * 2.4, 1, R * 2.4), groundMat);
+    /* Ground. One large slab, with the texture repeated hard so it does not
+       smear across a kilometre. */
+    const groundMat = SF.materials.painted(spec.ground, { repeat: [110, 110] });
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(R * 2.3, 1, R * 2.3), groundMat);
     ground.position.y = -0.5;
     ground.receiveShadow = true;
     group.add(ground);
 
-    /* Cover, in each world's own material: ice crystals that glow from
-       within, or the weathered pillars of whatever stood on the shelf. */
+    /* ---------- cover ----------
+       Thousands of rocks at this scale, so they are drawn as instanced
+       meshes: one draw call each rather than one per rock. */
     const rockMat = SF.materials.painted(spec.rockTint, { repeat: [2, 2] });
     const crystalMat = new THREE.MeshStandardMaterial({
       color: 0x7fc0dc, emissive: new THREE.Color(0x2f9fd0), emissiveIntensity: 0.45,
       metalness: 0.1, roughness: 0.12, transparent: true, opacity: 0.86
     });
+    const isCrystal = spec.cover === 'crystal';
+    const coverMat = isCrystal ? crystalMat : rockMat;
+    const coverGeo = isCrystal ? new THREE.ConeGeometry(1, 1, 6)
+                               : new THREE.DodecahedronGeometry(1, 0);
+    // unit geometries throughout, so one scaling rule grounds all of them
+    const bigGeo = isCrystal ? new THREE.ConeGeometry(1, 1, 7)
+                             : new THREE.BoxGeometry(1, 1, 1);
 
-    const rock = (x, z, r, h) => {
-      let m;
-      if (spec.cover === 'crystal') {
-        m = new THREE.Mesh(new THREE.ConeGeometry(r * 0.8, h, 6), crystalMat);
-        m.position.set(x, h * 0.5, z);
-        m.rotation.set((Math.random() - 0.5) * 0.24, Math.random() * 6.28, (Math.random() - 0.5) * 0.24);
-      } else if (spec.cover === 'ruin' && h > 5) {
-        m = new THREE.Mesh(new THREE.BoxGeometry(r * 1.5, h, r * 1.5), rockMat);
-        m.position.set(x, h * 0.5, z);
-        m.rotation.y = Math.random() * 6.28;
-      } else {
-        m = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), rockMat);
-        m.position.set(x, h * 0.35, z);
-        m.scale.set(1, h / r, 1);
-        m.rotation.set(Math.random(), Math.random() * 6.28, Math.random());
+    /* Density per square metre, so the world feels the same however big it is. */
+    const AREA = Math.PI * R * R;
+    const SMALL = Math.min(5200, Math.round(AREA / 900));
+    const LARGE = Math.min(1400, Math.round(AREA / 3400));
+
+    const dummy = new THREE.Object3D();
+
+    function place(obj, geo, x, z, r, h) {
+      if (isCrystal) {                       // cone: unit height, centre pivot
+        obj.position.set(x, h * 0.5, z);
+        obj.scale.set(r, h, r);
+        obj.rotation.set((Math.random() - 0.5) * 0.24, Math.random() * 6.28,
+                         (Math.random() - 0.5) * 0.24);
+      } else if (geo.type === 'BoxGeometry') {
+        obj.position.set(x, h * 0.46, z);    // a touch into the ground
+        obj.scale.set(r * 1.6, h, r * 1.6);
+        obj.rotation.set(0, Math.random() * 6.28, 0);
+      } else {                               // dodecahedron: spans two units
+        obj.position.set(x, h * 0.3, z);
+        obj.scale.set(r, h * 0.5, r);
+        obj.rotation.set(Math.random(), Math.random() * 6.28, Math.random());
       }
-      m.castShadow = m.receiveShadow = true;
-      group.add(m);
-      colliders.push({ min: { x: x - r * 0.8, z: z - r * 0.8 },
-                       max: { x: x + r * 0.8, z: z + r * 0.8 },
-                       top: h, bottom: 0 });
-      return m;
-    };
+      obj.updateMatrix();
+    }
 
-    for (let i = 0; i < 44; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const dist = 9 + Math.random() * (R - 14);
+    function scatter(geo, mat, count, sizeFn) {
+      const mesh = new THREE.InstancedMesh(geo, mat, count);
+      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.frustumCulled = true;
+      for (let i = 0; i < count; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        // sqrt keeps the scatter even rather than clumped at the middle
+        const dist = 14 + Math.sqrt(Math.random()) * (R - 20);
+        const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+        const { r, h } = sizeFn();
+
+        /* Cones and boxes are one unit tall and pivot at their centre; the
+           dodecahedron spans two units. Ground each accordingly, and sink the
+           rocks slightly so they read as outcrops rather than dropped props. */
+        place(dummy, geo, x, z, r, h);
+        mesh.setMatrixAt(i, dummy.matrix);
+
+        colliders.push({ min: { x: x - r * 0.8, z: z - r * 0.8 },
+                         max: { x: x + r * 0.8, z: z + r * 0.8 },
+                         top: h, bottom: 0 });
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      group.add(mesh);
+      return mesh;
+    }
+
+    scatter(coverGeo, coverMat, SMALL, () => {
       const r = 1.1 + Math.random() * 2.6;
-      const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
-      rock(x, z, r, r * (1.2 + Math.random() * 2.2));
-      if (spec.cover === 'crystal' && i % 6 === 0) {
-        emitters.push({ x: x, y: 2.2, z: z, colour: 0x5ec8ff, intensity: 1.6, distance: 12 });
-      }
-    }
-    // a ring of larger spires marking the edge of the playable ground
-    for (let i = 0; i < 26; i++) {
-      const ang = (i / 26) * Math.PI * 2 + Math.random() * 0.1;
-      rock(Math.cos(ang) * (R + 3), Math.sin(ang) * (R + 3), 3.4 + Math.random() * 2, 8.5);
-    }
+      return { r: r, h: r * (1.2 + Math.random() * 2.2) };
+    });
+    scatter(bigGeo, coverMat, LARGE, () => {
+      const r = 3.4 + Math.random() * 3.4;
+      return { r: r, h: r * (2.2 + Math.random() * 2.6) };
+    });
 
-    /* the extraction beacon you stand on to leave */
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.8, 0.4, 24),
+    /* A ring of tall spires marking the edge of the world. */
+    const edge = new THREE.InstancedMesh(bigGeo, coverMat, 220);
+    for (let i = 0; i < 220; i++) {
+      const ang = (i / 220) * Math.PI * 2;
+      const x = Math.cos(ang) * (R + 8), z = Math.sin(ang) * (R + 8);
+      const r = 7 + Math.random() * 5, h = 34 + Math.random() * 26;
+      place(dummy, bigGeo, x, z, r, h);
+      edge.setMatrixAt(i, dummy.matrix);
+      colliders.push({ min: { x: x - r, z: z - r }, max: { x: x + r, z: z + r },
+                       top: h, bottom: 0 });
+    }
+    edge.instanceMatrix.needsUpdate = true;
+    edge.castShadow = true;
+    group.add(edge);
+
+    /* ---------- the landing pad ---------- */
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 5, 0.4, 28),
       SF.materials.get('deck'));
     pad.position.set(0, 0.2, 0);
     pad.receiveShadow = true;
     group.add(pad);
-    const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 3.4, 10),
+    const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 60, 10),
       SF.materials.emissive(0x7dff9b, 2.4));
-    beacon.position.set(0, 1.9, 0);
+    beacon.position.set(0, 30, 0);
     group.add(beacon);
-    emitters.push({ x: 0, y: 3.4, z: 0, colour: 0x7dff9b, intensity: 2.6, distance: 22 });
+    emitters.push({ x: 0, y: 4, z: 0, colour: 0x7dff9b, intensity: 3.0, distance: 34 });
 
-    for (let i = 0; i < 5; i++) {
-      const ang = (i / 5) * Math.PI * 2;
-      emitters.push({ x: Math.cos(ang) * 26, y: 5, z: Math.sin(ang) * 26,
-                      colour: spec.sky.haze, intensity: 2.2, distance: 34 });
+    /* ---------- event sites ---------- */
+    const eventAnchors = [];
+    const RINGS = [0.3, 0.55, 0.8];
+    for (const ring of RINGS) {
+      const n = Math.round(6 * ring * 2);
+      for (let i = 0; i < n; i++) {
+        const ang = (i / n) * Math.PI * 2 + ring * 2.1;
+        eventAnchors.push({ x: Math.cos(ang) * R * ring, z: Math.sin(ang) * R * ring });
+      }
+    }
+    for (const a of eventAnchors) {
+      emitters.push({ x: a.x, y: 6, z: a.z, colour: spec.sky.haze, intensity: 2.0, distance: 40 });
     }
 
     scene.add(group);
 
-    /* Where public events can fire: a ring of sites around the zone, each
-       far enough from the landing pad that going to one is a decision. */
-    const eventAnchors = [];
-    for (let i = 0; i < 6; i++) {
-      const ang = (i / 6) * Math.PI * 2 + 0.4;
-      const d = R * 0.55;
-      eventAnchors.push({ x: Math.cos(ang) * d, z: Math.sin(ang) * d });
-    }
-
     return {
       group, colliders, emitters, props: [], nodeAnchors: [], eventAnchors,
+      space: SF.spatial.create(colliders, 24),
       zones: { arena: { x0: -R, x1: R, z0: -R, z1: R, cx: 0, cz: 0, name: spec.name } },
-      playerStart: new THREE.Vector3(0, 0, 6),
+      playerStart: new THREE.Vector3(0, 0, 8),
       bounds: { minX: -R, maxX: R, minZ: -R, maxZ: R },
       extraction: new THREE.Vector3(0, 0, 0),
+      radius: R,
       beacon: beacon
     };
   }
 
   SF.planets = { DESTINATIONS, byId, unlocked, asMission, buildArena, buildSky,
-                 UNLOCK_AFTER, resolveAsset };
+                 UNLOCK_AFTER, ZONE_R, resolveAsset };
 })(window.SF);

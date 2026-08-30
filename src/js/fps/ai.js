@@ -158,7 +158,10 @@
     /* Ray vs the level's AABBs; returns the nearest wall distance. */
     function rayWalls(origin, dir, maxDist, colliders) {
       let best = maxDist, normal = null;
-      for (const c of colliders) {
+      const list = (level.space && maxDist > 0)
+        ? level.space.alongRay(origin.x, origin.z, dir.x, dir.z, maxDist)
+        : colliders;
+      for (const c of list) {
         const inv = { x: 1 / (dir.x || 1e-6), z: 1 / (dir.z || 1e-6) };
         let t0 = (c.min.x - origin.x) * inv.x, t1 = (c.max.x - origin.x) * inv.x;
         if (t0 > t1) { const s = t0; t0 = t1; t1 = s; }
@@ -239,7 +242,8 @@
 
     /* ---------- steering ---------- */
     function blocked(x, z, radius) {
-      for (const c of level.colliders) {
+      const candidates = level.space ? level.space.near(x, z, radius + 1) : level.colliders;
+      for (const c of candidates) {
         if (c.top < 0.6) continue;
         if (x > c.min.x - radius && x < c.max.x + radius &&
             z > c.min.z - radius && z < c.max.z + radius) return true;
@@ -500,6 +504,16 @@
 
     const byUid = (uid) => enemies.find((e) => e.uid === uid) || null;
 
+    /* Remove a hostile without a death: used when streaming retires one that
+       has been left far behind. */
+    function retire(e) {
+      const i = enemies.indexOf(e);
+      if (i === -1) return;
+      e.rig.halo.release();
+      scene.remove(e.rig.group);
+      enemies.splice(i, 1);
+    }
+
     /* Line of sight from the player's eye to an enemy's chest. */
     function visible(from, e) {
       const to = bodyCentre(e);
@@ -520,7 +534,7 @@
 
     return {
       enemies, spawn, step, damage, pulse, raycast, visible, prewarm, TYPES,
-      snapshot, applySnapshot, byUid,
+      snapshot, applySnapshot, byUid, retire,
       setRemote(v) { remote = !!v; },
       get isRemote() { return remote; },
       get alive() { return enemies.filter((e) => !e.dead).length; },

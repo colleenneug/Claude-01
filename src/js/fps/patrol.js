@@ -14,8 +14,14 @@
 (function (SF) {
   'use strict';
 
-  const POP_MIN_DIST = 34;         // never populate on top of a player
-  const RESPAWN_EVERY = 4.5;       // seconds between top-ups
+  /* The zone is a kilometre across, so the population is streamed rather
+     than placed: hostiles live in a band around the player, and anything
+     that falls too far behind is retired so the count stays affordable.
+     Event spawns are exempt — those belong to their site. */
+  const SPAWN_MIN = 55;            // never populate on top of a player
+  const SPAWN_MAX = 150;           // ...nor beyond sight of one
+  const DESPAWN = 260;             // retire stragglers past this
+  const RESPAWN_EVERY = 2.2;       // seconds between top-ups
   const EVENT_GAP = [55, 95];      // idle time between events
   const EVENT_TIME = 150;          // seconds to complete one
 
@@ -160,11 +166,23 @@
       if (population() >= cap) return;
       for (let i = 0; i < 24; i++) {
         const ang = Math.random() * Math.PI * 2;
-        const dist = 12 + Math.random() * (R - 14);
-        const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
-        if (Math.hypot(x - player.position.x, z - player.position.z) < POP_MIN_DIST) continue;
+        const d = SPAWN_MIN + Math.random() * (SPAWN_MAX - SPAWN_MIN);
+        const x = player.position.x + Math.cos(ang) * d;
+        const z = player.position.z + Math.sin(ang) * d;
+        if (Math.hypot(x, z) > R - 8) continue;          // keep inside the zone
         spawnAt(pickType(), x, z, false);
         return;
+      }
+    }
+
+    /* Retire anything that has been left far behind, so walking across the
+       zone does not drag its whole population along. */
+    function cull() {
+      for (const e of ai.enemies) {
+        if (e.dead) continue;
+        if (state.event && state.event.uids.has(e.uid)) continue;
+        const d = Math.hypot(e.pos.x - player.position.x, e.pos.z - player.position.z);
+        if (d > DESPAWN) ai.retire(e);
       }
     }
 
@@ -250,7 +268,7 @@
       if (!hosting) return;
 
       state.respawnT -= dt;
-      if (state.respawnT <= 0) { state.respawnT = RESPAWN_EVERY; topUp(); }
+      if (state.respawnT <= 0) { state.respawnT = RESPAWN_EVERY; cull(); topUp(); topUp(); }
 
       if (state.event) {
         const e = state.event;
@@ -278,7 +296,7 @@
       scene.remove(marker);
     }
 
-    /* Seed the zone so it is already inhabited when you arrive. */
+    /* Seed the band around the landing pad so the zone is already inhabited. */
     if (hosting) for (let i = 0; i < spec.faction.population; i++) topUp();
 
     return { update, destroy, applyRemote, state,
