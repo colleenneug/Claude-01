@@ -366,3 +366,28 @@ body.in-mission #vignette{ opacity:.55; }
 .sq-live .sq-bar{ width:46px; height:4px; background:rgba(255,255,255,.14); display:block; }
 .sq-live .sq-bar i{ display:block; height:100%; background:var(--lime); }
 .sq-live.down b{ color:var(--blood); }
+
+/* ---------- public events ---------- */
+#event-panel{
+  position:absolute; right:38px; top:150px; width:260px;
+  background:rgba(4,8,14,.55); border-left:2px solid var(--amber);
+  padding:12px 14px; text-align:left;
+}
+#event-panel[hidden]{ display:none; }
+.ev-head{
+  display:flex; justify-content:space-between; align-items:baseline; gap:8px;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.22em; color:var(--ink-dim);
+  margin-bottom:7px;
+}
+.ev-tag{ color:var(--amber); }
+#event-dist{ color:var(--cyan); }
+#event-timer{ font-variant-numeric:tabular-nums; color:#eafcff; }
+#event-name{ font-size:14px; letter-spacing:.14em; color:#eafcff; }
+#event-line{
+  font-size:11.5px; line-height:1.55; color:var(--ink-dim); margin-top:5px;
+}
+.ev-track{ height:5px; background:rgba(255,255,255,.12); margin-top:9px; }
+.ev-track i{
+  display:block; height:100%; width:0%; background:linear-gradient(90deg,#ffb454,#7dff9b);
+  box-shadow:0 0 10px rgba(255,180,84,.6); transition:width .3s;
+}

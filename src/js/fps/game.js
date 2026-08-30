@@ -67,13 +67,14 @@
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
-      wave: 0, onPad: false, extractT: 0,
+      wave: 0, onPad: false, extractT: 0, events: 0,
       spawned: false, bossBeaten: false,
-      respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0
+      respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0, started: false
     };
     state.maxRespawns = SF.campaign.respawnsFor(SF.campaign.byIndex(missionIndex));
     state.respawns = state.maxRespawns;
     let boss = null;
+    let patrol = null;
 
     const ai = SF.ai.create({
       scene, level, lights,
@@ -107,6 +108,7 @@
         if (m.d.kind === 'objective') hud.objective(m.d.text);
         if (m.d.kind === 'down') hud.killFeed((m.d.name || 'OPERATIVE') + ' IS DOWN');
         if (m.d.kind === 'complete' && !state.over) complete();
+        if (m.d.kind === 'patrol' && patrol) patrol.applyRemote(m.d.ev);
       });
     }
     let netAccum = 0;
@@ -227,7 +229,25 @@
 
     function beginMission() {
       const zone = level.zones[mission.zone];
-      if (mission.survival) { state.wave = 0; nextWave(); state.spawned = true; SF.audio.sfx.objective(); return; }
+      if (mission.patrol) {
+        patrol = SF.patrol.create({
+          scene, level, ai, hud, player, lights, net: SF.net,
+          spec: mission.planet, hosting: hosting, hpScale: scale.hp,
+          onReward: (tier, name) => {
+            const drops = SF.gear.rollDrops(character, Math.min(16, 6 + tier * 3), tier > 1);
+            SF.gear.grant(character, drops);
+            state.xp += 120 * tier;
+            state.events++;
+            SF.storage.save(character.slot, character);
+            for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
+            hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
+          }
+        });
+        hud.objective('<b>PATROL</b> ' + mission.objective);
+        state.spawned = true;
+        SF.audio.sfx.objective();
+        return;
+      }
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
       if (hosting) {
@@ -328,49 +348,18 @@
       SF.audio.sfx.objective();
     }
 
-    /* Destinations run escalating waves rather than a fixed roster. */
-    function nextWave() {
-      if (!hosting) return;
-      state.wave++;
-      scale = SF.campaign.scaleFor(2 + state.wave * 1.35);
-      const budget = 3 + Math.round(state.wave * 1.7);
-      const mix = mission.planet.mix;
-      const zone = level.zones.arena;
-
-      for (let i = 0; i < budget; i++) {
-        let roll = Math.random(), type = mix[0][0];
-        for (const [t, w] of mix) { roll -= w; if (roll <= 0) { type = t; break; } }
-        // ring spawn, well clear of the extraction pad
-        const ang = Math.random() * Math.PI * 2;
-        const dist = 26 + Math.random() * 26;
-        const e = ai.spawn(type, Math.cos(ang) * dist, Math.sin(ang) * dist);
-        e.maxHp = Math.round(e.maxHp * scale.hp);
-        e.hp = e.maxHp;
-        e.alerted = true;
-        void zone;
-      }
-      hud.objective(`<b>WAVE ${state.wave}</b> ${state.wave >= 5
-        ? 'Stand on the beacon to extract.' : 'Survive. Extraction opens at wave 5.'}`);
-      hud.banner('WAVE ' + state.wave);
-      if (online) SF.net.send({ t: 'event', d: { kind: 'wave', wave: state.wave } });
-      SF.audio.sfx.alarm();
-    }
-
-    function survivalTick(dt) {
-      if (ai.alive === 0 && state.stepT > 1.2) {
-        state.xp += 40 * state.wave;
-        nextWave();
-        state.stepT = 0;
-      }
-      const onPad = state.wave >= 5 &&
-        Math.hypot(player.position.x, player.position.z) < 3.6;
+    /* On a patrol you can leave whenever you like: stand on the pad and hold F.
+       Nothing else ends the trip. */
+    function patrolTick(dt) {
+      patrol.update(dt);
+      const onPad = Math.hypot(player.position.x, player.position.z) < 3.6;
       if (onPad !== state.onPad) {
         state.onPad = onPad;
-        hud.pickup(onPad ? 'HOLD F TO EXTRACT' : '');
+        hud.pickup(onPad ? 'HOLD F TO LEAVE' : '');
       }
       if (onPad && extractHeld) {
         state.extractT += dt;
-        hud.pickup('EXTRACTING ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
+        hud.pickup('CALLING CUTTER ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
         if (state.extractT >= 1.6) complete();
       } else {
         state.extractT = 0;
@@ -388,7 +377,7 @@
 
     function checkCleared() {
       if (mission.boss) return;                 // the boss ends its own mission
-      if (mission.survival) return;             // destinations end on extraction
+      if (mission.patrol) return;               // a patrol ends when you leave
       if (!hosting) return;                     // the host calls the sector clear
       if (ai.alive === 0 && state.stepT > 2) {
         if (online) SF.net.send({ t: 'event', d: { kind: 'complete' } });
@@ -406,10 +395,10 @@
       else {
         character.expeditions = character.expeditions || {};
         const best = character.expeditions[missionIndex] || 0;
-        character.expeditions[missionIndex] = Math.max(best, state.wave);
+        character.expeditions[missionIndex] = Math.max(best, state.events);
       }
       state.drops = SF.gear.rollDrops(character,
-        isPlanet ? Math.min(16, 4 + state.wave * 1.6) : mission.n, !!mission.boss);
+        isPlanet ? Math.min(16, 5 + state.events * 2) : mission.n, !!mission.boss);
       SF.gear.grant(character, state.drops);
       SF.storage.save(character.slot, character);
       SF.audio.sfx.win();
@@ -433,19 +422,20 @@
       const acc = weapon.state.shots ? Math.round((weapon.state.hits / weapon.state.shots) * 100) : 0;
       const finale = won && mission.boss;
       $('#end-title').textContent = finale ? 'THE ARK IS QUIET'
-                                  : won && mission.survival ? 'EXTRACTED'
+                                  : won && mission.patrol ? 'RETURNED TO ORBIT'
                                   : won ? 'SECTOR CLEAR' : 'ASSET LOST';
       $('#end-title').className = won ? 'win' : 'lose';
       $('#end-sub').textContent = finale
         ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
-        : won && mission.survival ? `Cutter clear of ${mission.name} at wave ${state.wave}.`
+        : won && mission.patrol
+            ? `Cutter clear of ${mission.name}. ${state.events} public event${state.events === 1 ? '' : 's'} resolved.`
         : won ? `${mission.name} secured. The route aft is open.`
         : mission.boss ? 'No harness charge is issued for Deck Zero. Take it again from the top.'
               : 'Every harness charge spent. Recovery Division budgets a replacement.';
       $('#end-stats').innerHTML = [
-        [mission.survival ? 'DESTINATION' : 'MISSION',
-         mission.survival ? mission.name + ' — WAVE ' + state.wave
-                          : mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
+        [mission.patrol ? 'DESTINATION' : 'MISSION',
+         mission.patrol ? mission.name + ' — ' + state.events + ' EVENTS'
+                        : mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
         ['HOSTILES DOWN', state.kills],
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
@@ -537,7 +527,7 @@
 
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
-      if (mission.survival) survivalTick(dt);
+      if (mission.patrol) patrolTick(dt);
       if (boss) boss.update(dt, player.position);
       checkCleared();
 
@@ -549,9 +539,30 @@
     }
 
     /* ---------- lifecycle ---------- */
+    /* The engage overlay is owned by the mission that is waiting on it, not
+       by the menu layer: a listener living outside the mission can end up
+       holding a stale reference once a second mission is created, and then
+       the click quietly does nothing. */
+    const engageEl = $('#engage');
+    let awaitingEngage = false;
+
+    /* Listen on the document rather than the overlay: whatever is on top,
+       a click or a keypress while we are waiting means "start". */
+    function onEngageInput(e) {
+      if (!awaitingEngage || state.running) return;
+      if (e.type === 'keydown' && (e.key === 'Escape' || e.key === 'Tab')) return;
+      engageEl.hidden = true;
+      SF.audio.unlock();
+      engage();
+    }
+
     /* Build and render the world, but hold the mission until the player
        clicks to engage — that click is the gesture pointer lock needs. */
     function start() {
+      awaitingEngage = true;
+      document.addEventListener('pointerdown', onEngageInput);
+      document.addEventListener('keydown', onEngageInput);
+      state.started = true;
       weapon.prewarm(eng.renderer, scene, camera);
       ai.prewarm(eng.renderer, scene, camera);
       eng.renderer.compile(scene, camera);
@@ -560,7 +571,7 @@
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
       hud.refreshHarness(state.respawns, state.maxRespawns);
-      hud.objective(mission.survival
+      hud.objective(mission.patrol
         ? '<b>' + mission.name + '</b> CLICK TO ENGAGE'
         : `<b>${mission.n}/${SF.campaign.LAST}</b> CLICK TO ENGAGE`);
       last = performance.now();
@@ -569,6 +580,10 @@
 
     function engage() {
       if (state.running) return;
+      awaitingEngage = false;
+      document.removeEventListener('pointerdown', onEngageInput);
+      document.removeEventListener('keydown', onEngageInput);
+      engageEl.hidden = true;
       state.running = true;
       state.paused = false;
       beginMission();
@@ -585,25 +600,32 @@
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       canvas.removeEventListener('contextmenu', onContext);
+      awaitingEngage = false;
+      document.removeEventListener('pointerdown', onEngageInput);
+      document.removeEventListener('keydown', onEngageInput);
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
+      if (patrol) patrol.destroy();
       if (boss) boss.destroy();
       if (remotes) remotes.clear();
       hud.bossHide();
       hud.hideNodes();
       hud.squad([]);
+      hud.clearEvent();
       ai.clear();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
       });
       eng.renderer.dispose();
+      SF.materials.reset();          // the traverse above disposed the shared cache
       hud.setVisible(false);
       onExit();
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
              engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
+             get patrolRef() { return patrol; },
              get bossRef() { return boss; } };
   }
 

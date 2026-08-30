@@ -953,6 +953,31 @@ body.in-mission #vignette{ opacity:.55; }
 .sq-live .sq-bar i{ display:block; height:100%; background:var(--lime); }
 .sq-live.down b{ color:var(--blood); }
 
+/* ---------- public events ---------- */
+#event-panel{
+  position:absolute; right:38px; top:150px; width:260px;
+  background:rgba(4,8,14,.55); border-left:2px solid var(--amber);
+  padding:12px 14px; text-align:left;
+}
+#event-panel[hidden]{ display:none; }
+.ev-head{
+  display:flex; justify-content:space-between; align-items:baseline; gap:8px;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.22em; color:var(--ink-dim);
+  margin-bottom:7px;
+}
+.ev-tag{ color:var(--amber); }
+#event-dist{ color:var(--cyan); }
+#event-timer{ font-variant-numeric:tabular-nums; color:#eafcff; }
+#event-name{ font-size:14px; letter-spacing:.14em; color:#eafcff; }
+#event-line{
+  font-size:11.5px; line-height:1.55; color:var(--ink-dim); margin-top:5px;
+}
+.ev-track{ height:5px; background:rgba(255,255,255,.12); margin-top:9px; }
+.ev-track i{
+  display:block; height:100%; width:0%; background:linear-gradient(90deg,#ffb454,#7dff9b);
+  box-shadow:0 0 10px rgba(255,180,84,.6); transition:width .3s;
+}
+
 </style>
 
 
@@ -1160,6 +1185,17 @@ body.in-mission #vignette{ opacity:.55; }
   <div id="hud-objective">&mdash;</div>
   <div id="kill-feed"></div>
   <div id="squad-hud" hidden></div>
+
+  <div id="event-panel" hidden>
+    <div class="ev-head">
+      <span class="ev-tag">PUBLIC EVENT</span>
+      <span id="event-dist">&mdash;</span>
+      <span id="event-timer">0:00</span>
+    </div>
+    <div id="event-name">&mdash;</div>
+    <div id="event-line"></div>
+    <div class="ev-track"><i id="event-fill"></i></div>
+  </div>
   <div id="hud-banner"></div>
   <div id="subtitle"></div>
 
@@ -2501,7 +2537,7 @@ window.SF = window.SF || {};
       id: 'desert',
       name: "THRESHER'S REACH",
       sub: 'DESERT SURVEY STATION · ABANDONED YEAR 4',
-      objective: 'Survive the dust shelf. Extract when you have had enough.',
+      objective: 'Patrol the dust shelf. Leave when you want to.',
       brief: 'A survey station the ark dropped on its way through, four years before the ' +
              'singing started. The relay still answers. Nothing else does. Whatever came up ' +
              'out of the shelf has had a long time to get used to the heat.',
@@ -2513,13 +2549,18 @@ window.SF = window.SF || {};
       cover: 'ruin',
       ground: '#b06a38', rockTint: '#8a5a3c', fog: 0xa9663f, fogDensity: 0.010,
       light: { key: 0xffd8a0, keyI: 2.2, hemiSky: 0xffb877, hemiGround: 0x4a2f18, hemiI: 1.1 },
-      mix: [['drone', 0.45], ['warden', 0.2], ['thrall', 0.35]]
+      faction: {
+        name: 'THE RECLAIMED',
+        mix: [['scarab', 0.44], ['marauder', 0.42], ['colossus', 0.14]],
+        elite: 'colossus',
+        population: 12
+      }
     },
     {
       id: 'frozen',
       name: 'COLD LANTERN',
       sub: 'FROZEN RELAY · LAST TRANSMISSION YEAR 6',
-      objective: 'Survive the ice field. Extract when you have had enough.',
+      objective: 'Patrol the ice field. Leave when you want to.',
       brief: 'The relay that carried the ark\'s last clean message home, six years into the ' +
              'crossing. It is still transmitting on a loop, into a sky that has not changed ' +
              'in forty years. Something down there learned the loop.',
@@ -2532,7 +2573,12 @@ window.SF = window.SF || {};
          whole field blows out to white and takes the HUD with it. */
       ground: '#93aec2', rockTint: '#7fb4d4', fog: 0x86b0cc, fogDensity: 0.012,
       light: { key: 0xdcefff, keyI: 1.05, hemiSky: 0xbfe0ff, hemiGround: 0x2f3d4a, hemiI: 0.7 },
-      mix: [['thrall', 0.5], ['drone', 0.3], ['warden', 0.2]]
+      faction: {
+        name: 'THE STILLED',
+        mix: [['mote', 0.4], ['revenant', 0.46], ['hoarfrost', 0.14]],
+        elite: 'hoarfrost',
+        population: 12
+      }
     }
   ];
 
@@ -2546,10 +2592,11 @@ window.SF = window.SF || {};
       id: dest.id, n: dest.name, zone: 'arena', from: null,
       name: dest.name, objective: dest.objective, brief: dest.brief,
       waves: [], beats: [
-        [0.5, 'DIVISION', 'Cutter is holding at altitude. Call when you want out.'],
-        [6.0, 'VOSS', 'Whatever is down there is not part of the composition. It is just hungry.']
+        [0.5, 'DIVISION', 'Cutter is holding at altitude. Stay as long as you like.'],
+        [7.0, 'VOSS', 'Whatever is down there is not part of the composition. It is just hungry.'],
+        [16.0, 'DIVISION', 'We will flag anything worth your time as it comes up.']
       ],
-      survival: true, planet: dest
+      patrol: true, planet: dest
     };
   }
 
@@ -2802,8 +2849,17 @@ window.SF = window.SF || {};
 
     scene.add(group);
 
+    /* Where public events can fire: a ring of sites around the zone, each
+       far enough from the landing pad that going to one is a decision. */
+    const eventAnchors = [];
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2 + 0.4;
+      const d = R * 0.55;
+      eventAnchors.push({ x: Math.cos(ang) * d, z: Math.sin(ang) * d });
+    }
+
     return {
-      group, colliders, emitters, props: [], nodeAnchors: [],
+      group, colliders, emitters, props: [], nodeAnchors: [], eventAnchors,
       zones: { arena: { x0: -R, x1: R, z0: -R, z1: R, cx: 0, cz: 0, name: spec.name } },
       playerStart: new THREE.Vector3(0, 0, 6),
       bounds: { minX: -R, maxX: R, minZ: -R, maxZ: R },
@@ -3532,7 +3588,19 @@ window.SF = window.SF || {};
     return m;
   }
 
-  SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal, canvasOf: canvas };
+  /* A mission disposes everything in its scene when it ends, and that
+     includes these shared materials. Drop the cache with it so the next
+     mission builds fresh ones instead of reusing disposed objects. */
+  function reset() {
+    for (const m of cache.values()) {
+      for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k]) m[k].dispose();
+      m.dispose();
+    }
+    cache.clear();
+  }
+
+  SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal,
+                   reset, canvasOf: canvas };
 })(window.SF);
 
 
@@ -4849,6 +4917,37 @@ window.SF = window.SF || {};
       name: 'WARDEN FRAME', hp: 240, speed: 2.1, damage: 20, range: 26, rate: 2.1,
       colour: 0x4a5260, glow: 0xffb454, height: 2.5, radius: 0.75, ranged: true, xp: 90
     },
+    /* ---- Thresher's Reach: machines the dust never finished burying ---- */
+    scarab: {
+      name: 'SCARAB', sub: 'SURVEY DRONE / FERAL', hp: 46, speed: 3.7, damage: 8, range: 2.0,
+      rate: 0.95, colour: 0xa8763a, glow: 0xffc46a, height: 1.3, radius: 0.4, flying: true, xp: 18
+    },
+    marauder: {
+      name: 'MARAUDER', sub: 'SITE SECURITY / REPURPOSED', hp: 115, speed: 2.5, damage: 15,
+      range: 22, rate: 1.9, colour: 0x8a6a44, glow: 0xffb454, height: 1.95, radius: 0.5,
+      ranged: true, xp: 40
+    },
+    colossus: {
+      name: 'DUST COLOSSUS', sub: 'EXCAVATION FRAME / ELITE', hp: 430, speed: 1.8, damage: 26,
+      range: 26, rate: 2.0, colour: 0x6a5236, glow: 0xff7a3a, height: 2.9, radius: 0.95,
+      ranged: true, elite: true, xp: 190
+    },
+
+    /* ---- Cold Lantern: the relay crew, and what the cold kept of them ---- */
+    mote: {
+      name: 'FROST MOTE', sub: 'RELAY DRONE / ICED', hp: 40, speed: 3.9, damage: 7, range: 1.9,
+      rate: 0.9, colour: 0x7fc0dc, glow: 0x9fe8ff, height: 1.25, radius: 0.38, flying: true, xp: 17
+    },
+    revenant: {
+      name: 'REVENANT', sub: 'RELAY CREW / STILLED', hp: 125, speed: 2.6, damage: 16, range: 2.2,
+      rate: 1.3, colour: 0x5a7a8c, glow: 0xbfe8ff, height: 1.9, radius: 0.45, xp: 38
+    },
+    hoarfrost: {
+      name: 'HOARFROST', sub: 'STATION WARDEN / ELITE', hp: 470, speed: 1.9, damage: 24,
+      range: 24, rate: 1.9, colour: 0x486a80, glow: 0x8fd8ff, height: 2.9, radius: 0.95,
+      ranged: true, elite: true, xp: 200
+    },
+
     conductor: {
       name: 'THE CONDUCTOR', hp: 900, speed: 2.4, damage: 26, range: 30, rate: 1.6,
       colour: 0x6b3550, glow: 0xff3fa0, height: 3.0, radius: 0.9, ranged: true, boss: true, xp: 320
@@ -5470,6 +5569,298 @@ window.SF = window.SF || {};
 })(window.SF);
 
 
+/* ==== src/js/fps/patrol.js ==== */
+/* ============================================================
+   Patrol zones.
+
+   The destinations are places rather than gauntlets. A population of
+   hostiles lives in the zone and is topped up as you thin it out, and
+   every so often a public event fires somewhere on the map: it is
+   announced, it puts a marker in the world, and it runs on a timer
+   whether or not you go to it. Nothing pushes you along. Extraction is
+   always available.
+
+   In co-op the host owns the population and the events and broadcasts
+   the event state; hostiles ride the existing enemy snapshot.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const POP_MIN_DIST = 34;         // never populate on top of a player
+  const RESPAWN_EVERY = 4.5;       // seconds between top-ups
+  const EVENT_GAP = [55, 95];      // idle time between events
+  const EVENT_TIME = 150;          // seconds to complete one
+
+  /* Each event type says how to start it, how to tell if it is finished,
+     and what it is worth. */
+  const EVENTS = [
+    {
+      id: 'breach', name: 'SITE BREACH',
+      line: 'Something is coming up out of the ground. Put it back.',
+      build(c) {
+        c.spawnGroup(c.anchor, 7, 0.15);
+        return { kind: 'clear' };
+      },
+      progress: (c) => 1 - c.aliveTagged() / Math.max(1, c.tagged),
+      done: (c) => c.aliveTagged() === 0,
+      reward: 1
+    },
+    {
+      id: 'elite', name: 'HIGH-VALUE TARGET',
+      line: 'One of theirs is out in the open. It will not be for long.',
+      build(c) {
+        const boss = c.spawnOne(c.spec.faction.elite, c.anchor, 0);
+        boss.maxHp = Math.round(boss.maxHp * 1.35);
+        boss.hp = boss.maxHp;
+        c.spawnGroup(c.anchor, 4, 0.5);
+        return { kind: 'elite', bossUid: boss.uid };
+      },
+      progress: (c) => {
+        const b = c.ai.byUid(c.data.bossUid);
+        return b ? 1 - b.hp / b.maxHp : 1;
+      },
+      done: (c) => {
+        const b = c.ai.byUid(c.data.bossUid);
+        return !b || b.dead;
+      },
+      reward: 2
+    },
+    {
+      id: 'relay', name: 'RELAY CAPTURE',
+      line: 'The relay will answer if someone stands there long enough.',
+      build(c) {
+        c.spawnGroup(c.anchor, 5, 0.3);
+        return { kind: 'capture', charge: 0 };
+      },
+      tick(c, dt, playerNear) {
+        if (playerNear) c.data.charge = Math.min(1, c.data.charge + dt / 22);
+        else c.data.charge = Math.max(0, c.data.charge - dt / 60);
+        if (c.data.charge < 1 && Math.random() < dt * 0.22 && c.aliveTagged() < 8) {
+          c.spawnGroup(c.anchor, 1, 0.7);
+        }
+      },
+      progress: (c) => c.data.charge,
+      done: (c) => c.data.charge >= 1,
+      reward: 2,
+      needsPresence: true
+    }
+  ];
+
+  function create(ctx) {
+    const { scene, level, ai, hud, player, spec, lights } = ctx;
+    const hosting = ctx.hosting !== false;
+    const R = level.bounds.maxX - 6;
+
+    const state = {
+      nextEvent: 20 + Math.random() * 20,
+      event: null,          // { def, anchor, t, data, tagged, uids:Set }
+      respawnT: RESPAWN_EVERY,
+      completed: 0
+    };
+
+    /* ---------- event marker ---------- */
+    const markerMat = new THREE.MeshBasicMaterial({
+      color: 0xffb454, transparent: true, opacity: 0.32,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+    });
+    const marker = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 46, 18, 1, true), markerMat);
+    marker.visible = false;
+    scene.add(marker);
+    const markerLight = lights.attach(0xffb454, 0, 30, { dynamic: false });
+
+    /* ---------- helpers handed to event definitions ---------- */
+    const anchors = level.eventAnchors || [];
+
+    function pointNear(anchor, spread) {
+      for (let i = 0; i < 20; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const d = 3 + Math.random() * (6 + spread * 18);
+        const x = anchor.x + Math.cos(ang) * d;
+        const z = anchor.z + Math.sin(ang) * d;
+        if (Math.hypot(x, z) < R) return { x, z };
+      }
+      return { x: anchor.x, z: anchor.z };
+    }
+
+    function pickType() {
+      const mix = spec.faction.mix;
+      let roll = Math.random();
+      for (const [t, w] of mix) { roll -= w; if (roll <= 0) return t; }
+      return mix[0][0];
+    }
+
+    function spawnAt(type, x, z, tag) {
+      const e = ai.spawn(type, x, z);
+      e.maxHp = Math.round(e.maxHp * (ctx.hpScale || 1));
+      e.hp = e.maxHp;
+      if (tag && state.event) state.event.uids.add(e.uid);
+      return e;
+    }
+
+    const helper = {
+      ai: ai, spec: spec,
+      get anchor() { return state.event.anchor; },
+      get data() { return state.event.data; },
+      get tagged() { return state.event.tagged; },
+      spawnOne(type, anchor, spread) {
+        const p = pointNear(anchor, spread);
+        const e = spawnAt(type, p.x, p.z, true);
+        e.alerted = true;
+        state.event.tagged++;
+        return e;
+      },
+      spawnGroup(anchor, n, spread) {
+        for (let i = 0; i < n; i++) helper.spawnOne(pickType(), anchor, spread);
+      },
+      aliveTagged() {
+        let n = 0;
+        for (const uid of state.event.uids) {
+          const e = ai.byUid(uid);
+          if (e && !e.dead) n++;
+        }
+        return n;
+      }
+    };
+
+    /* ---------- ambient population ---------- */
+    function population() {
+      return ai.enemies.filter((e) => !e.dead).length;
+    }
+
+    function topUp() {
+      const cap = spec.faction.population;
+      if (population() >= cap) return;
+      for (let i = 0; i < 24; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 12 + Math.random() * (R - 14);
+        const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+        if (Math.hypot(x - player.position.x, z - player.position.z) < POP_MIN_DIST) continue;
+        spawnAt(pickType(), x, z, false);
+        return;
+      }
+    }
+
+    /* ---------- events ---------- */
+    function startEvent() {
+      if (!anchors.length) return;
+      const def = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+      const anchor = anchors[Math.floor(Math.random() * anchors.length)];
+
+      state.event = { def: def, anchor: anchor, t: EVENT_TIME, data: {}, tagged: 0, uids: new Set() };
+      state.event.data = def.build(helper) || {};
+
+      marker.position.set(anchor.x, 22, anchor.z);
+      marker.visible = true;
+      markerLight.set(anchor.x, 6, anchor.z);
+      markerLight.setIntensity(3.2);
+
+      hud.event(def.name, def.line, EVENT_TIME, 0);
+      hud.banner('PUBLIC EVENT — ' + def.name);
+      SF.audio.sfx.alarm();
+      broadcast();
+    }
+
+    function endEvent(won) {
+      if (!state.event) return;
+      const def = state.event.def;
+      if (won) {
+        state.completed++;
+        hud.banner('EVENT COMPLETE');
+        SF.audio.sfx.win();
+        if (ctx.onReward) ctx.onReward(def.reward, def.name);
+      } else {
+        hud.banner('EVENT LOST');
+        SF.audio.sfx.lose();
+      }
+      // anything still tagged wanders off into the general population
+      state.event = null;
+      marker.visible = false;
+      markerLight.setIntensity(0);
+      hud.clearEvent();
+      state.nextEvent = EVENT_GAP[0] + Math.random() * (EVENT_GAP[1] - EVENT_GAP[0]);
+      broadcast();
+    }
+
+    /* Clients are told what the event is, not asked to simulate it. */
+    function broadcast() {
+      if (!ctx.net || !ctx.net.active || !hosting) return;
+      const e = state.event;
+      ctx.net.send({ t: 'event', d: { kind: 'patrol', ev: e ? {
+        id: e.def.id, name: e.def.name, line: e.def.line,
+        t: Math.round(e.t), p: +e.def.progress(helper).toFixed(2),
+        x: e.anchor.x, z: e.anchor.z
+      } : null } });
+    }
+
+    function applyRemote(ev) {
+      if (ev) {
+        marker.position.set(ev.x, 22, ev.z);
+        marker.visible = true;
+        markerLight.set(ev.x, 6, ev.z);
+        markerLight.setIntensity(3.2);
+        hud.event(ev.name, ev.line, ev.t, ev.p);
+        state.remoteAnchor = { x: ev.x, z: ev.z };
+      } else {
+        marker.visible = false;
+        markerLight.setIntensity(0);
+        hud.clearEvent();
+        state.remoteAnchor = null;
+      }
+    }
+
+    let netAccum = 0;
+
+    function update(dt) {
+      marker.rotation.y += dt * 0.25;
+
+      // distance readout works for host and client alike
+      const a = state.event ? state.event.anchor : state.remoteAnchor;
+      if (a) {
+        hud.eventDistance(Math.round(Math.hypot(a.x - player.position.x, a.z - player.position.z)));
+      }
+
+      if (!hosting) return;
+
+      state.respawnT -= dt;
+      if (state.respawnT <= 0) { state.respawnT = RESPAWN_EVERY; topUp(); }
+
+      if (state.event) {
+        const e = state.event;
+        e.t -= dt;
+        const near = Math.hypot(e.anchor.x - player.position.x,
+                                e.anchor.z - player.position.z) < 9;
+        if (e.def.tick) e.def.tick(helper, dt, near);
+
+        const progress = e.def.progress(helper);
+        hud.event(e.def.name, e.def.line, Math.max(0, e.t), progress);
+
+        netAccum += dt;
+        if (netAccum > 1) { netAccum = 0; broadcast(); }
+
+        if (e.def.done(helper)) endEvent(true);
+        else if (e.t <= 0) endEvent(false);
+      } else {
+        state.nextEvent -= dt;
+        if (state.nextEvent <= 0) startEvent();
+      }
+    }
+
+    function destroy() {
+      markerLight.release();
+      scene.remove(marker);
+    }
+
+    /* Seed the zone so it is already inhabited when you arrive. */
+    if (hosting) for (let i = 0; i < spec.faction.population; i++) topUp();
+
+    return { update, destroy, applyRemote, state,
+             get eventName() { return state.event ? state.event.def.name : null; } };
+  }
+
+  SF.patrol = { create, EVENTS };
+})(window.SF);
+
+
 /* ==== src/js/fps/hud.js ==== */
 /* ============================================================
    In-mission HUD. DOM over the canvas — cheaper than drawing it in
@@ -5570,6 +5961,22 @@ window.SF = window.SF || {};
       },
 
       setVisible(v) { root.hidden = !v; },
+
+      /* ---------- public events ---------- */
+      event(name, line, secondsLeft, progress) {
+        const box = $('#event-panel');
+        box.hidden = false;
+        $('#event-name').textContent = name;
+        $('#event-line').textContent = line;
+        const m = Math.floor(secondsLeft / 60), sec = Math.floor(secondsLeft % 60);
+        $('#event-timer').textContent = m + ':' + String(sec).padStart(2, '0');
+        $('#event-fill').style.width = Math.round(Math.max(0, Math.min(1, progress)) * 100) + '%';
+      },
+      eventDistance(m) {
+        const d = $('#event-dist');
+        if (d) d.textContent = m + 'm';
+      },
+      clearEvent() { $('#event-panel').hidden = true; },
 
       /* Squadmates and their vitals, during a co-op mission. */
       squad(list) {
@@ -6033,13 +6440,14 @@ window.SF = window.SF || {};
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
-      wave: 0, onPad: false, extractT: 0,
+      wave: 0, onPad: false, extractT: 0, events: 0,
       spawned: false, bossBeaten: false,
-      respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0
+      respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0, started: false
     };
     state.maxRespawns = SF.campaign.respawnsFor(SF.campaign.byIndex(missionIndex));
     state.respawns = state.maxRespawns;
     let boss = null;
+    let patrol = null;
 
     const ai = SF.ai.create({
       scene, level, lights,
@@ -6073,6 +6481,7 @@ window.SF = window.SF || {};
         if (m.d.kind === 'objective') hud.objective(m.d.text);
         if (m.d.kind === 'down') hud.killFeed((m.d.name || 'OPERATIVE') + ' IS DOWN');
         if (m.d.kind === 'complete' && !state.over) complete();
+        if (m.d.kind === 'patrol' && patrol) patrol.applyRemote(m.d.ev);
       });
     }
     let netAccum = 0;
@@ -6193,7 +6602,25 @@ window.SF = window.SF || {};
 
     function beginMission() {
       const zone = level.zones[mission.zone];
-      if (mission.survival) { state.wave = 0; nextWave(); state.spawned = true; SF.audio.sfx.objective(); return; }
+      if (mission.patrol) {
+        patrol = SF.patrol.create({
+          scene, level, ai, hud, player, lights, net: SF.net,
+          spec: mission.planet, hosting: hosting, hpScale: scale.hp,
+          onReward: (tier, name) => {
+            const drops = SF.gear.rollDrops(character, Math.min(16, 6 + tier * 3), tier > 1);
+            SF.gear.grant(character, drops);
+            state.xp += 120 * tier;
+            state.events++;
+            SF.storage.save(character.slot, character);
+            for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
+            hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
+          }
+        });
+        hud.objective('<b>PATROL</b> ' + mission.objective);
+        state.spawned = true;
+        SF.audio.sfx.objective();
+        return;
+      }
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
       if (hosting) {
@@ -6294,49 +6721,18 @@ window.SF = window.SF || {};
       SF.audio.sfx.objective();
     }
 
-    /* Destinations run escalating waves rather than a fixed roster. */
-    function nextWave() {
-      if (!hosting) return;
-      state.wave++;
-      scale = SF.campaign.scaleFor(2 + state.wave * 1.35);
-      const budget = 3 + Math.round(state.wave * 1.7);
-      const mix = mission.planet.mix;
-      const zone = level.zones.arena;
-
-      for (let i = 0; i < budget; i++) {
-        let roll = Math.random(), type = mix[0][0];
-        for (const [t, w] of mix) { roll -= w; if (roll <= 0) { type = t; break; } }
-        // ring spawn, well clear of the extraction pad
-        const ang = Math.random() * Math.PI * 2;
-        const dist = 26 + Math.random() * 26;
-        const e = ai.spawn(type, Math.cos(ang) * dist, Math.sin(ang) * dist);
-        e.maxHp = Math.round(e.maxHp * scale.hp);
-        e.hp = e.maxHp;
-        e.alerted = true;
-        void zone;
-      }
-      hud.objective(`<b>WAVE ${state.wave}</b> ${state.wave >= 5
-        ? 'Stand on the beacon to extract.' : 'Survive. Extraction opens at wave 5.'}`);
-      hud.banner('WAVE ' + state.wave);
-      if (online) SF.net.send({ t: 'event', d: { kind: 'wave', wave: state.wave } });
-      SF.audio.sfx.alarm();
-    }
-
-    function survivalTick(dt) {
-      if (ai.alive === 0 && state.stepT > 1.2) {
-        state.xp += 40 * state.wave;
-        nextWave();
-        state.stepT = 0;
-      }
-      const onPad = state.wave >= 5 &&
-        Math.hypot(player.position.x, player.position.z) < 3.6;
+    /* On a patrol you can leave whenever you like: stand on the pad and hold F.
+       Nothing else ends the trip. */
+    function patrolTick(dt) {
+      patrol.update(dt);
+      const onPad = Math.hypot(player.position.x, player.position.z) < 3.6;
       if (onPad !== state.onPad) {
         state.onPad = onPad;
-        hud.pickup(onPad ? 'HOLD F TO EXTRACT' : '');
+        hud.pickup(onPad ? 'HOLD F TO LEAVE' : '');
       }
       if (onPad && extractHeld) {
         state.extractT += dt;
-        hud.pickup('EXTRACTING ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
+        hud.pickup('CALLING CUTTER ' + Math.max(0, (1.6 - state.extractT)).toFixed(1) + 's');
         if (state.extractT >= 1.6) complete();
       } else {
         state.extractT = 0;
@@ -6354,7 +6750,7 @@ window.SF = window.SF || {};
 
     function checkCleared() {
       if (mission.boss) return;                 // the boss ends its own mission
-      if (mission.survival) return;             // destinations end on extraction
+      if (mission.patrol) return;               // a patrol ends when you leave
       if (!hosting) return;                     // the host calls the sector clear
       if (ai.alive === 0 && state.stepT > 2) {
         if (online) SF.net.send({ t: 'event', d: { kind: 'complete' } });
@@ -6372,10 +6768,10 @@ window.SF = window.SF || {};
       else {
         character.expeditions = character.expeditions || {};
         const best = character.expeditions[missionIndex] || 0;
-        character.expeditions[missionIndex] = Math.max(best, state.wave);
+        character.expeditions[missionIndex] = Math.max(best, state.events);
       }
       state.drops = SF.gear.rollDrops(character,
-        isPlanet ? Math.min(16, 4 + state.wave * 1.6) : mission.n, !!mission.boss);
+        isPlanet ? Math.min(16, 5 + state.events * 2) : mission.n, !!mission.boss);
       SF.gear.grant(character, state.drops);
       SF.storage.save(character.slot, character);
       SF.audio.sfx.win();
@@ -6399,19 +6795,20 @@ window.SF = window.SF || {};
       const acc = weapon.state.shots ? Math.round((weapon.state.hits / weapon.state.shots) * 100) : 0;
       const finale = won && mission.boss;
       $('#end-title').textContent = finale ? 'THE ARK IS QUIET'
-                                  : won && mission.survival ? 'EXTRACTED'
+                                  : won && mission.patrol ? 'RETURNED TO ORBIT'
                                   : won ? 'SECTOR CLEAR' : 'ASSET LOST';
       $('#end-title').className = won ? 'win' : 'lose';
       $('#end-sub').textContent = finale
         ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
-        : won && mission.survival ? `Cutter clear of ${mission.name} at wave ${state.wave}.`
+        : won && mission.patrol
+            ? `Cutter clear of ${mission.name}. ${state.events} public event${state.events === 1 ? '' : 's'} resolved.`
         : won ? `${mission.name} secured. The route aft is open.`
         : mission.boss ? 'No harness charge is issued for Deck Zero. Take it again from the top.'
               : 'Every harness charge spent. Recovery Division budgets a replacement.';
       $('#end-stats').innerHTML = [
-        [mission.survival ? 'DESTINATION' : 'MISSION',
-         mission.survival ? mission.name + ' — WAVE ' + state.wave
-                          : mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
+        [mission.patrol ? 'DESTINATION' : 'MISSION',
+         mission.patrol ? mission.name + ' — ' + state.events + ' EVENTS'
+                        : mission.n + ' / ' + SF.campaign.LAST + ' — ' + mission.name],
         ['HOSTILES DOWN', state.kills],
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
@@ -6503,7 +6900,7 @@ window.SF = window.SF || {};
 
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
-      if (mission.survival) survivalTick(dt);
+      if (mission.patrol) patrolTick(dt);
       if (boss) boss.update(dt, player.position);
       checkCleared();
 
@@ -6515,9 +6912,30 @@ window.SF = window.SF || {};
     }
 
     /* ---------- lifecycle ---------- */
+    /* The engage overlay is owned by the mission that is waiting on it, not
+       by the menu layer: a listener living outside the mission can end up
+       holding a stale reference once a second mission is created, and then
+       the click quietly does nothing. */
+    const engageEl = $('#engage');
+    let awaitingEngage = false;
+
+    /* Listen on the document rather than the overlay: whatever is on top,
+       a click or a keypress while we are waiting means "start". */
+    function onEngageInput(e) {
+      if (!awaitingEngage || state.running) return;
+      if (e.type === 'keydown' && (e.key === 'Escape' || e.key === 'Tab')) return;
+      engageEl.hidden = true;
+      SF.audio.unlock();
+      engage();
+    }
+
     /* Build and render the world, but hold the mission until the player
        clicks to engage — that click is the gesture pointer lock needs. */
     function start() {
+      awaitingEngage = true;
+      document.addEventListener('pointerdown', onEngageInput);
+      document.addEventListener('keydown', onEngageInput);
+      state.started = true;
       weapon.prewarm(eng.renderer, scene, camera);
       ai.prewarm(eng.renderer, scene, camera);
       eng.renderer.compile(scene, camera);
@@ -6526,7 +6944,7 @@ window.SF = window.SF || {};
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
       hud.refreshHarness(state.respawns, state.maxRespawns);
-      hud.objective(mission.survival
+      hud.objective(mission.patrol
         ? '<b>' + mission.name + '</b> CLICK TO ENGAGE'
         : `<b>${mission.n}/${SF.campaign.LAST}</b> CLICK TO ENGAGE`);
       last = performance.now();
@@ -6535,6 +6953,10 @@ window.SF = window.SF || {};
 
     function engage() {
       if (state.running) return;
+      awaitingEngage = false;
+      document.removeEventListener('pointerdown', onEngageInput);
+      document.removeEventListener('keydown', onEngageInput);
+      engageEl.hidden = true;
       state.running = true;
       state.paused = false;
       beginMission();
@@ -6551,25 +6973,32 @@ window.SF = window.SF || {};
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       canvas.removeEventListener('contextmenu', onContext);
+      awaitingEngage = false;
+      document.removeEventListener('pointerdown', onEngageInput);
+      document.removeEventListener('keydown', onEngageInput);
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
+      if (patrol) patrol.destroy();
       if (boss) boss.destroy();
       if (remotes) remotes.clear();
       hud.bossHide();
       hud.hideNodes();
       hud.squad([]);
+      hud.clearEvent();
       ai.clear();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
       });
       eng.renderer.dispose();
+      SF.materials.reset();          // the traverse above disposed the shared cache
       hud.setVisible(false);
       onExit();
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
              engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
+             get patrolRef() { return patrol; },
              get bossRef() { return boss; } };
   }
 
@@ -7227,13 +7656,6 @@ window.SF = window.SF || {};
       toast('SQUAD DROPPING — ' + (d.name || d.id), 'warn');
       missionIndex = d.id;
       drop();
-    });
-
-    $('#engage').addEventListener('click', () => {
-      if (!mission) return;
-      $('#engage').hidden = true;
-      SF.audio.unlock();
-      mission.engage();
     });
 
     $('#btn-resume').addEventListener('click', () => {

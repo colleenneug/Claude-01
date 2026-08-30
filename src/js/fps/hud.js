@@ -98,6 +98,22 @@
 
       setVisible(v) { root.hidden = !v; },
 
+      /* ---------- public events ---------- */
+      event(name, line, secondsLeft, progress) {
+        const box = $('#event-panel');
+        box.hidden = false;
+        $('#event-name').textContent = name;
+        $('#event-line').textContent = line;
+        const m = Math.floor(secondsLeft / 60), sec = Math.floor(secondsLeft % 60);
+        $('#event-timer').textContent = m + ':' + String(sec).padStart(2, '0');
+        $('#event-fill').style.width = Math.round(Math.max(0, Math.min(1, progress)) * 100) + '%';
+      },
+      eventDistance(m) {
+        const d = $('#event-dist');
+        if (d) d.textContent = m + 'm';
+      },
+      clearEvent() { $('#event-panel').hidden = true; },
+
       /* Squadmates and their vitals, during a co-op mission. */
       squad(list) {
         const box = $('#squad-hud');

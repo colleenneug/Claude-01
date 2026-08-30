@@ -649,13 +649,6 @@
       drop();
     });
 
-    $('#engage').addEventListener('click', () => {
-      if (!mission) return;
-      $('#engage').hidden = true;
-      SF.audio.unlock();
-      mission.engage();
-    });
-
     $('#btn-resume').addEventListener('click', () => {
       if (!mission) return;
       $('#pause-menu').hidden = true;

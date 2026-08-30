@@ -255,23 +255,37 @@ room. Hair sits under a helmet when one is equipped, as it would.
 
 ## Orbital destinations
 
-Clearing mission 6 opens two worlds the cutter can reach: **Thresher's Reach**, a desert
-survey station the ark dropped four years before the singing started, and **Cold Lantern**,
-the frozen relay that carried the last clean message home. Both are open arenas rather
-than corridors — a horizon, scattered cover, and hostiles in escalating waves.
+Clearing mission 6 opens two worlds the cutter can reach. They are patrol zones, not
+missions: you drop in, and what you do there is up to you. Nothing pushes you along and
+nothing ends the trip except you — stand on the landing pad and hold `F` whenever you want
+to leave.
 
-They run endless: each cleared wave is larger and tougher than the last and pays XP, and
-from wave 5 you can stand on the extraction beacon and hold `F` to call the cutter. Salvage
-rolls against the wave you reached, so going deeper is how you get better gear. Harness
-charges apply, so death is survivable up to a point.
+**A living population.** Each zone keeps a dozen hostiles roaming it, topped up as you
+thin them out, so the place stays inhabited however long you stay. They spawn well away
+from wherever you are standing.
 
-Each destination looks for a backdrop image in `assets/` — `desert-planet-bg.webp` and
-`frozen-planet-bg.webp`. If the file is there it is used as the sky; if it is not, the sky
-is generated procedurally instead, so the destinations work either way. `tools/bundle.py`
-inlines anything under `assets/` as a data URI, so supplied art survives into the
-single-file build.
+**Different enemies on each world.** The desert belongs to **The Reclaimed** — scarab
+drones, marauders, and dust colossi. The ice belongs to **The Stilled** — frost motes,
+revenants, and hoarfrost wardens. Nothing crosses over.
 
-## Three character slots
+**Public events.** Every minute or so an event fires somewhere in the zone. It is
+announced, it drops a beam marker you can see from across the map, the panel tracks its
+timer and progress, and it runs whether or not you go to it:
+
+| Event | What it is |
+|---|---|
+| **Site Breach** | Something comes up out of the ground in force. Clear it. |
+| **High-Value Target** | An elite is in the open with an escort. Kill it. |
+| **Relay Capture** | Hold ground near the relay while it charges and they keep coming. |
+
+Finishing one pays salvage and XP on the spot — the reward rolls against the event's
+difficulty, and elites roll higher. Failing one costs nothing but the time.
+
+**With friends.** Everything above is shared: the host owns the population and the events
+and broadcasts them, so your squad sees the same event marker, fights the same hostiles,
+and everyone is paid when it completes.
+
+## Three character slots## Three character slots
 
 The crew registry holds exactly three bays, persisted to `localStorage`. Each dossier
 carries its own name, doctrine, rank, XP and its own campaign progress — how far down the

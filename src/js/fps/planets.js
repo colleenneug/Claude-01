@@ -20,7 +20,7 @@
       id: 'desert',
       name: "THRESHER'S REACH",
       sub: 'DESERT SURVEY STATION · ABANDONED YEAR 4',
-      objective: 'Survive the dust shelf. Extract when you have had enough.',
+      objective: 'Patrol the dust shelf. Leave when you want to.',
       brief: 'A survey station the ark dropped on its way through, four years before the ' +
              'singing started. The relay still answers. Nothing else does. Whatever came up ' +
              'out of the shelf has had a long time to get used to the heat.',
@@ -32,13 +32,18 @@
       cover: 'ruin',
       ground: '#b06a38', rockTint: '#8a5a3c', fog: 0xa9663f, fogDensity: 0.010,
       light: { key: 0xffd8a0, keyI: 2.2, hemiSky: 0xffb877, hemiGround: 0x4a2f18, hemiI: 1.1 },
-      mix: [['drone', 0.45], ['warden', 0.2], ['thrall', 0.35]]
+      faction: {
+        name: 'THE RECLAIMED',
+        mix: [['scarab', 0.44], ['marauder', 0.42], ['colossus', 0.14]],
+        elite: 'colossus',
+        population: 12
+      }
     },
     {
       id: 'frozen',
       name: 'COLD LANTERN',
       sub: 'FROZEN RELAY · LAST TRANSMISSION YEAR 6',
-      objective: 'Survive the ice field. Extract when you have had enough.',
+      objective: 'Patrol the ice field. Leave when you want to.',
       brief: 'The relay that carried the ark\'s last clean message home, six years into the ' +
              'crossing. It is still transmitting on a loop, into a sky that has not changed ' +
              'in forty years. Something down there learned the loop.',
@@ -51,7 +56,12 @@
          whole field blows out to white and takes the HUD with it. */
       ground: '#93aec2', rockTint: '#7fb4d4', fog: 0x86b0cc, fogDensity: 0.012,
       light: { key: 0xdcefff, keyI: 1.05, hemiSky: 0xbfe0ff, hemiGround: 0x2f3d4a, hemiI: 0.7 },
-      mix: [['thrall', 0.5], ['drone', 0.3], ['warden', 0.2]]
+      faction: {
+        name: 'THE STILLED',
+        mix: [['mote', 0.4], ['revenant', 0.46], ['hoarfrost', 0.14]],
+        elite: 'hoarfrost',
+        population: 12
+      }
     }
   ];
 
@@ -65,10 +75,11 @@
       id: dest.id, n: dest.name, zone: 'arena', from: null,
       name: dest.name, objective: dest.objective, brief: dest.brief,
       waves: [], beats: [
-        [0.5, 'DIVISION', 'Cutter is holding at altitude. Call when you want out.'],
-        [6.0, 'VOSS', 'Whatever is down there is not part of the composition. It is just hungry.']
+        [0.5, 'DIVISION', 'Cutter is holding at altitude. Stay as long as you like.'],
+        [7.0, 'VOSS', 'Whatever is down there is not part of the composition. It is just hungry.'],
+        [16.0, 'DIVISION', 'We will flag anything worth your time as it comes up.']
       ],
-      survival: true, planet: dest
+      patrol: true, planet: dest
     };
   }
 
@@ -321,8 +332,17 @@
 
     scene.add(group);
 
+    /* Where public events can fire: a ring of sites around the zone, each
+       far enough from the landing pad that going to one is a decision. */
+    const eventAnchors = [];
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2 + 0.4;
+      const d = R * 0.55;
+      eventAnchors.push({ x: Math.cos(ang) * d, z: Math.sin(ang) * d });
+    }
+
     return {
-      group, colliders, emitters, props: [], nodeAnchors: [],
+      group, colliders, emitters, props: [], nodeAnchors: [], eventAnchors,
       zones: { arena: { x0: -R, x1: R, z0: -R, z1: R, cx: 0, cz: 0, name: spec.name } },
       playerStart: new THREE.Vector3(0, 0, 6),
       bounds: { minX: -R, maxX: R, minZ: -R, maxZ: R },

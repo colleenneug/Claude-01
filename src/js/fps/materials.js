@@ -245,5 +245,17 @@
     return m;
   }
 
-  SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal, canvasOf: canvas };
+  /* A mission disposes everything in its scene when it ends, and that
+     includes these shared materials. Drop the cache with it so the next
+     mission builds fresh ones instead of reusing disposed objects. */
+  function reset() {
+    for (const m of cache.values()) {
+      for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k]) m[k].dispose();
+      m.dispose();
+    }
+    cache.clear();
+  }
+
+  SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal,
+                   reset, canvasOf: canvas };
 })(window.SF);

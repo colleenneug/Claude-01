@@ -22,6 +22,37 @@
       name: 'WARDEN FRAME', hp: 240, speed: 2.1, damage: 20, range: 26, rate: 2.1,
       colour: 0x4a5260, glow: 0xffb454, height: 2.5, radius: 0.75, ranged: true, xp: 90
     },
+    /* ---- Thresher's Reach: machines the dust never finished burying ---- */
+    scarab: {
+      name: 'SCARAB', sub: 'SURVEY DRONE / FERAL', hp: 46, speed: 3.7, damage: 8, range: 2.0,
+      rate: 0.95, colour: 0xa8763a, glow: 0xffc46a, height: 1.3, radius: 0.4, flying: true, xp: 18
+    },
+    marauder: {
+      name: 'MARAUDER', sub: 'SITE SECURITY / REPURPOSED', hp: 115, speed: 2.5, damage: 15,
+      range: 22, rate: 1.9, colour: 0x8a6a44, glow: 0xffb454, height: 1.95, radius: 0.5,
+      ranged: true, xp: 40
+    },
+    colossus: {
+      name: 'DUST COLOSSUS', sub: 'EXCAVATION FRAME / ELITE', hp: 430, speed: 1.8, damage: 26,
+      range: 26, rate: 2.0, colour: 0x6a5236, glow: 0xff7a3a, height: 2.9, radius: 0.95,
+      ranged: true, elite: true, xp: 190
+    },
+
+    /* ---- Cold Lantern: the relay crew, and what the cold kept of them ---- */
+    mote: {
+      name: 'FROST MOTE', sub: 'RELAY DRONE / ICED', hp: 40, speed: 3.9, damage: 7, range: 1.9,
+      rate: 0.9, colour: 0x7fc0dc, glow: 0x9fe8ff, height: 1.25, radius: 0.38, flying: true, xp: 17
+    },
+    revenant: {
+      name: 'REVENANT', sub: 'RELAY CREW / STILLED', hp: 125, speed: 2.6, damage: 16, range: 2.2,
+      rate: 1.3, colour: 0x5a7a8c, glow: 0xbfe8ff, height: 1.9, radius: 0.45, xp: 38
+    },
+    hoarfrost: {
+      name: 'HOARFROST', sub: 'STATION WARDEN / ELITE', hp: 470, speed: 1.9, damage: 24,
+      range: 24, rate: 1.9, colour: 0x486a80, glow: 0x8fd8ff, height: 2.9, radius: 0.95,
+      ranged: true, elite: true, xp: 200
+    },
+
     conductor: {
       name: 'THE CONDUCTOR', hp: 900, speed: 2.4, damage: 26, range: 30, rate: 1.6,
       colour: 0x6b3550, glow: 0xff3fa0, height: 3.0, radius: 0.9, ranged: true, boss: true, xp: 320
