@@ -178,6 +178,31 @@
     </footer>
   </section>
 
+  <!-- ============ CONTRACTS ============ -->
+  <section class="screen" id="screen-contracts">
+    <header class="screen-head">
+      <h2>CONTRACTS &mdash; <span id="ct-who">&mdash;</span></h2>
+      <p>Work you take here and finish anywhere. Four at a time. Bring them back full
+         and Shaw pays in experience, runner parts and salvage.</p>
+    </header>
+
+    <div class="ct-body">
+      <section class="ct-col">
+        <div class="ct-head"><span>ACTIVE</span><span id="ct-slots">0 / 4</span></div>
+        <div id="ct-active"></div>
+        <button class="btn btn-major" id="btn-claim" data-hover="COLLECT" disabled>NOTHING READY</button>
+      </section>
+      <section class="ct-col">
+        <div class="ct-head"><span>ON THE BOARD</span><span id="ct-done">&mdash;</span></div>
+        <div id="ct-board"></div>
+      </section>
+    </div>
+
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="campaign">&lsaquo; CAMPAIGN</button>
+    </footer>
+  </section>
+
   <!-- ============ CAMPAIGN ============ -->
   <section class="screen" id="screen-campaign">
     <header class="screen-head">
@@ -219,6 +244,8 @@
   <div id="squad-hud" hidden></div>
 
   <div id="deck-tag" hidden>&mdash;</div>
+
+  <div id="contract-hud" hidden></div>
 
   <div id="runner-panel" hidden>
     <div class="rn-speed"><span id="runner-speed">0</span><i>KM/H</i></div>
@@ -369,10 +396,12 @@
 <script src="src/js/fps/ai.js"></script>
 <script src="src/js/fps/pickups.js"></script>
 <script src="src/js/fps/envmap.js"></script>
+<script src="src/js/fps/bounties.js"></script>
 <script src="src/js/fps/avatar.js"></script>
 <script src="src/js/fps/body.js"></script>
 <script src="src/js/fps/station.js"></script>
 <script src="src/js/fps/hub.js"></script>
+<script src="src/js/fps/crew.js"></script>
 <script src="src/js/fps/runner.js"></script>
 <script src="src/js/fps/chests.js"></script>
 <script src="src/js/fps/patrol.js"></script>

@@ -273,6 +273,56 @@
 .item-pow{ float:right; font-family:var(--font-mono); font-size:11px; color:var(--amber); }
 .item-empty{ font-family:var(--font-mono); font-size:11px; color:rgba(108,139,160,.65); letter-spacing:.12em; }
 
+/* ---------- contracts ---------- */
+.ct-body{
+  padding:14px 6vw; display:grid; grid-template-columns:1fr 1fr;
+  grid-template-rows:minmax(0, 1fr); gap:22px; flex:1; min-height:0;
+}
+.ct-col{ display:flex; flex-direction:column; min-height:0; gap:10px; }
+.ct-head{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.26em; color:var(--amber);
+  border-bottom:1px solid var(--line); padding-bottom:8px;
+}
+#ct-active, #ct-board{ overflow:auto; display:flex; flex-direction:column; gap:9px; min-height:0; flex:1; }
+.ct-card{
+  border:1px solid var(--line); border-left:3px solid var(--tc, var(--ink-dim));
+  background:var(--panel); padding:12px 14px; position:relative;
+}
+.ct-card.done{ background:rgba(125,255,155,.07); border-color:rgba(125,255,155,.4); }
+.ct-name{
+  font-size:14px; letter-spacing:.16em; color:#eafcff;
+  display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+}
+.ct-tier{ font-family:var(--font-mono); font-size:9px; letter-spacing:.2em; color:var(--tc); }
+.ct-text{ font-size:12px; line-height:1.55; color:var(--ink-dim); margin-top:6px; }
+.ct-bar{ height:5px; background:rgba(255,255,255,.13); margin-top:10px; }
+.ct-bar i{ display:block; height:100%; background:var(--tc); box-shadow:0 0 8px var(--tc); }
+.ct-prog{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em;
+  color:var(--ink-dim); margin-top:5px;
+}
+.ct-card.done .ct-prog{ color:var(--lime); }
+.ct-pay{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.12em;
+  color:var(--lime); margin-top:8px;
+}
+.ct-btn{
+  margin-top:10px; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.18em;
+  padding:5px 12px; border:1px solid var(--line); background:transparent;
+  color:var(--cyan); transition:.14s;
+}
+.ct-btn:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(94,234,255,.12); }
+.ct-btn:disabled{ color:rgba(108,139,160,.55); border-color:rgba(108,139,160,.25); }
+.ct-btn.ghost{ color:var(--ink-dim); }
+.ct-btn.ghost:hover{ color:var(--blood); border-color:var(--blood); background:rgba(255,77,94,.1); }
+#btn-claim{ margin-top:4px; }
+@media (max-width: 900px){ .ct-body{ grid-template-columns:1fr; } }
+
+/* a vendor's reply on the toast rail */
+.toast.said{ border-left-color:var(--magenta); max-width:420px; }
+.toast.said b{ color:var(--magenta); font-weight:400; letter-spacing:.16em; }
+
 /* ---------- the runner bench ---------- */
 /* Sits under the runner list inside its own slot block, so fitting a part
    reads as something you do to the frame above it. */

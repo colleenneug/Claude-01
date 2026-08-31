@@ -376,6 +376,26 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #deck-tag[hidden]{ display:none; }
 
+/* live contracts, top right under the event panel's slot */
+#contract-hud{
+  position:absolute; right:38px; top:76px; width:250px; text-align:left;
+  display:flex; flex-direction:column; gap:6px;
+}
+#contract-hud[hidden]{ display:none; }
+.ch-row{
+  background:rgba(4,8,14,.5); border-left:2px solid var(--tc, var(--cyan));
+  padding:6px 10px;
+}
+.ch-name{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; color:#eafcff;
+  display:flex; justify-content:space-between; gap:8px;
+}
+.ch-name i{ font-style:normal; color:var(--tc, var(--cyan)); font-variant-numeric:tabular-nums; }
+.ch-bar{ height:3px; background:rgba(255,255,255,.13); margin-top:5px; }
+.ch-bar i{ display:block; height:100%; background:var(--tc, var(--cyan)); transition:width .3s; }
+.ch-row.done{ border-left-color:var(--lime); }
+.ch-row.done .ch-name i{ color:var(--lime); }
+
 /* ---------- runner readout ---------- */
 /* Bottom-left, opposite the ammo block: the speed is the part you read at
    a glance, so it is the only thing here that is large. */

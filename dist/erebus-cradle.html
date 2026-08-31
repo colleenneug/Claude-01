@@ -530,6 +530,56 @@ body.booting .screen:not(#screen-boot){ display:none !important; }
 .item-pow{ float:right; font-family:var(--font-mono); font-size:11px; color:var(--amber); }
 .item-empty{ font-family:var(--font-mono); font-size:11px; color:rgba(108,139,160,.65); letter-spacing:.12em; }
 
+/* ---------- contracts ---------- */
+.ct-body{
+  padding:14px 6vw; display:grid; grid-template-columns:1fr 1fr;
+  grid-template-rows:minmax(0, 1fr); gap:22px; flex:1; min-height:0;
+}
+.ct-col{ display:flex; flex-direction:column; min-height:0; gap:10px; }
+.ct-head{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.26em; color:var(--amber);
+  border-bottom:1px solid var(--line); padding-bottom:8px;
+}
+#ct-active, #ct-board{ overflow:auto; display:flex; flex-direction:column; gap:9px; min-height:0; flex:1; }
+.ct-card{
+  border:1px solid var(--line); border-left:3px solid var(--tc, var(--ink-dim));
+  background:var(--panel); padding:12px 14px; position:relative;
+}
+.ct-card.done{ background:rgba(125,255,155,.07); border-color:rgba(125,255,155,.4); }
+.ct-name{
+  font-size:14px; letter-spacing:.16em; color:#eafcff;
+  display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+}
+.ct-tier{ font-family:var(--font-mono); font-size:9px; letter-spacing:.2em; color:var(--tc); }
+.ct-text{ font-size:12px; line-height:1.55; color:var(--ink-dim); margin-top:6px; }
+.ct-bar{ height:5px; background:rgba(255,255,255,.13); margin-top:10px; }
+.ct-bar i{ display:block; height:100%; background:var(--tc); box-shadow:0 0 8px var(--tc); }
+.ct-prog{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em;
+  color:var(--ink-dim); margin-top:5px;
+}
+.ct-card.done .ct-prog{ color:var(--lime); }
+.ct-pay{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.12em;
+  color:var(--lime); margin-top:8px;
+}
+.ct-btn{
+  margin-top:10px; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.18em;
+  padding:5px 12px; border:1px solid var(--line); background:transparent;
+  color:var(--cyan); transition:.14s;
+}
+.ct-btn:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(94,234,255,.12); }
+.ct-btn:disabled{ color:rgba(108,139,160,.55); border-color:rgba(108,139,160,.25); }
+.ct-btn.ghost{ color:var(--ink-dim); }
+.ct-btn.ghost:hover{ color:var(--blood); border-color:var(--blood); background:rgba(255,77,94,.1); }
+#btn-claim{ margin-top:4px; }
+@media (max-width: 900px){ .ct-body{ grid-template-columns:1fr; } }
+
+/* a vendor's reply on the toast rail */
+.toast.said{ border-left-color:var(--magenta); max-width:420px; }
+.toast.said b{ color:var(--magenta); font-weight:400; letter-spacing:.16em; }
+
 /* ---------- the runner bench ---------- */
 /* Sits under the runner list inside its own slot block, so fitting a part
    reads as something you do to the frame above it. */
@@ -1021,6 +1071,26 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #deck-tag[hidden]{ display:none; }
 
+/* live contracts, top right under the event panel's slot */
+#contract-hud{
+  position:absolute; right:38px; top:76px; width:250px; text-align:left;
+  display:flex; flex-direction:column; gap:6px;
+}
+#contract-hud[hidden]{ display:none; }
+.ch-row{
+  background:rgba(4,8,14,.5); border-left:2px solid var(--tc, var(--cyan));
+  padding:6px 10px;
+}
+.ch-name{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; color:#eafcff;
+  display:flex; justify-content:space-between; gap:8px;
+}
+.ch-name i{ font-style:normal; color:var(--tc, var(--cyan)); font-variant-numeric:tabular-nums; }
+.ch-bar{ height:3px; background:rgba(255,255,255,.13); margin-top:5px; }
+.ch-bar i{ display:block; height:100%; background:var(--tc, var(--cyan)); transition:width .3s; }
+.ch-row.done{ border-left-color:var(--lime); }
+.ch-row.done .ch-name i{ color:var(--lime); }
+
 /* ---------- runner readout ---------- */
 /* Bottom-left, opposite the ammo block: the speed is the part you read at
    a glance, so it is the only thing here that is large. */
@@ -1255,6 +1325,31 @@ body.in-mission #vignette{ opacity:.55; }
     </footer>
   </section>
 
+  <!-- ============ CONTRACTS ============ -->
+  <section class="screen" id="screen-contracts">
+    <header class="screen-head">
+      <h2>CONTRACTS &mdash; <span id="ct-who">&mdash;</span></h2>
+      <p>Work you take here and finish anywhere. Four at a time. Bring them back full
+         and Shaw pays in experience, runner parts and salvage.</p>
+    </header>
+
+    <div class="ct-body">
+      <section class="ct-col">
+        <div class="ct-head"><span>ACTIVE</span><span id="ct-slots">0 / 4</span></div>
+        <div id="ct-active"></div>
+        <button class="btn btn-major" id="btn-claim" data-hover="COLLECT" disabled>NOTHING READY</button>
+      </section>
+      <section class="ct-col">
+        <div class="ct-head"><span>ON THE BOARD</span><span id="ct-done">&mdash;</span></div>
+        <div id="ct-board"></div>
+      </section>
+    </div>
+
+    <footer class="screen-foot">
+      <button class="btn btn-ghost" data-go="campaign">&lsaquo; CAMPAIGN</button>
+    </footer>
+  </section>
+
   <!-- ============ CAMPAIGN ============ -->
   <section class="screen" id="screen-campaign">
     <header class="screen-head">
@@ -1296,6 +1391,8 @@ body.in-mission #vignette{ opacity:.55; }
   <div id="squad-hud" hidden></div>
 
   <div id="deck-tag" hidden>&mdash;</div>
+
+  <div id="contract-hud" hidden></div>
 
   <div id="runner-panel" hidden>
     <div class="rn-speed"><span id="runner-speed">0</span><i>KM/H</i></div>
@@ -3446,6 +3543,43 @@ window.SF = window.SF || {};
     return ch;
   }
 
+  /* ---------- the appraiser ----------
+     Sixty slots fill up fast, and nothing was ever done with the twelfth
+     common helmet you picked up. Breaking salvage down turns it into runner
+     parts, which is the one thing you always want more of. Rarer gear is
+     worth more, and anything equipped is never touched. */
+  const BREAK_YIELD = { common: 1, uncommon: 1, rare: 2, epic: 3, exotic: 4 };
+
+  function isEquipped(ch, item) {
+    return SLOTS.some((s) => ch.equipped[s.id] && ch.equipped[s.id].uid === item.uid);
+  }
+
+  /* What the appraiser would take, and what it would pay. `floor` is the
+     highest rarity it is allowed to break — nothing above it is touched. */
+  function breakdownPreview(ch, floor) {
+    ensure(ch);
+    const limit = rarityRank(floor);
+    const take = ch.inventory.filter((it) => !isEquipped(ch, it) && rarityRank(it.rarity) <= limit);
+    const pay = take.reduce((a, it) => a + (BREAK_YIELD[it.rarity] || 1), 0);
+    return { count: take.length, parts: pay };
+  }
+
+  function breakdown(ch, floor) {
+    const limit = rarityRank(floor);
+    const take = ch.inventory.filter((it) => !isEquipped(ch, it) && rarityRank(it.rarity) <= limit);
+    if (!take.length) return { count: 0, parts: {} };
+    const gained = { thrust: 0, brace: 0, grip: 0, cell: 0 };
+    for (const it of take) {
+      const n = BREAK_YIELD[it.rarity] || 1;
+      for (let i = 0; i < n; i++) gained[PARTS[Math.floor(Math.random() * PARTS.length)].id]++;
+    }
+    const gone = new Set(take.map((it) => it.uid));
+    ch.inventory = ch.inventory.filter((it) => !gone.has(it.uid));
+    grantParts(ch, gained);
+    return { count: take.length, parts: gained,
+             total: Object.keys(gained).reduce((a, k) => a + gained[k], 0) };
+  }
+
   function grant(ch, items) {
     ensure(ch);
     for (const it of items) {
@@ -3463,6 +3597,7 @@ window.SF = window.SF || {};
     rarityOf, rarityRank, rollRarity, rollDrops, makeWeapon, makeArmour,
     makeRunner, runnerStats, partOf, partCap, fittedCount, partBlocker,
     installPart, stripParts, rollParts, grantParts,
+    breakdown, breakdownPreview, isEquipped,
     weaponMods, armourStats, powerOf, powerOfCharacter, ensure, grant, defaultLook
   };
 })(window.SF);
@@ -5314,7 +5449,11 @@ window.SF = window.SF || {};
         }
       }
 
-      if (anyHit) { w.hits++; hud.hitMarker(anyHead); if (anyHead) w.headshots++; }
+      if (anyHit) {
+        w.hits++;
+        hud.hitMarker(anyHead);
+        if (anyHead) { w.headshots++; if (ctx.onHeadshot) ctx.onHeadshot(); }
+      }
 
       player.addRecoil(spec.recoil.pitch * (w.ads ? 0.6 : 1),
                        (Math.random() - 0.5) * spec.recoil.yaw * 2);
@@ -5337,8 +5476,9 @@ window.SF = window.SF || {};
     }
 
     function useAbility() {
-      if (w.abilityCool > 0) return;
+      if (w.abilityCool > 0) return false;
       w.abilityCool = ability.cooldown;
+      if (ctx.onAbility) ctx.onAbility();
 
       if (ctx.classId === 'bulwark') {
         ctx.onOvershield(60);
@@ -6246,6 +6386,168 @@ window.SF = window.SF || {};
 })(window.SF);
 
 
+/* ==== src/js/fps/bounties.js ==== */
+/* ============================================================
+   Contracts.
+
+   Work you pick up in the station and finish anywhere else. A
+   contract is a counter and a payout: take up to four, go out, come
+   back when they are full. They are the reason to visit the Cradle
+   between missions rather than dropping straight back into one.
+
+   Progress is reported from wherever it happens — the mission loop
+   calls note() as things occur — and lives on the character, so it
+   survives leaving and coming back.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const MAX_ACTIVE = 4;
+
+  /* Each contract counts one thing. Tiers scale the target and the payout
+     together, and the tier you are offered rises with your rank. */
+  const TEMPLATES = [
+    { id: 'kills',   name: 'THINNING',        track: 'kills',
+      text: 'Put down {n} hostiles.',            tiers: [25, 45, 70] },
+    { id: 'heads',   name: 'PRECISION',       track: 'heads',
+      text: 'Land {n} precision hits.',          tiers: [15, 30, 50] },
+    { id: 'crates',  name: 'SCAVENGER',       track: 'crates',
+      text: 'Crack {n} crates on the destinations.', tiers: [3, 6, 10] },
+    { id: 'events',  name: 'FIRST RESPONDER', track: 'events',
+      text: 'Resolve {n} public events.',        tiers: [1, 2, 4] },
+    { id: 'ride',    name: 'LONG HAUL',        track: 'ride',
+      text: 'Cover {n} metres on a runner.',     tiers: [1500, 3500, 7000] },
+    { id: 'missions', name: 'THE LONG WAY',    track: 'missions',
+      text: 'Clear {n} missions aboard the ark.', tiers: [1, 2, 4] },
+    { id: 'ability', name: 'CHANNELLED',       track: 'ability',
+      text: 'Use your class ability {n} times.', tiers: [6, 12, 20] },
+    { id: 'nodes',   name: 'PERFECT PITCH',    track: 'nodes',
+      text: 'Answer {n} resonance nodes correctly.', tiers: [4, 8, 14] }
+  ];
+
+  const TIER_NAMES = ['STANDING', 'SEALED', 'BLACK SEAL'];
+  const TIER_COLOUR = ['#9fb0c0', '#5eeaff', '#ffb454'];
+
+  const byId = (id) => TEMPLATES.find((t) => t.id === id);
+
+  let seq = 0;
+
+  function make(tid, tier) {
+    const t = byId(tid);
+    const need = t.tiers[tier];
+    return {
+      uid: 'c' + (++seq) + '-' + Date.now().toString(36),
+      tid: tid, tier: tier, track: t.track, name: t.name,
+      text: t.text.replace('{n}', need),
+      need: need, have: 0, claimed: false
+    };
+  }
+
+  const BOARD_SIZE = 5;
+
+  /* The board always has something on it. Taking one tops it back up from
+     whatever you are not already carrying, so it never runs dry — a board
+     that empties as you work is a board you stop visiting. */
+  function restock(ch) {
+    ensure(ch);
+    const spoken = new Set(ch.bounties.map((b) => b.tid)
+                     .concat(ch.board.map((b) => b.tid)));
+    const maxTier = ch.level >= 12 ? 2 : ch.level >= 5 ? 1 : 0;
+    for (const t of TEMPLATES) {
+      if (ch.board.length >= BOARD_SIZE) break;
+      if (spoken.has(t.id)) continue;
+      ch.board.push(make(t.id, Math.min(maxTier, Math.floor(Math.random() * (maxTier + 1)))));
+      spoken.add(t.id);
+    }
+    return ch.board;
+  }
+
+  function refreshBoard(ch) {
+    ensure(ch);
+    ch.board = [];
+    return restock(ch);
+  }
+
+  function ensure(ch) {
+    if (!ch.bounties) ch.bounties = [];
+    if (!ch.board) ch.board = [];
+    if (typeof ch.contractsDone !== 'number') ch.contractsDone = 0;
+    return ch;
+  }
+
+  function accept(ch, uid) {
+    ensure(ch);
+    if (ch.bounties.length >= MAX_ACTIVE) return null;
+    const i = ch.board.findIndex((b) => b.uid === uid);
+    if (i < 0) return null;
+    const b = ch.board.splice(i, 1)[0];
+    ch.bounties.push(b);
+    restock(ch);
+    return b;
+  }
+
+  function abandon(ch, uid) {
+    ensure(ch);
+    const i = ch.bounties.findIndex((b) => b.uid === uid);
+    if (i < 0) return false;
+    ch.bounties.splice(i, 1);
+    restock(ch);
+    return true;
+  }
+
+  /* Report progress. Returns the contracts that just filled up, so the
+     mission can say so. */
+  function note(ch, track, amount) {
+    if (!ch || !ch.bounties || !ch.bounties.length) return null;
+    let filled = null;
+    for (const b of ch.bounties) {
+      if (b.track !== track || b.have >= b.need) continue;
+      b.have = Math.min(b.need, b.have + (amount || 1));
+      if (b.have >= b.need) (filled = filled || []).push(b);
+    }
+    return filled;
+  }
+
+  const complete = (b) => b.have >= b.need;
+  const readyCount = (ch) => (ch.bounties || []).filter(complete).length;
+
+  /* The payout: experience, runner parts, and one piece of salvage rolled a
+     few tiers above where you are, so a black seal is worth crossing a zone
+     for. */
+  function reward(b) {
+    return { xp: 140 + b.tier * 220, parts: 2 + b.tier * 2, dropTier: 7 + b.tier * 4 };
+  }
+
+  function claim(ch) {
+    ensure(ch);
+    const done = ch.bounties.filter(complete);
+    if (!done.length) return null;
+    let xp = 0, parts = 0;
+    const drops = [];
+    for (const b of done) {
+      const r = reward(b);
+      xp += r.xp;
+      parts += r.parts;
+      drops.push(...SF.gear.rollDrops(ch, r.dropTier, b.tier >= 2));
+    }
+    const bundle = SF.gear.rollParts(parts);
+    SF.gear.grantParts(ch, bundle);
+    SF.gear.grant(ch, drops);
+    ch.contractsDone += done.length;
+    const keptUids = new Set(done.map((b) => b.uid));
+    ch.bounties = ch.bounties.filter((b) => !keptUids.has(b.uid));
+    refreshBoard(ch);
+    return { count: done.length, xp, parts: bundle, drops };
+  }
+
+  SF.bounties = {
+    TEMPLATES, TIER_NAMES, TIER_COLOUR, MAX_ACTIVE,
+    ensure, refreshBoard, restock, accept, abandon, note, claim, reward,
+    complete, readyCount, byId
+  };
+})(window.SF);
+
+
 /* ==== src/js/fps/avatar.js ==== */
 /* ============================================================
    The operative's body.
@@ -7116,6 +7418,338 @@ window.SF = window.SF || {};
   }
 
   SF.hub = { create };
+})(window.SF);
+
+
+/* ==== src/js/fps/crew.js ==== */
+/* ============================================================
+   The people in the station.
+
+   A hub is not a room, it is the people standing in it. Four of them
+   have posts and a job you can walk up to and do; the rest are crew,
+   walking their own routes across three decks, standing in pairs,
+   leaning on the gallery rail watching the Earth go past.
+
+   The four you can talk to:
+
+     VOSS       QUARTERMASTER   gear, parts, the bench
+     KAUR       FLIGHT OFFICER  the ark and the ground below it
+     ODIL       MUSTER          flying with someone
+     THE ROOK   APPRAISER       breaks salvage down into parts
+
+   The rest are set dressing that moves, which is the difference
+   between a lobby and somewhere people live.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const PLATE = 0.0042;              // nameplate world scale per canvas pixel
+  const TALK_RANGE = 3.4;
+
+  const VENDORS = [
+    { id: 'armoury',  name: 'VOSS',      title: 'QUARTERMASTER',
+      line: 'Gear, parts, and the bench.',
+      x: -37, y: 7, z: 2, face: 1.57, colour: '#ffb454', cls: 'bulwark' },
+    { id: 'campaign', name: 'KAUR',      title: 'FLIGHT OFFICER',
+      line: 'The ark, and the ground below it.',
+      x: 0, y: 0, z: 33, face: Math.PI, colour: '#5eeaff', cls: 'oracle' },
+    { id: 'coop',     name: 'ODIL',      title: 'MUSTER',
+      line: 'Nobody should be going out there alone.',
+      x: 37, y: 7, z: 2, face: -1.57, colour: '#7dff9b', cls: 'wraith' },
+    { id: 'appraise', name: 'THE ROOK',  title: 'APPRAISER',
+      line: 'Bring me what you are not using.',
+      x: -8, y: 0, z: -16, face: 0.4, colour: '#b98cff', cls: 'oracle' },
+    { id: 'contracts', name: 'SHAW',     title: 'CONTRACTS',
+      line: 'Work, if you want it. Come back when it is done.',
+      x: 9, y: 0, z: -16, face: -0.4, colour: '#ff5ea8', cls: 'bulwark' }
+  ];
+
+  /* Crew routes: a loop of waypoints each, walked at a stroll. Deliberately
+     laid across the concourse and the galleries rather than around the edges,
+     because people you have to walk around are what make a room feel used. */
+  const ROUTES = [
+    [[-14, 0, -20], [-14, 0, 16], [6, 0, 16], [6, 0, -20]],
+    [[10, 0, 22], [-10, 0, 22], [-10, 0, -6], [10, 0, -6]],
+    [[0, 0, -40], [0, 0, -30], [8, 0, -22], [-8, 0, -22], [0, 0, -30]],
+    [[-18, 7, 24], [18, 7, 24], [18, 7, -24], [-18, 7, -24]],
+    [[24, 7, 10], [24, 7, -10], [40, 7, -4], [40, 7, 8]],
+    [[-24, 7, -10], [-24, 7, 10], [-40, 7, 8], [-40, 7, -4]],
+    [[-18, 14, 22], [18, 14, 22], [18, 14, -22], [-18, 14, -22]],
+    [[6, 0, 38], [6, 0, 28], [-6, 0, 28], [-6, 0, 38]]
+  ];
+
+  /* People who stand still: leaning on rails, talking in pairs. */
+  const IDLERS = [
+    [-15.5, 7, -8, 1.57], [-15.5, 7, -5, 1.4],       // two at the gallery rail
+    [15.5, 7, 12, -1.57],
+    [-15.5, 14, 6, 1.57], [15.5, 14, -6, -1.57],
+    [26, 0, 2, -1.57], [29, 0, 5, -2.2],             // a pair in the quartermaster's bay
+    [-3, 0, 30, 3.0], [3, 0, 31, 3.3],               // queueing at flight control
+    [-33, 14, -18, 0.6]                              // one in the cupola, watching
+  ];
+
+  const CHATTER = [
+    'Sixteen hours in the seat and they want a debrief.',
+    'You were on the ice run? I heard it sang at you.',
+    'Cutter three is down again. Third time this month.',
+    'They say the ark changed course. They always say that.',
+    'Nobody has slept since the relay came back up.',
+    'I keep the shutter open. You get used to the drop.'
+  ];
+
+  function plate(lines, colour) {
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 160;
+    const g = cv.getContext('2d');
+    g.textAlign = 'center';
+    g.lineWidth = 8;
+    g.strokeStyle = 'rgba(0,0,0,.85)';
+
+    g.font = '600 54px "Chakra Petch", system-ui, sans-serif';
+    g.textBaseline = 'middle';
+    g.strokeText(lines[0], 256, 46);
+    g.fillStyle = colour;
+    g.fillText(lines[0], 256, 46);
+
+    if (lines[1]) {
+      g.font = '400 30px "Share Tech Mono", ui-monospace, monospace';
+      g.lineWidth = 6;
+      g.strokeText(lines[1], 256, 104);
+      g.fillStyle = 'rgba(230,244,252,.85)';
+      g.fillText(lines[1], 256, 104);
+    }
+
+    const tex = new THREE.CanvasTexture(cv);
+    if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthTest: false, depthWrite: false
+    }));
+    sprite.scale.set(512 * PLATE, 160 * PLATE, 1);
+    return sprite;
+  }
+
+  function create(ctx) {
+    const { scene, level, player, hud } = ctx;
+    const people = [];
+    const vendors = [];
+    let prompting = false;
+    let useT = 0;
+    let sayT = 8;
+
+    const look = () => ({
+      skin: Math.floor(Math.random() * SF.gear.SKINS.length),
+      hair: Math.floor(Math.random() * SF.gear.HAIR_STYLES.length),
+      hairColour: Math.floor(Math.random() * SF.gear.HAIR_COLOURS.length)
+    });
+    const CLASSES = ['bulwark', 'oracle', 'wraith'];
+
+    function spawn(cls, x, y, z, yaw, gun) {
+      const built = SF.avatar.build({ cls: cls, look: look(), gun: gun !== false });
+      built.group.position.set(x, y, z);
+      built.group.rotation.y = yaw;
+      scene.add(built.group);
+      const p = { built, group: built.group, phase: Math.random() * 6.28, amount: 0,
+                  yaw: yaw, bob: Math.random() * 6.28 };
+      people.push(p);
+      return p;
+    }
+
+    /* ---------- the four with posts ---------- */
+    for (const v of VENDORS) {
+      const p = spawn(v.cls, v.x, v.y, v.z, v.face, false);
+      const tag = plate([v.name, v.title], v.colour);
+      tag.position.set(0, 2.24, 0);
+      p.group.add(tag);
+      p.tag = tag;
+      vendors.push(Object.assign({}, v, { person: p }));
+
+      /* A lit post to stand behind, so a vendor reads as a station and not
+         as somebody who wandered off. */
+      const desk = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.05, 0.9),
+        new THREE.MeshStandardMaterial({ color: 0x30363f, metalness: 0.75, roughness: 0.45 }));
+      desk.position.set(v.x - Math.sin(v.face) * -1.3, v.y + 0.52, v.z - Math.cos(v.face) * -1.3);
+      desk.rotation.y = v.face;
+      desk.castShadow = desk.receiveShadow = true;
+      scene.add(desk);
+      const glow = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, 0.7),
+        SF.materials.emissive(new THREE.Color(v.colour).getHex(), 2.0));
+      glow.position.copy(desk.position);
+      glow.position.y = v.y + 1.06;
+      glow.rotation.y = v.face;
+      scene.add(glow);
+      p.desk = desk; p.glow = glow;
+
+      /* The board itself, behind the contracts post — a wall of lit slates
+         is what tells you across a room that there is work here. */
+      if (v.id === 'contracts') {
+        const back = new THREE.Mesh(new THREE.BoxGeometry(4.6, 3.0, 0.25),
+          new THREE.MeshStandardMaterial({ color: 0x1b2028, metalness: 0.6, roughness: 0.6 }));
+        back.position.set(v.x - Math.sin(v.face) * 1.5, v.y + 1.8, v.z - Math.cos(v.face) * 1.5);
+        back.rotation.y = v.face;
+        scene.add(back);
+        p.board = back;
+        p.slates = [];
+        for (let r = 0; r < 2; r++) {
+          for (let c = 0; c < 3; c++) {
+            const slate = new THREE.Mesh(new THREE.BoxGeometry(1.24, 1.14, 0.08),
+              SF.materials.emissive(0xff5ea8, 1.5));
+            const ox = (c - 1) * 1.42, oy = 0.65 - r * 1.3;
+            /* Along the board's face, and proud of it — sharing the slab's
+               centre buries them inside it. */
+            slate.position.set(back.position.x + Math.cos(v.face) * ox + Math.sin(v.face) * 0.18,
+                               back.position.y + oy,
+                               back.position.z - Math.sin(v.face) * ox + Math.cos(v.face) * 0.18);
+            slate.rotation.y = v.face;
+            scene.add(slate);
+            p.slates.push(slate);
+          }
+        }
+      }
+    }
+
+    /* ---------- everyone else ---------- */
+    ROUTES.forEach((route, i) => {
+      const p = spawn(CLASSES[i % 3], route[0][0], route[0][1], route[0][2], 0, Math.random() < 0.4);
+      p.route = route;
+      p.leg = 0;
+      p.speed = 1.5 + Math.random() * 0.8;
+      p.wait = 0;
+    });
+    IDLERS.forEach(([x, y, z, yaw], i) => {
+      spawn(CLASSES[(i + 1) % 3], x, y, z, yaw, Math.random() < 0.3);
+    });
+
+    /* ---------- ships going past the windows ---------- */
+    const ships = [];
+    for (let i = 0; i < 3; i++) {
+      const g = new THREE.Group();
+      const hull = new THREE.Mesh(new THREE.ConeGeometry(1.4, 8, 6),
+        new THREE.MeshStandardMaterial({ color: 0x8a94a2, metalness: 0.8, roughness: 0.35 }));
+      hull.rotation.x = Math.PI / 2;
+      const burn = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0x8fd9ff, transparent: true, opacity: 0.7, fog: false }));
+      burn.position.z = 4.6;
+      g.add(hull, burn);
+      scene.add(g);
+      ships.push({ g, t: i * 0.33, speed: 0.03 + Math.random() * 0.02,
+                   lane: i, r: 120 + i * 40 });
+    }
+
+    /* ---------- update ---------- */
+    const tmp = new THREE.Vector3();
+
+    function update(dt, holding, camera) {
+      /* walkers */
+      for (const p of people) {
+        if (p.route) {
+          const target = p.route[(p.leg + 1) % p.route.length];
+          const dx = target[0] - p.group.position.x, dz = target[2] - p.group.position.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 0.6) {
+            p.leg = (p.leg + 1) % p.route.length;
+            p.wait = Math.random() < 0.3 ? 1.5 + Math.random() * 3 : 0;
+          }
+          if (p.wait > 0) {
+            p.wait -= dt;
+            p.amount += (0 - p.amount) * Math.min(1, 6 * dt);
+          } else {
+            const want = Math.atan2(dx, dz) + Math.PI;   // the model faces -Z
+            let diff = ((want - p.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+            p.yaw += diff * Math.min(1, 5 * dt);
+            p.group.rotation.y = p.yaw;
+            p.group.position.x += (dx / d) * p.speed * dt;
+            p.group.position.z += (dz / d) * p.speed * dt;
+            p.amount += (1 - p.amount) * Math.min(1, 6 * dt);
+          }
+          p.phase += dt * (3.2 + p.speed);
+          SF.avatar.stride(p.built.limbs, p.phase, p.amount * 0.55);
+        } else {
+          // standing: a small weight shift, so nobody is a statue
+          p.bob += dt * 1.1;
+          p.group.position.y = (p.group.userData.baseY == null
+            ? (p.group.userData.baseY = p.group.position.y)
+            : p.group.userData.baseY) + Math.sin(p.bob) * 0.012;
+          SF.avatar.stride(p.built.limbs, p.bob * 0.4, 0.05);
+        }
+        if (p.tag && camera) p.tag.lookAt(camera.position);
+      }
+
+      /* ships on a slow circuit outside */
+      for (const s of ships) {
+        s.t += s.speed * dt;
+        const a = s.t * Math.PI * 2;
+        s.g.position.set(Math.cos(a) * s.r, 6 + s.lane * 14, Math.sin(a) * s.r);
+        s.g.rotation.y = -a + Math.PI / 2;
+      }
+
+      /* overheard crew, once in a while, when you are near one of them */
+      sayT -= dt;
+      if (sayT <= 0) {
+        sayT = 22 + Math.random() * 26;
+        const near = people.filter((p) => p.route &&
+          Math.hypot(p.group.position.x - player.position.x,
+                     p.group.position.z - player.position.z) < 12 &&
+          Math.abs(p.group.position.y - player.position.y) < 3);
+        if (near.length) hud.say('CREW', CHATTER[Math.floor(Math.random() * CHATTER.length)], 3600);
+      }
+
+      /* the contracts board runs hot when you have work finished */
+      const contracts = vendors.find((c) => c.id === 'contracts');
+      if (contracts && contracts.person.slates) {
+        const ready = SF.bounties.readyCount(ctx.character);
+        const t = performance.now() / 340;
+        contracts.person.slates.forEach((sl, i) => {
+          sl.material.emissiveIntensity = ready
+            ? 2.2 + Math.sin(t + i * 0.7) * 1.5
+            : 0.9 + Math.sin(t * 0.3 + i) * 0.25;
+        });
+      }
+
+      /* the ones you can talk to */
+      let v = null, best = TALK_RANGE;
+      for (const cand of vendors) {
+        const d = Math.hypot(player.position.x - cand.x, player.position.z - cand.z);
+        if (d < best && Math.abs(player.position.y - cand.y) < 2.4) { best = d; v = cand; }
+      }
+      if (!v) {
+        if (prompting) { hud.pickup(''); prompting = false; }
+        useT = 0;
+        return false;
+      }
+      prompting = true;
+      if (holding) {
+        useT += dt;
+        hud.pickup(v.name + ' — ' + Math.max(0, 0.5 - useT).toFixed(1) + 's');
+        if (useT >= 0.5) {
+          useT = 0;
+          hud.pickup('');
+          SF.audio.sfx.confirm();
+          if (ctx.onVendor) ctx.onVendor(v);
+        }
+      } else {
+        useT = 0;
+        hud.pickup('HOLD F — ' + v.name + ', ' + v.title + ' · ' + v.line);
+      }
+      return true;
+    }
+
+    function destroy() {
+      hud.pickup('');
+      for (const p of people) {
+        scene.remove(p.group);
+        if (p.desk) scene.remove(p.desk);
+        if (p.glow) scene.remove(p.glow);
+        if (p.board) scene.remove(p.board);
+        if (p.slates) for (const sl of p.slates) scene.remove(sl);
+      }
+      for (const s of ships) scene.remove(s.g);
+      people.length = 0;
+    }
+
+    return { update, destroy, vendors, get count() { return people.length; } };
+  }
+
+  SF.crew = { create, VENDORS };
 })(window.SF);
 
 
@@ -8050,6 +8684,23 @@ window.SF = window.SF || {};
         const el = $('#runner-speed');
         if (el) el.textContent = kmh;
       },
+      /* The contracts you are carrying, and how they are going. */
+      contracts(list) {
+        const box = $('#contract-hud');
+        if (!box) return;
+        box.hidden = !list || !list.length;
+        if (box.hidden) return;
+        const B = SF.bounties;
+        box.innerHTML = list.map((b) => {
+          const pct = Math.min(100, Math.round((b.have / b.need) * 100));
+          const done = b.have >= b.need;
+          return `<div class="ch-row${done ? ' done' : ''}" style="--tc:${B.TIER_COLOUR[b.tier]}">` +
+                 `<div class="ch-name"><span>${b.name}</span>` +
+                 `<i>${done ? 'READY' : b.have + '/' + b.need}</i></div>` +
+                 `<div class="ch-bar"><i style="width:${pct}%"></i></div></div>`;
+        }).join('');
+      },
+
       /* Which deck of the station you are standing on. */
       deck(letter) {
         const el = $('#deck-tag');
@@ -8554,6 +9205,19 @@ window.SF = window.SF || {};
     })();
     const hud = SF.hud.create();
 
+    /* Contracts are counters that live on the character, so they tick over
+       here and are still there when you get back to the station. */
+    SF.bounties.ensure(character);
+    function bounty(track, amount) {
+      const filled = SF.bounties.note(character, track, amount);
+      if (filled) {
+        for (const b of filled) hud.killFeed('CONTRACT READY — ' + b.name);
+        SF.audio.sfx.objective();
+        SF.storage.save(character.slot, character);
+      }
+      hud.contracts(character.bounties);
+    }
+
     SF.gear.ensure(character);
     const armour = SF.gear.armourStats(character);
 
@@ -8573,6 +9237,7 @@ window.SF = window.SF || {};
     let runner = null;                  // the transit frame, on open ground only
     let chests = null;
     let hub = null;                     // lifts and terminals, in the station
+    let crew = null;                    // the people standing in it
     let body = null;                    // your own operative, in third person
     let bodyWasOn = false;              // third person, put aside while riding
 
@@ -8582,6 +9247,7 @@ window.SF = window.SF || {};
       onPlayerHit(amount, from) { hurtPlayer(amount * scale.damage, from); },
       onKill(e) {
         state.kills++;
+        bounty('kills', 1);
         // a destination's reference is an id, not a number — use its tier instead
         const tier = isPlanet ? 6 + state.wave : missionIndex;
         state.xp += Math.round(e.spec.xp * (1 + 0.1 * (tier - 1)));
@@ -8612,6 +9278,7 @@ window.SF = window.SF || {};
       });
     }
     let netAccum = 0;
+    let rideMetres = 0;
 
     const pickups = SF.pickups.create({ scene, level, lights, hud });
 
@@ -8636,7 +9303,10 @@ window.SF = window.SF || {};
         : null),
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
-      onNode: (i) => { if (boss) boss.hitNode(i); },
+      onNode: (i) => { if (boss) boss.hitNode(i); bounty('nodes', 1); },
+      onHeadshot: () => bounty('heads', 1),
+      // reported from inside, so a press on cooldown does not count
+      onAbility: () => bounty('ability', 1),
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
       onPhase(t) { state.phase = t; }
     });
@@ -8764,7 +9434,12 @@ window.SF = window.SF || {};
           level, player, hud, character,
           onTerminal: (id) => { state.exitTo = id; complete(); }
         });
-        hud.objective('<b>THE CRADLE</b> ' + mission.objective);
+        crew = SF.crew.create({
+          scene, level, player, hud, character,
+          onVendor: (v) => { state.exitTo = v.id; complete(); }
+        });
+        hud.contracts(character.bounties);
+      hud.objective('<b>THE CRADLE</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
         return;
@@ -8784,6 +9459,7 @@ window.SF = window.SF || {};
             state.parts += Object.keys(parts).reduce((a, k) => a + parts[k], 0);
             state.xp += 120 * tier;
             state.events++;
+            bounty('events', 1);
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
             hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
@@ -8818,15 +9494,18 @@ window.SF = window.SF || {};
             for (const k of Object.keys(parts)) {
               if (parts[k]) hud.killFeed('PARTS — ' + parts[k] + '× ' + SF.gear.partOf(k).name);
             }
+            bounty('crates', 1);
             hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
 
+        hud.contracts(character.bounties);
         hud.objective('<b>PATROL</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
         return;
       }
+      hud.contracts(character.bounties);
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
       if (hosting) {
@@ -8963,7 +9642,9 @@ window.SF = window.SF || {};
       }
       if (!inLock) {
         state.extractT = 0;
-        hub.update(dt, extractHeld);        // lifts and terminals own the key here
+        // a person you are standing in front of takes the key first
+        const talking = crew && crew.update(dt, extractHeld, camera);
+        if (!talking) hub.update(dt, extractHeld);
         hud.deck(hub.deckOf());
         return;
       }
@@ -9006,7 +9687,7 @@ window.SF = window.SF || {};
          straight back to whatever the terminal or the airlock asked for. */
       if (mission.hub) { SF.storage.save(character.slot, character); destroy(); return; }
       const notes = SF.classes.grantXp(character, state.xp);
-      if (!isPlanet) SF.campaign.markCleared(character, missionIndex, state.time);
+      if (!isPlanet) { SF.campaign.markCleared(character, missionIndex, state.time); bounty('missions', 1); }
       else {
         character.expeditions = character.expeditions || {};
         const best = character.expeditions[missionIndex] || 0;
@@ -9088,7 +9769,14 @@ window.SF = window.SF || {};
 
     function frame(now) {
       raf = requestAnimationFrame(frame);
-      const dt = Math.min(0.05, (now - last) / 1000);
+      /* Clamped at both ends. A frame timestamp is the time the frame began,
+         which after a long synchronous build can be *earlier* than the moment
+         we recorded as `last` — so the first dt after engaging is negative,
+         by about as long as the build took. Everything downstream then runs
+         backwards for one frame: the damage tint decays upward and the screen
+         comes up red, the clock steps back, and the controller integrates in
+         reverse. */
+      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
       last = now;
       if (!state.running || state.paused) {
         lights.update(dt, camera.position);
@@ -9141,7 +9829,13 @@ window.SF = window.SF || {};
         }
       }
 
-      if (runner) runner.update(dt);
+      if (runner) {
+        runner.update(dt);
+        if (runner.mounted) {
+          rideMetres += Math.hypot(player.state.vel.x, player.state.vel.z) * dt;
+          if (rideMetres >= 25) { bounty('ride', Math.floor(rideMetres)); rideMetres %= 1; }
+        }
+      }
       if (body) body.update(dt);
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
@@ -9214,6 +9908,10 @@ window.SF = window.SF || {};
     function destroy() {
       cancelAnimationFrame(raf);
       raf = 0;
+      /* Contracts tick over during a mission but are only banked when
+         something else happens to save. Leaving any way at all — abandoning,
+         a last death, or walking out of the station — has to keep them. */
+      if (character.slot != null) SF.storage.save(character.slot, character);
       canvas.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('keydown', onKeyDown);
@@ -9228,6 +9926,8 @@ window.SF = window.SF || {};
       if (chests) chests.destroy();
       if (body) body.destroy();
       if (hub) hub.destroy();
+      if (crew) crew.destroy();
+      hud.contracts([]);
       hud.runner(null);
       if (patrol) patrol.destroy();
       if (boss) boss.destroy();
@@ -9254,6 +9954,7 @@ window.SF = window.SF || {};
              get patrolRef() { return patrol; },
              get runnerRef() { return runner; },
              get hubRef() { return hub; },
+             get crewRef() { return crew; },
              get bodyRef() { return body; },
              get chestsRef() { return chests; },
              get bossRef() { return boss; } };
@@ -9679,6 +10380,122 @@ window.SF = window.SF || {};
 
   /* ---------------- armoury ---------------- */
 
+  /* ---------------- contracts ---------------- */
+  function openContracts() {
+    if (!ch) return;
+    const B = SF.bounties;
+    B.ensure(ch);
+    B.restock(ch);
+    $('#ct-who').textContent = `${ch.name} · ${ch.contractsDone} COMPLETED`;
+    show('contracts');
+    renderContracts();
+    SF.audio.sfx.open();
+  }
+
+  /* One card shape for both columns: the difference is the button on it. */
+  function contractCard(b, mode) {
+    const B = SF.bounties;
+    const done = B.complete(b);
+    const pct = Math.min(100, Math.round((b.have / b.need) * 100));
+    const r = B.reward(b);
+    const card = el('div', 'ct-card' + (done ? ' done' : ''));
+    card.style.setProperty('--tc', B.TIER_COLOUR[b.tier]);
+    card.innerHTML =
+      `<div class="ct-name">${b.name}<span class="ct-tier">${B.TIER_NAMES[b.tier]}</span></div>` +
+      `<div class="ct-text">${b.text}</div>` +
+      (mode === 'active'
+        ? `<div class="ct-bar"><i style="width:${pct}%"></i></div>` +
+          `<div class="ct-prog">${b.have} / ${b.need}${done ? ' &nbsp;·&nbsp; READY' : ''}</div>`
+        : `<div class="ct-pay">${r.xp} XP &nbsp;·&nbsp; ${r.parts} PARTS &nbsp;·&nbsp; SALVAGE</div>`);
+    return card;
+  }
+
+  function renderContracts() {
+    const B = SF.bounties;
+    B.ensure(ch);
+    const active = $('#ct-active');
+    const board = $('#ct-board');
+    active.innerHTML = '';
+    board.innerHTML = '';
+
+    $('#ct-slots').textContent = ch.bounties.length + ' / ' + B.MAX_ACTIVE;
+    $('#ct-done').textContent = ch.board.length + ' OFFERED';
+
+    if (!ch.bounties.length) {
+      active.appendChild(el('div', 'item-empty', 'NOTHING TAKEN. THE BOARD IS TO YOUR RIGHT.'));
+    }
+    for (const b of ch.bounties) {
+      const card = contractCard(b, 'active');
+      const drop = el('button', 'ct-btn ghost', 'ABANDON');
+      drop.dataset.hover = 'GIVE IT BACK';
+      drop.addEventListener('click', () => {
+        B.abandon(ch, b.uid);
+        B.refreshBoard(ch);
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.back();
+        renderContracts();
+      });
+      card.appendChild(drop);
+      active.appendChild(card);
+    }
+
+    const full = ch.bounties.length >= B.MAX_ACTIVE;
+    if (!ch.board.length) board.appendChild(el('div', 'item-empty', 'THE BOARD IS EMPTY.'));
+    for (const b of ch.board) {
+      const card = contractCard(b, 'board');
+      const take = el('button', 'ct-btn', full ? 'NO ROOM' : 'TAKE');
+      take.disabled = full;
+      take.dataset.hover = full ? 'FINISH ONE FIRST' : 'ACCEPT';
+      take.addEventListener('click', () => {
+        if (!B.accept(ch, b.uid)) return;
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.confirm();
+        renderContracts();
+      });
+      card.appendChild(take);
+      board.appendChild(card);
+    }
+
+    const ready = B.readyCount(ch);
+    const claim = $('#btn-claim');
+    claim.disabled = !ready;
+    claim.textContent = ready ? 'COLLECT ' + ready + ' CONTRACT' + (ready === 1 ? '' : 'S')
+                              : 'NOTHING READY';
+  }
+
+  /* The Rook takes anything you are not wearing and pays in parts. Rare and
+     better is left alone unless you say otherwise, because losing a good roll
+     to a careless keypress is not a mistake worth allowing. */
+  function appraise() {
+    const G = SF.gear;
+    const preview = G.breakdownPreview(ch, 'uncommon');
+    if (!preview.count) {
+      said('THE ROOK', 'Nothing here I would take. Come back with worse.');
+      return;
+    }
+    const out = G.breakdown(ch, 'uncommon');
+    SF.storage.save(slotIndex, ch);
+    SF.audio.sfx.confirm();
+    const parts = Object.keys(out.parts).filter((k) => out.parts[k])
+      .map((k) => out.parts[k] + '× ' + G.partOf(k).name).join(', ');
+    said('THE ROOK', `${out.count} pieces down to ${out.total} parts. ${parts}.`);
+    renderArmoury();
+  }
+
+  function claimContracts() {
+    const out = SF.bounties.claim(ch);
+    if (!out) return;
+    const notes = SF.classes.grantXp(ch, out.xp);
+    SF.storage.save(slotIndex, ch);
+    SF.audio.sfx.win();
+    const parts = Object.keys(out.parts).filter((k) => out.parts[k])
+      .map((k) => out.parts[k] + '× ' + SF.gear.partOf(k).name).join(', ');
+    said('SHAW', `${out.count} settled. ${out.xp} experience, ${parts || 'no parts'}, ` +
+                  `${out.drops.length} piece${out.drops.length === 1 ? '' : 's'} of salvage.` +
+                  (notes.length ? ' ' + notes.join(' ') : ''));
+    renderContracts();
+  }
+
   function openArmoury() {
     if (!ch) return;
     SF.gear.ensure(ch);
@@ -9937,6 +10754,9 @@ window.SF = window.SF || {};
     $('#engage').hidden = false;
   }
 
+  /* A line from whoever you just dealt with, through the existing rail. */
+  function said(who, text) { toast(`<b>${who}</b> &nbsp;${text}`, 'said'); }
+
   function exitMission(reason) {
     mission = null;
     document.body.classList.remove('in-mission');
@@ -9949,6 +10769,8 @@ window.SF = window.SF || {};
        armoury kiosk opens the armoury rather than dumping you on the list. */
     if (reason === 'armoury') { openCampaign(slotIndex); openArmoury(); return; }
     if (reason === 'coop') { openCampaign(slotIndex); openCoop(); return; }
+    if (reason === 'contracts') { openCampaign(slotIndex); openContracts(); return; }
+    if (reason === 'appraise') { openCampaign(slotIndex); openArmoury(); appraise(); return; }
     openCampaign(slotIndex);
   }
 
@@ -10018,6 +10840,7 @@ window.SF = window.SF || {};
       mission.pause(false);
       mission.requestLock();
     });
+    $('#btn-claim').addEventListener('click', claimContracts);
     $('#btn-abandon').addEventListener('click', abandon);
     $('#btn-debrief').addEventListener('click', () => { if (mission) mission.destroy(); });
 
@@ -10028,6 +10851,7 @@ window.SF = window.SF || {};
   }
 
   SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury, openCoop,
+            openContracts, renderContracts, appraise,
             get character() { return ch; } };
 })(window.SF);
 

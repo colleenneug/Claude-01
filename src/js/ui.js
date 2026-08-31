@@ -413,6 +413,122 @@
 
   /* ---------------- armoury ---------------- */
 
+  /* ---------------- contracts ---------------- */
+  function openContracts() {
+    if (!ch) return;
+    const B = SF.bounties;
+    B.ensure(ch);
+    B.restock(ch);
+    $('#ct-who').textContent = `${ch.name} · ${ch.contractsDone} COMPLETED`;
+    show('contracts');
+    renderContracts();
+    SF.audio.sfx.open();
+  }
+
+  /* One card shape for both columns: the difference is the button on it. */
+  function contractCard(b, mode) {
+    const B = SF.bounties;
+    const done = B.complete(b);
+    const pct = Math.min(100, Math.round((b.have / b.need) * 100));
+    const r = B.reward(b);
+    const card = el('div', 'ct-card' + (done ? ' done' : ''));
+    card.style.setProperty('--tc', B.TIER_COLOUR[b.tier]);
+    card.innerHTML =
+      `<div class="ct-name">${b.name}<span class="ct-tier">${B.TIER_NAMES[b.tier]}</span></div>` +
+      `<div class="ct-text">${b.text}</div>` +
+      (mode === 'active'
+        ? `<div class="ct-bar"><i style="width:${pct}%"></i></div>` +
+          `<div class="ct-prog">${b.have} / ${b.need}${done ? ' &nbsp;·&nbsp; READY' : ''}</div>`
+        : `<div class="ct-pay">${r.xp} XP &nbsp;·&nbsp; ${r.parts} PARTS &nbsp;·&nbsp; SALVAGE</div>`);
+    return card;
+  }
+
+  function renderContracts() {
+    const B = SF.bounties;
+    B.ensure(ch);
+    const active = $('#ct-active');
+    const board = $('#ct-board');
+    active.innerHTML = '';
+    board.innerHTML = '';
+
+    $('#ct-slots').textContent = ch.bounties.length + ' / ' + B.MAX_ACTIVE;
+    $('#ct-done').textContent = ch.board.length + ' OFFERED';
+
+    if (!ch.bounties.length) {
+      active.appendChild(el('div', 'item-empty', 'NOTHING TAKEN. THE BOARD IS TO YOUR RIGHT.'));
+    }
+    for (const b of ch.bounties) {
+      const card = contractCard(b, 'active');
+      const drop = el('button', 'ct-btn ghost', 'ABANDON');
+      drop.dataset.hover = 'GIVE IT BACK';
+      drop.addEventListener('click', () => {
+        B.abandon(ch, b.uid);
+        B.refreshBoard(ch);
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.back();
+        renderContracts();
+      });
+      card.appendChild(drop);
+      active.appendChild(card);
+    }
+
+    const full = ch.bounties.length >= B.MAX_ACTIVE;
+    if (!ch.board.length) board.appendChild(el('div', 'item-empty', 'THE BOARD IS EMPTY.'));
+    for (const b of ch.board) {
+      const card = contractCard(b, 'board');
+      const take = el('button', 'ct-btn', full ? 'NO ROOM' : 'TAKE');
+      take.disabled = full;
+      take.dataset.hover = full ? 'FINISH ONE FIRST' : 'ACCEPT';
+      take.addEventListener('click', () => {
+        if (!B.accept(ch, b.uid)) return;
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.confirm();
+        renderContracts();
+      });
+      card.appendChild(take);
+      board.appendChild(card);
+    }
+
+    const ready = B.readyCount(ch);
+    const claim = $('#btn-claim');
+    claim.disabled = !ready;
+    claim.textContent = ready ? 'COLLECT ' + ready + ' CONTRACT' + (ready === 1 ? '' : 'S')
+                              : 'NOTHING READY';
+  }
+
+  /* The Rook takes anything you are not wearing and pays in parts. Rare and
+     better is left alone unless you say otherwise, because losing a good roll
+     to a careless keypress is not a mistake worth allowing. */
+  function appraise() {
+    const G = SF.gear;
+    const preview = G.breakdownPreview(ch, 'uncommon');
+    if (!preview.count) {
+      said('THE ROOK', 'Nothing here I would take. Come back with worse.');
+      return;
+    }
+    const out = G.breakdown(ch, 'uncommon');
+    SF.storage.save(slotIndex, ch);
+    SF.audio.sfx.confirm();
+    const parts = Object.keys(out.parts).filter((k) => out.parts[k])
+      .map((k) => out.parts[k] + '× ' + G.partOf(k).name).join(', ');
+    said('THE ROOK', `${out.count} pieces down to ${out.total} parts. ${parts}.`);
+    renderArmoury();
+  }
+
+  function claimContracts() {
+    const out = SF.bounties.claim(ch);
+    if (!out) return;
+    const notes = SF.classes.grantXp(ch, out.xp);
+    SF.storage.save(slotIndex, ch);
+    SF.audio.sfx.win();
+    const parts = Object.keys(out.parts).filter((k) => out.parts[k])
+      .map((k) => out.parts[k] + '× ' + SF.gear.partOf(k).name).join(', ');
+    said('SHAW', `${out.count} settled. ${out.xp} experience, ${parts || 'no parts'}, ` +
+                  `${out.drops.length} piece${out.drops.length === 1 ? '' : 's'} of salvage.` +
+                  (notes.length ? ' ' + notes.join(' ') : ''));
+    renderContracts();
+  }
+
   function openArmoury() {
     if (!ch) return;
     SF.gear.ensure(ch);
@@ -671,6 +787,9 @@
     $('#engage').hidden = false;
   }
 
+  /* A line from whoever you just dealt with, through the existing rail. */
+  function said(who, text) { toast(`<b>${who}</b> &nbsp;${text}`, 'said'); }
+
   function exitMission(reason) {
     mission = null;
     document.body.classList.remove('in-mission');
@@ -683,6 +802,8 @@
        armoury kiosk opens the armoury rather than dumping you on the list. */
     if (reason === 'armoury') { openCampaign(slotIndex); openArmoury(); return; }
     if (reason === 'coop') { openCampaign(slotIndex); openCoop(); return; }
+    if (reason === 'contracts') { openCampaign(slotIndex); openContracts(); return; }
+    if (reason === 'appraise') { openCampaign(slotIndex); openArmoury(); appraise(); return; }
     openCampaign(slotIndex);
   }
 
@@ -752,6 +873,7 @@
       mission.pause(false);
       mission.requestLock();
     });
+    $('#btn-claim').addEventListener('click', claimContracts);
     $('#btn-abandon').addEventListener('click', abandon);
     $('#btn-debrief').addEventListener('click', () => { if (mission) mission.destroy(); });
 
@@ -762,5 +884,6 @@
   }
 
   SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury, openCoop,
+            openContracts, renderContracts, appraise,
             get character() { return ch; } };
 })(window.SF);

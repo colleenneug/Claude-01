@@ -92,6 +92,19 @@
     })();
     const hud = SF.hud.create();
 
+    /* Contracts are counters that live on the character, so they tick over
+       here and are still there when you get back to the station. */
+    SF.bounties.ensure(character);
+    function bounty(track, amount) {
+      const filled = SF.bounties.note(character, track, amount);
+      if (filled) {
+        for (const b of filled) hud.killFeed('CONTRACT READY — ' + b.name);
+        SF.audio.sfx.objective();
+        SF.storage.save(character.slot, character);
+      }
+      hud.contracts(character.bounties);
+    }
+
     SF.gear.ensure(character);
     const armour = SF.gear.armourStats(character);
 
@@ -111,6 +124,7 @@
     let runner = null;                  // the transit frame, on open ground only
     let chests = null;
     let hub = null;                     // lifts and terminals, in the station
+    let crew = null;                    // the people standing in it
     let body = null;                    // your own operative, in third person
     let bodyWasOn = false;              // third person, put aside while riding
 
@@ -120,6 +134,7 @@
       onPlayerHit(amount, from) { hurtPlayer(amount * scale.damage, from); },
       onKill(e) {
         state.kills++;
+        bounty('kills', 1);
         // a destination's reference is an id, not a number — use its tier instead
         const tier = isPlanet ? 6 + state.wave : missionIndex;
         state.xp += Math.round(e.spec.xp * (1 + 0.1 * (tier - 1)));
@@ -150,6 +165,7 @@
       });
     }
     let netAccum = 0;
+    let rideMetres = 0;
 
     const pickups = SF.pickups.create({ scene, level, lights, hud });
 
@@ -174,7 +190,10 @@
         : null),
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
-      onNode: (i) => { if (boss) boss.hitNode(i); },
+      onNode: (i) => { if (boss) boss.hitNode(i); bounty('nodes', 1); },
+      onHeadshot: () => bounty('heads', 1),
+      // reported from inside, so a press on cooldown does not count
+      onAbility: () => bounty('ability', 1),
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
       onPhase(t) { state.phase = t; }
     });
@@ -302,7 +321,12 @@
           level, player, hud, character,
           onTerminal: (id) => { state.exitTo = id; complete(); }
         });
-        hud.objective('<b>THE CRADLE</b> ' + mission.objective);
+        crew = SF.crew.create({
+          scene, level, player, hud, character,
+          onVendor: (v) => { state.exitTo = v.id; complete(); }
+        });
+        hud.contracts(character.bounties);
+      hud.objective('<b>THE CRADLE</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
         return;
@@ -322,6 +346,7 @@
             state.parts += Object.keys(parts).reduce((a, k) => a + parts[k], 0);
             state.xp += 120 * tier;
             state.events++;
+            bounty('events', 1);
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
             hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
@@ -356,15 +381,18 @@
             for (const k of Object.keys(parts)) {
               if (parts[k]) hud.killFeed('PARTS — ' + parts[k] + '× ' + SF.gear.partOf(k).name);
             }
+            bounty('crates', 1);
             hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
 
+        hud.contracts(character.bounties);
         hud.objective('<b>PATROL</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
         return;
       }
+      hud.contracts(character.bounties);
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
       if (hosting) {
@@ -501,7 +529,9 @@
       }
       if (!inLock) {
         state.extractT = 0;
-        hub.update(dt, extractHeld);        // lifts and terminals own the key here
+        // a person you are standing in front of takes the key first
+        const talking = crew && crew.update(dt, extractHeld, camera);
+        if (!talking) hub.update(dt, extractHeld);
         hud.deck(hub.deckOf());
         return;
       }
@@ -544,7 +574,7 @@
          straight back to whatever the terminal or the airlock asked for. */
       if (mission.hub) { SF.storage.save(character.slot, character); destroy(); return; }
       const notes = SF.classes.grantXp(character, state.xp);
-      if (!isPlanet) SF.campaign.markCleared(character, missionIndex, state.time);
+      if (!isPlanet) { SF.campaign.markCleared(character, missionIndex, state.time); bounty('missions', 1); }
       else {
         character.expeditions = character.expeditions || {};
         const best = character.expeditions[missionIndex] || 0;
@@ -626,7 +656,14 @@
 
     function frame(now) {
       raf = requestAnimationFrame(frame);
-      const dt = Math.min(0.05, (now - last) / 1000);
+      /* Clamped at both ends. A frame timestamp is the time the frame began,
+         which after a long synchronous build can be *earlier* than the moment
+         we recorded as `last` — so the first dt after engaging is negative,
+         by about as long as the build took. Everything downstream then runs
+         backwards for one frame: the damage tint decays upward and the screen
+         comes up red, the clock steps back, and the controller integrates in
+         reverse. */
+      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
       last = now;
       if (!state.running || state.paused) {
         lights.update(dt, camera.position);
@@ -679,7 +716,13 @@
         }
       }
 
-      if (runner) runner.update(dt);
+      if (runner) {
+        runner.update(dt);
+        if (runner.mounted) {
+          rideMetres += Math.hypot(player.state.vel.x, player.state.vel.z) * dt;
+          if (rideMetres >= 25) { bounty('ride', Math.floor(rideMetres)); rideMetres %= 1; }
+        }
+      }
       if (body) body.update(dt);
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
@@ -752,6 +795,10 @@
     function destroy() {
       cancelAnimationFrame(raf);
       raf = 0;
+      /* Contracts tick over during a mission but are only banked when
+         something else happens to save. Leaving any way at all — abandoning,
+         a last death, or walking out of the station — has to keep them. */
+      if (character.slot != null) SF.storage.save(character.slot, character);
       canvas.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('keydown', onKeyDown);
@@ -766,6 +813,8 @@
       if (chests) chests.destroy();
       if (body) body.destroy();
       if (hub) hub.destroy();
+      if (crew) crew.destroy();
+      hud.contracts([]);
       hud.runner(null);
       if (patrol) patrol.destroy();
       if (boss) boss.destroy();
@@ -792,6 +841,7 @@
              get patrolRef() { return patrol; },
              get runnerRef() { return runner; },
              get hubRef() { return hub; },
+             get crewRef() { return crew; },
              get bodyRef() { return body; },
              get chestsRef() { return chests; },
              get bossRef() { return boss; } };

@@ -126,6 +126,23 @@
         const el = $('#runner-speed');
         if (el) el.textContent = kmh;
       },
+      /* The contracts you are carrying, and how they are going. */
+      contracts(list) {
+        const box = $('#contract-hud');
+        if (!box) return;
+        box.hidden = !list || !list.length;
+        if (box.hidden) return;
+        const B = SF.bounties;
+        box.innerHTML = list.map((b) => {
+          const pct = Math.min(100, Math.round((b.have / b.need) * 100));
+          const done = b.have >= b.need;
+          return `<div class="ch-row${done ? ' done' : ''}" style="--tc:${B.TIER_COLOUR[b.tier]}">` +
+                 `<div class="ch-name"><span>${b.name}</span>` +
+                 `<i>${done ? 'READY' : b.have + '/' + b.need}</i></div>` +
+                 `<div class="ch-bar"><i style="width:${pct}%"></i></div></div>`;
+        }).join('');
+      },
+
       /* Which deck of the station you are standing on. */
       deck(letter) {
         const el = $('#deck-tag');

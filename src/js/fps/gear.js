@@ -396,6 +396,43 @@
     return ch;
   }
 
+  /* ---------- the appraiser ----------
+     Sixty slots fill up fast, and nothing was ever done with the twelfth
+     common helmet you picked up. Breaking salvage down turns it into runner
+     parts, which is the one thing you always want more of. Rarer gear is
+     worth more, and anything equipped is never touched. */
+  const BREAK_YIELD = { common: 1, uncommon: 1, rare: 2, epic: 3, exotic: 4 };
+
+  function isEquipped(ch, item) {
+    return SLOTS.some((s) => ch.equipped[s.id] && ch.equipped[s.id].uid === item.uid);
+  }
+
+  /* What the appraiser would take, and what it would pay. `floor` is the
+     highest rarity it is allowed to break — nothing above it is touched. */
+  function breakdownPreview(ch, floor) {
+    ensure(ch);
+    const limit = rarityRank(floor);
+    const take = ch.inventory.filter((it) => !isEquipped(ch, it) && rarityRank(it.rarity) <= limit);
+    const pay = take.reduce((a, it) => a + (BREAK_YIELD[it.rarity] || 1), 0);
+    return { count: take.length, parts: pay };
+  }
+
+  function breakdown(ch, floor) {
+    const limit = rarityRank(floor);
+    const take = ch.inventory.filter((it) => !isEquipped(ch, it) && rarityRank(it.rarity) <= limit);
+    if (!take.length) return { count: 0, parts: {} };
+    const gained = { thrust: 0, brace: 0, grip: 0, cell: 0 };
+    for (const it of take) {
+      const n = BREAK_YIELD[it.rarity] || 1;
+      for (let i = 0; i < n; i++) gained[PARTS[Math.floor(Math.random() * PARTS.length)].id]++;
+    }
+    const gone = new Set(take.map((it) => it.uid));
+    ch.inventory = ch.inventory.filter((it) => !gone.has(it.uid));
+    grantParts(ch, gained);
+    return { count: take.length, parts: gained,
+             total: Object.keys(gained).reduce((a, k) => a + gained[k], 0) };
+  }
+
   function grant(ch, items) {
     ensure(ch);
     for (const it of items) {
@@ -413,6 +450,7 @@
     rarityOf, rarityRank, rollRarity, rollDrops, makeWeapon, makeArmour,
     makeRunner, runnerStats, partOf, partCap, fittedCount, partBlocker,
     installPart, stripParts, rollParts, grantParts,
+    breakdown, breakdownPreview, isEquipped,
     weaponMods, armourStats, powerOf, powerOfCharacter, ensure, grant, defaultLook
   };
 })(window.SF);
