@@ -330,6 +330,13 @@
 .es-drop .d-name{ font-size:12.5px; color:#eafcff; }
 .es-drop .d-meta{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; color:var(--rc); margin-top:3px; }
 
+/* the station reads as somewhere to be rather than something to clear */
+.camp-row.station{ border-color:rgba(94,234,255,.45); background:rgba(94,234,255,.05); }
+.camp-row.station .camp-n{ color:var(--cyan); font-size:26px; }
+.camp-row.station:hover:not(:disabled){
+  border-color:var(--cyan); box-shadow:0 0 18px rgba(94,234,255,.3); }
+.camp-row.station .camp-diff{ visibility:hidden; }
+
 .camp-row.destination{ border-color:rgba(255,180,84,.4); }
 .camp-row.destination .camp-n{ color:var(--amber); font-size:24px; }
 .camp-row.destination:hover:not(:disabled){

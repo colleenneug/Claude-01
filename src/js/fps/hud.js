@@ -126,6 +126,14 @@
         const el = $('#runner-speed');
         if (el) el.textContent = kmh;
       },
+      /* Which deck of the station you are standing on. */
+      deck(letter) {
+        const el = $('#deck-tag');
+        if (!el) return;
+        el.hidden = !letter;
+        if (letter) el.textContent = 'DECK ' + letter;
+      },
+
       /* The boost cell: how much charge is left, and whether it is burning. */
       runnerCell(frac, burning) {
         const el = $('#runner-cell');

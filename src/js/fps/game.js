@@ -10,18 +10,21 @@
   const { $, clamp } = SF.util;
 
   function create(character, missionIndex, onExit) {
-    /* A mission reference is either a campaign index or a destination id. */
-    const isPlanet = typeof missionIndex === 'string';
-    const mission = isPlanet ? SF.planets.asMission(SF.planets.byId(missionIndex))
+    /* A reference is a campaign index, a destination id, or the hub. */
+    const isHub = missionIndex === 'cradle';
+    const isPlanet = !isHub && typeof missionIndex === 'string';
+    const mission = isHub ? SF.station.asMission()
+                  : isPlanet ? SF.planets.asMission(SF.planets.byId(missionIndex))
                              : SF.campaign.byIndex(missionIndex);
     // destinations scale with the wave reached, not the mission number
-    let scale = SF.campaign.scaleFor(isPlanet ? 5 : missionIndex - 1);
+    let scale = SF.campaign.scaleFor(isHub ? 0 : isPlanet ? 5 : missionIndex - 1);
 
     const canvas = $('#gl');
     const eng = SF.engine.create(canvas);
     const { scene, camera } = eng;
 
-    const level = isPlanet ? SF.planets.buildArena(scene, mission.planet)
+    const level = isHub ? SF.station.build(scene)
+                : isPlanet ? SF.planets.buildArena(scene, mission.planet)
                            : SF.level.build(scene);
     const missionSpec = mission;
 
@@ -29,25 +32,55 @@
        changing the scene's light count recompiles every shader, so nothing
        ever adds or removes one after this. The boss arena is far larger than
        a corridor, so it gets a few more slots. */
-    const lights = SF.lights.create(scene, missionSpec.boss ? 12 : 8);
+    const lights = SF.lights.create(scene, missionSpec.boss || isHub ? 12 : 8);
     for (const e of level.emitters) lights.addStatic(e.x, e.y, e.z, e.colour, e.intensity, e.distance);
     const lightSpec = isPlanet ? mission.planet.light
-                               : { key: 0x9ec4dd, keyI: 0.6, hemiSky: 0x4a6479,
-                                   hemiGround: 0x141a22, hemiI: 0.95 };
+                     : isHub ? { key: 0xfff3e0, keyI: 2.4, hemiSky: 0x9fc4e8,
+                                 hemiGround: 0x2a3038, hemiI: 1.7 }
+                             : { key: 0x9ec4dd, keyI: 0.6, hemiSky: 0x4a6479,
+                                 hemiGround: 0x141a22, hemiI: 0.95 };
+
+    /* Image-based lighting: without it every metal surface reflects nothing
+       and reads as grey plastic. One prefiltered cube map, built at load,
+       free thereafter. See fps/envmap.js. */
+    const envTarget = SF.envmap.build(eng.renderer,
+      isHub ? 'station' : isPlanet ? (mission.planet.id === 'frozen' ? 'ice' : 'desert') : 'ship');
+    scene.environment = envTarget.texture;
+
+    /* An interior you can see across: the ship's corridor fog is far too
+       thick for a room seventy metres wide. */
+    if (isHub) scene.fog = new THREE.FogExp2(0x101927, 0.0035);
     scene.add(new THREE.HemisphereLight(lightSpec.hemiSky, lightSpec.hemiGround, lightSpec.hemiI));
     const key = new THREE.DirectionalLight(lightSpec.key, lightSpec.keyI);
     key.position.set(8, 20, -12);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
-    key.shadow.camera.near = 1; key.shadow.camera.far = 90;
-    key.shadow.camera.left = -45; key.shadow.camera.right = 45;
-    key.shadow.camera.top = 45; key.shadow.camera.bottom = -45;
+    key.shadow.camera.near = 1; key.shadow.camera.far = isHub ? 140 : 90;
+    const shadowSpan = isHub ? 60 : 45;
+    key.shadow.camera.left = -shadowSpan; key.shadow.camera.right = shadowSpan;
+    key.shadow.camera.top = shadowSpan; key.shadow.camera.bottom = -shadowSpan;
+    key.shadow.bias = -0.0006;
+    if (isHub) {
+      key.shadow.mapSize.set(2048, 2048);
+      key.position.set(-26, 34, -18);
+      /* A little fill from below, standing in for the light the Earth throws
+         up through the cupola and the windows. */
+      const earthshine = new THREE.DirectionalLight(0x6fb6ff, 0.5);
+      earthshine.position.set(10, -20, 14);
+      scene.add(earthshine);
+      scene.add(new THREE.AmbientLight(0x2c3a4a, 0.9));
+    }
     scene.add(key);
 
     const player = SF.player.create(camera, level);
     /* Each mission opens where the last one closed: at the near edge of its
        own sector, facing down the ship. */
     (function placeStart() {
+      if (isHub) {
+        player.state.pos.copy(level.playerStart);
+        player.state.yaw = Math.PI;      // facing down the arrivals tube
+        return;
+      }
       if (isPlanet) {
         player.state.pos.copy(level.playerStart);
         player.state.yaw = Math.PI;
@@ -67,7 +100,7 @@
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
-      wave: 0, onPad: false, extractT: 0, events: 0, parts: 0,
+      wave: 0, onPad: false, extractT: 0, events: 0, parts: 0, exitTo: null,
       spawned: false, bossBeaten: false,
       respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0, started: false
     };
@@ -77,6 +110,9 @@
     let patrol = null;
     let runner = null;                  // the transit frame, on open ground only
     let chests = null;
+    let hub = null;                     // lifts and terminals, in the station
+    let body = null;                    // your own operative, in third person
+    let bodyWasOn = false;              // third person, put aside while riding
 
     const ai = SF.ai.create({
       scene, level, lights,
@@ -131,7 +167,8 @@
       /* Riding, the shot leaves from a point on the camera's centre line
          rather than from the eye, so the crosshair still means something
          with the camera sitting behind the rider. */
-      originOverride: () => (runner && runner.mounted ? runner.shotOrigin() : null),
+      originOverride: () => (runner && runner.mounted ? runner.shotOrigin()
+                           : body ? body.shotOrigin() : null),
       spreadScale: () => (runner && runner.mounted
         ? (runner.boosting ? 3.2 : 1.8)      // one hand on the bars
         : null),
@@ -164,6 +201,10 @@
     function onKeyDown(e) {
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
+      if (e.code === 'KeyT' && body) {
+        const on = body.toggle();
+        hud.pickup(on ? 'THIRD PERSON' : 'FIRST PERSON');
+      }
       if (e.code === 'KeyV' && runner) runner.toggle();
       if (e.code === 'ShiftLeft' && runner) runner.setBoost(true);
       if (e.code === 'KeyR') weapon.reload();
@@ -241,7 +282,32 @@
       return best || { x: zone.cx, z: zone.z1 - 2 };
     }
 
+    /* The first-person weapon is drawn only when the camera is actually at
+       the eye — third person or a runner both take it away, and either can
+       end without the other. */
+    function refreshViewmodel() {
+      weapon.view.visible = !(body && body.enabled) && !(runner && runner.mounted);
+    }
+
     function beginMission() {
+      /* Third person is available on every mission, not just in the station:
+         the body is built once here and shown when the view is toggled. */
+      body = SF.body.create({
+        scene, camera, player, character,
+        onToggle: refreshViewmodel
+      });
+
+      if (mission.hub) {
+        hub = SF.hub.create({
+          level, player, hud, character,
+          onTerminal: (id) => { state.exitTo = id; complete(); }
+        });
+        hud.objective('<b>THE CRADLE</b> ' + mission.objective);
+        state.spawned = true;
+        SF.audio.sfx.objective();
+        return;
+      }
+
       const zone = level.zones[mission.zone];
       if (mission.patrol) {
         player.setSpeedScale(2.1);        // a kilometre of ground needs the legs
@@ -266,7 +332,12 @@
           scene, camera, player, hud, lights, character,
           isOpenZone: true, baseSpeedScale: 2.1,
           // the first-person weapon has no place in a third-person view
-          onMount: (on) => { weapon.view.visible = !on; },
+          onMount: (on) => {
+            // the runner draws its own rider, and takes the chase camera with it
+            if (on) { bodyWasOn = body && body.enabled; if (body) body.setEnabled(false); }
+            else if (bodyWasOn && body) { body.setEnabled(true); bodyWasOn = false; }
+            refreshViewmodel();
+          },
           onCrash: (dmg) => hurtPlayer(dmg, null)
         });
         chests = SF.chests.create({
@@ -419,6 +490,31 @@
       if (chests) chests.update(dt, extractHeld);
     }
 
+    /* The airlock is the way out. Everything else in the station is a place
+       to stand; QUEST is the one spot that ends the visit. */
+    function hubTick(dt) {
+      const inLock = Math.abs(player.position.x) < 8 && player.position.z > 40 &&
+                     player.position.y < 2;
+      if (inLock !== state.onPad) {
+        state.onPad = inLock;
+        if (!inLock) hud.pickup('');
+      }
+      if (!inLock) {
+        state.extractT = 0;
+        hub.update(dt, extractHeld);        // lifts and terminals own the key here
+        hud.deck(hub.deckOf());
+        return;
+      }
+      if (extractHeld) {
+        state.extractT += dt;
+        hud.pickup('CYCLING AIRLOCK ' + Math.max(0, (1.4 - state.extractT)).toFixed(1) + 's');
+        if (state.extractT >= 1.4) { state.exitTo = 'campaign'; complete(); }
+      } else {
+        state.extractT = 0;
+        hud.pickup('HOLD F — LEAVE THE CRADLE');
+      }
+    }
+
     function runBeats(dt) {
       state.stepT += dt;
       while (state.beatIdx < mission.beats.length && state.stepT >= mission.beats[state.beatIdx][0]) {
@@ -429,6 +525,7 @@
     }
 
     function checkCleared() {
+      if (mission.hub) return;                  // you leave the station, it does not end
       if (mission.boss) return;                 // the boss ends its own mission
       if (mission.patrol) return;               // a patrol ends when you leave
       if (!hosting) return;                     // the host calls the sector clear
@@ -443,6 +540,9 @@
       state.over = true;
       state.running = false;
       document.exitPointerLock();
+      /* You do not clear the station, you leave it. No debrief, no salvage —
+         straight back to whatever the terminal or the airlock asked for. */
+      if (mission.hub) { SF.storage.save(character.slot, character); destroy(); return; }
       const notes = SF.classes.grantXp(character, state.xp);
       if (!isPlanet) SF.campaign.markCleared(character, missionIndex, state.time);
       else {
@@ -580,9 +680,11 @@
       }
 
       if (runner) runner.update(dt);
+      if (body) body.update(dt);
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (mission.patrol) patrolTick(dt);
+      if (mission.hub) hubTick(dt);
       if (boss) boss.update(dt, player.position);
       checkCleared();
 
@@ -662,6 +764,8 @@
       pickups.destroy();
       if (runner) runner.destroy();
       if (chests) chests.destroy();
+      if (body) body.destroy();
+      if (hub) hub.destroy();
       hud.runner(null);
       if (patrol) patrol.destroy();
       if (boss) boss.destroy();
@@ -675,16 +779,20 @@
         if (o.geometry) o.geometry.dispose();
         if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
       });
+      scene.environment = null;
+      envTarget.dispose();
       eng.renderer.dispose();
       SF.materials.reset();          // the traverse above disposed the shared cache
       hud.setVisible(false);
-      onExit();
+      onExit(state.exitTo);
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
              engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
              get patrolRef() { return patrol; },
              get runnerRef() { return runner; },
+             get hubRef() { return hub; },
+             get bodyRef() { return body; },
              get chestsRef() { return chests; },
              get bossRef() { return boss; } };
   }

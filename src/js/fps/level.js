@@ -78,7 +78,11 @@
     }
 
     function box(w, h, d, mat, x, y, z, solid) {
-      const geo = new THREE.BoxGeometry(w, h, d);
+      /* UVs scaled to the box's real size, so one texture tile covers the
+         same distance on a two-metre crate and a forty-metre bulkhead. Left
+         alone, the material's single repeat setting smears across whichever
+         surface is largest. */
+      const geo = SF.materials.tiledBox(w, h, d, 3.2);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y, z);
       mesh.castShadow = solid !== false;

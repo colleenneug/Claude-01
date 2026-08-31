@@ -587,6 +587,13 @@ body.booting .screen:not(#screen-boot){ display:none !important; }
 .es-drop .d-name{ font-size:12.5px; color:#eafcff; }
 .es-drop .d-meta{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; color:var(--rc); margin-top:3px; }
 
+/* the station reads as somewhere to be rather than something to clear */
+.camp-row.station{ border-color:rgba(94,234,255,.45); background:rgba(94,234,255,.05); }
+.camp-row.station .camp-n{ color:var(--cyan); font-size:26px; }
+.camp-row.station:hover:not(:disabled){
+  border-color:var(--cyan); box-shadow:0 0 18px rgba(94,234,255,.3); }
+.camp-row.station .camp-diff{ visibility:hidden; }
+
 .camp-row.destination{ border-color:rgba(255,180,84,.4); }
 .camp-row.destination .camp-n{ color:var(--amber); font-size:24px; }
 .camp-row.destination:hover:not(:disabled){
@@ -1005,6 +1012,15 @@ body.in-mission #vignette{ opacity:.55; }
 .sq-live .sq-bar i{ display:block; height:100%; background:var(--lime); }
 .sq-live.down b{ color:var(--blood); }
 
+/* which deck of the station you are on — top centre, under the objective */
+#deck-tag{
+  position:absolute; top:96px; left:50%; transform:translateX(-50%);
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.3em;
+  color:var(--amber); background:rgba(4,8,14,.5); padding:4px 12px;
+  border:1px solid rgba(255,180,84,.3);
+}
+#deck-tag[hidden]{ display:none; }
+
 /* ---------- runner readout ---------- */
 /* Bottom-left, opposite the ammo block: the speed is the part you read at
    a glance, so it is the only thing here that is large. */
@@ -1279,6 +1295,8 @@ body.in-mission #vignette{ opacity:.55; }
   <div id="kill-feed"></div>
   <div id="squad-hud" hidden></div>
 
+  <div id="deck-tag" hidden>&mdash;</div>
+
   <div id="runner-panel" hidden>
     <div class="rn-speed"><span id="runner-speed">0</span><i>KM/H</i></div>
     <div class="rn-cell"><i id="runner-cell"></i></div>
@@ -1352,7 +1370,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="engage-keys">
       WASD MOVE &nbsp;·&nbsp; MOUSE / &larr; &rarr; TURN &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
       LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; F USE<br>
-      V RUNNER &nbsp;·&nbsp; SHIFT BOOST WHILE RIDING &nbsp;·&nbsp; ESC PAUSE
+      V RUNNER &nbsp;·&nbsp; SHIFT BOOST WHILE RIDING &nbsp;·&nbsp; T 1ST / 3RD PERSON &nbsp;·&nbsp; ESC PAUSE
     </div>
   </div>
 </div>
@@ -1385,7 +1403,7 @@ body.in-mission #vignette{ opacity:.55; }
     <div class="lo-hint">
       WASD MOVE &nbsp;·&nbsp; MOUSE / &larr; &rarr; TURN &nbsp;·&nbsp; SHIFT SPRINT &nbsp;·&nbsp; CTRL CROUCH &nbsp;·&nbsp; SPACE JUMP<br>
       LMB FIRE &nbsp;·&nbsp; RMB AIM &nbsp;·&nbsp; R RELOAD &nbsp;·&nbsp; Q ABILITY &nbsp;·&nbsp; F USE<br>
-      V RUNNER &nbsp;·&nbsp; SHIFT BOOST WHILE RIDING &nbsp;·&nbsp; ESC PAUSE
+      V RUNNER &nbsp;·&nbsp; SHIFT BOOST WHILE RIDING &nbsp;·&nbsp; T 1ST / 3RD PERSON &nbsp;·&nbsp; ESC PAUSE
     </div>
   </div>
 </div>
@@ -3981,17 +3999,34 @@ window.SF = window.SF || {};
     if (cache.has(name)) return cache.get(name);
     let m;
     switch (name) {
-      case 'hull':     m = hullPlate({ base: '#59636f', repeat: [2, 1] }); break;
-      case 'hullDark': m = hullPlate({ base: '#3d4550', dark: '#252b33', rough: 0.7, repeat: [2, 1] }); break;
-      case 'ceiling':  m = hullPlate({ base: '#454c56', cell: 96, repeat: [3, 3] }); break;
-      case 'floor':    m = grating({ repeat: [4, 4] }); break;
-      case 'deck':     m = hullPlate({ base: '#4d545e', cell: 96, rough: 0.7, repeat: [4, 4] }); break;
-      case 'hazard':   m = painted('#484a54', { hazard: true, repeat: [2, 1] }); break;
+      /* Every one of these repeats exactly once: the geometry sets the tiling
+         now (see tiledBox), so a per-material repeat would multiply on top of
+         it and the density would depend on which material a wall happened to
+         use rather than on how big the wall is. */
+      case 'hull':     m = hullPlate({ base: '#59636f', repeat: [1, 1] }); break;
+      case 'hullDark': m = hullPlate({ base: '#3d4550', dark: '#252b33', rough: 0.7, repeat: [1, 1] }); break;
+      case 'ceiling':  m = hullPlate({ base: '#454c56', cell: 96, repeat: [1, 1] }); break;
+      case 'floor':    m = grating({ repeat: [1, 1] }); break;
+      case 'deck':     m = hullPlate({ base: '#4d545e', cell: 96, rough: 0.7, repeat: [1, 1] }); break;
+      case 'hazard':   m = painted('#484a54', { hazard: true, repeat: [1, 1] }); break;
       case 'panelRed': m = painted('#5a2b2b', { repeat: [1, 1] }); break;
       case 'crate':    m = painted('#67707c', { repeat: [1, 1] }); break;
       case 'pipe':     m = new THREE.MeshStandardMaterial({ color: 0x6a707a, metalness: 0.95, roughness: 0.35 }); break;
       case 'glass':    m = new THREE.MeshStandardMaterial({ color: 0x0a1a22, metalness: 0.1, roughness: 0.05,
                             transparent: true, opacity: 0.35 }); break;
+      /* The station sizes its own tiling per surface (see tiledBox), so its
+         materials repeat exactly once and let the geometry decide. */
+      case 'stnHull':  m = hullPlate({ base: '#6d7783', repeat: [1, 1] }); break;
+      case 'stnDark':  m = hullPlate({ base: '#48505b', dark: '#2b323b', rough: 0.68, repeat: [1, 1] }); break;
+      case 'stnDeck':  m = hullPlate({ base: '#5b636e', cell: 96, rough: 0.62, repeat: [1, 1] }); break;
+      case 'stnGrate': m = grating({ repeat: [1, 1] }); break;
+      case 'stnPaint': m = painted('#7a828e', { repeat: [1, 1] }); break;
+      /* The cupola's panes are the one window in the game you look at rather
+         than through, so they are much clearer than a bulkhead port. */
+      case 'stnPane':  m = new THREE.MeshStandardMaterial({ color: 0xbcd8ea, metalness: 0.1,
+                            roughness: 0.08, transparent: true, opacity: 0.1,
+                            envMapIntensity: 0.12, depthWrite: false, side: THREE.DoubleSide });
+                       break;
       default:         m = new THREE.MeshStandardMaterial({ color: 0x808080 });
     }
     cache.set(name, m);
@@ -4009,8 +4044,41 @@ window.SF = window.SF || {};
     cache.clear();
   }
 
+  /* ---------- texel density ----------
+     A material carries one repeat setting, shared by every mesh using it. So
+     a plate texture tuned for a two-metre crate is smeared across a sixty-
+     metre deck, and the deck reads as a painted backdrop rather than as
+     plating. Rewriting a box's own UVs fixes it per surface: every face is
+     scaled so one texture tile covers the same real distance everywhere.
+
+     Face order in a BoxGeometry is +X, -X, +Y, -Y, +Z, -Z, four vertices
+     each at one segment, and each face's U and V run along a different pair
+     of the box's dimensions. */
+  function tileUVs(geo, w, h, d, tile) {
+    const uv = geo.attributes.uv;
+    if (!uv || uv.count !== 24) return geo;
+    const T = tile || 2;
+    const spans = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) {
+      const [su, sv] = spans[f];
+      const ru = Math.max(1, Math.round(su / T));
+      const rv = Math.max(1, Math.round(sv / T));
+      for (let i = 0; i < 4; i++) {
+        const k = f * 4 + i;
+        uv.setXY(k, uv.getX(k) * ru, uv.getY(k) * rv);
+      }
+    }
+    uv.needsUpdate = true;
+    return geo;
+  }
+
+  /* A box whose texture covers a fixed real-world distance per tile. */
+  function tiledBox(w, h, d, tile) {
+    return tileUVs(new THREE.BoxGeometry(w, h, d), w, h, d, tile);
+  }
+
   SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal,
-                   reset, canvasOf: canvas };
+                   tileUVs, tiledBox, reset, canvasOf: canvas };
 })(window.SF);
 
 
@@ -4380,7 +4448,11 @@ window.SF = window.SF || {};
     }
 
     function box(w, h, d, mat, x, y, z, solid) {
-      const geo = new THREE.BoxGeometry(w, h, d);
+      /* UVs scaled to the box's real size, so one texture tile covers the
+         same distance on a two-metre crate and a forty-metre bulkhead. Left
+         alone, the material's single repeat setting smears across whichever
+         surface is largest. */
+      const geo = SF.materials.tiledBox(w, h, d, 3.2);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y, z);
       mesh.castShadow = solid !== false;
@@ -6093,6 +6165,960 @@ window.SF = window.SF || {};
 })(window.SF);
 
 
+/* ==== src/js/fps/envmap.js ==== */
+/* ============================================================
+   Image-based lighting.
+
+   A MeshStandardMaterial with no environment is lit only by the lamps
+   you place, so every metal surface in the game has been reflecting
+   nothing — which is why they read as flat grey plastic rather than
+   as metal. This builds a small room out of emissive panels, runs it
+   through three's prefiltered-mipmap generator, and hands back a cube
+   map the whole scene can reflect.
+
+   It costs one render at load and nothing per frame, and it is the
+   single largest difference between "untextured 3D" and "a place".
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  /* Each preset describes the light around you rather than a picture:
+     what is overhead, what is underfoot, and the two or three coloured
+     things big enough to show up in a reflection. */
+  const PRESETS = {
+    ship:    { sky: 0x2a3644, ground: 0x0d1118, key: 0xbfe0ff, keyI: 3.2,
+               accents: [[0xffb454, 1.6, -1, 0.2, -0.6], [0x5eeaff, 1.2, 1, 0.1, 0.5]] },
+    station: { sky: 0x3a4a5e, ground: 0x141a22, key: 0xfff3e0, keyI: 5.5,
+               accents: [[0x2f74c8, 3.0, 0, -0.85, 0.2],     // Earth, underneath
+                         [0x5eeaff, 1.4, -1, 0.15, -0.4],
+                         [0xffb454, 1.2, 1, 0.2, 0.4]] },
+    desert:  { sky: 0x7b3f7a, ground: 0xb06a38, key: 0xffd9a0, keyI: 7.0,
+               accents: [[0xe0975c, 2.4, 0, -0.3, -1], [0x2a1038, 0.6, 0, 0.9, 0]] },
+    ice:     { sky: 0x8fb4cc, ground: 0x9fb6c8, key: 0xdfeeff, keyI: 6.0,
+               accents: [[0x132743, 1.0, 0, 0.8, 0], [0x6fa8d0, 1.8, 1, -0.2, 0.6]] }
+  };
+
+  /* An inward-facing box of unlit panels. Unlit is the point: these are
+     light sources, not surfaces, so nothing needs to illuminate them. */
+  function room(spec) {
+    const scene = new THREE.Scene();
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const junk = [geo];
+
+    const panel = (colour, intensity, x, y, z, sx, sy, sz) => {
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(colour).multiplyScalar(intensity), side: THREE.BackSide
+      });
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.scale.set(sx, sy, sz);
+      scene.add(m);
+      junk.push(mat);
+      return m;
+    };
+
+    // the shell: sky above, ground below, walls between
+    panel(spec.sky, 1, 0, 0, 0, 20, 20, 20);
+    panel(spec.ground, 1, 0, -10.5, 0, 20, 1, 20);
+    // the key: a bright ceiling panel, which is what a reflection reads as
+    panel(spec.key, spec.keyI, 0, 9.2, 0, 9, 0.3, 9);
+
+    for (const [colour, intensity, ax, ay, az] of spec.accents || []) {
+      panel(colour, intensity, ax * 8, ay * 8, az * 8, 7, 5, 7);
+    }
+    return { scene, junk };
+  }
+
+  /* Build the cube map. The result belongs to the caller, who disposes it
+     with the rest of the mission. */
+  function build(renderer, presetName) {
+    const spec = PRESETS[presetName] || PRESETS.ship;
+    const { scene, junk } = room(spec);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    const target = pmrem.fromScene(scene, 0.02);
+    pmrem.dispose();
+    for (const j of junk) j.dispose();
+    return target;
+  }
+
+  SF.envmap = { build, PRESETS };
+})(window.SF);
+
+
+/* ==== src/js/fps/avatar.js ==== */
+/* ============================================================
+   The operative's body.
+
+   One build, used everywhere a person has to be visible: a squadmate
+   across the room, the rider on a runner, and your own operative when
+   you drop into third person. Class colour on the suit, the look you
+   chose on the skin and hair.
+
+   Limbs come back in a list so a caller can animate them; the build
+   itself is static.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  function build(info) {
+    const G = SF.gear;
+    const cls = SF.classes.CLASSES[info.cls] || SF.classes.CLASSES.bulwark;
+    const look = info.look || G.defaultLook();
+
+    const group = new THREE.Group();
+    const suit = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(cls.accent).multiplyScalar(0.34),
+      roughness: 0.6, metalness: 0.4
+    });
+    const skin = new THREE.MeshStandardMaterial({
+      color: G.SKINS[look.skin % G.SKINS.length], roughness: 0.75
+    });
+    const hair = new THREE.MeshStandardMaterial({
+      color: G.HAIR_COLOURS[look.hairColour % G.HAIR_COLOURS.length], roughness: 0.85
+    });
+
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.44, 4, 12), suit);
+    torso.position.y = 1.13;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 14), skin);
+    head.position.y = 1.6;
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.232, 16, 12,
+      0, Math.PI * 2, 0, Math.PI * 0.5), hair);
+    cap.position.y = 1.6;
+    const hips = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.1, 3, 10), suit);
+    hips.position.y = 0.82;
+
+    const limbs = [];
+    for (const side of [-1, 1]) {
+      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.46, 3, 8), suit);
+      arm.position.set(side * 0.34, 1.14, 0);
+      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.5, 3, 8), suit);
+      leg.position.set(side * 0.13, 0.44, 0);
+      group.add(arm, leg);
+      limbs.push({ arm, leg, side });
+    }
+
+    group.add(torso, head, cap, hips);
+
+    /* A stubby rifle, so it is obvious which way a body is facing. Optional:
+       a rider has both hands on the frame. */
+    let gun = null;
+    if (info.gun !== false) {
+      gun = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.5),
+        new THREE.MeshStandardMaterial({ color: 0x20242c, metalness: 0.85, roughness: 0.4 }));
+      gun.position.set(0.22, 1.16, -0.34);
+      group.add(gun);
+    }
+
+    for (const c of group.children) c.castShadow = true;
+    return { group, limbs, gun, torso, head, cap, hips, materials: [suit, skin, hair] };
+  }
+
+  /* The walk cycle every body shares: legs and arms counter-swinging at a
+     rate set by how fast the body is actually moving. */
+  function stride(limbs, phase, amount) {
+    for (const l of limbs) {
+      const swing = Math.sin(phase + (l.side > 0 ? Math.PI : 0)) * amount;
+      l.leg.rotation.x = swing;
+      l.arm.rotation.x = -swing * 0.7;
+    }
+  }
+
+  SF.avatar = { build, stride };
+})(window.SF);
+
+
+/* ==== src/js/fps/body.js ==== */
+/* ============================================================
+   Your own operative, seen from outside.
+
+   Third person on foot: the camera pulls back and this stands where
+   you stand. It walks when you walk, crouches when you crouch, and
+   turns with your look — but only in yaw, because a body that pitches
+   with the camera looks like it is falling over.
+
+   The shot still leaves through the crosshair: see shotOrigin, which
+   returns a point on the camera's centre line rather than the eye.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const CHASE_DIST = 3.1;
+  const CHASE_LIFT = 0.45;
+
+  function create(ctx) {
+    const { scene, camera, player, character } = ctx;
+
+    const built = SF.avatar.build({ cls: character.cls, look: character.look });
+    const group = built.group;
+    group.visible = false;
+    scene.add(group);
+
+    let on = false;
+    let phase = 0;
+    let amount = 0;
+
+    function setEnabled(v) {
+      on = !!v;
+      group.visible = on;
+      player.setChase(on ? CHASE_DIST : 0, on ? CHASE_LIFT : 0);
+      if (ctx.onToggle) ctx.onToggle(on);
+    }
+
+    /* A muzzle on the camera's centre line, so third person aims where the
+       crosshair points instead of where the eye happens to be. */
+    const originV = new THREE.Vector3();
+    const fwdV = new THREE.Vector3();
+    function shotOrigin() {
+      if (!on) return null;
+      camera.getWorldPosition(originV);
+      camera.getWorldDirection(fwdV);
+      return originV.addScaledVector(fwdV, player.chaseDistance + 0.7);
+    }
+
+    function update(dt) {
+      if (!on) return;
+      const s = player.state;
+      group.position.set(s.pos.x, s.pos.y, s.pos.z);
+      group.rotation.y = s.yaw;
+
+      const moving = Math.hypot(s.vel.x, s.vel.z);
+      amount += (Math.min(1, moving / 5) - amount) * Math.min(1, 9 * dt);
+      phase += dt * (4 + moving * 0.9);
+      SF.avatar.stride(built.limbs, phase, amount * 0.7);
+
+      // crouching folds the whole body down rather than bending the knees
+      const squat = s.crouching ? 0.66 : 1;
+      group.scale.y += (squat - group.scale.y) * Math.min(1, 12 * dt);
+      // and a small forward lean under speed
+      group.rotation.x = -Math.min(0.12, moving * 0.008);
+    }
+
+    function destroy() {
+      player.setChase(0, 0);
+      scene.remove(group);
+      group.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+    }
+
+    return {
+      update, destroy, setEnabled, shotOrigin,
+      toggle() { setEnabled(!on); return on; },
+      get enabled() { return on; }
+    };
+  }
+
+  SF.body = { create };
+})(window.SF);
+
+
+/* ==== src/js/fps/station.js ==== */
+/* ============================================================
+   THE CRADLE — the station you come back to.
+
+   Not a mission. Nothing here shoots at you. It is the place the
+   Division kept flying: the last assembled station in orbit, modules
+   bolted end to end across forty years and still holding pressure,
+   with a hundred people living in it and the ark going past overhead
+   every ninety-four minutes.
+
+   Three decks around an open concourse, joined by four stair flights
+   and two lifts. The module names are the ones on the hull, which is
+   to say the real ones — UNITY, DESTINY, HARMONY, TRANQUILITY, and
+   the CUPOLA, which is still the best window anyone has ever built.
+
+   Layout, in metres. The spine runs along Z, the decks stack in Y:
+
+     DECK A  y  0   arrivals, concourse floor, the airlock out
+     DECK B  y  7   gallery ring, the two side labs
+     DECK C  y 14   upper ring and the cupola
+
+   The concourse is open through all three, so from the floor you can
+   see the cupola, and from the cupola you can see the floor.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const DECK = { a: 0, b: 7, c: 14 };
+  const CEIL = 22;                       // the top of the concourse volume
+  const RISE = 0.29;                     // one stair step — under the player's step height
+  const LIFT_R = 2.6;                    // the car
+  const LIFT_AT = [[-25, -25], [25, 25]];
+  /* The shaft is barely wider than the car: the gap you step over on arrival
+     has to be narrower than the player's own radius or it is a hole. */
+  const SHAFT = LIFT_R + 0.15;
+  const shaftWells = () => LIFT_AT.map(([x, z]) =>
+    ({ x0: x - SHAFT, x1: x + SHAFT, z0: z - SHAFT, z1: z + SHAFT }));
+
+  const MODULES = [
+    { id: 'unity',      name: 'UNITY',       deck: 'a', sub: 'ARRIVALS' },
+    { id: 'destiny',    name: 'DESTINY',     deck: 'a', sub: 'CONCOURSE' },
+    { id: 'quest',      name: 'QUEST',       deck: 'a', sub: 'AIRLOCK' },
+    { id: 'zvezda',     name: 'ZVEZDA',      deck: 'a', sub: 'QUARTERMASTER' },
+    { id: 'harmony',    name: 'HARMONY',     deck: 'b', sub: 'GALLERY' },
+    { id: 'columbus',   name: 'COLUMBUS',    deck: 'b', sub: 'ARMOURY' },
+    { id: 'kibo',       name: 'KIBO',        deck: 'b', sub: 'FIRETEAM' },
+    { id: 'tranquility', name: 'TRANQUILITY', deck: 'c', sub: 'UPPER RING' },
+    { id: 'cupola',     name: 'CUPOLA',      deck: 'c', sub: 'OBSERVATION' }
+  ];
+
+  function build(scene) {
+    const group = new THREE.Group();
+    scene.add(group);
+    const colliders = [];
+    const emitters = [];
+    const M = SF.materials;
+
+    /* ---------- helpers ---------- */
+    /* Everything is axis-aligned boxes given as extents rather than centres:
+       a station is a set of rooms, and rooms are easier to write as the space
+       they occupy than as a centre plus a size. */
+    function box(x0, x1, y0, y1, z0, z1, mat, solid) {
+      const w = x1 - x0, h = y1 - y0, d = z1 - z0;
+      // one texture tile per two metres, whatever the surface's size
+      const mesh = new THREE.Mesh(M.tiledBox(w, h, d, 2.2), mat);
+      mesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      mesh.castShadow = solid !== false;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      if (solid !== false) {
+        colliders.push({ min: { x: x0, z: z0 }, max: { x: x1, z: z1 }, top: y1, bottom: y0 });
+      }
+      return mesh;
+    }
+
+    /* A deck plate with rectangular holes cut in it: the atrium, and a well
+       over each stair flight. Cutting the wells matters more than it sounds
+       — a flight that runs under an unbroken deck stops you dead when your
+       head reaches the slab, about two thirds of the way up.
+
+       Rather than special-casing shapes, cut the plate on every hole edge and
+       emit the cells that no hole covers. */
+    function plateWith(x0, x1, z0, z1, y, holes, mat) {
+      const T = 0.4;
+      const xs = [x0, x1], zs = [z0, z1];
+      for (const h of holes) {
+        for (const v of [h.x0, h.x1]) if (v > x0 && v < x1) xs.push(v);
+        for (const v of [h.z0, h.z1]) if (v > z0 && v < z1) zs.push(v);
+      }
+      xs.sort((a, b) => a - b);
+      zs.sort((a, b) => a - b);
+      for (let i = 0; i < xs.length - 1; i++) {
+        for (let j = 0; j < zs.length - 1; j++) {
+          const ax = xs[i], bx = xs[i + 1], az = zs[j], bz = zs[j + 1];
+          if (bx - ax < 0.01 || bz - az < 0.01) continue;
+          const cx = (ax + bx) / 2, cz = (az + bz) / 2;
+          if (holes.some((h) => cx > h.x0 && cx < h.x1 && cz > h.z0 && cz < h.z1)) continue;
+          box(ax, bx, y - T, y, az, bz, mat);
+        }
+      }
+    }
+
+    function plate(x0, x1, z0, z1, y, mat) {
+      box(x0, x1, y - 0.4, y, z0, z1, mat);
+    }
+
+    /* A railing along one edge — solid, because the whole point of a gallery
+       is that you can lean on the edge and not fall off it. */
+    function rail(x0, x1, z0, z1, y) {
+      const post = M.get('pipe');
+      box(x0, x1, y, y + 1.05, z0, z1, post);
+    }
+
+    /* A flight of stairs as a run of steps. Each rise is under the player's
+       step height, so walking into it climbs it — no ramp special-casing. */
+    function stairs(x0, x1, zFrom, zTo, yFrom, yTo, mat) {
+      const n = Math.round((yTo - yFrom) / RISE);
+      const dz = (zTo - zFrom) / n;
+      for (let i = 0; i < n; i++) {
+        const y = yFrom + RISE * (i + 1);
+        const za = zFrom + dz * i, zb = zFrom + dz * (i + 1);
+        box(x0, x1, y - RISE - 0.25, y, Math.min(za, zb), Math.max(za, zb), mat);
+      }
+      return { x0, x1, zFrom, zTo, yFrom, yTo };
+    }
+
+    const light = (x, y, z, colour, intensity, distance) =>
+      emitters.push({ x, y, z, colour, intensity, distance });
+
+    const hull = M.get('stnHull');
+    const dark = M.get('stnDark');
+    const deckMat = M.get('stnDeck');
+    const grate = M.get('stnGrate');
+    const glass = M.get('glass');
+    const pipe = M.get('pipe');
+
+    /* ---------- deck A ---------- */
+    // concourse floor, arrivals, airlock, quartermaster bay
+    plate(-20, 20, -26, 26, DECK.a, deckMat);
+    plate(-11, 11, -54, -26, DECK.a, grate);            // UNITY, arrivals
+    plate(-9, 9, 26, 46, DECK.a, grate);                // QUEST, the airlock
+    plate(20, 42, -10, 14, DECK.a, grate);              // ZVEZDA side bay
+
+    /* ---------- deck B: a gallery ring around the open middle ---------- */
+    /* The atrium, plus a well over each of the two flights coming up from A. */
+    const WELL_B = [
+      { x0: -13, x1: 13, z0: -19, z1: 19 },
+      { x0: -23, x1: -15, z0: -16, z1: 8 },
+      { x0: 15, x1: 23, z0: -8, z1: 16 }
+    ].concat(shaftWells());
+    plateWith(-28, 28, -34, 34, DECK.b, WELL_B, deckMat);
+    plate(-46, -28, -8, 12, DECK.b, grate);             // COLUMBUS arm
+    plate(28, 46, -8, 12, DECK.b, grate);               // KIBO arm
+
+    /* ---------- deck C: a smaller ring, and the cupola ---------- */
+    const WELL_C = [
+      { x0: -13, x1: 13, z0: -19, z1: 19 },
+      { x0: -22, x1: -15, z0: 4, z1: 28 },
+      { x0: 15, x1: 22, z0: -28, z1: -4 }
+    ].concat(shaftWells());
+    plateWith(-24, 24, -30, 30, DECK.c, WELL_C, deckMat);
+    /* The cupola hangs off the port side of deck C rather than off the bow,
+       because a cupola over another module is a window onto that module's
+       roof. Out here there is nothing below it at any deck — which is the
+       entire specification for this room. */
+    plate(-30, -24, -20, -14, DECK.c, grate);           // the neck you walk in along
+    // and then the floor becomes the window: the cupola looks *down*
+    box(-43.4, -30, DECK.c - 0.3, DECK.c, -25.4, -12.6, M.get('stnPane'));
+    // mullions, so it reads as a built window and not a hole
+    /* Matte and dark: a window frame lit from behind by a lamp and in front
+       by an environment map turns into two white bars across the view. */
+    const mullion = new THREE.MeshStandardMaterial({ color: 0x171c23, metalness: 0.15,
+                                                     roughness: 0.9, envMapIntensity: 0.15 });
+    for (const x of [-39.9, -36.7, -33.5])
+      box(x - 0.12, x + 0.12, DECK.c - 0.32, DECK.c + 0.06, -25.4, -12.6, mullion, false);
+    for (const z of [-22.2, -19, -15.8])
+      box(-43.4, -30, DECK.c - 0.32, DECK.c + 0.06, z - 0.12, z + 0.12, mullion, false);
+    // a rim you can hold on to at the edge of it
+    box(-10, 10, DECK.c, DECK.c + 1.0, -32.4, -32, pipe);
+
+    /* ---------- the hull around it all ---------- */
+    const WALL = 1.2;
+    // outer shell of the concourse volume
+    box(-30 - WALL, -30, DECK.a - 1, CEIL, -36, 36, hull);
+    box(30, 30 + WALL, DECK.a - 1, CEIL, -36, 36, hull);
+    box(-30, 30, DECK.a - 1, CEIL, 36, 36 + WALL, hull);
+    box(-30, 30, CEIL, CEIL + 0.6, -36, 36, dark, false);   // the roof, not a collider
+
+    // arrivals tube walls
+    box(-12, -11, DECK.a - 1, 7, -54, -26, hull);
+    box(11, 12, DECK.a - 1, 7, -54, -26, hull);
+    box(-12, 12, DECK.a - 1, 7, -55, -54, hull);
+    box(-12, 12, 7, 7.6, -54, -26, dark, false);
+
+    // airlock tube
+    box(-10, -9, DECK.a - 1, 6.5, 26, 46, hull);
+    box(9, 10, DECK.a - 1, 6.5, 26, 46, hull);
+    box(-10, 10, DECK.a - 1, 6.5, 46, 47, hull);
+    box(-10, 10, 6.5, 7, 26, 46, dark, false);
+
+    // side bays and lab arms get walls too, so you cannot walk off into space
+    for (const bay of [
+      { x0: 20, x1: 42, z0: -10, z1: 14, y: DECK.a, h: 6.5 },
+      { x0: -46, x1: -28, z0: -8, z1: 12, y: DECK.b, h: 6.0 },
+      { x0: 28, x1: 46, z0: -8, z1: 12, y: DECK.b, h: 6.0 }
+    ]) {
+      box(bay.x0, bay.x1, bay.y - 1, bay.y + bay.h, bay.z0 - 1, bay.z0, hull);
+      box(bay.x0, bay.x1, bay.y - 1, bay.y + bay.h, bay.z1, bay.z1 + 1, hull);
+      const far = bay.x0 > 0 ? bay.x1 : bay.x0;
+      box(far - (bay.x0 > 0 ? 0 : 1), far + (bay.x0 > 0 ? 1 : 0),
+          bay.y - 1, bay.y + bay.h, bay.z0, bay.z1, hull);
+      box(bay.x0, bay.x1, bay.y + bay.h, bay.y + bay.h + 0.5, bay.z0, bay.z1, dark, false);
+    }
+
+    // the cupola: a walled neck out from the ring, then the bay itself
+    box(-30, -24, DECK.c - 1, DECK.c + 4.5, -21, -20, hull);
+    box(-30, -24, DECK.c - 1, DECK.c + 4.5, -14, -13, hull);
+    box(-30, -24, DECK.c + 4.5, DECK.c + 5, -21, -13, dark, false);
+    box(-45, -43.4, DECK.c - 1, DECK.c + 5, -26.4, -11.6, hull);
+    box(-45, -29, DECK.c - 1, DECK.c + 5, -26.4, -25.4, hull);
+    box(-45, -29, DECK.c - 1, DECK.c + 5, -12.6, -11.6, hull);
+    box(-30, -29, DECK.c - 1, DECK.c + 5, -26.4, -21, hull);
+    box(-30, -29, DECK.c - 1, DECK.c + 5, -13, -11.6, hull);
+    // a rail at the lip where the grating stops and the glass starts
+    box(-30.2, -29.8, DECK.c, DECK.c + 1.0, -25.4, -12.6, mullion);
+
+    /* ---------- railings around every drop ---------- */
+    // deck B gallery, inner edge
+    rail(-13, 13, -19.2, -19, DECK.b);
+    rail(-13, 13, 19, 19.2, DECK.b);
+    rail(-13.2, -13, -19, 19, DECK.b);
+    rail(13, 13.2, -19, 19, DECK.b);
+    // deck C ring, inner edge
+    rail(-13, 13, -19.2, -19, DECK.c);
+    rail(-13, 13, 19, 19.2, DECK.c);
+    rail(-13.2, -13, -19, 19, DECK.c);
+    rail(13, 13.2, -19, 19, DECK.c);
+    // the stair wells, on the two long sides — the ends are where you walk in
+    rail(-23.2, -23, -16, 8, DECK.b);
+    rail(-15, -14.8, -16, 8, DECK.b);
+    rail(14.8, 15, -8, 16, DECK.b);
+    rail(23, 23.2, -8, 16, DECK.b);
+    rail(-22.2, -22, 4, 28, DECK.c);
+    rail(-15, -14.8, 4, 28, DECK.c);
+    rail(14.8, 15, -28, -4, DECK.c);
+    rail(22, 22.2, -28, -4, DECK.c);
+
+    // deck C outer edge, where it overhangs deck B — broken where a shaft
+    // comes up through it
+    rail(-24, 24, 29.8, 30, DECK.c);
+    rail(-24, 24, -30, -29.8, DECK.c);
+    rail(-24, -23.8, -30, -25 - SHAFT, DECK.c);
+    rail(-24, -23.8, -25 + SHAFT, 30, DECK.c);
+    rail(23.8, 24, -30, 25 - SHAFT, DECK.c);
+    rail(23.8, 24, 25 + SHAFT, 30, DECK.c);
+
+    /* ---------- stairs ---------- */
+    /* Two flights up each side of the concourse, offset front to back so the
+       climb reads as a route through the room rather than a ladder. */
+    const flights = [
+      stairs(-22, -16, -14, 8, DECK.a, DECK.b, deckMat),
+      stairs(16, 22, 14, -8, DECK.a, DECK.b, deckMat),
+      stairs(-21, -16, 26, 4, DECK.b, DECK.c, deckMat),
+      stairs(16, 21, -26, -4, DECK.b, DECK.c, deckMat)
+    ];
+    // landings, so the top of a flight is a floor and not a lip
+    box(-22, -16, DECK.b - 0.4, DECK.b, 8, 12, deckMat);
+    box(16, 22, DECK.b - 0.4, DECK.b, -12, -8, deckMat);
+    box(-21, -16, DECK.c - 0.4, DECK.c, 0, 4, deckMat);
+    box(16, 21, DECK.c - 0.4, DECK.c, -4, 0, deckMat);
+
+    /* ---------- lifts ---------- */
+    /* Two of them, at opposite corners, each serving all three decks. The car
+       is a real floor you stand on; holding the call key sends it to the next
+       deck up and wraps back to A from the top. The shaft is drawn as a glass
+       tube so you can watch the other one move. */
+    const lifts = [];
+    for (const [lx, lz] of LIFT_AT) {
+      const R = LIFT_R;
+      const tube = new THREE.Mesh(
+        new THREE.CylinderGeometry(R + 0.3, R + 0.3, CEIL - DECK.a + 1, 20, 1, true), glass);
+      tube.position.set(lx, (CEIL + DECK.a) / 2, lz);
+      group.add(tube);
+
+      const car = new THREE.Group();
+      const floor = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.3, 20), M.get('hazard'));
+      floor.receiveShadow = true;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(R, 0.08, 6, 24),
+        M.emissive(0x5eeaff, 2.4));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 1.1;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.4, 8), pipe);
+      post.position.set(0, 1.2, -R + 0.3);
+      car.add(floor, ring, post);
+      car.position.set(lx, DECK.a, lz);
+      group.add(car);
+
+      /* The car's own collider is mutated as it moves — the spatial hash is
+         built once, so a lift that changed cells would fall out of it. Both
+         lifts sit still in X and Z, so its bucket never changes. */
+      const col = { min: { x: lx - R, z: lz - R }, max: { x: lx + R, z: lz + R },
+                    top: DECK.a, bottom: DECK.a - 0.3 };
+      colliders.push(col);
+
+      lifts.push({ x: lx, z: lz, r: R, car, col, ring,
+                   y: DECK.a, target: DECK.a, deck: 0, moving: false, hold: 0 });
+      light(lx, DECK.a + 2.4, lz, 0x5eeaff, 1.1, 9);
+    }
+
+    /* ---------- terminals ---------- */
+    /* The three things you actually came here to do, each a lit kiosk you
+       stand at. They are placed apart on purpose: a hub you cross is a hub. */
+    const terminals = [
+      { id: 'armoury',  name: 'ARMOURY',        line: 'Salvage, parts and the bench.',
+        x: -37, y: DECK.b, z: 2,  colour: 0xffb454 },
+      { id: 'campaign', name: 'FLIGHT DECK',    line: 'The ark, and the ground below it.',
+        x: 0,   y: DECK.a, z: 34, colour: 0x5eeaff },
+      { id: 'coop',     name: 'FIRETEAM',       line: 'Fly with someone.',
+        x: 37,  y: DECK.b, z: 2,  colour: 0x7dff9b }
+    ];
+    for (const t of terminals) {
+      const body = box(t.x - 1.1, t.x + 1.1, t.y, t.y + 1.0, t.z - 0.7, t.z + 0.7, dark);
+      void body;
+      const screen = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.2, 0.12),
+        M.emissive(t.colour, 1.6));
+      screen.position.set(t.x, t.y + 1.7, t.z);
+      screen.rotation.x = -0.32;
+      group.add(screen);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.8, 8), pipe);
+      stem.position.set(t.x, t.y + 1.3, t.z);
+      group.add(stem);
+      light(t.x, t.y + 2.0, t.z, t.colour, 1.5, 10);
+      t.screen = screen;
+    }
+
+    /* ---------- the view ---------- */
+    // windows in the concourse walls, and the cupola's own dome
+    for (const z of [-24, -8, 8, 24]) {
+      for (const side of [-1, 1]) {
+        const w = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.2, 7), glass);
+        w.position.set(side * 30, DECK.b + 2.4, z);
+        group.add(w);
+      }
+    }
+    /* The dome caps the bay from above, so the room is glass top and bottom
+       and metal only at the edges. */
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(8.2, 28, 18, 0, Math.PI * 2, 0, 1.15),
+      M.get('stnPane'));
+    dome.position.set(-36.7, DECK.c + 0.4, -19);
+    group.add(dome);
+
+    /* ---------- dressing ---------- */
+    // crates and pipe runs so the volumes read as lived in
+    const crate = M.get('stnPaint');
+    const spots = [[-6, DECK.a, -34], [5, DECK.a, -38], [-8, DECK.a, 30], [26, DECK.a, 4],
+                   [30, DECK.a, -4], [-34, DECK.b, 8], [-40, DECK.b, -2], [34, DECK.b, 8],
+                   [16, DECK.a, 18], [-17, DECK.a, -20], [20, DECK.c, 20], [-19, DECK.c, -22]];
+    for (const [x, y, z] of spots) {
+      const h = 0.7 + Math.random() * 0.8;
+      box(x - 0.7, x + 0.7, y, y + h, z - 0.7, z + 0.7, crate);
+    }
+    for (const [x, y, z, len] of [[-29, DECK.a + 5.4, 0, 60], [29, DECK.a + 5.4, 0, 60],
+                                  [-29, DECK.b + 5.2, 0, 50], [29, DECK.b + 5.2, 0, 50]]) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, len, 10), pipe);
+      m.rotation.x = Math.PI / 2;
+      m.position.set(x, y, z);
+      group.add(m);
+    }
+
+    /* ---------- lighting the volume ----------
+       A room this size cannot be lit by point lights: the pool is a dozen
+       slots for the whole mission. So the station lights itself the way a
+       real one does — with strips. Emissive geometry costs no light slot and
+       reads as the source; the hemisphere and the environment map do the
+       actual illuminating. */
+    const strip = (colour, x0, x1, y, z0, z1, intensity) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.14, z1 - z0),
+                               M.emissive(colour, intensity == null ? 2.4 : intensity));
+      m.position.set((x0 + x1) / 2, y, (z0 + z1) / 2);
+      group.add(m);
+      return m;
+    };
+
+    // ceiling coves down both sides of the concourse, the length of the room
+    for (const side of [-1, 1]) {
+      strip(0xdfefff, side * 29 - 0.6, side * 29 + 0.6, CEIL - 1.2, -34, 34, 3.0);
+      strip(0xdfefff, side * 29 - 0.5, side * 29 + 0.5, DECK.b + 5.4, -32, 32, 1.9);
+      strip(0xdfefff, side * 29 - 0.5, side * 29 + 0.5, DECK.a + 5.6, -24, 24, 1.9);
+    }
+    // deck-edge nosing, so every drop reads before you reach it
+    for (const y of [DECK.b, DECK.c]) {
+      strip(0x5eeaff, -13, 13, y + 0.02, -19.3, -18.9, 2.2);
+      strip(0x5eeaff, -13, 13, y + 0.02, 18.9, 19.3, 2.2);
+      strip(0x5eeaff, -13.3, -12.9, y + 0.02, -19, 19, 2.2);
+      strip(0x5eeaff, 12.9, 13.3, y + 0.02, -19, 19, 2.2);
+    }
+    // the tube runs
+    strip(0xdfefff, -0.6, 0.6, 6.7, -53, -27, 2.6);
+    strip(0xdfefff, -0.6, 0.6, 6.2, 27, 45, 2.6);
+    // the lab arms
+    strip(0xdfefff, -45, -29, DECK.b + 5.4, -0.5, 0.5, 2.4);
+    strip(0xdfefff, 29, 45, DECK.b + 5.4, -0.5, 0.5, 2.4);
+    strip(0xdfefff, 21, 41, DECK.a + 5.9, -0.5, 0.5, 2.4);
+
+    light(0, CEIL - 3, 0, 0xbfe9ff, 2.2, 70);
+    light(0, DECK.b + 4, 0, 0xbfe9ff, 1.4, 46);
+    light(0, DECK.a + 4, -38, 0x9ec4dd, 1.4, 30);
+    light(0, DECK.a + 4, 36, 0x9ec4dd, 1.4, 30);
+    // over the neck, not over the glass — the cupola is lit by the Earth
+    light(-27, DECK.c + 3, -17, 0x8fd9ff, 1.3, 18);
+
+    outside(group);
+
+    const zones = {
+      hub: { x0: -30, x1: 30, z0: -36, z1: 36, cx: 0, cz: 0, name: 'THE CRADLE' }
+    };
+
+    return {
+      group, colliders, emitters, zones, props: [],
+      lifts, terminals, decks: DECK, modules: MODULES,
+      space: SF.spatial.create(colliders, 14),
+      playerStart: new THREE.Vector3(0, 0, -48),
+      bounds: { minX: -48, maxX: 48, minZ: -56, maxZ: 48 },
+      flights
+    };
+  }
+
+  /* ---------- what is out the window ----------
+     Stars, the trusses and arrays that make the silhouette unmistakable,
+     and the Earth underneath — which is the whole reason the cupola is
+     worth the walk. The globe is drawn rather than loaded, so this needs
+     no art to look like somewhere. */
+  function outside(group) {
+    const M = SF.materials;
+
+    // starfield: a sphere of points around everything
+    const N = 2600, pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2;
+      const r = 900, s = Math.sqrt(1 - u * u);
+      pos[i * 3] = r * s * Math.cos(a);
+      pos[i * 3 + 1] = r * u;
+      pos[i * 3 + 2] = r * s * Math.sin(a);
+    }
+    const stars = new THREE.Points(
+      new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos, 3)),
+      new THREE.PointsMaterial({ color: 0xdfeaff, size: 2.4, sizeAttenuation: false, fog: false }));
+    group.add(stars);
+
+    // the Earth, drawn: ocean, a few continents, ice caps, a cloud band
+    const S = 1024, cv = document.createElement('canvas');
+    cv.width = S; cv.height = S / 2;
+    const g = cv.getContext('2d');
+    /* Painted dark on purpose. The globe is self-lit — the station's lamps
+       have no business reaching it — and it goes through ACES tone mapping
+       and a bloom pass on the way to the screen, both of which lift it. Paint
+       it at the brightness of a photograph and it arrives as a white disc. */
+    const sea = g.createLinearGradient(0, 0, 0, S / 2);
+    sea.addColorStop(0, '#07223f'); sea.addColorStop(0.5, '#12507f'); sea.addColorStop(1, '#07223f');
+    g.fillStyle = sea; g.fillRect(0, 0, S, S / 2);
+    const blob = (cx, cy, rx, ry, fill) => {
+      g.fillStyle = fill;
+      g.beginPath();
+      for (let a = 0; a <= Math.PI * 2 + 0.01; a += 0.24) {
+        const w = 0.68 + Math.sin(a * 3.1 + cx) * 0.2 + Math.cos(a * 5.3) * 0.12;
+        const x = cx + Math.cos(a) * rx * w, y = cy + Math.sin(a) * ry * w;
+        a === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+      }
+      g.closePath(); g.fill();
+    };
+    for (const [cx, cy, rx, ry] of [[150, 150, 90, 70], [300, 300, 70, 90], [470, 170, 130, 80],
+                                    [560, 320, 60, 55], [760, 200, 110, 90], [880, 340, 70, 60]]) {
+      blob(cx, cy, rx, ry, '#275a31');
+      blob(cx + rx * 0.3, cy + ry * 0.2, rx * 0.4, ry * 0.35, '#665a33');
+    }
+    g.fillStyle = '#cddeea';
+    g.fillRect(0, 0, S, 26); g.fillRect(0, S / 2 - 26, S, 26);
+    g.globalAlpha = 0.3;
+    g.fillStyle = '#dbe8f2';
+    for (let i = 0; i < 90; i++) {
+      const x = Math.random() * S, y = Math.random() * S / 2;
+      g.beginPath(); g.ellipse(x, y, 30 + Math.random() * 70, 9 + Math.random() * 14, 0, 0, 6.3); g.fill();
+    }
+    g.globalAlpha = 1;
+
+    /* The terminator: one edge of the globe is in shadow, with a thin band of
+       city light along it. Without this the sphere reads as a flat disc. */
+    const night = g.createLinearGradient(0, 0, S, 0);
+    night.addColorStop(0, 'rgba(0,0,0,0.80)');
+    night.addColorStop(0.13, 'rgba(0,0,0,0.30)');
+    night.addColorStop(0.24, 'rgba(0,0,0,0)');
+    night.addColorStop(0.86, 'rgba(0,0,0,0)');
+    night.addColorStop(1, 'rgba(0,0,0,0.72)');
+    g.fillStyle = night;
+    g.fillRect(0, 0, S, S / 2);
+    g.globalAlpha = 0.5;
+    g.fillStyle = '#ffcf80';
+    for (let i = 0; i < 120; i++) {
+      const x = Math.random() * S * 0.2, y = 40 + Math.random() * (S / 2 - 80);
+      g.fillRect(x, y, 1 + Math.random() * 2, 1 + Math.random() * 2);
+    }
+    g.globalAlpha = 1;
+    const tex = new THREE.CanvasTexture(cv);
+    if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
+
+    /* Two hundred metres down and nine hundred across, which is nothing like
+       the real numbers and exactly like the real view: a curved horizon that
+       fills the window and runs off both edges. Fog is off on all of it —
+       interior haze has no business out there. */
+    const earth = new THREE.Mesh(new THREE.SphereGeometry(900, 64, 40),
+      new THREE.MeshBasicMaterial({ map: tex, fog: false }));
+    earth.position.set(-90, -1080, -60);
+    earth.rotation.y = 1.1;
+    group.add(earth);
+
+    // the atmosphere on the limb, brightest where it is edge-on
+    const air = new THREE.Mesh(new THREE.SphereGeometry(936, 48, 28),
+      new THREE.MeshBasicMaterial({ color: 0x2e6ea8, transparent: true, opacity: 0.13,
+                                    side: THREE.BackSide, depthWrite: false, fog: false }));
+    air.position.copy(earth.position);
+    group.add(air);
+
+    // the sun, low and off to one side, so the arrays have something to face
+    const sun = new THREE.Mesh(new THREE.SphereGeometry(26, 20, 14),
+      new THREE.MeshBasicMaterial({ color: 0xfff6e2, fog: false }));
+    sun.position.set(-420, 240, -560);
+    group.add(sun);
+
+    /* Trusses and solar arrays. Drawn outside the pressure hull and never
+       collided against — you are never out there. */
+    const truss = M.get('pipe');
+    const panel = new THREE.MeshStandardMaterial({
+      color: 0x2b2f52, metalness: 0.5, roughness: 0.35,
+      emissive: new THREE.Color(0x101830), emissiveIntensity: 1
+    });
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(150, 1.6, 1.6), truss);
+    beam.position.set(0, DECK.b + 12, -6);
+    group.add(beam);
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(34, 0.25, 12), panel);
+        wing.position.set(side * (40 + i * 22), DECK.b + 12, -6 + (i % 2 ? 16 : -16));
+        wing.rotation.z = side * 0.06;
+        group.add(wing);
+      }
+      const radiator = new THREE.Mesh(new THREE.BoxGeometry(20, 0.2, 8),
+        new THREE.MeshStandardMaterial({ color: 0xc9d2dc, metalness: 0.3, roughness: 0.6 }));
+      radiator.position.set(side * 34, DECK.b + 11, 22);
+      group.add(radiator);
+    }
+  }
+
+  /* The hub runs through the same mission pipeline as everything else, so
+     it describes itself the same way — with no waves and nothing to do. */
+  function asMission() {
+    return {
+      id: 'cradle', n: 'THE CRADLE', zone: 'hub', from: null,
+      name: 'THE CRADLE', objective: 'Nothing is shooting at you. Take your time.',
+      brief: '', waves: [], beats: [
+        [1.0, 'DIVISION', 'Cradle control has you. Welcome back.'],
+        [9.0, 'VOSS', 'Cupola is two decks up and out to port. Worth the stairs.']
+      ],
+      hub: true, patrol: false
+    };
+  }
+
+  SF.station = { build, asMission, DECK, MODULES };
+})(window.SF);
+
+
+/* ==== src/js/fps/hub.js ==== */
+/* ============================================================
+   Living in the station: the lifts and the terminals.
+
+   A lift car is a real floor with a collider that moves in Y only, so
+   the spatial hash it was bucketed into at build time stays correct.
+   Stand on one and hold the use key: it goes to the next deck up and
+   wraps back to the bottom from the top. While it moves it carries you
+   directly rather than leaving that to gravity, which at a metre a
+   frame would drop you through the floor.
+
+   A terminal is the reason you came: hold the use key at one and the
+   station hands you back to the menu it stands for.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const CALL_TIME = 0.45;         // how long you hold the key before it moves
+  const LIFT_SPEED = 4.2;         // metres a second
+  const USE_RANGE = 2.9;          // how close you stand to a terminal
+  const USE_TIME = 0.5;
+
+  function create(ctx) {
+    const { level, player, hud } = ctx;
+    const lifts = level.lifts || [];
+    const terminals = level.terminals || [];
+    const stops = [level.decks.a, level.decks.b, level.decks.c];
+    const NAMES = ['A', 'B', 'C'];
+
+    let prompting = false;
+    let useT = 0;
+    let riding = null;
+
+    function onCar(l) {
+      return Math.hypot(player.position.x - l.x, player.position.z - l.z) < l.r - 0.2 &&
+             Math.abs(player.position.y - l.y) < 1.2;
+    }
+
+    function send(l) {
+      l.deck = (l.deck + 1) % stops.length;
+      l.target = stops[l.deck];
+      l.moving = true;
+      riding = l;
+      hud.pickup('DECK ' + NAMES[l.deck]);
+      SF.audio.sfx.open();
+    }
+
+    function update(dt, holding) {
+      /* ---- lifts in motion ---- */
+      for (const l of lifts) {
+        if (!l.moving) continue;
+        const dir = Math.sign(l.target - l.y);
+        l.y += dir * LIFT_SPEED * dt;
+        if ((dir > 0 && l.y >= l.target) || (dir < 0 && l.y <= l.target)) {
+          l.y = l.target;
+          l.moving = false;
+          if (riding === l) riding = null;
+          SF.audio.sfx.objective();
+        }
+        l.car.position.y = l.y;
+        l.col.top = l.y;
+        l.col.bottom = l.y - 0.3;
+        l.ring.material.emissiveIntensity = 2.4 + Math.sin(performance.now() / 90) * 1.2;
+        // carry whoever is standing on it
+        if (riding === l && onCar(l)) {
+          player.state.pos.y = l.y;
+          player.state.vel.y = 0;
+          player.state.onGround = true;
+        }
+      }
+
+      /* ---- what is in reach ---- */
+      let liftHere = null;
+      for (const l of lifts) if (!l.moving && onCar(l)) { liftHere = l; break; }
+
+      let term = null, td = USE_RANGE;
+      if (!liftHere) {
+        for (const t of terminals) {
+          const d = Math.hypot(player.position.x - t.x, player.position.z - t.z);
+          if (d < td && Math.abs(player.position.y - t.y) < 2.4) { td = d; term = t; }
+        }
+      }
+
+      if (!liftHere && !term) {
+        if (prompting) { hud.pickup(''); prompting = false; }
+        useT = 0;
+        return;
+      }
+      prompting = true;
+
+      if (liftHere) {
+        const next = NAMES[(liftHere.deck + 1) % stops.length];
+        if (holding) {
+          useT += dt;
+          hud.pickup('LIFT TO DECK ' + next + ' ' + Math.max(0, CALL_TIME - useT).toFixed(1) + 's');
+          if (useT >= CALL_TIME) { useT = 0; send(liftHere); }
+        } else {
+          useT = 0;
+          hud.pickup('HOLD F — LIFT TO DECK ' + next);
+        }
+        return;
+      }
+
+      if (holding) {
+        useT += dt;
+        hud.pickup('OPENING ' + term.name + ' ' + Math.max(0, USE_TIME - useT).toFixed(1) + 's');
+        if (useT >= USE_TIME) {
+          useT = 0;
+          hud.pickup('');
+          SF.audio.sfx.confirm();
+          if (ctx.onTerminal) ctx.onTerminal(term.id);
+        }
+      } else {
+        useT = 0;
+        hud.pickup('HOLD F — ' + term.name + ' · ' + term.line);
+      }
+    }
+
+    /* Which deck the player is standing on, for the readout. */
+    function deckOf() {
+      const y = player.position.y;
+      let best = 0;
+      for (let i = 0; i < stops.length; i++) if (y >= stops[i] - 1.5) best = i;
+      return NAMES[best];
+    }
+
+    function destroy() { hud.pickup(''); }
+
+    return { update, destroy, deckOf, get riding() { return !!riding; } };
+  }
+
+  SF.hub = { create };
+})(window.SF);
+
+
 /* ==== src/js/fps/runner.js ==== */
 /* ============================================================
    Runners — the transit frames you ride across open ground.
@@ -7024,6 +8050,14 @@ window.SF = window.SF || {};
         const el = $('#runner-speed');
         if (el) el.textContent = kmh;
       },
+      /* Which deck of the station you are standing on. */
+      deck(letter) {
+        const el = $('#deck-tag');
+        if (!el) return;
+        el.hidden = !letter;
+        if (letter) el.textContent = 'DECK ' + letter;
+      },
+
       /* The boost cell: how much charge is left, and whether it is burning. */
       runnerCell(frac, burning) {
         const el = $('#runner-cell');
@@ -7438,18 +8472,21 @@ window.SF = window.SF || {};
   const { $, clamp } = SF.util;
 
   function create(character, missionIndex, onExit) {
-    /* A mission reference is either a campaign index or a destination id. */
-    const isPlanet = typeof missionIndex === 'string';
-    const mission = isPlanet ? SF.planets.asMission(SF.planets.byId(missionIndex))
+    /* A reference is a campaign index, a destination id, or the hub. */
+    const isHub = missionIndex === 'cradle';
+    const isPlanet = !isHub && typeof missionIndex === 'string';
+    const mission = isHub ? SF.station.asMission()
+                  : isPlanet ? SF.planets.asMission(SF.planets.byId(missionIndex))
                              : SF.campaign.byIndex(missionIndex);
     // destinations scale with the wave reached, not the mission number
-    let scale = SF.campaign.scaleFor(isPlanet ? 5 : missionIndex - 1);
+    let scale = SF.campaign.scaleFor(isHub ? 0 : isPlanet ? 5 : missionIndex - 1);
 
     const canvas = $('#gl');
     const eng = SF.engine.create(canvas);
     const { scene, camera } = eng;
 
-    const level = isPlanet ? SF.planets.buildArena(scene, mission.planet)
+    const level = isHub ? SF.station.build(scene)
+                : isPlanet ? SF.planets.buildArena(scene, mission.planet)
                            : SF.level.build(scene);
     const missionSpec = mission;
 
@@ -7457,25 +8494,55 @@ window.SF = window.SF || {};
        changing the scene's light count recompiles every shader, so nothing
        ever adds or removes one after this. The boss arena is far larger than
        a corridor, so it gets a few more slots. */
-    const lights = SF.lights.create(scene, missionSpec.boss ? 12 : 8);
+    const lights = SF.lights.create(scene, missionSpec.boss || isHub ? 12 : 8);
     for (const e of level.emitters) lights.addStatic(e.x, e.y, e.z, e.colour, e.intensity, e.distance);
     const lightSpec = isPlanet ? mission.planet.light
-                               : { key: 0x9ec4dd, keyI: 0.6, hemiSky: 0x4a6479,
-                                   hemiGround: 0x141a22, hemiI: 0.95 };
+                     : isHub ? { key: 0xfff3e0, keyI: 2.4, hemiSky: 0x9fc4e8,
+                                 hemiGround: 0x2a3038, hemiI: 1.7 }
+                             : { key: 0x9ec4dd, keyI: 0.6, hemiSky: 0x4a6479,
+                                 hemiGround: 0x141a22, hemiI: 0.95 };
+
+    /* Image-based lighting: without it every metal surface reflects nothing
+       and reads as grey plastic. One prefiltered cube map, built at load,
+       free thereafter. See fps/envmap.js. */
+    const envTarget = SF.envmap.build(eng.renderer,
+      isHub ? 'station' : isPlanet ? (mission.planet.id === 'frozen' ? 'ice' : 'desert') : 'ship');
+    scene.environment = envTarget.texture;
+
+    /* An interior you can see across: the ship's corridor fog is far too
+       thick for a room seventy metres wide. */
+    if (isHub) scene.fog = new THREE.FogExp2(0x101927, 0.0035);
     scene.add(new THREE.HemisphereLight(lightSpec.hemiSky, lightSpec.hemiGround, lightSpec.hemiI));
     const key = new THREE.DirectionalLight(lightSpec.key, lightSpec.keyI);
     key.position.set(8, 20, -12);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
-    key.shadow.camera.near = 1; key.shadow.camera.far = 90;
-    key.shadow.camera.left = -45; key.shadow.camera.right = 45;
-    key.shadow.camera.top = 45; key.shadow.camera.bottom = -45;
+    key.shadow.camera.near = 1; key.shadow.camera.far = isHub ? 140 : 90;
+    const shadowSpan = isHub ? 60 : 45;
+    key.shadow.camera.left = -shadowSpan; key.shadow.camera.right = shadowSpan;
+    key.shadow.camera.top = shadowSpan; key.shadow.camera.bottom = -shadowSpan;
+    key.shadow.bias = -0.0006;
+    if (isHub) {
+      key.shadow.mapSize.set(2048, 2048);
+      key.position.set(-26, 34, -18);
+      /* A little fill from below, standing in for the light the Earth throws
+         up through the cupola and the windows. */
+      const earthshine = new THREE.DirectionalLight(0x6fb6ff, 0.5);
+      earthshine.position.set(10, -20, 14);
+      scene.add(earthshine);
+      scene.add(new THREE.AmbientLight(0x2c3a4a, 0.9));
+    }
     scene.add(key);
 
     const player = SF.player.create(camera, level);
     /* Each mission opens where the last one closed: at the near edge of its
        own sector, facing down the ship. */
     (function placeStart() {
+      if (isHub) {
+        player.state.pos.copy(level.playerStart);
+        player.state.yaw = Math.PI;      // facing down the arrivals tube
+        return;
+      }
       if (isPlanet) {
         player.state.pos.copy(level.playerStart);
         player.state.yaw = Math.PI;
@@ -7495,7 +8562,7 @@ window.SF = window.SF || {};
       damageFlash: 0, phase: 0, regenT: 0,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
-      wave: 0, onPad: false, extractT: 0, events: 0, parts: 0,
+      wave: 0, onPad: false, extractT: 0, events: 0, parts: 0, exitTo: null,
       spawned: false, bossBeaten: false,
       respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0, started: false
     };
@@ -7505,6 +8572,9 @@ window.SF = window.SF || {};
     let patrol = null;
     let runner = null;                  // the transit frame, on open ground only
     let chests = null;
+    let hub = null;                     // lifts and terminals, in the station
+    let body = null;                    // your own operative, in third person
+    let bodyWasOn = false;              // third person, put aside while riding
 
     const ai = SF.ai.create({
       scene, level, lights,
@@ -7559,7 +8629,8 @@ window.SF = window.SF || {};
       /* Riding, the shot leaves from a point on the camera's centre line
          rather than from the eye, so the crosshair still means something
          with the camera sitting behind the rider. */
-      originOverride: () => (runner && runner.mounted ? runner.shotOrigin() : null),
+      originOverride: () => (runner && runner.mounted ? runner.shotOrigin()
+                           : body ? body.shotOrigin() : null),
       spreadScale: () => (runner && runner.mounted
         ? (runner.boosting ? 3.2 : 1.8)      // one hand on the bars
         : null),
@@ -7592,6 +8663,10 @@ window.SF = window.SF || {};
     function onKeyDown(e) {
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
+      if (e.code === 'KeyT' && body) {
+        const on = body.toggle();
+        hud.pickup(on ? 'THIRD PERSON' : 'FIRST PERSON');
+      }
       if (e.code === 'KeyV' && runner) runner.toggle();
       if (e.code === 'ShiftLeft' && runner) runner.setBoost(true);
       if (e.code === 'KeyR') weapon.reload();
@@ -7669,7 +8744,32 @@ window.SF = window.SF || {};
       return best || { x: zone.cx, z: zone.z1 - 2 };
     }
 
+    /* The first-person weapon is drawn only when the camera is actually at
+       the eye — third person or a runner both take it away, and either can
+       end without the other. */
+    function refreshViewmodel() {
+      weapon.view.visible = !(body && body.enabled) && !(runner && runner.mounted);
+    }
+
     function beginMission() {
+      /* Third person is available on every mission, not just in the station:
+         the body is built once here and shown when the view is toggled. */
+      body = SF.body.create({
+        scene, camera, player, character,
+        onToggle: refreshViewmodel
+      });
+
+      if (mission.hub) {
+        hub = SF.hub.create({
+          level, player, hud, character,
+          onTerminal: (id) => { state.exitTo = id; complete(); }
+        });
+        hud.objective('<b>THE CRADLE</b> ' + mission.objective);
+        state.spawned = true;
+        SF.audio.sfx.objective();
+        return;
+      }
+
       const zone = level.zones[mission.zone];
       if (mission.patrol) {
         player.setSpeedScale(2.1);        // a kilometre of ground needs the legs
@@ -7694,7 +8794,12 @@ window.SF = window.SF || {};
           scene, camera, player, hud, lights, character,
           isOpenZone: true, baseSpeedScale: 2.1,
           // the first-person weapon has no place in a third-person view
-          onMount: (on) => { weapon.view.visible = !on; },
+          onMount: (on) => {
+            // the runner draws its own rider, and takes the chase camera with it
+            if (on) { bodyWasOn = body && body.enabled; if (body) body.setEnabled(false); }
+            else if (bodyWasOn && body) { body.setEnabled(true); bodyWasOn = false; }
+            refreshViewmodel();
+          },
           onCrash: (dmg) => hurtPlayer(dmg, null)
         });
         chests = SF.chests.create({
@@ -7847,6 +8952,31 @@ window.SF = window.SF || {};
       if (chests) chests.update(dt, extractHeld);
     }
 
+    /* The airlock is the way out. Everything else in the station is a place
+       to stand; QUEST is the one spot that ends the visit. */
+    function hubTick(dt) {
+      const inLock = Math.abs(player.position.x) < 8 && player.position.z > 40 &&
+                     player.position.y < 2;
+      if (inLock !== state.onPad) {
+        state.onPad = inLock;
+        if (!inLock) hud.pickup('');
+      }
+      if (!inLock) {
+        state.extractT = 0;
+        hub.update(dt, extractHeld);        // lifts and terminals own the key here
+        hud.deck(hub.deckOf());
+        return;
+      }
+      if (extractHeld) {
+        state.extractT += dt;
+        hud.pickup('CYCLING AIRLOCK ' + Math.max(0, (1.4 - state.extractT)).toFixed(1) + 's');
+        if (state.extractT >= 1.4) { state.exitTo = 'campaign'; complete(); }
+      } else {
+        state.extractT = 0;
+        hud.pickup('HOLD F — LEAVE THE CRADLE');
+      }
+    }
+
     function runBeats(dt) {
       state.stepT += dt;
       while (state.beatIdx < mission.beats.length && state.stepT >= mission.beats[state.beatIdx][0]) {
@@ -7857,6 +8987,7 @@ window.SF = window.SF || {};
     }
 
     function checkCleared() {
+      if (mission.hub) return;                  // you leave the station, it does not end
       if (mission.boss) return;                 // the boss ends its own mission
       if (mission.patrol) return;               // a patrol ends when you leave
       if (!hosting) return;                     // the host calls the sector clear
@@ -7871,6 +9002,9 @@ window.SF = window.SF || {};
       state.over = true;
       state.running = false;
       document.exitPointerLock();
+      /* You do not clear the station, you leave it. No debrief, no salvage —
+         straight back to whatever the terminal or the airlock asked for. */
+      if (mission.hub) { SF.storage.save(character.slot, character); destroy(); return; }
       const notes = SF.classes.grantXp(character, state.xp);
       if (!isPlanet) SF.campaign.markCleared(character, missionIndex, state.time);
       else {
@@ -8008,9 +9142,11 @@ window.SF = window.SF || {};
       }
 
       if (runner) runner.update(dt);
+      if (body) body.update(dt);
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (mission.patrol) patrolTick(dt);
+      if (mission.hub) hubTick(dt);
       if (boss) boss.update(dt, player.position);
       checkCleared();
 
@@ -8090,6 +9226,8 @@ window.SF = window.SF || {};
       pickups.destroy();
       if (runner) runner.destroy();
       if (chests) chests.destroy();
+      if (body) body.destroy();
+      if (hub) hub.destroy();
       hud.runner(null);
       if (patrol) patrol.destroy();
       if (boss) boss.destroy();
@@ -8103,16 +9241,20 @@ window.SF = window.SF || {};
         if (o.geometry) o.geometry.dispose();
         if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
       });
+      scene.environment = null;
+      envTarget.dispose();
       eng.renderer.dispose();
       SF.materials.reset();          // the traverse above disposed the shared cache
       hud.setVisible(false);
-      onExit();
+      onExit(state.exitTo);
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
              engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
              get patrolRef() { return patrol; },
              get runnerRef() { return runner; },
+             get hubRef() { return hub; },
+             get bodyRef() { return body; },
              get chestsRef() { return chests; },
              get bossRef() { return boss; } };
   }
@@ -8399,6 +9541,21 @@ window.SF = window.SF || {};
       if (unlocked) row.addEventListener('click', () => openBrief(m.n));
       body.appendChild(row);
     }
+
+    /* The station is always open. It is the one place on this screen that
+       is not a fight, so it goes first rather than buried under the list. */
+    const hubRow = el('button', 'camp-row station');
+    hubRow.dataset.hover = 'DOCK';
+    hubRow.innerHTML =
+      '<div class="camp-n">⌂</div>' +
+      '<div>' +
+        '<div class="camp-name">THE CRADLE</div>' +
+        '<div class="camp-obj">INTERNATIONAL SPACE STATION · DIVISION HOME PORT</div>' +
+        '<div class="camp-diff"><i></i><i></i><i></i><i></i><i></i></div>' +
+      '</div>' +
+      '<div class="camp-state next">OPEN</div>';
+    hubRow.addEventListener('click', () => { missionIndex = 'cradle'; drop(); });
+    body.insertBefore(hubRow, body.firstChild);
 
     /* Orbital destinations open once the habitat ring is behind you. */
     const skyOpen = SF.planets.unlocked(ch);
@@ -8747,13 +9904,14 @@ window.SF = window.SF || {};
     show('none');
     $('#loading').hidden = false;
 
-    const steps = [
-      ['GENERATING HULL SURFACES', 0.25],
-      ['BUILDING DECK GEOMETRY', 0.5],
-      ['SEEDING HOSTILE PATTERNS', 0.72],
-      ['SPINNING UP OPTICS', 0.9],
-      ['LINK ESTABLISHED', 1]
-    ];
+    const steps = missionIndex === 'cradle'
+      ? [['MATCHING ORBIT', 0.3], ['HARD DOCK', 0.6],
+         ['PRESSURISING COLLAR', 0.85], ['WELCOME BACK', 1]]
+      : [['GENERATING HULL SURFACES', 0.25],
+         ['BUILDING DECK GEOMETRY', 0.5],
+         ['SEEDING HOSTILE PATTERNS', 0.72],
+         ['SPINNING UP OPTICS', 0.9],
+         ['LINK ESTABLISHED', 1]];
     for (const [label, pct] of steps) {
       $('#lo-step').textContent = label;
       $('#lo-fill').style.width = (pct * 100) + '%';
@@ -8779,14 +9937,19 @@ window.SF = window.SF || {};
     $('#engage').hidden = false;
   }
 
-  function exitMission() {
+  function exitMission(reason) {
     mission = null;
     document.body.classList.remove('in-mission');
     $('#gl').hidden = true;
     $('#pause-menu').hidden = true;
     $('#engage').hidden = true;
     $('#screen-end').classList.remove('active');
-    if (ch) openCampaign(slotIndex); else { renderSlots(); show('slots'); }
+    if (!ch) { renderSlots(); show('slots'); return; }
+    /* A station terminal names where it is sending you, so walking up to the
+       armoury kiosk opens the armoury rather than dumping you on the list. */
+    if (reason === 'armoury') { openCampaign(slotIndex); openArmoury(); return; }
+    if (reason === 'coop') { openCampaign(slotIndex); openCoop(); return; }
+    openCampaign(slotIndex);
   }
 
   async function abandon() {

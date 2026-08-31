@@ -276,6 +276,21 @@
       body.appendChild(row);
     }
 
+    /* The station is always open. It is the one place on this screen that
+       is not a fight, so it goes first rather than buried under the list. */
+    const hubRow = el('button', 'camp-row station');
+    hubRow.dataset.hover = 'DOCK';
+    hubRow.innerHTML =
+      '<div class="camp-n">⌂</div>' +
+      '<div>' +
+        '<div class="camp-name">THE CRADLE</div>' +
+        '<div class="camp-obj">INTERNATIONAL SPACE STATION · DIVISION HOME PORT</div>' +
+        '<div class="camp-diff"><i></i><i></i><i></i><i></i><i></i></div>' +
+      '</div>' +
+      '<div class="camp-state next">OPEN</div>';
+    hubRow.addEventListener('click', () => { missionIndex = 'cradle'; drop(); });
+    body.insertBefore(hubRow, body.firstChild);
+
     /* Orbital destinations open once the habitat ring is behind you. */
     const skyOpen = SF.planets.unlocked(ch);
     for (const dest of SF.planets.DESTINATIONS) {
@@ -623,13 +638,14 @@
     show('none');
     $('#loading').hidden = false;
 
-    const steps = [
-      ['GENERATING HULL SURFACES', 0.25],
-      ['BUILDING DECK GEOMETRY', 0.5],
-      ['SEEDING HOSTILE PATTERNS', 0.72],
-      ['SPINNING UP OPTICS', 0.9],
-      ['LINK ESTABLISHED', 1]
-    ];
+    const steps = missionIndex === 'cradle'
+      ? [['MATCHING ORBIT', 0.3], ['HARD DOCK', 0.6],
+         ['PRESSURISING COLLAR', 0.85], ['WELCOME BACK', 1]]
+      : [['GENERATING HULL SURFACES', 0.25],
+         ['BUILDING DECK GEOMETRY', 0.5],
+         ['SEEDING HOSTILE PATTERNS', 0.72],
+         ['SPINNING UP OPTICS', 0.9],
+         ['LINK ESTABLISHED', 1]];
     for (const [label, pct] of steps) {
       $('#lo-step').textContent = label;
       $('#lo-fill').style.width = (pct * 100) + '%';
@@ -655,14 +671,19 @@
     $('#engage').hidden = false;
   }
 
-  function exitMission() {
+  function exitMission(reason) {
     mission = null;
     document.body.classList.remove('in-mission');
     $('#gl').hidden = true;
     $('#pause-menu').hidden = true;
     $('#engage').hidden = true;
     $('#screen-end').classList.remove('active');
-    if (ch) openCampaign(slotIndex); else { renderSlots(); show('slots'); }
+    if (!ch) { renderSlots(); show('slots'); return; }
+    /* A station terminal names where it is sending you, so walking up to the
+       armoury kiosk opens the armoury rather than dumping you on the list. */
+    if (reason === 'armoury') { openCampaign(slotIndex); openArmoury(); return; }
+    if (reason === 'coop') { openCampaign(slotIndex); openCoop(); return; }
+    openCampaign(slotIndex);
   }
 
   async function abandon() {

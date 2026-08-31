@@ -228,17 +228,34 @@
     if (cache.has(name)) return cache.get(name);
     let m;
     switch (name) {
-      case 'hull':     m = hullPlate({ base: '#59636f', repeat: [2, 1] }); break;
-      case 'hullDark': m = hullPlate({ base: '#3d4550', dark: '#252b33', rough: 0.7, repeat: [2, 1] }); break;
-      case 'ceiling':  m = hullPlate({ base: '#454c56', cell: 96, repeat: [3, 3] }); break;
-      case 'floor':    m = grating({ repeat: [4, 4] }); break;
-      case 'deck':     m = hullPlate({ base: '#4d545e', cell: 96, rough: 0.7, repeat: [4, 4] }); break;
-      case 'hazard':   m = painted('#484a54', { hazard: true, repeat: [2, 1] }); break;
+      /* Every one of these repeats exactly once: the geometry sets the tiling
+         now (see tiledBox), so a per-material repeat would multiply on top of
+         it and the density would depend on which material a wall happened to
+         use rather than on how big the wall is. */
+      case 'hull':     m = hullPlate({ base: '#59636f', repeat: [1, 1] }); break;
+      case 'hullDark': m = hullPlate({ base: '#3d4550', dark: '#252b33', rough: 0.7, repeat: [1, 1] }); break;
+      case 'ceiling':  m = hullPlate({ base: '#454c56', cell: 96, repeat: [1, 1] }); break;
+      case 'floor':    m = grating({ repeat: [1, 1] }); break;
+      case 'deck':     m = hullPlate({ base: '#4d545e', cell: 96, rough: 0.7, repeat: [1, 1] }); break;
+      case 'hazard':   m = painted('#484a54', { hazard: true, repeat: [1, 1] }); break;
       case 'panelRed': m = painted('#5a2b2b', { repeat: [1, 1] }); break;
       case 'crate':    m = painted('#67707c', { repeat: [1, 1] }); break;
       case 'pipe':     m = new THREE.MeshStandardMaterial({ color: 0x6a707a, metalness: 0.95, roughness: 0.35 }); break;
       case 'glass':    m = new THREE.MeshStandardMaterial({ color: 0x0a1a22, metalness: 0.1, roughness: 0.05,
                             transparent: true, opacity: 0.35 }); break;
+      /* The station sizes its own tiling per surface (see tiledBox), so its
+         materials repeat exactly once and let the geometry decide. */
+      case 'stnHull':  m = hullPlate({ base: '#6d7783', repeat: [1, 1] }); break;
+      case 'stnDark':  m = hullPlate({ base: '#48505b', dark: '#2b323b', rough: 0.68, repeat: [1, 1] }); break;
+      case 'stnDeck':  m = hullPlate({ base: '#5b636e', cell: 96, rough: 0.62, repeat: [1, 1] }); break;
+      case 'stnGrate': m = grating({ repeat: [1, 1] }); break;
+      case 'stnPaint': m = painted('#7a828e', { repeat: [1, 1] }); break;
+      /* The cupola's panes are the one window in the game you look at rather
+         than through, so they are much clearer than a bulkhead port. */
+      case 'stnPane':  m = new THREE.MeshStandardMaterial({ color: 0xbcd8ea, metalness: 0.1,
+                            roughness: 0.08, transparent: true, opacity: 0.1,
+                            envMapIntensity: 0.12, depthWrite: false, side: THREE.DoubleSide });
+                       break;
       default:         m = new THREE.MeshStandardMaterial({ color: 0x808080 });
     }
     cache.set(name, m);
@@ -256,6 +273,39 @@
     cache.clear();
   }
 
+  /* ---------- texel density ----------
+     A material carries one repeat setting, shared by every mesh using it. So
+     a plate texture tuned for a two-metre crate is smeared across a sixty-
+     metre deck, and the deck reads as a painted backdrop rather than as
+     plating. Rewriting a box's own UVs fixes it per surface: every face is
+     scaled so one texture tile covers the same real distance everywhere.
+
+     Face order in a BoxGeometry is +X, -X, +Y, -Y, +Z, -Z, four vertices
+     each at one segment, and each face's U and V run along a different pair
+     of the box's dimensions. */
+  function tileUVs(geo, w, h, d, tile) {
+    const uv = geo.attributes.uv;
+    if (!uv || uv.count !== 24) return geo;
+    const T = tile || 2;
+    const spans = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) {
+      const [su, sv] = spans[f];
+      const ru = Math.max(1, Math.round(su / T));
+      const rv = Math.max(1, Math.round(sv / T));
+      for (let i = 0; i < 4; i++) {
+        const k = f * 4 + i;
+        uv.setXY(k, uv.getX(k) * ru, uv.getY(k) * rv);
+      }
+    }
+    uv.needsUpdate = true;
+    return geo;
+  }
+
+  /* A box whose texture covers a fixed real-world distance per tile. */
+  function tiledBox(w, h, d, tile) {
+    return tileUVs(new THREE.BoxGeometry(w, h, d), w, h, d, tile);
+  }
+
   SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal,
-                   reset, canvasOf: canvas };
+                   tileUVs, tiledBox, reset, canvasOf: canvas };
 })(window.SF);
