@@ -164,7 +164,7 @@
         box.hidden = max === 0;
         if (!max) return;
         if (box.childElementCount !== max + 1) {
-          box.innerHTML = '<span class="h-label">HARNESS</span>';
+          box.innerHTML = '<span class="h-label">RETURNS</span>';
           for (let i = 0; i < max; i++) box.appendChild(el('i'));
         }
         Array.from(box.querySelectorAll('i')).forEach((c, i) => c.classList.toggle('spent', i >= left));
@@ -174,7 +174,7 @@
         const o = $('#death');
         o.hidden = !show;
         if (!show) return;
-        $('#death-msg').textContent = message || 'TRAUMA HARNESS ENGAGING';
+        $('#death-msg').textContent = message || 'THE DEEP IS NOT DONE WITH YOU';
         $('#death-sub').textContent = remaining > 0
           ? remaining + (remaining === 1 ? ' CHARGE REMAINING' : ' CHARGES REMAINING')
           : 'NO CHARGES REMAINING';

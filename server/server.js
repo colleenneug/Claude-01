@@ -1,5 +1,5 @@
 /* ============================================================
-   Erebus Cradle — co-op server.
+   The Deep Choir — co-op server.
 
    Serves the game and runs the multiplayer relay on one port, so a
    bare checkout plus `node server/server.js` is a playable co-op
@@ -225,7 +225,7 @@ setInterval(() => {
 }, 10000);
 
 server.listen(PORT, () => {
-  log(`Erebus Cradle server on http://localhost:${PORT}`);
+  log(`The Deep Choir server on http://localhost:${PORT}`);
   log(`  game:  http://localhost:${PORT}/`);
   log(`  co-op: ws://localhost:${PORT}/ws`);
 });

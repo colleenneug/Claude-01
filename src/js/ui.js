@@ -30,19 +30,19 @@
   /* ---------------- boot ---------------- */
 
   const BOOT_LINES = [
-    ['RECOVERY DIVISION FIELD TERMINAL — REV 9.4', 'dim'],
-    ['POST ................................ <span class="ok">PASS</span>', ''],
-    ['NEURAL HARNESS LINK ................. <span class="ok">PASS</span>', ''],
-    ['WEAPON AUTHORISATION ................ <span class="ok">GRANTED</span>', ''],
-    ['LONG-RANGE UPLINK ................... <span class="bad">NO CARRIER</span>', ''],
+    ['THE DEEP — FIRST DESCENT', 'dim'],
+    ['RECOVERY OF SUBJECT .............. <span class="ok">COMPLETE</span>', ''],
+    ['CAUSE OF DEATH ................... <span class="ok">IRRELEVANT</span>', ''],
+    ['CONSENT .......................... <span class="ok">GIVEN</span>', ''],
+    ['RETURN TO SURFACE ................ <span class="bad">NOT OFFERED</span>', ''],
     ['', ''],
-    ['MOUNTING MISSION PACKAGE 44-C ...', 'dim'],
-    ['TARGET: COLONY ARK <em>EREBUS CRADLE</em>', ''],
-    ['LAST CONTACT: 40 YEARS, 2 MONTHS', ''],
+    ['MOUNTING ASCENT ...', 'dim'],
+    ['TARGET: CATHEDRAL ARK <em>EREBUS CRADLE</em>', ''],
+    ['CONSECRATED: 40 YEARS, 2 MONTHS AGO', ''],
     ['SOULS ABOARD AT DEPARTURE: 203,000', ''],
-    ['CURRENT BROADCAST: <span class="warn">ACTIVE — UNCLASSIFIED WAVEFORM</span>', ''],
+    ['SOULS ABOARD NOW: <span class="warn">203,000 — NONE OF THEM ALIVE</span>', ''],
     ['', ''],
-    ['<span class="warn">WARNING: WAVEFORM ANALYSIS INCOMPLETE. IT IS SINGING.</span>', ''],
+    ['<span class="warn">WARNING: THE LIGHT UP THERE DOES NOT LET GO OF ANYTHING.</span>', ''],
     ['', ''],
     ['INTERFACE READY. POINT AND COMMIT.<span class="caret">▌</span>', '']
   ];
@@ -320,7 +320,7 @@
         'REWARD: SALVAGE SCALES WITH THE WAVE YOU REACH.</p>' +
         `<p>${dest.brief}</p>` +
         '<p class="alert">STAND ON THE BEACON AND HOLD F TO CALL THE CUTTER. ' +
-        'HARNESS CHARGES APPLY HERE.</p>' +
+        'THE DEEP STILL RETURNS YOU HERE.</p>' +
       '</div>';
     SF.audio.sfx.open();
     show('brief');

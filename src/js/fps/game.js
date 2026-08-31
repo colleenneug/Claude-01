@@ -315,7 +315,7 @@
             state.events++;
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
-            hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
+            hud.say('CHOIRMASTER', name + ' resolved. Salvage is yours.', 4200);
           }
         });
         /* Open ground: a frame to cross it on, and crates worth crossing it for. */
@@ -342,7 +342,7 @@
             for (const k of Object.keys(parts)) {
               if (parts[k]) hud.killFeed('PARTS — ' + parts[k] + '× ' + SF.gear.partOf(k).name);
             }
-            hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
+            hud.say('CHOIRMASTER', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
 
@@ -371,8 +371,8 @@
           onPlayerHit: (amt, from) => hurtPlayer(amt, from),
           onDefeated: () => { if (!state.bossBeaten) { state.bossBeaten = true; complete(); } }
         });
-        hud.bossShow('THE CONDUCTOR', 'FIRST VOICE / TWO HUNDRED THOUSAND STRONG');
-        hud.bossNodes([0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8]);
+        hud.bossShow('THE FIRST LIGHT', 'FIRST TO SAY YES / TWO HUNDRED THOUSAND STRONG');
+        hud.bossNodes(SF.boss.NODE_COLOUR);   // one definition, in fps/boss.js
       }
 
       state.spawned = true;
@@ -403,8 +403,8 @@
 
     /* ---------- death and respawn ---------- */
 
-    /* Ordinary sectors let the harness bring you back where you came in.
-       The boss fight does not: there, losing your vitals ends the mission. */
+    /* Ordinary sectors let the Deep put you back where you came in. The
+       reliquary floor does not: up there, losing your vitals ends the run. */
     function die() {
       if (state.over || state.dying) return;
       state.deaths++;
@@ -414,8 +414,8 @@
 
       if (state.respawns <= 0) {
         hud.deathOverlay(true, 0, mission.boss
-          ? 'NO HARNESS CHARGE — THE CONDUCTOR TAKES THE FIELD'
-          : 'HARNESS SPENT');
+          ? 'THE DEEP DOES NOT REACH THIS FLOOR'
+          : 'THE DEEP LETS GO');
         return fail();
       }
 
@@ -430,7 +430,7 @@
       state.respawnT = 2.4;
       state.hp = 0;
       hud.refreshVitals(0, state.maxHp, 0);
-      hud.deathOverlay(true, state.respawns, 'TRAUMA HARNESS ENGAGING');
+      hud.deathOverlay(true, state.respawns, 'THE DEEP IS NOT DONE WITH YOU');
       hud.refreshHarness(state.respawns, state.maxRespawns);
       SF.audio.sfx.lose();
       player.state.shake = 3;
@@ -542,12 +542,12 @@
                                   : won ? 'SECTOR CLEAR' : 'ASSET LOST';
       $('#end-title').className = won ? 'win' : 'lose';
       $('#end-sub').textContent = finale
-        ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
+        ? 'Two hundred thousand kept lives finally allowed to end. It will stay dark.'
         : won && mission.patrol
             ? `Cutter clear of ${mission.name}. ${state.events} public event${state.events === 1 ? '' : 's'} resolved.`
-        : won ? `${mission.name} secured. The route aft is open.`
-        : mission.boss ? 'No harness charge is issued for Deck Zero. Take it again from the top.'
-              : 'Every harness charge spent. Recovery Division budgets a replacement.';
+        : won ? `${mission.name} secured. The route up is open.`
+        : mission.boss ? 'The Deep does not reach the reliquary floor. Take it again from the top.'
+              : 'It has put you back as often as it intends to. Go down and ask again.';
       $('#end-stats').innerHTML = [
         [mission.patrol ? 'DESTINATION' : 'MISSION',
          mission.patrol ? mission.name + ' — ' + state.events + ' EVENTS'
@@ -556,7 +556,7 @@
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
         ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
-        ['HARNESS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE ISSUED')],
+        ['RETURNS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE OFFERED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ...(state.parts ? [['RUNNER PARTS', state.parts]] : []),
         ['RANK', character.level]
@@ -598,7 +598,7 @@
       }
 
       if (state.dying) {
-        // the world holds its breath while the harness works
+        // the world holds its breath while the Deep works
         state.respawnT -= dt;
         if (state.respawnT <= 0) respawn();
         lights.update(dt, camera.position);

@@ -34,6 +34,8 @@
 
     /* ---------- the boss itself ---------- */
     const arena = level.zones.deckzero;
+    // 'conductor' is the type key, left alone like the class ids: it is
+    // written into saved data and keyed on across the module.
     const boss = ai.spawn('conductor', arena.cx, arena.cz + 6);
     const totalHp = Math.round(2600 * (ctx.hpScale || 1));
     boss.maxHp = totalHp;
@@ -297,7 +299,7 @@
             const ang = Math.random() * Math.PI * 2;
             ai.spawn('thrall', arena.cx + Math.cos(ang) * 17, arena.cz + Math.sin(ang) * 15);
           }
-          hud.say('CONDUCTOR', 'THE CHOIR WILL ASSIST.', 3200);
+          hud.say('FIRST LIGHT', 'THE BLESSED WILL ASSIST.', 3200);
         }
       }
       void playerPos;
@@ -327,5 +329,5 @@
     return { boss, nodes, state, update, rayNode, hitNode, destroy, totalHp };
   }
 
-  SF.boss = { create, PHASES };
+  SF.boss = { create, PHASES, NODE_COLOUR };
 })(window.SF);
