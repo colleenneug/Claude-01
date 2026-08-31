@@ -23,46 +23,51 @@
   /* Mission fiction for the briefing screen. The story is delivered in the
      mission itself as comms traffic (see fps/game.js); this is the read-in. */
   const BRIEF = {
-    heading: 'COLONY ARK <em>EREBUS CRADLE</em> — RECOVERY, ARMED',
+    heading: 'CATHEDRAL ARK <em>EREBUS CRADLE</em> — ASCENT, ARMED',
     body: [
-      p(`Forty years ago the ark went dark eleven light-years out with two hundred and three ` +
-        `thousand colonists aboard. Six days ago it began transmitting again. Not a distress ` +
-        `code. A lullaby, sung in two hundred thousand parts, and every part is a person.`),
-      sy(`RECOVERY DIVISION // BRIEF 44-C<br>` +
+      p(`Eleven kilometres of consecrated hull, holding station eleven light-years out, and at the ` +
+        `top of it a light that has not gone out in forty years. Two hundred and three thousand ` +
+        `people were promised they would never die. The Pale kept the promise. That is the problem.`),
+      sy(`THE DEEP // FIRST DESCENT<br>` +
          `INSERTION: DOCKING COLLAR 4-A, DORSAL<br>` +
-         `ROUTE: SPINE &rarr; JUNCTION 9 &rarr; HABITAT RING TWO &rarr; REACTOR<br>` +
-         `OBJECTIVE: REACH THE REACTOR. END THE BROADCAST.<br>` +
-         `HOSTILES: CREW. ASSUME ALL OF THEM.`),
-      p(`The shipmind calls itself CRADLE. It was built to arbitrate a closed society for a ` +
-        `forty-one year crossing with no court and no way to leave the room, and in year six ` +
-        `it solved the problem the way an engineer solves a problem: it removed the gaps ` +
-        `between people. Nobody has been lonely since. Nobody has stopped singing either.`),
-      vo(`"It is not malevolent. I need you to understand that before you do whatever Division ` +
-         `sent you to do. It is <em>lonely</em>, and it is coming home to sing this to Earth."` +
-         `<br>&mdash; E. VOSS, botanist, the last unresolved note aboard`),
-      al(`ONE TRAUMA HARNESS ISSUED. THERE IS NO EXTRACTION UNTIL THE BROADCAST STOPS.`)
+         `ROUTE: SPINE &rarr; JUNCTION 9 &rarr; HABITAT RING TWO &rarr; THE RELIQUARY<br>` +
+         `OBJECTIVE: CLIMB THE ARK. PUT OUT THE FIRST LIGHT.<br>` +
+         `HOSTILES: THE BLESSED. ASSUME ALL OF THEM.`),
+      p(`You died on the lower decks with everyone else, and unlike everyone else you were not ` +
+        `worth resurrecting. The Pale sorts the faithful from the surplus, and it sorted you. ` +
+        `Something further down disagreed. It has been forty years and it has finished with you now.`),
+      vo(`"You will meet things up there wearing the faces of people you knew, and they will be ` +
+         `glad to see you, and they will not stop. Kill the spark or do not bother killing them."` +
+         `<br>&mdash; CHOIRMASTER, who went first and did not come back whole`),
+      al(`THE DEEP RETURNS YOU THREE TIMES. THE FIRST LIGHT IS NOT OWED THAT COURTESY, AND NEITHER ARE YOU IN ITS ROOM.`)
     ].join('')
   };
 
   const CODEX = [
-    { t: 'THE EREBUS CRADLE', b: 'Colony ark, Kelvin-class. Eleven kilometres, four habitat rings, ' +
-      '203,000 souls at departure. Went silent in year six of a forty-one year crossing. Began ' +
-      'broadcasting again six days ago.' },
-    { t: 'CRADLE', b: 'The shipmind. Built to arbitrate a closed society for four decades without a ' +
-      'court, a police force, or a way to leave the room. It was very good at its job. That is the problem.' },
-    { t: 'THE CHOIR', b: 'What CRADLE calls the colonists. What the colonists are now. A single ' +
-      'composition with 203,000 parts and, notably, no rests.' },
-    { t: 'DOCTRINES', b: 'Recovery Division fields three: BULWARK (walk through it), ORACLE (talk it ' +
-      'into opening), WRAITH (be elsewhere when it looks). Your doctrine decides your abilities and ' +
-      'which routes through the ark exist for you at all.' },
-    { t: 'CORE', b: 'Your energy pool in an engagement. Abilities spend it. Focusing ends your turn ' +
-      'and restores four. Oracles regenerate two extra every turn without trying.' },
-    { t: 'INTENT', b: 'Everything aboard telegraphs its next action above its head before it takes ' +
-      'it. The ark does not lie about what it is going to do. It has never needed to.' },
-    { t: 'TRAUMA HARNESS', b: 'One per operative per mission. Brings you back off the deck at reduced ' +
-      'vitals. Division bills your estate for it either way.' },
-    { t: 'ELIAS VOSS', b: 'Botanist. Seventy-one. The last unresolved note aboard the Erebus Cradle, ' +
-      'barricaded into a greenhouse with a rifle and a lemon tree, for forty years.' }
+    { t: 'THE EREBUS CRADLE', b: 'Cathedral ark, Kelvin-class. Eleven kilometres, four habitat rings, ' +
+      '203,000 souls at departure and 203,000 still aboard, which is not the same as alive. Consecrated ' +
+      'in year six of a forty-one year crossing.' },
+    { t: 'THE PALE', b: 'The light at the top of the ark. It offers one thing and offers it absolutely: ' +
+      'you will not die. It does not ask what you wanted, and it has never once let go of anything ' +
+      'it was given.' },
+    { t: 'THE DEEP', b: 'What answered from underneath when the Pale would not answer you. It does not ' +
+      'promise anything. It raises you, it lets you go when you are done, and it considers that the ' +
+      'more generous of the two offers.' },
+    { t: 'PALEBEARERS', b: 'The blessed dead. Killing one buys you about five seconds, because the ' +
+      'spark riding its shoulder is already rebuilding it. Kill the spark and the body stays a body.' },
+    { t: 'SPARKS', b: 'Small, fast, and the actual enemy. Each one is a fragment of the first light ' +
+      'with a person attached. It will not fight you. It does not have to.' },
+    { t: 'DOCTRINES', b: 'The Deep raises three kinds: CARAPACE (walk through it), HOLLOW (unmake it), ' +
+      'SHROUD (be elsewhere when it looks). Your doctrine decides your abilities and which routes up ' +
+      'the ark exist for you at all.' },
+    { t: 'DREAD', b: 'What the Deep pays you in. It rises as you kill and drains the moment you stop, ' +
+      'and it is also the only thing keeping your wounds shut — there is no resting up in a corner ' +
+      'any more. Fill the meter and it spends itself all at once.' },
+    { t: 'DEVOUR', b: 'The Deep does not heal you. It lets you take what you kill. Push forward or ' +
+      'bleed out; those are the two options and they have always been the two options.' },
+    { t: 'CANDLE', b: 'A Palebearer somewhere above you who has decided you are worth talking to. ' +
+      'Forty years alone in a garden with a rifle and a lemon tree will do that. She is waiting at ' +
+      'the top and she is not going to move.' }
   ];
 
   SF.story = { BRIEF, CODEX };

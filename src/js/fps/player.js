@@ -18,6 +18,10 @@
 
   function create(camera, level) {
     let speedScale = 1;
+    /* Rapture's speed bonus. Kept separate from speedScale because the runner
+       overwrites that one every frame while you are riding — the two need to
+       multiply, not clobber each other. */
+    let surge = 1;
     let turnScale = 1;
     /* Third person, for when you are riding something. `want` is what the
        ride asks for; `cur` is what the world will actually allow, eased so
@@ -197,7 +201,7 @@
       state.sprinting = wantSprint && len > 0 && (keys.KeyW || keys.ArrowUp);
 
       const target = (state.crouching ? SPEED.crouch
-                    : state.sprinting ? SPEED.sprint : SPEED.walk) * speedScale;
+                    : state.sprinting ? SPEED.sprint : SPEED.walk) * speedScale * surge;
       const accel = state.onGround ? 52 : 12;
       state.vel.x += (dx * target - state.vel.x) * Math.min(1, accel * dt);
       state.vel.z += (dz * target - state.vel.z) * Math.min(1, accel * dt);
@@ -317,6 +321,7 @@
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
       setSpeedScale(v) { speedScale = v || 1; },
+      setSurge(v) { surge = v || 1; },
       /* Ask for a chase camera. dist 0 puts it back on the eye. */
       setChase(dist, height) { chase.want = dist || 0; chase.height = height || 0; },
       get chaseDistance() { return chase.cur; },

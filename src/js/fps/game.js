@@ -62,9 +62,28 @@
     SF.gear.ensure(character);
     const armour = SF.gear.armourStats(character);
 
+    /* ---------- the Deep's economy ----------
+       Dread rises as you kill and falls the moment you stop. It is the only
+       thing that closes your wounds (see devour below), so the correct play
+       is forward. Fill the meter and it spends itself all at once. */
+    const DREAD_MAX = 100;
+    const DREAD_KILL = 17;              // per body
+    const DREAD_HEAD = 7;               // on top, for a head shot kill
+    const DREAD_SHATTER = 9;            // on top, for shattering something frozen
+    const DREAD_DECAY = 4;              // per second, once the killing stops
+    const DREAD_GRACE = 3;              // seconds before decay starts
+    const RAPTURE_TIME = 8;
+    const RAPTURE_DAMAGE = 1.35;
+    const RAPTURE_SPEED = 1.15;
+    /* Devour: what you take back out of a body, scaled by how much dread you
+       are carrying and by the armour's regeneration affix. */
+    const DEVOUR_BASE = 9;
+    const DEVOUR_DREAD = 13;            // added at a full meter
+
     const state = {
       hp: 100 + armour.hp, maxHp: 100 + armour.hp, shield: 0, overshield: 0,
       damageFlash: 0, phase: 0, regenT: 0,
+      dread: 0, rapture: 0, dreadIdle: 0, lastKillHead: false,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
       wave: 0, onPad: false, extractT: 0, events: 0, parts: 0,
@@ -87,8 +106,43 @@
         // a destination's reference is an id, not a number — use its tier instead
         const tier = isPlanet ? 6 + state.wave : missionIndex;
         state.xp += Math.round(e.spec.xp * (1 + 0.1 * (tier - 1)));
+        addDread(DREAD_KILL + (state.lastKillHead ? DREAD_HEAD : 0));
+        state.lastKillHead = false;
+        devour();
+      },
+      onShatter() { addDread(DREAD_SHATTER); },
+      onRevive(e) {
+        hud.killFeed((e.spec.name || 'PALEBEARER') + ' IS BACK UP');
+        hud.banner('IT GOT UP — KILL THE SPARK');
       }
     });
+
+    /* Dread in, and the moment it tips over into Rapture. */
+    function addDread(n) {
+      if (state.over) return;
+      state.dreadIdle = 0;
+      if (state.rapture > 0) return;          // already spent; ride it out
+      state.dread = Math.min(DREAD_MAX, state.dread + n);
+      if (state.dread >= DREAD_MAX) {
+        state.dread = DREAD_MAX;
+        state.rapture = RAPTURE_TIME;
+        player.setSurge(RAPTURE_SPEED);
+        SF.audio.sfx.rapture();
+        hud.banner('RAPTURE');
+      }
+      hud.refreshDread(state.dread / DREAD_MAX, state.rapture > 0);
+    }
+
+    /* The Deep does not heal you; it lets you take what you kill. */
+    function devour() {
+      if (state.over || state.hp <= 0) return;
+      if (state.hp >= state.maxHp) return;
+      const amount = (DEVOUR_BASE + DEVOUR_DREAD * (state.dread / DREAD_MAX))
+                   * (1 + armour.regen / 100);
+      state.hp = Math.min(state.maxHp, state.hp + amount);
+      SF.audio.sfx.devour();
+      hud.refreshVitals(state.hp, state.maxHp, state.overshield);
+    }
 
     /* ---------- co-op ---------- */
     const online = SF.net && SF.net.active;
@@ -139,7 +193,10 @@
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
       onNode: (i) => { if (boss) boss.hitNode(i); },
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
-      onPhase(t) { state.phase = t; }
+      onPhase(t) { state.phase = t; },
+      damageScale: () => (state.rapture > 0 ? RAPTURE_DAMAGE : 1),
+      onDevourStep() { devour(); },
+      markHead(isHead) { state.lastKillHead = !!isHead; }
     });
 
     /* ---------- input ---------- */
@@ -362,6 +419,12 @@
         return fail();
       }
 
+      state.dread = 0;
+      state.rapture = 0;
+      state.dreadIdle = 0;
+      player.setSurge(1);
+      hud.refreshDread(0, false);
+
       state.respawns--;
       state.dying = true;
       state.respawnT = 2.4;
@@ -547,6 +610,26 @@
       state.phase = Math.max(0, state.phase - dt);
       state.damageFlash = Math.max(0, state.damageFlash - dt * 2.2);
 
+      /* Dread: banked while you are killing, bleeding away while you are not.
+         Rapture spends the whole meter, so it empties on the way out. */
+      if (state.rapture > 0) {
+        state.rapture = Math.max(0, state.rapture - dt);
+        state.dread = DREAD_MAX * (state.rapture / RAPTURE_TIME);
+        if (state.rapture <= 0) {
+          state.dread = 0;
+          state.dreadIdle = 0;
+          player.setSurge(1);
+          hud.banner('THE DREAD IS SPENT');
+        }
+        hud.refreshDread(state.dread / DREAD_MAX, state.rapture > 0);
+      } else if (state.dread > 0) {
+        state.dreadIdle += dt;
+        if (state.dreadIdle > DREAD_GRACE) {
+          state.dread = Math.max(0, state.dread - DREAD_DECAY * dt);
+          hud.refreshDread(state.dread / DREAD_MAX, false);
+        }
+      }
+
       player.update(dt);
       weapon.update(dt, firing);
       lights.update(dt, camera.position);
@@ -555,10 +638,12 @@
       const visibleTargets = ai.enemies.some((e) => !e.dead && ai.visible(eye, e));
       ai.step(dt, player.position, visibleTargets);
 
-      // out-of-combat regeneration keeps the pace moving
+      /* There is no resting up any more: the Deep pays out on kills (see
+         devour) and leaves only a token trickle for the walk between fights.
+         Backing off to full health is not a strategy the dark side offers. */
       state.regenT += dt;
-      if (state.regenT > 5 && state.hp < state.maxHp) {
-        state.hp = Math.min(state.maxHp, state.hp + 14 * (1 + armour.regen / 100) * dt);
+      if (state.regenT > 7 && state.hp < state.maxHp * 0.35) {
+        state.hp = Math.min(state.maxHp * 0.35, state.hp + 2.5 * (1 + armour.regen / 100) * dt);
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
@@ -625,6 +710,7 @@
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
+      hud.refreshDread(0, false);
       hud.refreshHarness(state.respawns, state.maxRespawns);
       hud.objective(mission.patrol
         ? '<b>' + mission.name + '</b> CLICK TO ENGAGE'
@@ -650,6 +736,7 @@
     function destroy() {
       cancelAnimationFrame(raf);
       raf = 0;
+      player.setSurge(1);            // never strand rapture's speed bonus
       canvas.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('keydown', onKeyDown);

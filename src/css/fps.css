@@ -65,6 +65,26 @@ body.in-mission #vignette{ opacity:.55; }
   font-family:var(--font-mono); color:#eafcff; text-shadow:0 2px 8px rgba(0,0,0,.9);
   font-size:34px; line-height:1; margin-top:6px;
 }
+/* ---- the dread meter ----
+   Violet while it fills, and it takes the whole HUD with it at full. */
+.dread-bar{ border-color:rgba(157,123,255,.34); }
+#v-dread{
+  width:0%;
+  background:linear-gradient(90deg,#5a2fb0,#9d7bff);
+  box-shadow:0 0 10px rgba(157,123,255,.55);
+}
+#fps-hud.dread-full .dread-bar{ border-color:rgba(157,123,255,.9); }
+#fps-hud.dread-full #v-dread{ animation: dreadReady .7s ease-in-out infinite; }
+#fps-hud.rapture .dread-bar{ border-color:rgba(226,200,255,.95); }
+#fps-hud.rapture #v-dread{
+  background:linear-gradient(90deg,#9d7bff,#e8ddff);
+  box-shadow:0 0 18px rgba(200,170,255,.95), 0 0 44px rgba(157,123,255,.5);
+}
+@keyframes dreadReady{
+  0%,100%{ filter:brightness(1); }
+  50%{ filter:brightness(1.65); }
+}
+
 #vitals .hud-num{ font-size:28px; }
 #fps-hud.critical #v-hp-text{ color:var(--blood); animation: critPulse 1s ease-in-out infinite; }
 @keyframes critPulse{ 50%{ opacity:.45; } }
@@ -308,7 +328,9 @@ body.in-mission #vignette{ opacity:.55; }
 
 /* ---------- harness charges ---------- */
 #harness{
-  position:absolute; left:38px; bottom:150px; display:flex; align-items:center; gap:6px;
+  /* clears the vitals stack, which is three rows tall now that dread sits under
+     the barrier — see #vitals above */
+  position:absolute; left:38px; bottom:188px; display:flex; align-items:center; gap:6px;
 }
 #harness[hidden]{ display:none; }
 #harness .h-label{

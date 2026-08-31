@@ -25,6 +25,15 @@
         root.classList.toggle('critical', hp / maxHp < 0.3);
       },
 
+      /* The dread meter. `frac` is 0..1; `rapture` flips the bar over to the
+         spent-all-at-once state, which the CSS animates. */
+      refreshDread(frac, rapture) {
+        const f = Math.max(0, Math.min(1, frac || 0));
+        $('#v-dread').style.width = (f * 100) + '%';
+        root.classList.toggle('rapture', !!rapture);
+        root.classList.toggle('dread-full', f >= 1 && !rapture);
+      },
+
       refreshAmmo(w) {
         $('#a-mag').textContent = w.ammo;
         $('#a-reserve').textContent = w.reserve;

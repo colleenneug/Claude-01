@@ -10,54 +10,79 @@
   'use strict';
 
   const TYPES = {
+    /* ---- the ark's garrison: what the Pale made of the crew ---- */
     drone: {
-      name: 'HUSK DRONE', hp: 60, speed: 3.2, damage: 9, range: 2.2, rate: 1.1,
-      colour: 0x8a3b3b, glow: 0xff5a4a, height: 1.5, radius: 0.45, flying: true, xp: 20
+      name: 'SEEKER MOTE', hp: 60, speed: 3.2, damage: 9, range: 2.2, rate: 1.1,
+      colour: 0x8a7a4a, glow: 0xffd27a, height: 1.5, radius: 0.45, flying: true, xp: 20
     },
     thrall: {
-      name: 'CHOIR THRALL', hp: 85, speed: 2.7, damage: 13, range: 2.0, rate: 1.4,
-      colour: 0x5c5a68, glow: 0xff7ab0, height: 1.85, radius: 0.42, xp: 26
+      name: 'ACOLYTE OF THE PALE', hp: 85, speed: 2.7, damage: 13, range: 2.0, rate: 1.4,
+      colour: 0x6a6558, glow: 0xfff0c0, height: 1.85, radius: 0.42, xp: 26
     },
     warden: {
-      name: 'WARDEN FRAME', hp: 240, speed: 2.1, damage: 20, range: 26, rate: 2.1,
-      colour: 0x4a5260, glow: 0xffb454, height: 2.5, radius: 0.75, ranged: true, xp: 90
+      name: 'SUNGUARD FRAME', hp: 240, speed: 2.1, damage: 20, range: 26, rate: 2.1,
+      colour: 0x5a5648, glow: 0xffc04a, height: 2.5, radius: 0.75, ranged: true, xp: 90
     },
-    /* ---- Thresher's Reach: machines the dust never finished burying ---- */
+
+    /* ---- the blessed dead, and the thing that keeps rebuilding them ----
+       A palebearer dropped to zero does not die: it goes down, its spark
+       comes out, and it is back on its feet in REVIVE_TIME unless you kill
+       the spark first. See damage() and the downed branch in step(). */
+    palebearer: {
+      name: 'PALEBEARER', sub: 'BLESSED / WILL NOT STAY DOWN', hp: 190, speed: 2.8, damage: 18,
+      range: 24, rate: 1.7, colour: 0x7a6a48, glow: 0xfff4d8, height: 1.95, radius: 0.5,
+      ranged: true, bearer: true, xp: 110
+    },
+    spark: {
+      name: 'SPARK', sub: 'FRAGMENT OF THE FIRST LIGHT', hp: 15, speed: 7.5, damage: 0,
+      range: 0, rate: 9, colour: 0xf0e4c0, glow: 0xffffff, height: 0.5, radius: 0.22,
+      flying: true, spark: true, xp: 45
+    },
+
+    /* ---- Thresher's Reach: the Pale Order, still holding a dead station ---- */
     scarab: {
-      name: 'SCARAB', sub: 'SURVEY DRONE / FERAL', hp: 46, speed: 3.7, damage: 8, range: 2.0,
+      name: 'CENSER', sub: 'PALE ORDER / DRONE', hp: 46, speed: 3.7, damage: 8, range: 2.0,
       rate: 0.95, colour: 0xa8763a, glow: 0xffc46a, height: 1.3, radius: 0.4, flying: true, xp: 18
     },
     marauder: {
-      name: 'MARAUDER', sub: 'SITE SECURITY / REPURPOSED', hp: 115, speed: 2.5, damage: 15,
+      name: 'ORDINAL', sub: 'PALE ORDER / SWORN', hp: 115, speed: 2.5, damage: 15,
       range: 22, rate: 1.9, colour: 0x8a6a44, glow: 0xffb454, height: 1.95, radius: 0.5,
       ranged: true, xp: 40
     },
     colossus: {
-      name: 'DUST COLOSSUS', sub: 'EXCAVATION FRAME / ELITE', hp: 430, speed: 1.8, damage: 26,
-      range: 26, rate: 2.0, colour: 0x6a5236, glow: 0xff7a3a, height: 2.9, radius: 0.95,
+      name: 'RELIQUARY FRAME', sub: 'PALE ORDER / ELITE', hp: 430, speed: 1.8, damage: 26,
+      range: 26, rate: 2.0, colour: 0x6a5236, glow: 0xffd27a, height: 2.9, radius: 0.95,
       ranged: true, elite: true, xp: 190
     },
 
-    /* ---- Cold Lantern: the relay crew, and what the cold kept of them ---- */
+    /* ---- Cold Lantern: the Lamplit, keeping a relay warm for nobody ---- */
     mote: {
-      name: 'FROST MOTE', sub: 'RELAY DRONE / ICED', hp: 40, speed: 3.9, damage: 7, range: 1.9,
-      rate: 0.9, colour: 0x7fc0dc, glow: 0x9fe8ff, height: 1.25, radius: 0.38, flying: true, xp: 17
+      name: 'EMBER', sub: 'THE LAMPLIT / DRONE', hp: 40, speed: 3.9, damage: 7, range: 1.9,
+      rate: 0.9, colour: 0xbba87f, glow: 0xffeec2, height: 1.25, radius: 0.38, flying: true, xp: 17
     },
     revenant: {
-      name: 'REVENANT', sub: 'RELAY CREW / STILLED', hp: 125, speed: 2.6, damage: 16, range: 2.2,
-      rate: 1.3, colour: 0x5a7a8c, glow: 0xbfe8ff, height: 1.9, radius: 0.45, xp: 38
+      name: 'LAMPLIGHTER', sub: 'THE LAMPLIT / SWORN', hp: 125, speed: 2.6, damage: 16, range: 2.2,
+      rate: 1.3, colour: 0x8c8060, glow: 0xfff4d8, height: 1.9, radius: 0.45, xp: 38
     },
     hoarfrost: {
-      name: 'HOARFROST', sub: 'STATION WARDEN / ELITE', hp: 470, speed: 1.9, damage: 24,
-      range: 24, rate: 1.9, colour: 0x486a80, glow: 0x8fd8ff, height: 2.9, radius: 0.95,
+      name: 'BEACON WARDEN', sub: 'THE LAMPLIT / ELITE', hp: 470, speed: 1.9, damage: 24,
+      range: 24, rate: 1.9, colour: 0x807456, glow: 0xffe08a, height: 2.9, radius: 0.95,
       ranged: true, elite: true, xp: 200
     },
 
     conductor: {
-      name: 'THE CONDUCTOR', hp: 900, speed: 2.4, damage: 26, range: 30, rate: 1.6,
-      colour: 0x6b3550, glow: 0xff3fa0, height: 3.0, radius: 0.9, ranged: true, boss: true, xp: 320
+      name: 'THE FIRST LIGHT', hp: 900, speed: 2.4, damage: 26, range: 30, rate: 1.6,
+      colour: 0x6b5a35, glow: 0xfff0b0, height: 3.0, radius: 0.9, ranged: true, boss: true, xp: 320
     }
   };
+
+  /* How long a downed palebearer takes to come back if you leave its spark alone. */
+  const REVIVE_TIME = 5.0;
+  /* A hit on a frozen target shatters it instead of merely hurting it. */
+  const SHATTER_MULT = 2.4;
+  const SHATTER_RADIUS = 4.5;
+  const SHATTER_SPLASH = 34;
+  const FROZEN_TINT = 0x9d7bff;
 
   let uidSeq = 0;
 
@@ -134,7 +159,15 @@
         cool: Math.random() * spec.rate,
         stun: 0, dead: false, deathT: 0,
         hitFlash: 0, bob: Math.random() * 6.28,
-        alerted: false
+        alerted: false,
+        /* Cipher status: held in place, and shatters on the next hit. */
+        frozen: 0,
+        /* Palebearer status: seconds left before it gets back up, its spark's
+           uid while it is down, and whether its one resurrection is spent. */
+        downed: 0, sparkUid: null, revived: false,
+        /* Sparks carry a back-reference to the body they are rebuilding. */
+        bearer: null,
+        baseColour: spec.colour
       };
       enemies.push(e);
       return e;
@@ -184,7 +217,7 @@
       const wall = rayWalls(origin, dir, range, colliders);
       const hits = [];
       for (const e of enemies) {
-        if (e.dead) continue;
+        if (e.dead || e.downed > 0) continue;
         const hd = raySphere(origin, dir, headCentre(e), e.spec.radius * 0.62);
         const bd = raySphere(origin, dir, bodyCentre(e), e.spec.radius * 1.05);
         const isHead = hd >= 0 && (bd < 0 || hd <= bd);
@@ -202,8 +235,64 @@
       };
     }
 
+    /* Frozen bodies shatter rather than absorb, and take their neighbours
+       with them. The guard stops one shatter cascading through a whole
+       frozen group and back into itself. */
+    let shattering = false;
+    function shatterBurst(from) {
+      if (shattering) return;
+      shattering = true;
+      for (const o of enemies) {
+        if (o === from || o.dead || o.downed > 0) continue;
+        if (o.pos.distanceTo(from.pos) > SHATTER_RADIUS) continue;
+        damage(o, SHATTER_SPLASH, null);
+      }
+      shattering = false;
+    }
+
+    function thaw(e) {
+      e.frozen = 0;
+      e.rig.materials[0].color.set(e.baseColour);
+    }
+
+    /* Hold everything in a radius still. The Hollow ability calls this after
+       pulse(), so the damage and the freeze land together. */
+    function freeze(centre, radius, duration) {
+      let n = 0;
+      for (const e of enemies) {
+        if (e.dead || e.downed > 0 || e.spec.boss) continue;
+        if (e.pos.distanceTo(centre) > radius) continue;
+        e.frozen = duration;
+        e.vel.set(0, 0, 0);
+        e.rig.materials[0].color.set(FROZEN_TINT);
+        n++;
+      }
+      return n;
+    }
+
+    /* The spark is dead, so the body it was rebuilding is finally dead too. */
+    function finaliseBearer(spark) {
+      const b = spark.bearer ? byUid(spark.bearer) : null;
+      if (!b || b.dead) return;
+      b.downed = 0;
+      b.sparkUid = null;
+      b.dead = true;
+      b.deathT = 0;
+      b.rig.halo.setIntensity(0);
+      ctx.onKill(b);
+    }
+
+    function spawnSpark(bearer) {
+      const s = spawn('spark', bearer.pos.x, bearer.pos.z);
+      s.pos.y = bearer.spec.height * 0.9;
+      s.bearer = bearer.uid;
+      s.alerted = true;
+      bearer.sparkUid = s.uid;
+      return s;
+    }
+
     function damage(e, amount, dir) {
-      if (e.dead) return false;
+      if (e.dead || e.downed > 0) return false;
       /* A shielded target takes nothing. The boss's shield comes down by
          solving its phrase, not by shooting it. */
       if (e.shielded) {
@@ -211,27 +300,55 @@
         SF.audio.sfx.dryfire();
         return false;
       }
-      e.hp -= amount;
+      let dealt = amount;
+      let shattered = false;
+      if (e.frozen > 0) {
+        dealt *= SHATTER_MULT;
+        shattered = true;
+        thaw(e);
+      }
+
+      e.hp -= dealt;
       e.hitFlash = 1;
       e.alerted = true;
       if (dir) { e.vel.addScaledVector(dir, 1.4 / (e.spec.radius * 3)); }
       SF.audio.sfx.impact();
+      if (shattered) {
+        SF.audio.sfx.shatter();
+        shatterBurst(e);
+        if (ctx.onShatter) ctx.onShatter(e);
+      }
+
       if (e.hp <= 0) {
+        /* A palebearer's first death is not one. It goes down and its spark
+           comes out; kill that inside REVIVE_TIME or it stands back up. */
+        if (e.spec.bearer && !e.revived) {
+          e.downed = REVIVE_TIME;
+          e.hp = 0;
+          e.vel.set(0, 0, 0);
+          e.deathT = 0;
+          e.rig.halo.setIntensity(0.5);
+          spawnSpark(e);
+          SF.audio.sfx.enemyDown();
+          return false;
+        }
         e.dead = true;
         e.deathT = 0;
         e.rig.halo.setIntensity(0);
         SF.audio.sfx.enemyDown();
         ctx.onKill(e);
+        /* Killing the spark finishes whatever it was holding together. */
+        if (e.spec.spark) finaliseBearer(e);
         return true;
       }
       return false;
     }
 
-    /* Oracle's EMP. */
+    /* Hollow's cipher pulse. */
     function pulse(centre, radius, dmg) {
       let n = 0;
       for (const e of enemies) {
-        if (e.dead) continue;
+        if (e.dead || e.downed > 0) continue;
         if (e.pos.distanceTo(centre) > radius) continue;
         e.stun = 3.2;
         n++;
@@ -251,6 +368,45 @@
       return false;
     }
 
+    /* The spark finished its work: the body gets up, the spark is spent. */
+    function reviveBearer(e) {
+      e.downed = 0;
+      e.revived = true;
+      e.hp = Math.round(e.maxHp * 0.6);
+      e.alerted = true;
+      e.rig.group.rotation.x = 0;
+      e.rig.halo.setIntensity(1.1);
+      const s = e.sparkUid ? byUid(e.sparkUid) : null;
+      if (s) retire(s);                     // consumed, not killed: no credit
+      e.sparkUid = null;
+      SF.audio.sfx.revive();
+      if (ctx.onRevive) ctx.onRevive(e);
+    }
+
+    /* Sparks do not fight. They orbit the body they are rebuilding, fast and
+       erratically, and they are small — that is the whole defence. */
+    function stepSpark(e, dt, playerPos) {
+      const b = e.bearer ? byUid(e.bearer) : null;
+      if (!b || b.dead) { retire(e); return; }
+
+      e.bob += dt * 3.2;
+      const r = 1.1 + Math.sin(e.bob * 1.7) * 0.35;
+      const ang = e.bob * 1.9;
+      const tx = b.pos.x + Math.cos(ang) * r;
+      const tz = b.pos.z + Math.sin(ang) * r;
+      const ty = b.spec.height * 0.85 + Math.sin(e.bob * 2.3) * 0.22;
+
+      e.pos.x += (tx - e.pos.x) * Math.min(1, 9 * dt);
+      e.pos.z += (tz - e.pos.z) * Math.min(1, 9 * dt);
+      e.pos.y += (ty - e.pos.y) * Math.min(1, 9 * dt);
+
+      e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+      e.rig.group.rotation.y = Math.atan2(playerPos.x - e.pos.x, playerPos.z - e.pos.z) + Math.PI;
+      if (e.rig.limbs[0] && e.rig.limbs[0].ring) e.rig.limbs[0].ring.rotation.z += dt * 9;
+      e.rig.halo.set(e.pos.x, e.pos.y, e.pos.z);
+      e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
+    }
+
     function step(dt, playerPos, playerVisible) {
       if (remote) { stepProxies(dt); return; }
       for (const e of enemies) {
@@ -264,6 +420,34 @@
         }
 
         e.hitFlash = Math.max(0, e.hitFlash - dt * 4);
+
+        /* Down but not out: the body lies there while its spark works. If the
+           clock runs out it gets back up, once, at a fraction of its health. */
+        if (e.downed > 0) {
+          e.downed -= dt;
+          const t = Math.min(1, (REVIVE_TIME - e.downed) / 0.6);
+          e.rig.group.rotation.x = -t * 1.4;
+          e.rig.group.position.set(e.pos.x, e.pos.y - t * 0.35, e.pos.z);
+          if (e.downed <= 0) reviveBearer(e);
+          continue;
+        }
+
+        /* Frozen: held in place, tinted, and primed to shatter. */
+        if (e.frozen > 0) {
+          e.frozen -= dt;
+          if (e.frozen <= 0) {
+            thaw(e);
+          } else {
+            e.vel.set(0, 0, 0);
+            e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+            e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
+            e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
+            continue;
+          }
+        }
+
+        if (e.spec.spark) { stepSpark(e, dt, playerPos); continue; }
+
         e.stun = Math.max(0, e.stun - dt);
         e.cool -= dt;
 
@@ -434,7 +618,8 @@
         out.push([e.uid, e.type,
                   +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2),
                   +e.rig.group.rotation.y.toFixed(2),
-                  Math.round(e.hp), e.dead ? 1 : 0]);
+                  Math.round(e.hp), e.dead ? 1 : 0,
+                  e.frozen > 0 ? 1 : 0, e.downed > 0 ? 1 : 0]);
       }
       return out;
     }
@@ -444,7 +629,7 @@
     function applySnapshot(list) {
       const seen = new Set();
       for (const row of list) {
-        const [uid, type, x, y, z, ry, hp, dead] = row;
+        const [uid, type, x, y, z, ry, hp, dead, frozen, downed] = row;
         seen.add(uid);
         let e = enemies.find((q) => q.uid === uid);
         if (!e) {
@@ -454,6 +639,13 @@
         }
         e.hp = hp;
         e.proxy.x = x; e.proxy.y = y; e.proxy.z = z; e.proxy.ry = ry;
+        /* Status is display-only on a client: the host owns the timers, we
+           just have to draw the tint and the collapse. */
+        const wasFrozen = e.frozen > 0;
+        e.frozen = frozen ? 1 : 0;
+        if (frozen && !wasFrozen) e.rig.materials[0].color.set(FROZEN_TINT);
+        if (!frozen && wasFrozen) e.rig.materials[0].color.set(e.baseColour);
+        e.downed = downed ? 1 : 0;
         if (dead && !e.dead) { e.dead = true; e.deathT = 0; e.rig.halo.setIntensity(0); }
       }
       for (let i = enemies.length - 1; i >= 0; i--) {
@@ -480,6 +672,13 @@
           if (e.deathT > 1.4) { e.rig.halo.release(); scene.remove(e.rig.group); enemies.splice(i, 1); }
           continue;
         }
+
+        if (e.downed > 0) {
+          e.rig.group.rotation.x = -1.4;
+          e.rig.group.position.set(e.pos.x, e.pos.y - 0.35, e.pos.z);
+          continue;
+        }
+        e.rig.group.rotation.x = 0;
 
         const p = e.proxy;
         if (!p) continue;
@@ -533,7 +732,7 @@
     }
 
     return {
-      enemies, spawn, step, damage, pulse, raycast, visible, prewarm, TYPES,
+      enemies, spawn, step, damage, pulse, freeze, raycast, visible, prewarm, TYPES,
       snapshot, applySnapshot, byUid, retire,
       setRemote(v) { remote = !!v; },
       get isRemote() { return remote; },

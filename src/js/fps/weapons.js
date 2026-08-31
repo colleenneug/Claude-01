@@ -10,35 +10,39 @@
 
   const WEAPONS = {
     bulwark: {
-      id: 'maul', name: 'MAUL-12', kind: 'BREACHING SHOTGUN',
+      id: 'maul', name: 'GRAVEMAUL', kind: 'GROWN SCATTERGUN',
       damage: 17, pellets: 8, rpm: 75, mag: 6, reserve: 48, reload: 2.6,
       spread: 0.055, adsSpread: 0.036, range: 34, headMult: 1.6,
       recoil: { pitch: 0.075, yaw: 0.012 }, shake: 1.5,
-      colour: 0xffb454, tracer: 0xffc46a,
-      desc: 'Eight pellets a shell. Devastating inside ten metres, useless past thirty.'
+      colour: 0xe0556b, tracer: 0xff8a96,
+      desc: 'Eight shards a shell, grown rather than machined. Devastating inside ten metres, ' +
+            'useless past thirty.'
     },
     oracle: {
-      id: 'lance', name: 'ARC LANCE', kind: 'INDUCTION RIFLE',
+      id: 'lance', name: 'NULL LANCE', kind: 'CIPHER RIFLE',
       damage: 26, pellets: 1, rpm: 320, mag: 24, reserve: 168, reload: 2.0,
       spread: 0.012, adsSpread: 0.002, range: 90, headMult: 2.2, pierce: true,
       recoil: { pitch: 0.022, yaw: 0.004 }, shake: 0.5,
-      colour: 0x5eeaff, tracer: 0x9ff4ff,
-      desc: 'Charged induction bolts. Punches through a target and into whatever stood behind it.'
+      colour: 0x9d7bff, tracer: 0xc4aaff,
+      desc: 'Bolts of unwritten matter. Punches through a target and into whatever stood behind it.'
     },
     wraith: {
       id: 'whisper', name: 'WHISPER', kind: 'SUPPRESSED CARBINE',
       damage: 15, pellets: 1, rpm: 640, mag: 32, reserve: 224, reload: 1.7,
       spread: 0.02, adsSpread: 0.005, range: 70, headMult: 3.0,
       recoil: { pitch: 0.014, yaw: 0.006 }, shake: 0.35,
-      colour: 0xff5ea8, tracer: 0xff9ccb,
-      desc: 'Subsonic and quiet. Triple damage on a head shot; the ark never hears the first one.'
+      colour: 0x7de3a8, tracer: 0xb6f2d2,
+      desc: 'Subsonic and quiet. Triple damage on a head shot; the choir never hears the first one.'
     }
   };
 
   const ABILITIES = {
-    bulwark: { name: 'AEGIS BARRIER', cooldown: 16, desc: 'Overshield that soaks the next wave of fire.' },
-    oracle:  { name: 'SYSTEMS BREACH', cooldown: 14, desc: 'EMP pulse: stuns and staggers everything nearby.' },
-    wraith:  { name: 'PHASE STEP',    cooldown: 10, desc: 'Blink forward; briefly untargetable, next shot crits.' }
+    bulwark: { name: 'GRAVE WARD', cooldown: 16,
+               desc: 'Overshield grown out of the ground, thicker for every body standing near you.' },
+    oracle:  { name: 'CRYSTALLIZE', cooldown: 14,
+               desc: 'Unwrites the syntax holding them upright: everything nearby freezes solid.' },
+    wraith:  { name: 'DEVOUR STEP', cooldown: 10,
+               desc: 'Step through the dark; briefly untargetable, next round primed, and it feeds you.' }
   };
 
   function create(ctx) {
@@ -208,6 +212,10 @@
         .addScaledVector(camRight, w.adsAmount > 0.5 ? 0.0 : 0.17)
         .addScaledVector(camUp, w.adsAmount > 0.5 ? -0.02 : -0.13);
 
+      /* Rapture multiplies what leaves the barrel; see the dread meter in
+         fps/game.js, which owns the timer. */
+      const surge = ctx.damageScale ? ctx.damageScale() : 1;
+
       let anyHit = false, anyHead = false;
       for (let p = 0; p < spec.pellets; p++) {
         pelletDir.copy(shotDir);
@@ -234,8 +242,12 @@
 
         if (shot.enemies && shot.enemies.length) {
           for (const h of shot.enemies) {
-            let dmg = spec.damage * (h.head ? spec.headMult : 1);
+            let dmg = spec.damage * (h.head ? spec.headMult : 1) * surge;
             if (w.primed) { dmg *= 2; w.primed = false; }
+            /* Tell the mission where this shot landed before it is applied:
+               ai.damage() calls back into onKill synchronously, and the dread
+               award needs to know whether it was a head shot by then. */
+            if (ctx.markHead) ctx.markHead(h.head);
             /* In co-op a client does not own the hostiles: report the damage
                to the host and let it decide. The hit marker is immediate
                either way, so shooting still feels instant. */
@@ -279,14 +291,23 @@
       w.abilityCool = ability.cooldown;
 
       if (ctx.classId === 'bulwark') {
-        ctx.onOvershield(60);
+        /* The ward is fed by what is close enough to take from: a barrier
+           worth having requires standing in the middle of them. */
+        let near = 0;
+        for (const e of ai.enemies) {
+          if (e.dead || e.downed > 0) continue;
+          if (e.pos.distanceTo(player.position) <= 9) near++;
+        }
+        ctx.onOvershield(60 + Math.min(4, near) * 15);
         SF.audio.sfx.shield();
-        hud.banner('AEGIS BARRIER');
+        hud.banner(near ? 'GRAVE WARD — ' + near + ' HARVESTED' : 'GRAVE WARD');
       } else if (ctx.classId === 'oracle') {
         const hitCount = ai.pulse(player.position, 13, 26);
+        const held = ai.freeze(player.position, 13, 4.0);
         SF.audio.sfx.emp();
+        SF.audio.sfx.freeze();
         player.state.shake = 2.2;
-        hud.banner('SYSTEMS BREACH — ' + hitCount + ' STUNNED');
+        hud.banner(held ? 'CRYSTALLIZE — ' + held + ' HELD' : 'CRYSTALLIZE');
       } else {
         const forward = muzzleDir;
         camera.getWorldDirection(forward);
@@ -295,8 +316,9 @@
         player.state.pos.x = dest.x; player.state.pos.z = dest.z;
         w.primed = true;
         ctx.onPhase(1.4);
+        if (ctx.onDevourStep) ctx.onDevourStep();
         SF.audio.sfx.phase();
-        hud.banner('PHASE STEP — NEXT SHOT PRIMED');
+        hud.banner('DEVOUR STEP — NEXT ROUND PRIMED');
       }
       hud.refreshAbility(w);
     }
