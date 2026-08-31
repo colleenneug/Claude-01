@@ -386,6 +386,10 @@
     /* Sparks do not fight. They orbit the body they are rebuilding, fast and
        erratically, and they are small — that is the whole defence. */
     function stepSpark(e, dt, playerPos) {
+      /* A free spark has no body to rebuild — it is loose in the room and
+         running. The First Light's last phase uses one; see fps/boss.js. */
+      if (e.sparkFree) { stepFreeSpark(e, dt, playerPos); return; }
+
       const b = e.bearer ? byUid(e.bearer) : null;
       if (!b || b.dead) { retire(e); return; }
 
@@ -403,6 +407,29 @@
       e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
       e.rig.group.rotation.y = Math.atan2(playerPos.x - e.pos.x, playerPos.z - e.pos.z) + Math.PI;
       if (e.rig.limbs[0] && e.rig.limbs[0].ring) e.rig.limbs[0].ring.rotation.z += dt * 9;
+      e.rig.halo.set(e.pos.x, e.pos.y, e.pos.z);
+      e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
+    }
+
+    /* Loose and evasive: a wide, drifting arc around its anchor that speeds up
+       as it is hurt. Small, fast and unarmed — the difficulty is hitting it. */
+    function stepFreeSpark(e, dt, playerPos) {
+      const a = e.anchor || { x: e.pos.x, z: e.pos.z };
+      const hurt = 1 - (e.hp / e.maxHp);
+      e.bob += dt * (1.5 + hurt * 1.6);
+      const r = 7 + Math.sin(e.bob * 0.8) * 3.5;
+      const tx = a.x + Math.cos(e.bob) * r;
+      const tz = a.z + Math.sin(e.bob * 1.31) * r;
+      const ty = 1.5 + Math.sin(e.bob * 2.7) * 0.8;
+
+      const k = Math.min(1, (2.6 + hurt * 2.2) * dt);
+      e.pos.x += (tx - e.pos.x) * k;
+      e.pos.z += (tz - e.pos.z) * k;
+      e.pos.y += (ty - e.pos.y) * k;
+
+      e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+      e.rig.group.rotation.y = Math.atan2(playerPos.x - e.pos.x, playerPos.z - e.pos.z) + Math.PI;
+      if (e.rig.limbs[0] && e.rig.limbs[0].ring) e.rig.limbs[0].ring.rotation.z += dt * 12;
       e.rig.halo.set(e.pos.x, e.pos.y, e.pos.z);
       e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
     }
