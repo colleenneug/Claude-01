@@ -376,6 +376,15 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #deck-tag[hidden]{ display:none; }
 
+/* the purse, top right above the contracts */
+#purse-hud{
+  position:absolute; right:38px; top:46px; display:flex; gap:14px;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.14em;
+}
+#purse-hud[hidden]{ display:none; }
+.pu{ color:#eafcff; font-variant-numeric:tabular-nums; }
+.pu i{ font-style:normal; color:var(--pc); margin-right:5px; letter-spacing:.2em; }
+
 /* live contracts, top right under the event panel's slot */
 #contract-hud{
   position:absolute; right:38px; top:76px; width:250px; text-align:left;

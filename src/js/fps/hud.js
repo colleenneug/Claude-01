@@ -126,6 +126,16 @@
         const el = $('#runner-speed');
         if (el) el.textContent = kmh;
       },
+      /* What is in the purse, so a crate paying out means something. */
+      purse(p) {
+        const box = $('#purse-hud');
+        if (!box || !p) return;
+        box.hidden = false;
+        box.innerHTML = SF.economy.CURRENCIES.map((c) =>
+          `<span class="pu" style="--pc:${c.colour}">` +
+          `<i>${c.short}</i>${p[c.id] || 0}</span>`).join('');
+      },
+
       /* The contracts you are carrying, and how they are going. */
       contracts(list) {
         const box = $('#contract-hud');

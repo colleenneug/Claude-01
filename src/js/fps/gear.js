@@ -150,16 +150,20 @@
     return item && item.upgrades ? (item.upgrades[partId] || 0) : 0;
   }
 
-  /* Why a part cannot go on, in words the bench can print. Null means it can. */
+  /* Why a part cannot go on, in words the bench can print. Null means it can.
+     A part in the tray is not enough: bolting one on burns a prime, which is
+     the whole reason primes are worth going out for. */
   function partBlocker(ch, item, partId) {
     if (!item) return 'NO RUNNER EQUIPPED';
     if (!(ch.parts && ch.parts[partId] > 0)) return 'NONE IN STOCK';
     if (fittedCount(item, partId) >= partCap(item)) return 'FRAME IS FULL';
+    if (!SF.economy.canAfford(ch, SF.economy.PRICE.fitPart)) return 'NEED A PRIME';
     return null;
   }
 
   function installPart(ch, item, partId) {
     if (partBlocker(ch, item, partId)) return false;
+    if (!SF.economy.spend(ch, SF.economy.PRICE.fitPart)) return false;
     ensureUpgrades(item);
     item.upgrades[partId]++;
     ch.parts[partId]--;
@@ -167,10 +171,13 @@
     return true;
   }
 
-  /* Strip a frame back to nothing and get every part back. Nothing is lost,
-     so moving your stock onto a better frame costs only the trip. */
+  /* Strip a frame back to nothing and get every part back. The parts come
+     home; the primes they were fitted with do not, and the pull costs a
+     handful of chits — so moving a stock across is cheap but not free.
+     Returns -1 when it cannot be paid for. */
   function stripParts(ch, item) {
     ensureUpgrades(item);
+    if (!SF.economy.spend(ch, SF.economy.PRICE.strip)) return -1;
     let n = 0;
     for (const p of PARTS) {
       n += item.upgrades[p.id];
@@ -374,6 +381,7 @@
       ch.inventory.push(ride);
       ch.equipped.runner = ride;
     }
+    SF.economy.ensure(ch);
     if (!ch.parts) ch.parts = { thrust: 0, brace: 0, grip: 0, cell: 0 };
     for (const p of PARTS) if (typeof ch.parts[p.id] !== 'number') ch.parts[p.id] = 0;
 
@@ -420,7 +428,9 @@
   function breakdown(ch, floor) {
     const limit = rarityRank(floor);
     const take = ch.inventory.filter((it) => !isEquipped(ch, it) && rarityRank(it.rarity) <= limit);
-    if (!take.length) return { count: 0, parts: {} };
+    if (!take.length) return { count: 0, parts: {}, purse: null };
+    const purse = SF.economy.PAY.breakdown(take);
+    SF.economy.earn(ch, purse);
     const gained = { thrust: 0, brace: 0, grip: 0, cell: 0 };
     for (const it of take) {
       const n = BREAK_YIELD[it.rarity] || 1;
@@ -429,7 +439,7 @@
     const gone = new Set(take.map((it) => it.uid));
     ch.inventory = ch.inventory.filter((it) => !gone.has(it.uid));
     grantParts(ch, gained);
-    return { count: take.length, parts: gained,
+    return { count: take.length, parts: gained, purse: purse,
              total: Object.keys(gained).reduce((a, k) => a + gained[k], 0) };
   }
 

@@ -273,6 +273,28 @@
 .item-pow{ float:right; font-family:var(--font-mono); font-size:11px; color:var(--amber); }
 .item-empty{ font-family:var(--font-mono); font-size:11px; color:rgba(108,139,160,.65); letter-spacing:.12em; }
 
+/* ---------- the purse ---------- */
+/* Two numbers, always in the same place, on every screen that spends them. */
+.purse-row{ display:flex; gap:20px; }
+.pr-c{ display:flex; align-items:baseline; gap:7px; }
+.pr-c b{
+  font-family:var(--font-mono); font-size:19px; color:var(--pc); font-weight:400;
+  font-variant-numeric:tabular-nums; text-shadow:0 0 12px color-mix(in srgb, var(--pc) 45%, transparent);
+}
+.pr-c i{ font-style:normal; font-family:var(--font-mono); font-size:9px;
+         letter-spacing:.22em; color:var(--ink-dim); }
+.arm-purse{ border-top:1px solid var(--line); padding-top:12px; }
+.ct-purse{ margin-top:14px; }
+
+/* the store, sharing the bench's row shape */
+.store{ border:1px solid var(--line); background:var(--panel); padding:14px 16px; }
+.br-cost{
+  display:block; margin-top:3px; color:var(--pc, #b98cff);
+  color:#b98cff; letter-spacing:.16em; font-size:9px;
+}
+.bench-row.blocked .br-cost{ color:rgba(108,139,160,.7); }
+#btn-reroll{ margin-top:4px; }
+
 /* ---------- contracts ---------- */
 .ct-body{
   padding:14px 6vw; display:grid; grid-template-columns:1fr 1fr;

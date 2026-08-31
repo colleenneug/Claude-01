@@ -95,6 +95,16 @@
     /* Contracts are counters that live on the character, so they tick over
        here and are still there when you get back to the station. */
     SF.bounties.ensure(character);
+    SF.economy.ensure(character);
+    /* Everything that pays, pays here, so the run's takings are one number. */
+    const takings = { chits: 0, prime: 0 };
+    function pay(bundle) {
+      if (!bundle) return;
+      takings.chits += bundle.chits || 0;
+      takings.prime += bundle.prime || 0;
+      SF.economy.earn(character, bundle);
+      hud.purse(character.purse);
+    }
     function bounty(track, amount) {
       const filled = SF.bounties.note(character, track, amount);
       if (filled) {
@@ -326,6 +336,7 @@
           onVendor: (v) => { state.exitTo = v.id; complete(); }
         });
         hud.contracts(character.bounties);
+      hud.purse(character.purse);
       hud.objective('<b>THE CRADLE</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
@@ -346,6 +357,7 @@
             state.parts += Object.keys(parts).reduce((a, k) => a + parts[k], 0);
             state.xp += 120 * tier;
             state.events++;
+            pay(SF.economy.PAY.event(tier));
             bounty('events', 1);
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
@@ -381,18 +393,21 @@
             for (const k of Object.keys(parts)) {
               if (parts[k]) hud.killFeed('PARTS — ' + parts[k] + '× ' + SF.gear.partOf(k).name);
             }
+            pay(kind.tierBonus ? SF.economy.PAY.vault() : SF.economy.PAY.cache());
             bounty('crates', 1);
             hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
 
         hud.contracts(character.bounties);
+        hud.purse(character.purse);
         hud.objective('<b>PATROL</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
         return;
       }
       hud.contracts(character.bounties);
+      hud.purse(character.purse);
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
       if (hosting) {
@@ -411,7 +426,12 @@
           scene, level, lights, ai, hud, player,
           hpScale: scale.hp, dmgScale: scale.damage,
           onPlayerHit: (amt, from) => hurtPlayer(amt, from),
-          onDefeated: () => { if (!state.bossBeaten) { state.bossBeaten = true; complete(); } }
+          onDefeated: () => {
+            if (state.bossBeaten) return;
+            state.bossBeaten = true;
+            pay(SF.economy.PAY.boss());
+            complete();
+          }
         });
         hud.bossShow('THE CONDUCTOR', 'FIRST VOICE / TWO HUNDRED THOUSAND STRONG');
         hud.bossNodes([0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8]);
@@ -574,6 +594,7 @@
          straight back to whatever the terminal or the airlock asked for. */
       if (mission.hub) { SF.storage.save(character.slot, character); destroy(); return; }
       const notes = SF.classes.grantXp(character, state.xp);
+      pay(isPlanet ? SF.economy.PAY.patrol(state.events) : SF.economy.PAY.mission(mission.n));
       if (!isPlanet) { SF.campaign.markCleared(character, missionIndex, state.time); bounty('missions', 1); }
       else {
         character.expeditions = character.expeditions || {};
@@ -626,6 +647,8 @@
         ['HARNESS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE ISSUED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ...(state.parts ? [['RUNNER PARTS', state.parts]] : []),
+        ...(takings.chits ? [['CHITS', takings.chits]] : []),
+        ...(takings.prime ? [['PRIME', takings.prime]] : []),
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
         notes.map((n) => `<div class="es-up">${n}</div>`).join('') +

@@ -167,6 +167,7 @@
           <span class="ap-value" id="arm-power">0</span>
           <span class="ap-sub" id="arm-power-sub">&mdash;</span>
         </div>
+        <div class="arm-purse" id="arm-purse"></div>
         <div class="arm-look" id="arm-look"></div>
       </aside>
 
@@ -183,7 +184,8 @@
     <header class="screen-head">
       <h2>CONTRACTS &mdash; <span id="ct-who">&mdash;</span></h2>
       <p>Work you take here and finish anywhere. Four at a time. Bring them back full
-         and Shaw pays in experience, runner parts and salvage.</p>
+         and Shaw pays in chits, experience, runner parts and salvage.</p>
+      <div class="ct-purse" id="ct-purse"></div>
     </header>
 
     <div class="ct-body">
@@ -195,6 +197,7 @@
       <section class="ct-col">
         <div class="ct-head"><span>ON THE BOARD</span><span id="ct-done">&mdash;</span></div>
         <div id="ct-board"></div>
+        <button class="btn btn-ghost" id="btn-reroll" data-hover="CLEAR AND REPOST">NEW BOARD</button>
       </section>
     </div>
 
@@ -246,6 +249,7 @@
   <div id="deck-tag" hidden>&mdash;</div>
 
   <div id="contract-hud" hidden></div>
+  <div id="purse-hud" hidden></div>
 
   <div id="runner-panel" hidden>
     <div class="rn-speed"><span id="runner-speed">0</span><i>KM/H</i></div>
@@ -396,6 +400,7 @@
 <script src="src/js/fps/ai.js"></script>
 <script src="src/js/fps/pickups.js"></script>
 <script src="src/js/fps/envmap.js"></script>
+<script src="src/js/fps/economy.js"></script>
 <script src="src/js/fps/bounties.js"></script>
 <script src="src/js/fps/avatar.js"></script>
 <script src="src/js/fps/body.js"></script>

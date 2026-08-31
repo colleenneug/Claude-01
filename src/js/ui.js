@@ -420,6 +420,8 @@
     B.ensure(ch);
     B.restock(ch);
     $('#ct-who').textContent = `${ch.name} · ${ch.contractsDone} COMPLETED`;
+    const ctPurse = $('#ct-purse');
+    if (ctPurse) { ctPurse.innerHTML = ''; ctPurse.appendChild(purseStrip()); }
     show('contracts');
     renderContracts();
     SF.audio.sfx.open();
@@ -453,6 +455,13 @@
 
     $('#ct-slots').textContent = ch.bounties.length + ' / ' + B.MAX_ACTIVE;
     $('#ct-done').textContent = ch.board.length + ' OFFERED';
+    const rr = $('#btn-reroll');
+    if (rr) {
+      const short = SF.economy.shortOf(ch, SF.economy.PRICE.reroll);
+      rr.textContent = 'NEW BOARD · ' + SF.economy.priceText(SF.economy.PRICE.reroll);
+      rr.disabled = !!short;
+      rr.dataset.hover = short ? 'NOT ENOUGH CHITS' : 'CLEAR AND REPOST';
+    }
 
     if (!ch.bounties.length) {
       active.appendChild(el('div', 'item-empty', 'NOTHING TAKEN. THE BOARD IS TO YOUR RIGHT.'));
@@ -511,7 +520,8 @@
     SF.audio.sfx.confirm();
     const parts = Object.keys(out.parts).filter((k) => out.parts[k])
       .map((k) => out.parts[k] + '× ' + G.partOf(k).name).join(', ');
-    said('THE ROOK', `${out.count} pieces down to ${out.total} parts. ${parts}.`);
+    said('THE ROOK', `${out.count} pieces down to ${out.total} parts and ` +
+                     `${SF.economy.priceText(out.purse)}. ${parts}.`);
     renderArmoury();
   }
 
@@ -523,10 +533,83 @@
     SF.audio.sfx.win();
     const parts = Object.keys(out.parts).filter((k) => out.parts[k])
       .map((k) => out.parts[k] + '× ' + SF.gear.partOf(k).name).join(', ');
-    said('SHAW', `${out.count} settled. ${out.xp} experience, ${parts || 'no parts'}, ` +
-                  `${out.drops.length} piece${out.drops.length === 1 ? '' : 's'} of salvage.` +
-                  (notes.length ? ' ' + notes.join(' ') : ''));
+    said('SHAW', `${out.count} settled. ${SF.economy.priceText(out.purse)}, ` +
+                 `${out.xp} experience, ${parts || 'no parts'}, ` +
+                 `${out.drops.length} piece${out.drops.length === 1 ? '' : 's'} of salvage.` +
+                 (notes.length ? ' ' + notes.join(' ') : ''));
     renderContracts();
+  }
+
+  /* The purse, drawn the same way wherever it appears. */
+  function purseStrip() {
+    const E = SF.economy;
+    E.ensure(ch);
+    const row = el('div', 'purse-row');
+    row.innerHTML = E.CURRENCIES.map((c) =>
+      `<span class="pr-c" style="--pc:${c.colour}" title="${c.line}">` +
+      `<b>${ch.purse[c.id] || 0}</b><i>${c.name}</i></span>`).join('');
+    return row;
+  }
+
+  /* Voss's store. Chits are the answer to "I did not get the drop I wanted",
+     which is the job a soft currency exists to do. */
+  function buildStore(ch) {
+    const E = SF.economy, G = SF.gear;
+    const store = el('div', 'store');
+    store.innerHTML = '<div class="bench-head"><span>THE STORE</span>' +
+                      '<span class="bh-stock">VOSS TAKES CHITS</span></div>';
+    const rows = el('div', 'bench-rows');
+
+    const stock = [
+      { name: 'RUNNER PART', desc: 'One part over the counter, whatever is on the shelf.',
+        cost: E.PRICE.part, take: () => {
+          const pick = G.PARTS[Math.floor(Math.random() * G.PARTS.length)];
+          const bundle = {}; bundle[pick.id] = 1;
+          G.grantParts(ch, bundle);
+          return '1× ' + pick.name;
+        } },
+      { name: 'PARTS CRATE', desc: 'Five parts, mixed, cheaper by the box.',
+        cost: E.PRICE.partBundle, take: () => {
+          const bundle = G.rollParts(5);
+          G.grantParts(ch, bundle);
+          return Object.keys(bundle).filter((k) => bundle[k])
+            .map((k) => bundle[k] + '× ' + G.partOf(k).name).join(', ');
+        } },
+      { name: 'SALVAGE CASE', desc: 'Two rolls of gear at your rank. No promises.',
+        cost: E.PRICE.salvageCase, take: () => {
+          const drops = G.rollDrops(ch, Math.min(16, 4 + ch.level), false);
+          G.grant(ch, drops);
+          return drops.map((d) => d.name).join(', ');
+        } },
+      { name: 'PRIME, TRADED', desc: 'A prime at the price of a prime. Voss is not a charity.',
+        cost: E.PRICE.primeTrade, take: () => { E.earn(ch, { prime: 1 }); return '1× PRIME'; } }
+    ];
+
+    for (const item of stock) {
+      const short = E.shortOf(ch, item.cost);
+      const row = el('div', 'bench-row' + (short ? ' blocked' : ''));
+      row.innerHTML =
+        '<div class="br-main">' +
+          `<div class="br-name">${item.name}</div>` +
+          `<div class="br-desc">${item.desc}</div>` +
+          `<div class="br-gain">${E.priceText(item.cost)}</div>` +
+        '</div><div class="br-side"></div>';
+      const buy = el('button', 'br-fit', short ? 'NEED ' + short.name : 'BUY');
+      buy.disabled = !!short;
+      buy.dataset.hover = short ? 'NOT ENOUGH' : 'PAY VOSS';
+      buy.addEventListener('click', () => {
+        if (!E.spend(ch, item.cost)) return;
+        const got = item.take();
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.confirm();
+        said('VOSS', got + '. Pleasure.');
+        renderArmoury();
+      });
+      row.querySelector('.br-side').appendChild(buy);
+      rows.appendChild(row);
+    }
+    store.appendChild(rows);
+    return store;
   }
 
   function openArmoury() {
@@ -557,7 +640,8 @@
 
       const head = el('div', 'bench-head');
       head.innerHTML = '<span>UPGRADE BENCH</span>' +
-        `<span class="bh-stock">${held} PART${held === 1 ? '' : 'S'} IN STOCK</span>`;
+        `<span class="bh-stock">${held} PART${held === 1 ? '' : 'S'} · ` +
+        `${SF.economy.balance(ch, 'prime')} PRIME</span>`;
       bench.appendChild(head);
 
       if (!runner) {
@@ -580,7 +664,8 @@
             `<div class="br-name">${part.name}<span class="br-have">×${have}</span></div>` +
             `<div class="br-desc">${part.desc}</div>` +
             `<div class="br-gain">${part.line.replace('{v}', part.per)} each &nbsp;·&nbsp; ` +
-              `NOW ${part.line.replace('{v}', fitted * part.per)}</div>` +
+              `NOW ${part.line.replace('{v}', fitted * part.per)}` +
+              `<span class="br-cost">${SF.economy.priceText(SF.economy.PRICE.fitPart)} TO FIT</span></div>` +
           `</div>` +
           `<div class="br-side"><div class="br-pips">${pips}</div></div>`;
 
@@ -601,11 +686,13 @@
 
       const total = G.PARTS.reduce((a, p) => a + G.fittedCount(runner, p.id), 0);
       const strip = el('button', 'bench-strip');
-      strip.textContent = total ? 'STRIP FRAME — RECOVER ' + total : 'NOTHING FITTED';
-      strip.disabled = !total;
+      const stripCost = SF.economy.priceText(SF.economy.PRICE.strip);
+      strip.textContent = total ? 'STRIP FRAME — RECOVER ' + total + ' · ' + stripCost
+                                : 'NOTHING FITTED';
+      strip.disabled = !total || !SF.economy.canAfford(ch, SF.economy.PRICE.strip);
       strip.dataset.hover = 'RECOVER EVERY PART';
       strip.addEventListener('click', () => {
-        G.stripParts(ch, runner);
+        if (G.stripParts(ch, runner) < 0) return;
         SF.storage.save(slotIndex, ch);
         SF.audio.sfx.back();
         renderArmoury();
@@ -619,6 +706,8 @@
     const a = G.armourStats(ch);
     $('#arm-power-sub').textContent =
       `+${a.hp} VITALS · ${a.resist.toFixed(0)}% RESIST · RANK ${ch.level}`;
+    const purseBox = $('#arm-purse');
+    if (purseBox) { purseBox.innerHTML = ''; purseBox.appendChild(purseStrip()); }
 
     /* ---- equipment, one block per slot ---- */
     const gearBox = $('#arm-gear');
@@ -665,6 +754,8 @@
       if (slot.id === 'runner') block.appendChild(buildBench(ch, equipped));
       gearBox.appendChild(block);
     }
+
+    gearBox.appendChild(buildStore(ch));
 
     /* ---- appearance ---- */
     const look = $('#arm-look');
@@ -874,6 +965,12 @@
       mission.requestLock();
     });
     $('#btn-claim').addEventListener('click', claimContracts);
+    $('#btn-reroll').addEventListener('click', () => {
+      if (!SF.bounties.reroll(ch)) return;
+      SF.storage.save(slotIndex, ch);
+      SF.audio.sfx.click();
+      renderContracts();
+    });
     $('#btn-abandon').addEventListener('click', abandon);
     $('#btn-debrief').addEventListener('click', () => { if (mission) mission.destroy(); });
 

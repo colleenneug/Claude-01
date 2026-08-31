@@ -79,6 +79,14 @@
     return restock(ch);
   }
 
+  /* Shaw will clear the board and post new work, for the usual consideration. */
+  function reroll(ch) {
+    ensure(ch);
+    if (!SF.economy.spend(ch, SF.economy.PRICE.reroll)) return false;
+    refreshBoard(ch);
+    return true;
+  }
+
   function ensure(ch) {
     if (!ch.bounties) ch.bounties = [];
     if (!ch.board) ch.board = [];
@@ -126,7 +134,8 @@
      few tiers above where you are, so a black seal is worth crossing a zone
      for. */
   function reward(b) {
-    return { xp: 140 + b.tier * 220, parts: 2 + b.tier * 2, dropTier: 7 + b.tier * 4 };
+    return { xp: 140 + b.tier * 220, parts: 2 + b.tier * 2, dropTier: 7 + b.tier * 4,
+             purse: SF.economy.PAY.contract(b.tier) };
   }
 
   function claim(ch) {
@@ -134,13 +143,17 @@
     const done = ch.bounties.filter(complete);
     if (!done.length) return null;
     let xp = 0, parts = 0;
+    const purse = { chits: 0, prime: 0 };
     const drops = [];
     for (const b of done) {
       const r = reward(b);
       xp += r.xp;
       parts += r.parts;
+      purse.chits += r.purse.chits || 0;
+      purse.prime += r.purse.prime || 0;
       drops.push(...SF.gear.rollDrops(ch, r.dropTier, b.tier >= 2));
     }
+    SF.economy.earn(ch, purse);
     const bundle = SF.gear.rollParts(parts);
     SF.gear.grantParts(ch, bundle);
     SF.gear.grant(ch, drops);
@@ -148,12 +161,12 @@
     const keptUids = new Set(done.map((b) => b.uid));
     ch.bounties = ch.bounties.filter((b) => !keptUids.has(b.uid));
     refreshBoard(ch);
-    return { count: done.length, xp, parts: bundle, drops };
+    return { count: done.length, xp, parts: bundle, drops, purse };
   }
 
   SF.bounties = {
     TEMPLATES, TIER_NAMES, TIER_COLOUR, MAX_ACTIVE,
-    ensure, refreshBoard, restock, accept, abandon, note, claim, reward,
+    ensure, refreshBoard, restock, reroll, accept, abandon, note, claim, reward,
     complete, readyCount, byId
   };
 })(window.SF);
