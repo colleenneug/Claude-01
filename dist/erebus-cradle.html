@@ -249,7 +249,15 @@ input::placeholder{ color:rgba(108,139,160,.6); letter-spacing:.14em; }
 .screen.active{ display:flex; flex-direction:column; animation: screenIn .32s ease-out; }
 @keyframes screenIn{ from{ opacity:0; transform:translateY(8px); } }
 
+/* While booting, the boot screen is the only thing on the page — and it has
+   to be *shown*, not merely un-hidden. `.screen` is display:none by default,
+   so without this line nothing at all renders until the sequence finishes and
+   `show('title')` runs: a blank page on every load and every reload. */
 body.booting .screen:not(#screen-boot){ display:none !important; }
+body.booting #screen-boot{ display:flex !important; flex-direction:column; }
+/* ...but never over a live mission. Nothing should be able to leave the boot
+   log floating in the middle of the game. */
+body.in-mission #screen-boot{ display:none !important; }
 
 .hidden{ display:none !important; }
 
@@ -262,6 +270,11 @@ body.booting .screen:not(#screen-boot){ display:none !important; }
 /* ---------- boot ---------- */
 #screen-boot{ align-items:center; justify-content:center; }
 .boot-wrap{ width:min(760px, 88vw); }
+.boot-skip{
+  margin-top:22px; font-family:var(--font-mono); font-size:10px; letter-spacing:.26em;
+  color:rgba(108,139,160,.65); animation: bootPulse 1.8s ease-in-out infinite;
+}
+@keyframes bootPulse{ 50%{ color:rgba(94,234,255,.75); } }
 #boot-log{
   font-family:var(--font-mono); font-size:13px; line-height:1.75; color:var(--cyan);
   margin:0; white-space:pre-wrap; text-shadow:0 0 8px rgba(94,234,255,.35);
@@ -551,6 +564,31 @@ body.booting .screen:not(#screen-boot){ display:none !important; }
 }
 .bench-row.blocked .br-cost{ color:rgba(108,139,160,.7); }
 #btn-reroll{ margin-top:4px; }
+
+/* ---------- the wardrobe ---------- */
+.wardrobe{ border:1px solid var(--line); background:var(--panel); padding:14px 16px; }
+.wd-set{
+  display:flex; align-items:baseline; gap:12px; margin:14px 0 9px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.24em; color:var(--cyan);
+}
+.wd-set em{ font-style:normal; font-family:var(--font-ui); font-size:11px;
+            letter-spacing:0; color:var(--ink-dim); }
+.wd-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(146px,1fr)); gap:8px; }
+.wd-card{
+  display:flex; flex-direction:column; gap:7px; padding:10px;
+  border:1px solid var(--line); background:rgba(94,234,255,.03); text-align:left;
+  transition:.15s;
+}
+.wd-card:hover:not(:disabled){ border-color:var(--line-hot); transform:translateY(-2px); }
+.wd-card.on{ border-color:var(--b); background:color-mix(in srgb, var(--b) 12%, transparent); }
+.wd-card.locked{ opacity:.55; }
+.wd-card:disabled{ cursor:none; }
+.wd-chip{ display:block; height:30px; position:relative; border:1px solid rgba(255,255,255,.14); }
+.wd-chip i{ position:absolute; inset:0; background:var(--a); display:block; }
+.wd-chip b{ position:absolute; right:0; top:0; bottom:0; width:34%; background:var(--b); display:block; }
+.wd-name{ font-size:11.5px; letter-spacing:.06em; color:#eafcff; line-height:1.3; }
+.wd-foot{ font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; color:var(--ink-dim); }
+.wd-card.on .wd-foot{ color:var(--b); }
 
 /* ---------- contracts ---------- */
 .ct-body{
@@ -1214,9 +1252,10 @@ body.in-mission #vignette{ opacity:.55; }
 <main id="app">
 
   <!-- ============ BOOT ============ -->
-  <section class="screen" id="screen-boot">
+  <section class="screen active" id="screen-boot">
     <div class="boot-wrap">
       <pre id="boot-log"></pre>
+      <div class="boot-skip">PRESS ANY KEY TO SKIP</div>
     </div>
   </section>
 
@@ -3841,8 +3880,13 @@ window.SF = window.SF || {};
         if (eq[slot]) plateMats[slot].color.set(G.rarityOf(eq[slot].rarity).colour);
       }
       const cls = SF.classes.CLASSES[character.cls];
-      suitMat.color.set(cls ? cls.accent : '#1d232c');
-      suitMat.color.multiplyScalar(0.32);
+      const worn = SF.cosmetics && SF.cosmetics.suitColours(character);
+      if (worn) {
+        suitMat.color.set(worn.suit);
+      } else {
+        suitMat.color.set(cls ? cls.accent : '#1d232c');
+        suitMat.color.multiplyScalar(0.32);
+      }
     }
 
     let spin = 0.6, raf = 0, dragging = false, lastX = 0;
@@ -6730,6 +6774,132 @@ window.SF = window.SF || {};
 })(window.SF);
 
 
+/* ==== src/js/fps/cosmetics.js ==== */
+/* ============================================================
+   Things that are only for looking at.
+
+   Chits buy two kinds. A LIVERY repaints the suit and its trim, and
+   shows everywhere your operative is drawn — third person, the
+   dossier, and the rider on a frame. A FRAME PLATE repaints the runner
+   itself, which otherwise takes its colour from its rarity.
+
+   Nothing here changes a number. That is the point: a soft currency
+   needs somewhere to go that does not make you stronger, or it is just
+   a slower way of buying power.
+
+   Two of each are not for sale. You get those for doing something.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  /* suit: the body. trim: the flashes and the plate under the name. */
+  const LIVERIES = [
+    { id: 'issue',    name: 'DIVISION ISSUE',  suit: null,      trim: null,
+      price: 0, note: 'What you were given. Takes your class colour.' },
+    { id: 'ash',      name: 'ASH GREY',        suit: '#5b6068', trim: '#9aa4b0', price: 300 },
+    { id: 'oxide',    name: 'OXIDE',           suit: '#7d3a2a', trim: '#ffb454', price: 420 },
+    { id: 'deepwater', name: 'DEEP WATER',     suit: '#1f3a5c', trim: '#5eeaff', price: 420 },
+    { id: 'moss',     name: 'GARDEN MOSS',     suit: '#2f4a32', trim: '#7dff9b', price: 520 },
+    { id: 'bone',     name: 'BONE AND BLACK',  suit: '#cdc6b6', trim: '#20242c', price: 700 },
+    { id: 'violet',   name: 'LONG VIOLET',     suit: '#3d2a55', trim: '#b98cff', price: 700 },
+    { id: 'signal',   name: 'SIGNAL ORANGE',   suit: '#8a4410', trim: '#ff8a3d', price: 900 },
+    /* earned, not bought */
+    { id: 'conductor', name: "THE CONDUCTOR'S", suit: '#241a2e', trim: '#ff5ea8',
+      price: null, earn: 'CLEAR THE CONDUCTOR', has: (ch) => !!(ch.campaign.cleared || {})[16] },
+    { id: 'ninetail', name: 'NINE CONTRACTS',  suit: '#0f1a24', trim: '#eaf4ff',
+      price: null, earn: 'SETTLE NINE CONTRACTS', has: (ch) => (ch.contractsDone || 0) >= 9 }
+  ];
+
+  /* shell: the frame's body. glow: the lit strip and the plume. */
+  const PLATES = [
+    { id: 'stock',   name: 'STOCK PLATE',    shell: null,      glow: null,
+      price: 0, note: 'Bare frame. Lit in the colour of its rarity.' },
+    { id: 'chalk',   name: 'CHALK',          shell: '#c9cfd6', glow: '#dfefff', price: 350 },
+    { id: 'ember',   name: 'EMBER',          shell: '#3a2018', glow: '#ff7a3d', price: 480 },
+    { id: 'tidal',   name: 'TIDAL',          shell: '#1b3140', glow: '#3fd8ff', price: 480 },
+    { id: 'wasp',    name: 'WASP',           shell: '#2a2618', glow: '#ffd34d', price: 640 },
+    { id: 'nightrun', name: 'NIGHT RUN',     shell: '#12151b', glow: '#ff5ea8', price: 880 },
+    { id: 'longhaul', name: 'LONG HAUL',     shell: '#4a4034', glow: '#9fb0c0',
+      price: null, earn: 'RIDE 20 KM', has: (ch) => (ch.metresRidden || 0) >= 20000 }
+  ];
+
+  const SETS = [
+    { id: 'livery', name: 'OPERATIVE LIVERY', list: LIVERIES,
+      line: 'Repaints the suit. Seen in third person, on a frame, and by your fireteam.' },
+    { id: 'plate', name: 'FRAME PLATE', list: PLATES,
+      line: 'Repaints the runner. Overrides the colour it takes from its rarity.' }
+  ];
+
+  function ensure(ch) {
+    if (!ch.wardrobe) ch.wardrobe = { livery: ['issue'], plate: ['stock'] };
+    for (const set of SETS) if (!Array.isArray(ch.wardrobe[set.id])) ch.wardrobe[set.id] = [];
+    if (!ch.worn) ch.worn = { livery: 'issue', plate: 'stock' };
+    // the free defaults are always owned, whatever an older save says
+    if (ch.wardrobe.livery.indexOf('issue') < 0) ch.wardrobe.livery.push('issue');
+    if (ch.wardrobe.plate.indexOf('stock') < 0) ch.wardrobe.plate.push('stock');
+    return ch;
+  }
+
+  const setOf = (id) => SETS.find((s) => s.id === id);
+  const itemOf = (setId, id) => (setOf(setId) || SETS[0]).list.find((x) => x.id === id) || null;
+
+  function owns(ch, setId, id) {
+    ensure(ch);
+    const item = itemOf(setId, id);
+    if (!item) return false;
+    if (item.price === 0) return true;
+    if (item.has) return !!item.has(ch);            // earned ones check the deed
+    return ch.wardrobe[setId].indexOf(id) >= 0;
+  }
+
+  /* Why it cannot be had yet, in words. Null means it can. */
+  function blocker(ch, setId, id) {
+    const item = itemOf(setId, id);
+    if (!item) return 'UNKNOWN';
+    if (owns(ch, setId, id)) return null;
+    if (item.price == null) return item.earn || 'EARNED';
+    const short = SF.economy.shortOf(ch, { chits: item.price });
+    return short ? 'NEED ' + short.name : null;
+  }
+
+  function buy(ch, setId, id) {
+    if (blocker(ch, setId, id)) return false;
+    const item = itemOf(setId, id);
+    if (item.price) {
+      if (!SF.economy.spend(ch, { chits: item.price })) return false;
+    }
+    if (ch.wardrobe[setId].indexOf(id) < 0) ch.wardrobe[setId].push(id);
+    return true;
+  }
+
+  function wear(ch, setId, id) {
+    ensure(ch);
+    if (!owns(ch, setId, id)) return false;
+    ch.worn[setId] = id;
+    return true;
+  }
+
+  /* What the renderers ask for. Both fall back to null, which means "use
+     whatever you were going to use anyway". */
+  function suitColours(ch) {
+    ensure(ch);
+    const it = itemOf('livery', ch.worn.livery);
+    return it && it.suit ? { suit: it.suit, trim: it.trim } : null;
+  }
+
+  function plateColours(ch) {
+    ensure(ch);
+    const it = itemOf('plate', ch.worn.plate);
+    return it && it.shell ? { shell: it.shell, glow: it.glow } : null;
+  }
+
+  SF.cosmetics = {
+    SETS, LIVERIES, PLATES,
+    ensure, owns, blocker, buy, wear, itemOf, setOf, suitColours, plateColours
+  };
+})(window.SF);
+
+
 /* ==== src/js/fps/avatar.js ==== */
 /* ============================================================
    The operative's body.
@@ -6751,9 +6921,14 @@ window.SF = window.SF || {};
     const look = info.look || G.defaultLook();
 
     const group = new THREE.Group();
+    /* A bought livery overrides the class colour; without one the suit is the
+       dulled class accent it has always been. */
+    const paint = info.livery || null;
+    const group_suitColour = paint
+      ? new THREE.Color(paint.suit)
+      : new THREE.Color(cls.accent).multiplyScalar(0.34);
     const suit = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(cls.accent).multiplyScalar(0.34),
-      roughness: 0.6, metalness: 0.4
+      color: group_suitColour, roughness: 0.6, metalness: 0.4
     });
     const skin = new THREE.MeshStandardMaterial({
       color: G.SKINS[look.skin % G.SKINS.length], roughness: 0.75
@@ -6783,6 +6958,18 @@ window.SF = window.SF || {};
     }
 
     group.add(torso, head, cap, hips);
+
+    if (paint && paint.trim) {
+      const flash = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.06),
+        new THREE.MeshStandardMaterial({ color: new THREE.Color(paint.trim),
+                                         roughness: 0.4, metalness: 0.5 }));
+      flash.position.set(0, 1.26, -0.24);
+      group.add(flash);
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.05, 0.44),
+        flash.material);
+      band.position.set(0, 0.92, 0);
+      group.add(band);
+    }
 
     /* A stubby rifle, so it is obvious which way a body is facing. Optional:
        a rider has both hands on the frame. */
@@ -6833,7 +7020,8 @@ window.SF = window.SF || {};
   function create(ctx) {
     const { scene, camera, player, character } = ctx;
 
-    const built = SF.avatar.build({ cls: character.cls, look: character.look });
+    const built = SF.avatar.build({ cls: character.cls, look: character.look,
+                                    livery: SF.cosmetics.suitColours(character) });
     const group = built.group;
     group.visible = false;
     scene.add(group);
@@ -7981,7 +8169,9 @@ window.SF = window.SF || {};
 
     const isSkiff = stats.family === 'skiff';
     const rarity = SF.gear.rarityOf(character.equipped.runner.rarity);
-    const tint = new THREE.Color(rarity.colour);
+    /* A frame plate overrides the rarity colour it would otherwise wear. */
+    const plate = SF.cosmetics.plateColours(character);
+    const tint = new THREE.Color(plate && plate.glow ? plate.glow : rarity.colour);
 
     /* ---------- the frame and its rider, in the world ---------- */
     /* Third person means both are real objects standing on the ground, not
@@ -7994,7 +8184,8 @@ window.SF = window.SF || {};
     /* Read at four metres in daylight, not just under a muzzle flash: a
        near-black chrome frame is a silhouette from behind and nothing else. */
     const shell = new THREE.MeshStandardMaterial({
-      color: 0x6d7684, metalness: 0.55, roughness: 0.42
+      color: new THREE.Color(plate && plate.shell ? plate.shell : 0x6d7684),
+      metalness: 0.55, roughness: 0.42
     });
     const trim = new THREE.MeshStandardMaterial({
       color: 0x0a0d12, emissive: tint, emissiveIntensity: 1.9,
@@ -8061,8 +8252,11 @@ window.SF = window.SF || {};
       const G = SF.gear;
       const cls = SF.classes.CLASSES[character.cls] || SF.classes.CLASSES.bulwark;
       const look = character.look || G.defaultLook();
+      const worn = SF.cosmetics.suitColours(character);
       const suit = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(cls.accent).multiplyScalar(0.34), roughness: 0.6, metalness: 0.4 });
+        color: worn ? new THREE.Color(worn.suit)
+                    : new THREE.Color(cls.accent).multiplyScalar(0.34),
+        roughness: 0.6, metalness: 0.4 });
       const skin = new THREE.MeshStandardMaterial({
         color: G.SKINS[look.skin % G.SKINS.length], roughness: 0.75 });
       const hair = new THREE.MeshStandardMaterial({
@@ -9401,6 +9595,7 @@ window.SF = window.SF || {};
        here and are still there when you get back to the station. */
     SF.bounties.ensure(character);
     SF.economy.ensure(character);
+    SF.cosmetics.ensure(character);
     /* Everything that pays, pays here, so the run's takings are one number. */
     const takings = { chits: 0, prime: 0 };
     function pay(bundle) {
@@ -10048,7 +10243,12 @@ window.SF = window.SF || {};
         runner.update(dt);
         if (runner.mounted) {
           rideMetres += Math.hypot(player.state.vel.x, player.state.vel.z) * dt;
-          if (rideMetres >= 25) { bounty('ride', Math.floor(rideMetres)); rideMetres %= 1; }
+          if (rideMetres >= 25) {
+            const whole = Math.floor(rideMetres);
+            bounty('ride', whole);
+            character.metresRidden = (character.metresRidden || 0) + whole;
+            rideMetres %= 1;
+          }
         }
       }
       if (body) body.update(dt);
@@ -10209,6 +10409,46 @@ window.SF = window.SF || {};
     SF.cursor.reset();
   }
 
+  /* Is anything on the page at all? Every path that hides the screens —
+     dropping into a mission, the debrief — is supposed to put something else
+     up. If one of them throws first, the player is left facing a blank page
+     with nothing to click, and a reload only starts the same sequence again.
+     So: a way back, and something that calls it. */
+  function nothingVisible() {
+    if (document.body.classList.contains('in-mission')) return false;
+    if (document.body.classList.contains('booting')) return false;
+    if (!$('#loading').hidden) return false;
+    return !$$('.screen').some((s) => s.classList.contains('active'));
+  }
+
+  function recover(why) {
+    $('#loading').hidden = true;
+    $('#engage').hidden = true;
+    $('#pause-menu').hidden = true;
+    document.body.classList.remove('in-mission', 'booting');
+    $('#gl').hidden = true;
+    if (mission) { try { mission.destroy(); } catch (e) { /* already gone */ } mission = null; }
+    if (ch && slotIndex >= 0) openCampaign(slotIndex);
+    else { renderSlots(); show('slots'); }
+    if (why) toast('RECOVERED — ' + why, 'bad');
+  }
+
+  /* Anything that escapes to the top level takes the UI down with it unless
+     something puts a screen back up. */
+  function installSafetyNet() {
+    const trip = (label) => {
+      if (!nothingVisible()) return;
+      recover(label);
+    };
+    window.addEventListener('error', (e) => trip((e.message || 'ERROR').slice(0, 60)));
+    window.addEventListener('unhandledrejection', (e) => {
+      const m = e && e.reason && (e.reason.message || String(e.reason));
+      trip((m || 'FAILED').slice(0, 60));
+    });
+    // and a slow backstop, for a blank page nothing reported
+    setInterval(() => { if (nothingVisible()) recover('BLANK SCREEN'); }, 4000);
+  }
+
   /* ---------------- boot ---------------- */
 
   const BOOT_LINES = [
@@ -10246,13 +10486,13 @@ window.SF = window.SF || {};
           out += line[i++];
           row.innerHTML = out;
           if (i % 3 === 0) SF.audio.sfx.type();
-          await wait(6);
+          await wait(2);
         }
         row.innerHTML = line;
       }
-      await wait(line ? 70 : 120);
+      await wait(line ? 34 : 60);
     }
-    await wait(700);
+    await wait(320);
     if (bootAborted) return;
     document.body.classList.remove('booting');
     show('title');
@@ -10794,9 +11034,64 @@ window.SF = window.SF || {};
     return store;
   }
 
+  /* The wardrobe. Chits buy paint, and paint changes no number at all —
+     which is exactly what a soft currency should be able to buy, or it is
+     only a slower route to power. Two in each set are earned instead. */
+  function buildWardrobe(ch) {
+    const C = SF.cosmetics, E = SF.economy;
+    C.ensure(ch);
+    const box = el('div', 'wardrobe');
+    box.innerHTML = '<div class="bench-head"><span>THE WARDROBE</span>' +
+                    '<span class="bh-stock">PAINT ONLY. NOTHING HERE MAKES YOU STRONGER.</span></div>';
+
+    for (const set of C.SETS) {
+      const head = el('div', 'wd-set');
+      head.innerHTML = `<span>${set.name}</span><em>${set.line}</em>`;
+      box.appendChild(head);
+
+      const grid = el('div', 'wd-grid');
+      for (const item of set.list) {
+        const owned = C.owns(ch, set.id, item.id);
+        const wornNow = ch.worn[set.id] === item.id;
+        const block = C.blocker(ch, set.id, item.id);
+        const a = item.suit || item.shell || '#4a525c';
+        const bcol = item.trim || item.glow || '#9fb0c0';
+
+        const card = el('button', 'wd-card' + (wornNow ? ' on' : '') + (owned ? '' : ' locked'));
+        card.style.setProperty('--a', a);
+        card.style.setProperty('--b', bcol);
+        card.innerHTML =
+          '<span class="wd-chip"><i></i><b></b></span>' +
+          `<span class="wd-name">${item.name}</span>` +
+          `<span class="wd-foot">${
+            wornNow ? 'WORN'
+            : owned ? 'OWNED'
+            : item.price == null ? (item.earn || 'EARNED')
+            : E.priceText({ chits: item.price })}</span>`;
+        card.dataset.hover = wornNow ? 'ALREADY ON' : owned ? 'WEAR IT'
+                            : item.price == null ? 'NOT YET' : 'BUY AND WEAR';
+        card.disabled = wornNow || (!owned && !!block);
+        card.title = item.note || item.earn || '';
+        card.addEventListener('click', () => {
+          if (!owned && !C.buy(ch, set.id, item.id)) return;
+          C.wear(ch, set.id, item.id);
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.confirm();
+          if (!owned) said('VOSS', item.name + '. Wear it in good health.');
+          renderArmoury();
+          if (dossier) dossier.setLook(ch);
+        });
+        grid.appendChild(card);
+      }
+      box.appendChild(grid);
+    }
+    return box;
+  }
+
   function openArmoury() {
     if (!ch) return;
     SF.gear.ensure(ch);
+    SF.cosmetics.ensure(ch);
     const cls = SF.classes.CLASSES[ch.cls];
     $('#arm-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
     show('armoury');
@@ -10938,6 +11233,7 @@ window.SF = window.SF || {};
     }
 
     gearBox.appendChild(buildStore(ch));
+    gearBox.appendChild(buildWardrobe(ch));
 
     /* ---- appearance ---- */
     const look = $('#arm-look');
@@ -11053,10 +11349,19 @@ window.SF = window.SF || {};
 
     // one frame for the browser to paint the loading state before the build
     await wait(60);
-    mission = SF.game.create(ch, missionIndex, exitMission);
-    window.__m = mission;               // handle for automated smoke tests
+    try {
+      mission = SF.game.create(ch, missionIndex, exitMission);
+      window.__m = mission;             // handle for automated smoke tests
+      mission.start();
+    } catch (err) {
+      /* A build that throws used to leave every screen hidden and the loading
+         card up forever — a white page with no way out of it. */
+      mission = null;
+      $('#loading').hidden = true;
+      recover((err && err.message ? err.message : 'INSERTION FAILED').slice(0, 60));
+      return;
+    }
     $('#loading').hidden = true;
-    mission.start();
     $('#engage').hidden = false;
   }
 
@@ -11159,6 +11464,7 @@ window.SF = window.SF || {};
     window.addEventListener('beforeunload', () => {
       if (ch && slotIndex >= 0) SF.storage.save(slotIndex, ch);
     });
+    installSafetyNet();
     void sessionStart;
   }
 

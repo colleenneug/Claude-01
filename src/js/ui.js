@@ -27,6 +27,46 @@
     SF.cursor.reset();
   }
 
+  /* Is anything on the page at all? Every path that hides the screens —
+     dropping into a mission, the debrief — is supposed to put something else
+     up. If one of them throws first, the player is left facing a blank page
+     with nothing to click, and a reload only starts the same sequence again.
+     So: a way back, and something that calls it. */
+  function nothingVisible() {
+    if (document.body.classList.contains('in-mission')) return false;
+    if (document.body.classList.contains('booting')) return false;
+    if (!$('#loading').hidden) return false;
+    return !$$('.screen').some((s) => s.classList.contains('active'));
+  }
+
+  function recover(why) {
+    $('#loading').hidden = true;
+    $('#engage').hidden = true;
+    $('#pause-menu').hidden = true;
+    document.body.classList.remove('in-mission', 'booting');
+    $('#gl').hidden = true;
+    if (mission) { try { mission.destroy(); } catch (e) { /* already gone */ } mission = null; }
+    if (ch && slotIndex >= 0) openCampaign(slotIndex);
+    else { renderSlots(); show('slots'); }
+    if (why) toast('RECOVERED — ' + why, 'bad');
+  }
+
+  /* Anything that escapes to the top level takes the UI down with it unless
+     something puts a screen back up. */
+  function installSafetyNet() {
+    const trip = (label) => {
+      if (!nothingVisible()) return;
+      recover(label);
+    };
+    window.addEventListener('error', (e) => trip((e.message || 'ERROR').slice(0, 60)));
+    window.addEventListener('unhandledrejection', (e) => {
+      const m = e && e.reason && (e.reason.message || String(e.reason));
+      trip((m || 'FAILED').slice(0, 60));
+    });
+    // and a slow backstop, for a blank page nothing reported
+    setInterval(() => { if (nothingVisible()) recover('BLANK SCREEN'); }, 4000);
+  }
+
   /* ---------------- boot ---------------- */
 
   const BOOT_LINES = [
@@ -64,13 +104,13 @@
           out += line[i++];
           row.innerHTML = out;
           if (i % 3 === 0) SF.audio.sfx.type();
-          await wait(6);
+          await wait(2);
         }
         row.innerHTML = line;
       }
-      await wait(line ? 70 : 120);
+      await wait(line ? 34 : 60);
     }
-    await wait(700);
+    await wait(320);
     if (bootAborted) return;
     document.body.classList.remove('booting');
     show('title');
@@ -612,9 +652,64 @@
     return store;
   }
 
+  /* The wardrobe. Chits buy paint, and paint changes no number at all —
+     which is exactly what a soft currency should be able to buy, or it is
+     only a slower route to power. Two in each set are earned instead. */
+  function buildWardrobe(ch) {
+    const C = SF.cosmetics, E = SF.economy;
+    C.ensure(ch);
+    const box = el('div', 'wardrobe');
+    box.innerHTML = '<div class="bench-head"><span>THE WARDROBE</span>' +
+                    '<span class="bh-stock">PAINT ONLY. NOTHING HERE MAKES YOU STRONGER.</span></div>';
+
+    for (const set of C.SETS) {
+      const head = el('div', 'wd-set');
+      head.innerHTML = `<span>${set.name}</span><em>${set.line}</em>`;
+      box.appendChild(head);
+
+      const grid = el('div', 'wd-grid');
+      for (const item of set.list) {
+        const owned = C.owns(ch, set.id, item.id);
+        const wornNow = ch.worn[set.id] === item.id;
+        const block = C.blocker(ch, set.id, item.id);
+        const a = item.suit || item.shell || '#4a525c';
+        const bcol = item.trim || item.glow || '#9fb0c0';
+
+        const card = el('button', 'wd-card' + (wornNow ? ' on' : '') + (owned ? '' : ' locked'));
+        card.style.setProperty('--a', a);
+        card.style.setProperty('--b', bcol);
+        card.innerHTML =
+          '<span class="wd-chip"><i></i><b></b></span>' +
+          `<span class="wd-name">${item.name}</span>` +
+          `<span class="wd-foot">${
+            wornNow ? 'WORN'
+            : owned ? 'OWNED'
+            : item.price == null ? (item.earn || 'EARNED')
+            : E.priceText({ chits: item.price })}</span>`;
+        card.dataset.hover = wornNow ? 'ALREADY ON' : owned ? 'WEAR IT'
+                            : item.price == null ? 'NOT YET' : 'BUY AND WEAR';
+        card.disabled = wornNow || (!owned && !!block);
+        card.title = item.note || item.earn || '';
+        card.addEventListener('click', () => {
+          if (!owned && !C.buy(ch, set.id, item.id)) return;
+          C.wear(ch, set.id, item.id);
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.confirm();
+          if (!owned) said('VOSS', item.name + '. Wear it in good health.');
+          renderArmoury();
+          if (dossier) dossier.setLook(ch);
+        });
+        grid.appendChild(card);
+      }
+      box.appendChild(grid);
+    }
+    return box;
+  }
+
   function openArmoury() {
     if (!ch) return;
     SF.gear.ensure(ch);
+    SF.cosmetics.ensure(ch);
     const cls = SF.classes.CLASSES[ch.cls];
     $('#arm-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
     show('armoury');
@@ -756,6 +851,7 @@
     }
 
     gearBox.appendChild(buildStore(ch));
+    gearBox.appendChild(buildWardrobe(ch));
 
     /* ---- appearance ---- */
     const look = $('#arm-look');
@@ -871,10 +967,19 @@
 
     // one frame for the browser to paint the loading state before the build
     await wait(60);
-    mission = SF.game.create(ch, missionIndex, exitMission);
-    window.__m = mission;               // handle for automated smoke tests
+    try {
+      mission = SF.game.create(ch, missionIndex, exitMission);
+      window.__m = mission;             // handle for automated smoke tests
+      mission.start();
+    } catch (err) {
+      /* A build that throws used to leave every screen hidden and the loading
+         card up forever — a white page with no way out of it. */
+      mission = null;
+      $('#loading').hidden = true;
+      recover((err && err.message ? err.message : 'INSERTION FAILED').slice(0, 60));
+      return;
+    }
     $('#loading').hidden = true;
-    mission.start();
     $('#engage').hidden = false;
   }
 
@@ -977,6 +1082,7 @@
     window.addEventListener('beforeunload', () => {
       if (ch && slotIndex >= 0) SF.storage.save(slotIndex, ch);
     });
+    installSafetyNet();
     void sessionStart;
   }
 

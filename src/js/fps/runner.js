@@ -43,7 +43,9 @@
 
     const isSkiff = stats.family === 'skiff';
     const rarity = SF.gear.rarityOf(character.equipped.runner.rarity);
-    const tint = new THREE.Color(rarity.colour);
+    /* A frame plate overrides the rarity colour it would otherwise wear. */
+    const plate = SF.cosmetics.plateColours(character);
+    const tint = new THREE.Color(plate && plate.glow ? plate.glow : rarity.colour);
 
     /* ---------- the frame and its rider, in the world ---------- */
     /* Third person means both are real objects standing on the ground, not
@@ -56,7 +58,8 @@
     /* Read at four metres in daylight, not just under a muzzle flash: a
        near-black chrome frame is a silhouette from behind and nothing else. */
     const shell = new THREE.MeshStandardMaterial({
-      color: 0x6d7684, metalness: 0.55, roughness: 0.42
+      color: new THREE.Color(plate && plate.shell ? plate.shell : 0x6d7684),
+      metalness: 0.55, roughness: 0.42
     });
     const trim = new THREE.MeshStandardMaterial({
       color: 0x0a0d12, emissive: tint, emissiveIntensity: 1.9,
@@ -123,8 +126,11 @@
       const G = SF.gear;
       const cls = SF.classes.CLASSES[character.cls] || SF.classes.CLASSES.bulwark;
       const look = character.look || G.defaultLook();
+      const worn = SF.cosmetics.suitColours(character);
       const suit = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(cls.accent).multiplyScalar(0.34), roughness: 0.6, metalness: 0.4 });
+        color: worn ? new THREE.Color(worn.suit)
+                    : new THREE.Color(cls.accent).multiplyScalar(0.34),
+        roughness: 0.6, metalness: 0.4 });
       const skin = new THREE.MeshStandardMaterial({
         color: G.SKINS[look.skin % G.SKINS.length], roughness: 0.75 });
       const hair = new THREE.MeshStandardMaterial({

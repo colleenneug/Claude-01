@@ -18,9 +18,14 @@
     const look = info.look || G.defaultLook();
 
     const group = new THREE.Group();
+    /* A bought livery overrides the class colour; without one the suit is the
+       dulled class accent it has always been. */
+    const paint = info.livery || null;
+    const group_suitColour = paint
+      ? new THREE.Color(paint.suit)
+      : new THREE.Color(cls.accent).multiplyScalar(0.34);
     const suit = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(cls.accent).multiplyScalar(0.34),
-      roughness: 0.6, metalness: 0.4
+      color: group_suitColour, roughness: 0.6, metalness: 0.4
     });
     const skin = new THREE.MeshStandardMaterial({
       color: G.SKINS[look.skin % G.SKINS.length], roughness: 0.75
@@ -50,6 +55,18 @@
     }
 
     group.add(torso, head, cap, hips);
+
+    if (paint && paint.trim) {
+      const flash = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.06),
+        new THREE.MeshStandardMaterial({ color: new THREE.Color(paint.trim),
+                                         roughness: 0.4, metalness: 0.5 }));
+      flash.position.set(0, 1.26, -0.24);
+      group.add(flash);
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.05, 0.44),
+        flash.material);
+      band.position.set(0, 0.92, 0);
+      group.add(band);
+    }
 
     /* A stubby rifle, so it is obvious which way a body is facing. Optional:
        a rider has both hands on the frame. */

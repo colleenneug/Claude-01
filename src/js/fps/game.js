@@ -96,6 +96,7 @@
        here and are still there when you get back to the station. */
     SF.bounties.ensure(character);
     SF.economy.ensure(character);
+    SF.cosmetics.ensure(character);
     /* Everything that pays, pays here, so the run's takings are one number. */
     const takings = { chits: 0, prime: 0 };
     function pay(bundle) {
@@ -743,7 +744,12 @@
         runner.update(dt);
         if (runner.mounted) {
           rideMetres += Math.hypot(player.state.vel.x, player.state.vel.z) * dt;
-          if (rideMetres >= 25) { bounty('ride', Math.floor(rideMetres)); rideMetres %= 1; }
+          if (rideMetres >= 25) {
+            const whole = Math.floor(rideMetres);
+            bounty('ride', whole);
+            character.metresRidden = (character.metresRidden || 0) + whole;
+            rideMetres %= 1;
+          }
         }
       }
       if (body) body.update(dt);

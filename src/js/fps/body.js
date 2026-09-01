@@ -18,7 +18,8 @@
   function create(ctx) {
     const { scene, camera, player, character } = ctx;
 
-    const built = SF.avatar.build({ cls: character.cls, look: character.look });
+    const built = SF.avatar.build({ cls: character.cls, look: character.look,
+                                    livery: SF.cosmetics.suitColours(character) });
     const group = built.group;
     group.visible = false;
     scene.add(group);
