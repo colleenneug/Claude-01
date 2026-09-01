@@ -215,6 +215,13 @@
 
     function onMouseDown(e) {
       if (!state.running || state.paused) return;
+      /* Unlocked but able to lock: the click is asking for the mouse back,
+         not asking to shoot. Without this the only route to recapture was
+         through the pause menu. */
+      if (e.button === 0 && lockAvailable && document.pointerLockElement !== canvas) {
+        requestLock();
+        return;
+      }
       if (e.button === 0) firing = true;
       if (e.button === 2) weapon.setAds(true);
     }
@@ -234,6 +241,7 @@
       if (e.code === 'KeyT' && body) {
         const on = body.toggle();
         hud.pickup(on ? 'THIRD PERSON' : 'FIRST PERSON');
+        refreshControls();
       }
       if (e.code === 'KeyV' && runner) runner.toggle();
       if (e.code === 'ShiftLeft' && runner) runner.setBoost(true);
@@ -261,14 +269,18 @@
     function onLockChange() {
       const locked = document.pointerLockElement === canvas;
       if (locked) { hadLock = true; applyLookMode(); return; }
-      // losing a lock we actually held means the player pressed Escape
-      if (hadLock && state.running && !state.over) pause(true);
-      else applyLookMode();
+      /* Escape hands the mouse back, and that is all it does: the game keeps
+         running behind a free cursor, and clicking the view takes the mouse
+         again. Escape twice — once to release, once with the cursor free —
+         is what opens the pause menu, through onKeyDown. */
+      applyLookMode();
+      if (hadLock && state.running && !state.over) hud.pickup('MOUSE RELEASED — CLICK TO LOCK');
     }
 
     /* Locked when we hold the pointer, free-look (with edge steering) when
        lock is unavailable, off while paused or before engaging. */
     function applyLookMode() {
+      refreshControls();
       if (!state.running || state.paused || state.over) { player.setMode('off'); return; }
       player.setMode(document.pointerLockElement === canvas ? 'locked' : 'free');
     }
@@ -291,6 +303,28 @@
       } catch (err) { onLockError(); }
       // if the request is ignored rather than refused, fall back anyway
       setTimeout(() => { if (document.pointerLockElement !== canvas) applyLookMode(); }, 400);
+    }
+
+    /* ---------- what the keys are doing ----------
+       Both of these are keyboard, not buttons: T changes the view, and the
+       mouse stays captured until Escape gives it back. The strip says which
+       state you are in, because neither is visible otherwise. */
+    const povHint = $('#hint-pov');
+    const lockHint = $('#hint-lock');
+
+    function refreshControls() {
+      if (!povHint || !lockHint) return;
+      const third = !!(body && body.enabled);
+      povHint.innerHTML = '<i>T</i>POV · ' + (third ? '3RD' : '1ST');
+      povHint.classList.toggle('third', third);
+
+      const locked = document.pointerLockElement === canvas;
+      lockHint.innerHTML = locked ? '<i>ESC</i>MOUSE LOCKED'
+                         : lockAvailable ? '<i>CLICK</i>TO LOCK THE MOUSE'
+                                         : '<i>—</i>MOUSE LOCK BLOCKED HERE';
+      lockHint.classList.toggle('locked', locked);
+      lockHint.classList.toggle('free', !locked && lockAvailable);
+      lockHint.classList.toggle('blocked', !lockAvailable);
     }
 
     /* ---------- mission flow ---------- */
@@ -375,6 +409,7 @@
             if (on) { bodyWasOn = body && body.enabled; if (body) body.setEnabled(false); }
             else if (bodyWasOn && body) { body.setEnabled(true); bodyWasOn = false; }
             refreshViewmodel();
+            refreshControls();
           },
           onCrash: (dmg) => hurtPlayer(dmg, null)
         });

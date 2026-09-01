@@ -376,6 +376,31 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #deck-tag[hidden]{ display:none; }
 
+/* ---------- in-mission controls ----------
+   Bottom left, above the vitals. They exist because the two things a player
+   most often wants mid-mission — recapturing the mouse and changing the view
+   — were both keyboard-only, and one of them you could not do at all once
+   the pointer had escaped. */
+#hud-controls{
+  position:absolute; left:38px; bottom:196px; display:flex; flex-direction:column;
+  gap:5px; align-items:flex-start; pointer-events:none;
+}
+#hud-controls div{
+  display:flex; align-items:center; gap:8px;
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.18em;
+  color:var(--ink-dim);
+}
+#hud-controls i{
+  font-style:normal; min-width:26px; text-align:center; padding:2px 5px;
+  border:1px solid var(--line); color:var(--cyan); background:rgba(4,8,14,.5);
+}
+#hint-lock.locked{ color:var(--lime); }
+#hint-lock.locked i{ color:var(--lime); border-color:rgba(125,255,155,.5); }
+#hint-lock.free i{ color:var(--amber); border-color:rgba(255,180,84,.5); }
+#hint-lock.blocked{ color:var(--blood); }
+#hint-pov.third{ color:var(--amber); }
+#hint-pov.third i{ color:var(--amber); border-color:rgba(255,180,84,.5); }
+
 /* the purse, top right above the contracts */
 #purse-hud{
   position:absolute; right:38px; top:46px; display:flex; gap:14px;
