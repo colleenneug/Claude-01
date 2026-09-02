@@ -239,6 +239,21 @@
 
 <!-- ============ IN-MISSION ============ -->
 <div id="fps-hud" hidden>
+  <div id="hud-frame"></div>
+
+  <div id="vitals">
+    <div class="vt-head">
+      <span id="v-who">OPERATIVE</span>
+      <span><b id="v-sh-text">0</b> BARRIER</span>
+    </div>
+    <div class="vt-bar">
+      <div class="vt-seg health"><i id="v-hp"></i></div>
+      <div class="vt-seg shield"><i id="v-sh-a"></i></div>
+      <div class="vt-seg shield"><i id="v-sh"></i></div>
+    </div>
+    <div class="vt-foot"><span id="v-hp-text">100</span><i>VITALS</i></div>
+  </div>
+
   <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
   <div id="hitmarker"><span></span><span></span><span></span><span></span></div>
   <div id="dmg-ring"></div>
@@ -278,20 +293,16 @@
   <div id="hud-banner"></div>
   <div id="subtitle"></div>
 
-  <div class="hud-corner" id="vitals">
-    <div class="hud-label">VITALS</div>
-    <div class="hud-bar"><i class="hp" id="v-hp"></i></div>
-    <div class="hud-label" style="margin-top:8px">BARRIER</div>
-    <div class="hud-bar"><i class="sh" id="v-sh"></i></div>
-    <div class="hud-num"><span id="v-hp-text">100</span> <span style="font-size:14px;color:var(--ink-dim)">/ <span id="v-sh-text">0</span></span></div>
-  </div>
-
-  <div id="harness" hidden></div>
-
-  <div id="ability">
-    <div id="ab-name">&mdash;</div>
-    <div class="hud-bar"><i id="ab-fill"></i></div>
-    <div id="ab-key">Q / E</div>
+  <div id="kit">
+    <div id="ability">
+      <div class="kit-slot">
+        <i id="ab-fill"></i>
+        <b class="kit-glyph">&#9670;</b>
+      </div>
+      <div class="kit-label" id="ab-name">&mdash;</div>
+      <div class="kit-key">Q / E</div>
+    </div>
+    <div id="harness" hidden></div>
   </div>
 
   <div id="boss-bar" hidden>
@@ -307,9 +318,12 @@
   </div>
   <div id="node-key" hidden></div>
 
-  <div class="hud-corner" id="ammo">
-    <div class="hud-label">MAGAZINE</div>
-    <div class="hud-num"><b id="a-mag">0</b> <span>/ <span id="a-reserve">0</span></span></div>
+  <div id="ammo">
+    <div class="am-row">
+      <b id="a-mag">0</b>
+      <span class="am-rule"></span>
+      <span id="a-reserve">0</span>
+    </div>
     <div id="weapon-name">&mdash;</div>
     <div id="reload-tag" hidden>PRESS R</div>
     <div id="pickup-note"></div>

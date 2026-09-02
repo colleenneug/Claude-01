@@ -372,6 +372,7 @@
         });
         hud.contracts(character.bounties);
       hud.purse(character.purse);
+      hud.setWho(character.name);
       hud.objective('<b>THE CRADLE</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
@@ -437,6 +438,7 @@
 
         hud.contracts(character.bounties);
         hud.purse(character.purse);
+        hud.setWho(character.name);
         hud.objective('<b>PATROL</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
@@ -444,6 +446,7 @@
       }
       hud.contracts(character.bounties);
       hud.purse(character.purse);
+      hud.setWho(character.name);
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
       if (hosting) {

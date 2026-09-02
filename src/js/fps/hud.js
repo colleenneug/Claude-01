@@ -17,12 +17,17 @@
     let spreadPx = 8;
 
     const api = {
+      /* Health is the first segment; the barrier fills the two after it,
+         so an overshield drains the far segment before the near one. */
       refreshVitals(hp, maxHp, shield) {
-        $('#v-hp').style.width = Math.max(0, (hp / maxHp) * 100) + '%';
+        const h = Math.max(0, Math.min(1, hp / maxHp));
+        const s = Math.max(0, Math.min(1, shield / 100));
+        $('#v-hp').style.width = (h * 100) + '%';
+        $('#v-sh-a').style.width = (Math.min(1, s * 2) * 100) + '%';
+        $('#v-sh').style.width = (Math.max(0, s * 2 - 1) * 100) + '%';
         $('#v-hp-text').textContent = Math.max(0, Math.ceil(hp));
-        $('#v-sh').style.width = Math.min(100, (shield / 100) * 100) + '%';
         $('#v-sh-text').textContent = Math.ceil(shield);
-        root.classList.toggle('critical', hp / maxHp < 0.3);
+        root.classList.toggle('critical', h < 0.3);
       },
 
       refreshAmmo(w) {
@@ -35,7 +40,8 @@
 
       refreshAbility(w) {
         const pct = w.abilityCool > 0 ? 1 - w.abilityCool / w.ability.cooldown : 1;
-        $('#ab-fill').style.width = (pct * 100) + '%';
+        // the panel charges from the bottom, not left to right
+        $('#ab-fill').style.height = (pct * 100) + '%';
         $('#ab-name').textContent = w.ability.name;
         $('#ability').classList.toggle('ready', w.abilityCool <= 0);
       },
@@ -153,6 +159,9 @@
         }).join('');
       },
 
+      /* The operative's name, over the vitals. */
+      setWho(name) { const e = $('#v-who'); if (e) e.textContent = name; },
+
       /* Which deck of the station you are standing on. */
       deck(letter) {
         const el = $('#deck-tag');
@@ -190,8 +199,9 @@
         box.hidden = max === 0;
         if (!max) return;
         if (box.childElementCount !== max + 1) {
-          box.innerHTML = '<span class="h-label">HARNESS</span>';
+          box.innerHTML = '';
           for (let i = 0; i < max; i++) box.appendChild(el('i'));
+          box.appendChild(el('span', 'h-label', 'HARNESS'));
         }
         Array.from(box.querySelectorAll('i')).forEach((c, i) => c.classList.toggle('spent', i >= left));
       },
