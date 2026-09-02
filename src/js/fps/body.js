@@ -57,11 +57,13 @@
       phase += dt * (4 + moving * 0.9);
       SF.avatar.stride(built.limbs, phase, amount * 0.7);
 
-      // crouching folds the whole body down rather than bending the knees
-      const squat = s.crouching ? 0.66 : 1;
+      // crouching folds the whole body down rather than bending the knees,
+      // and a slide folds it further and pitches it back
+      const squat = s.sliding ? 0.42 : s.crouching ? 0.66 : 1;
       group.scale.y += (squat - group.scale.y) * Math.min(1, 12 * dt);
-      // and a small forward lean under speed
-      group.rotation.x = -Math.min(0.12, moving * 0.008);
+      const leanWant = s.sliding ? 0.55 : -Math.min(0.12, moving * 0.008);
+      group.rotation.x += (leanWant - group.rotation.x) * Math.min(1, 10 * dt);
+      if (s.sliding) SF.avatar.stride(built.limbs, 0, 0);
     }
 
     function destroy() {

@@ -14,7 +14,30 @@
 
   /* Base speeds. An open zone multiplies these — see setSpeedScale — because
      a kilometre-wide world at corridor pace is a walking simulator. */
-  const SPEED = { walk: 4.6, sprint: 7.4, crouch: 2.3, air: 1.6 };
+  const SPEED = { walk: 4.6, sprint: 9.4, crouch: 2.3, air: 1.6 };
+
+  /* ---------- the slide ----------
+     Crouch while sprinting and you go down on the plates. The slide takes
+     whatever speed you arrived with and adds to it, then bleeds off; you
+     steer a little but not much, and you can jump out of it, which is the
+     whole reason to do it. The floor under the kick is your entry speed, so
+     sliding from a standing crouch does nothing. */
+  const SLIDE = {
+    kick: 1.7,          // multiplier on the speed you came in with
+    floor: 10,          // ...but never slower than this
+    ceiling: 17,        // ...and never faster than this
+    /* Drag is what decides how long a slide lasts, and it is exponential:
+       from a 14 m/s entry, 1.5 takes about three quarters of a second to
+       reach the exit speed. Anything much above that and the slide is over
+       before the camera has finished dropping. */
+    drag: 1.5,          // how fast it bleeds off, per second
+    steer: 3.4,         // how much authority you keep, against 52 on foot
+    time: 1.15,         // longest a slide can last
+    exit: 4.6,          // ...or until it has slowed to this
+    cooldown: 0.45,     // before another one is allowed
+    eye: 0.72,          // how low the camera rides
+    roll: 0.09          // and how far it leans
+  };
 
   function create(camera, level) {
     let speedScale = 1;
@@ -38,12 +61,29 @@
       recoil: new THREE.Vector2(),     // camera kick, decays back to zero
       shake: 0, shakePhase: 0, turnRate: 0,
       moveInput: 0,                    // how hard the player is asking to move, 0..1
+      sliding: false, slideT: 0, slideCool: 0, slideRoll: 0,
       landDip: 0,
       alive: true
     };
 
     const keys = Object.create(null);
     let sensitivity = 0.0022;
+    let crouchWasHeld = false;
+    let slideAllowed = true;          // a runner takes it away
+    const clampNum = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    function endSlide(keepSpeed) {
+      if (!state.sliding) return;
+      state.sliding = false;
+      state.slideT = 0;
+      state.slideCool = SLIDE.cooldown;
+      if (!keepSpeed) {
+        // stand up into a sprint rather than a dead stop
+        const now = Math.hypot(state.vel.x, state.vel.z);
+        const cap = SPEED.sprint * speedScale;
+        if (now > cap) { state.vel.x *= cap / now; state.vel.z *= cap / now; }
+      }
+    }
 
     /* Look modes:
          'locked' — real pointer lock; raw mouse deltas, infinite travel.
@@ -179,8 +219,8 @@
       steer(dt);
       if (!state.alive) { applyCamera(dt); return; }
 
-      state.crouching = !!(keys.ControlLeft || keys.KeyC);
-      const wantSprint = !!keys.ShiftLeft && !state.crouching;
+      const crouchHeld = !!(keys.ControlLeft || keys.KeyC);
+      const wantSprint = !!keys.ShiftLeft && !crouchHeld;
 
       // desired direction in world space
       const fx = -Math.sin(state.yaw), fz = -Math.cos(state.yaw);
@@ -194,20 +234,67 @@
       if (len > 0) { dx /= len; dz /= len; }
 
       state.moveInput = len;
-      state.sprinting = wantSprint && len > 0 && (keys.KeyW || keys.ArrowUp);
+      state.sprinting = wantSprint && len > 0 && (keys.KeyW || keys.ArrowUp) && !state.sliding;
 
-      const target = (state.crouching ? SPEED.crouch
-                    : state.sprinting ? SPEED.sprint : SPEED.walk) * speedScale;
-      const accel = state.onGround ? 52 : 12;
-      state.vel.x += (dx * target - state.vel.x) * Math.min(1, accel * dt);
-      state.vel.z += (dz * target - state.vel.z) * Math.min(1, accel * dt);
+      /* ---- starting a slide ----
+         Crouch, at speed, on the ground, with the cooldown clear. Anything
+         else and crouch is just crouch. */
+      const speedNow = Math.hypot(state.vel.x, state.vel.z);
+      state.slideCool = Math.max(0, state.slideCool - dt);
+      if (!state.sliding && crouchHeld && !crouchWasHeld && state.onGround &&
+          state.slideCool <= 0 && speedNow > SPEED.walk * speedScale * 0.85 && slideAllowed) {
+        state.sliding = true;
+        state.slideT = SLIDE.time;
+        const boosted = clampNum(speedNow * SLIDE.kick,
+                                 SLIDE.floor * speedScale, SLIDE.ceiling * speedScale);
+        const s0 = speedNow > 0.01 ? boosted / speedNow : 0;
+        state.vel.x *= s0;
+        state.vel.z *= s0;
+        state.slideRoll = 0;
+        SF.audio.sfx.slide();
+      }
+      crouchWasHeld = crouchHeld;
 
-      if (state.onGround && len === 0) {
-        const friction = Math.max(0, 1 - 14 * dt);
-        state.vel.x *= friction; state.vel.z *= friction;
+      if (state.sliding) {
+        state.slideT -= dt;
+        // bleed off, steer a little, and end when it is over
+        const drag = Math.max(0, 1 - SLIDE.drag * dt);
+        state.vel.x *= drag;
+        state.vel.z *= drag;
+        if (len > 0) {
+          state.vel.x += dx * SLIDE.steer * dt * speedScale;
+          state.vel.z += dz * SLIDE.steer * dt * speedScale;
+        }
+        const now = Math.hypot(state.vel.x, state.vel.z);
+        if (state.slideT <= 0 || now < SLIDE.exit * speedScale ||
+            !state.onGround || !crouchHeld || !slideAllowed) {
+          endSlide();
+        }
+      }
+
+      state.crouching = crouchHeld || state.sliding;
+
+      if (!state.sliding) {
+        /* Crouch only slows you on the ground — ducking in mid-air should not
+           brake you — and air control is a nudge, not a steering wheel. It
+           used to close 60% of the gap to the target every frame, which threw
+           away whatever speed you jumped with: a slide hop landed at walking
+           pace, and every jump was a full stop in the air. */
+        const target = (state.crouching && state.onGround ? SPEED.crouch
+                      : state.sprinting ? SPEED.sprint : SPEED.walk) * speedScale;
+        const accel = state.onGround ? 52 : 3.5;
+        state.vel.x += (dx * target - state.vel.x) * Math.min(1, accel * dt);
+        state.vel.z += (dz * target - state.vel.z) * Math.min(1, accel * dt);
+
+        if (state.onGround && len === 0) {
+          const friction = Math.max(0, 1 - 14 * dt);
+          state.vel.x *= friction; state.vel.z *= friction;
+        }
       }
 
       if (keys.Space && state.onGround) {
+        // jumping out of a slide keeps the speed you built — that is the trick
+        if (state.sliding) endSlide(true);
         state.vel.y = JUMP_V;
         state.onGround = false;
         SF.audio.sfx.step();
@@ -246,7 +333,8 @@
       // head bob follows actual ground speed
       const speed = Math.hypot(state.vel.x, state.vel.z);
       const moving = state.onGround && speed > 0.4;
-      state.bobAmount += ((moving ? (state.sprinting ? 1.35 : 1) : 0) - state.bobAmount) * Math.min(1, 8 * dt);
+      const bobWant = state.sliding ? 0 : moving ? (state.sprinting ? 1.35 : 1) : 0;
+      state.bobAmount += (bobWant - state.bobAmount) * Math.min(1, 8 * dt);
       if (moving) {
         const prev = state.bob;
         state.bob += dt * (state.sprinting ? 13 : 9.5);
@@ -258,7 +346,11 @@
     }
 
     function applyCamera(dt) {
-      const targetEye = state.crouching ? EYE_CROUCH : EYE_STAND;
+      const targetEye = state.sliding ? SLIDE.eye
+                      : state.crouching ? EYE_CROUCH : EYE_STAND;
+      // lean into the slide, and come back out of it smoothly
+      const wantRoll = state.sliding ? SLIDE.roll : 0;
+      state.slideRoll += (wantRoll - state.slideRoll) * Math.min(1, 9 * dt);
       state.eye += (targetEye - state.eye) * Math.min(1, 12 * dt);
       state.landDip *= Math.max(0, 1 - 7 * dt);
       state.shake *= Math.max(0, 1 - 7 * dt);
@@ -280,7 +372,8 @@
       camera.rotation.set(0, 0, 0);
       camera.rotateY(state.yaw);
       camera.rotateX(state.pitch + state.recoil.y);
-      camera.rotateZ(Math.cos(state.bob * 0.5) * 0.012 * state.bobAmount + state.recoil.x * 0.35);
+      camera.rotateZ(Math.cos(state.bob * 0.5) * 0.012 * state.bobAmount +
+                     state.recoil.x * 0.35 + state.slideRoll);
 
       /* Pull the eye straight backwards along the view axis — not off to a
          shoulder, and not a fixed horizontal offset either. Backing up along
@@ -319,6 +412,9 @@
       setSpeedScale(v) { speedScale = v || 1; },
       /* Ask for a chase camera. dist 0 puts it back on the eye. */
       setChase(dist, height) { chase.want = dist || 0; chase.height = height || 0; },
+      /* A frame carries you; you do not slide off one. */
+      setSlideAllowed(v) { slideAllowed = !!v; if (!v) endSlide(); },
+      get sliding() { return state.sliding; },
       get chaseDistance() { return chase.cur; },
       setTurnScale(v) { turnScale = v || 1; },
       setMode(v) { mode = v; },

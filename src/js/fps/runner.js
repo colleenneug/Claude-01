@@ -193,6 +193,7 @@
       player.setSpeedScale(stats.speed);
       player.setTurnScale(isSkiff ? 1 : 0.62);   // a courser fights the corner
       player.setChase(CHASE_DIST, CHASE_LIFT);
+      player.setSlideAllowed(false);       // you do not slide off a moving frame
       if (ctx.onMount) ctx.onMount(true);
       hud.runner(stats.name, stats.kind);
       hud.runnerCell(state.cell, false);
@@ -208,6 +209,7 @@
       player.setSpeedScale(ctx.baseSpeedScale || 1);
       player.setTurnScale(1);
       player.setChase(0, 0);
+      player.setSlideAllowed(true);
       if (ctx.onMount) ctx.onMount(false);
       hud.runner(null);
       if (why) hud.pickup(why);
