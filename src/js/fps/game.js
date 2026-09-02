@@ -51,26 +51,53 @@
        thick for a room seventy metres wide. */
     if (isHub) scene.fog = new THREE.FogExp2(0x101927, 0.0035);
     scene.add(new THREE.HemisphereLight(lightSpec.hemiSky, lightSpec.hemiGround, lightSpec.hemiI));
-    const key = new THREE.DirectionalLight(lightSpec.key, lightSpec.keyI);
-    key.position.set(8, 20, -12);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    key.shadow.camera.near = 1; key.shadow.camera.far = isHub ? 140 : 90;
-    const shadowSpan = isHub ? 60 : 45;
-    key.shadow.camera.left = -shadowSpan; key.shadow.camera.right = shadowSpan;
-    key.shadow.camera.top = shadowSpan; key.shadow.camera.bottom = -shadowSpan;
-    key.shadow.bias = -0.0006;
+
+    /* ---------- the sun ----------
+       Low. A light overhead lays a shadow directly under whatever casts it
+       and the ground reads flat; drop it towards the horizon and every
+       crate, railing and rock throws a shadow several times its own length
+       across the floor, which is what makes a place look modelled rather
+       than painted. Twenty degrees of elevation: shadows about three times
+       the height of whatever casts them, while surfaces facing up still
+       catch enough sun to show their own shape. */
+    const sunDir = (isHub ? new THREE.Vector3(0.62, -0.36, 0.42)
+                          : new THREE.Vector3(-0.68, -0.34, -0.36)).normalize();
+
+    /* Cascaded shadow maps, so that low sun still resolves the edge of a
+       handrail at arm's length and the far side of the arena at once.
+       See fps/csm.js. */
+    const csm = SF.csm.create(scene, camera, {
+      cascades: 3,
+      near: 1,
+      far: isHub ? 190 : isPlanet ? 240 : 110,
+      mapSizes: [2048, 2048, 1024],
+      fade: 2.5,
+      colour: lightSpec.key,
+      intensity: lightSpec.keyI * 1.35,
+      direction: sunDir,
+      backOff: isPlanet ? 140 : 90
+    });
+
+    eng.setSun(sunDir, lightSpec.key, isPlanet ? 0.95 : 1.10);
+
     if (isHub) {
-      key.shadow.mapSize.set(2048, 2048);
-      key.position.set(-26, 34, -18);
       /* A little fill from below, standing in for the light the Earth throws
-         up through the cupola and the windows. */
+         up through the cupola and the windows. Added after the cascades so
+         it keeps its own directional slot past the cascade mask. */
       const earthshine = new THREE.DirectionalLight(0x6fb6ff, 0.5);
       earthshine.position.set(10, -20, 14);
       scene.add(earthshine);
       scene.add(new THREE.AmbientLight(0x2c3a4a, 0.9));
     }
-    scene.add(key);
+
+    /* Airborne dust and the fog the composite integrates through. */
+    const atmosKey = isHub ? 'station'
+                   : isPlanet ? (mission.planet.id === 'frozen' ? 'ice' : 'desert')
+                   : 'ship';
+    const atmos = SF.atmos.create(scene, eng.renderer, atmosKey);
+    atmos.setSun(sunDir);
+    eng.setFog(atmos.fog);
+
 
     const player = SF.player.create(camera, level);
     /* Each mission opens where the last one closed: at the near edge of its
@@ -716,6 +743,16 @@
     let last = performance.now();
     let raf = 0;
 
+    /* Everything the picture needs that is not the simulation: refit the
+       shadow cascades to wherever the camera is now, drift the dust, and
+       tell the composite how far down the sights the weapon is — depth of
+       field only costs a pass while you are actually aiming. */
+    function renderTick(dt, now) {
+      csm.update();
+      atmos.update(dt, camera.position, now / 1000);
+      eng.setAim(weapon.state.adsAmount || 0);
+    }
+
     function frame(now) {
       raf = requestAnimationFrame(frame);
       /* Clamped at both ends. A frame timestamp is the time the frame began,
@@ -729,6 +766,7 @@
       last = now;
       if (!state.running || state.paused) {
         lights.update(dt, camera.position);
+        renderTick(dt, now);
         eng.render(now / 1000, state.damageFlash);
         return;
       }
@@ -738,6 +776,7 @@
         state.respawnT -= dt;
         if (state.respawnT <= 0) respawn();
         lights.update(dt, camera.position);
+        renderTick(dt, now);
         eng.render(now / 1000, Math.max(state.damageFlash, 0.75));
         return;
       }
@@ -802,6 +841,7 @@
       hud.updateCrosshair(dt, base + Math.hypot(player.state.vel.x, player.state.vel.z) * 1.6);
       hud.refreshAbility(weapon.state);
 
+      renderTick(dt, now);
       eng.render(now / 1000, state.damageFlash);
     }
 
@@ -832,6 +872,13 @@
       state.started = true;
       weapon.prewarm(eng.renderer, scene, camera);
       ai.prewarm(eng.renderer, scene, camera);
+      /* House PBR rules, applied to the finished world in one sweep rather
+         than trusted to every call site that ever made a material: anything
+         authored as metal is pinned to 0.85 / 0.25 and given a grain, and
+         every texture gets the driver's full anisotropic filtering. Run here
+         rather than at build time so it also catches the crew, the lifts and
+         the transit frame. See fps/shading.js. */
+      SF.shading.enforce(scene, { aniso: 0.4 });
       eng.renderer.compile(scene, camera);
       hud.setVisible(true);
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
@@ -897,6 +944,9 @@
       });
       scene.environment = null;
       envTarget.dispose();
+      atmos.dispose();
+      csm.dispose();
+      eng.dispose();
       eng.renderer.dispose();
       SF.materials.reset();          // the traverse above disposed the shared cache
       hud.setVisible(false);

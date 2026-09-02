@@ -21,7 +21,11 @@
   function texture(cv, repeat, srgb) {
     const t = new THREE.CanvasTexture(cv);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    /* Anisotropic filtering. A floor texture seen at a grazing angle —
+       which is most of the floor, most of the time — collapses to grey mush
+       a few metres out under plain trilinear filtering; this is what keeps
+       the plating readable all the way to the far wall. */
+    t.anisotropy = (SF.shading && SF.shading.maxAnisotropy) || 8;
     if (srgb) t.encoding = THREE.sRGBEncoding;   // albedo only; data maps stay linear
     if (repeat) t.repeat.set(repeat[0], repeat[1]);
     return t;
@@ -141,7 +145,7 @@
     grime(r, S, 22, 0.5);
     noise(r, S, 40);
 
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       map: texture(alb, o.repeat, true),
       normalMap: texture(heightToNormal(blur(hgt, 2), 1.3), o.repeat),
       roughnessMap: texture(rgh, o.repeat),
@@ -149,6 +153,11 @@
       roughness: 1.0,
       normalScale: new THREE.Vector2(0.8, 0.8)
     });
+    /* A roughness map multiplies the scalar, so anything retargeting this
+       material later has to know what the map averages. */
+    mat.userData.roughMean = o.rough;
+    mat.userData.pbr = 'metal';
+    return mat;
   }
 
   /* ---------- deck grating ---------- */
@@ -170,12 +179,121 @@
     for (let x = 0; x < S; x += bar + gap) h.fillRect(x, 0, bar, S);
     for (let y = 0; y < S; y += (bar + gap) * 2) h.fillRect(0, y, S, 8);
 
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       map: texture(alb, o.repeat, true),
       normalMap: texture(heightToNormal(blur(hgt, 2), 1.8), o.repeat),
       metalness: 0.9, roughness: 0.55,
       normalScale: new THREE.Vector2(1.0, 1.0)
     });
+    mat.userData.pbr = 'metal';
+    return mat;
+  }
+
+  /* ---------- bare stone ----------
+     Rock is the opposite of hull plating: no panels, no seams, almost no
+     reflection, and all of its character in the normal map. The albedo is
+     deliberately flat and mottled — a rock face that reads as detailed
+     because of the light falling across it, not because of its colour. */
+  function stone(tint, opts) {
+    const o = Object.assign({ size: 512, repeat: [1, 1], rough: 0.94,
+                              bump: 2.6, grain: 22 }, opts || {});
+    const S = o.size;
+    const base = new THREE.Color(tint);
+
+    const alb = canvas(S), a = alb.getContext('2d');
+    a.fillStyle = '#' + base.getHexString(); a.fillRect(0, 0, S, S);
+    // broad mineral mottling, then finer flecks over the top
+    for (const [count, min, max, alpha] of [[70, S * 0.06, S * 0.20, 0.10],
+                                            [260, 2, 14, 0.16]]) {
+      for (let i = 0; i < count; i++) {
+        const r = min + Math.random() * (max - min);
+        const l = (Math.random() - 0.5) * 0.5;
+        const c = base.clone().offsetHSL(0, (Math.random() - 0.5) * 0.06, l * 0.35);
+        a.fillStyle = `rgba(${c.r * 255 | 0},${c.g * 255 | 0},${c.b * 255 | 0},${alpha})`;
+        a.beginPath(); a.arc(Math.random() * S, Math.random() * S, r, 0, Math.PI * 2); a.fill();
+      }
+    }
+    noise(a, S, o.grain);
+
+    /* Height: overlapping blobs at three scales. Fractal, so the normal map
+       has both the shape of the outcrop and the pitting in its surface. */
+    const hgt = canvas(S), h = hgt.getContext('2d');
+    h.fillStyle = '#808080'; h.fillRect(0, 0, S, S);
+    for (const [count, min, max, alpha] of [[90, S * 0.05, S * 0.18, 0.20],
+                                            [340, 4, 22, 0.24],
+                                            [1200, 1, 5, 0.30]]) {
+      for (let i = 0; i < count; i++) {
+        const r = min + Math.random() * (max - min);
+        const up = Math.random() > 0.5;
+        h.fillStyle = up ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`;
+        h.beginPath(); h.arc(Math.random() * S, Math.random() * S, r, 0, Math.PI * 2); h.fill();
+      }
+    }
+    noise(h, S, 26);
+
+    const rgh = canvas(S), r = rgh.getContext('2d');
+    const v = o.rough * 255 | 0;
+    r.fillStyle = `rgb(${v},${v},${v})`; r.fillRect(0, 0, S, S);
+    noise(r, S, 30);
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: texture(alb, o.repeat, true),
+      normalMap: texture(heightToNormal(blur(hgt, 1), o.bump), o.repeat),
+      roughnessMap: texture(rgh, o.repeat),
+      metalness: 0.0,              // stone is a dielectric; it must not be metal
+      roughness: 1.0,
+      normalScale: new THREE.Vector2(1.5, 1.5)
+    });
+    mat.userData.roughMean = o.rough;
+    mat.userData.pbr = 'rock';
+    return mat;
+  }
+
+  /* A tight, tileable grain used as a detail normal over both terrain
+     layers. Its whole job is to survive being magnified: whatever the
+     layer maps are doing, standing on the ground still shows grit. */
+  function detailNormal(size, strength) {
+    const S = size || 256;
+    const hgt = canvas(S), h = hgt.getContext('2d');
+    h.fillStyle = '#808080'; h.fillRect(0, 0, S, S);
+    for (let i = 0; i < 2600; i++) {
+      const r = 0.6 + Math.random() * 2.6;
+      h.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
+      h.beginPath(); h.arc(Math.random() * S, Math.random() * S, r, 0, Math.PI * 2); h.fill();
+    }
+    noise(h, S, 40);
+    return texture(heightToNormal(blur(hgt, 1), strength || 2.2), [1, 1]);
+  }
+
+  /* ---------- layered terrain ----------
+     Two full material layers plus a detail normal, blended per vertex.
+     One repeating ground texture is visibly wallpaper from any height;
+     two layers under a slow noise mask break the tile up into patches of
+     different stuff, and the detail normal puts the microscopic surface
+     back at close range. The blending itself lives in the shader patch in
+     fps/shading.js; this only builds the maps. */
+  function layeredGround(opts) {
+    const o = Object.assign({ baseTint: '#6b5545', layerTint: '#8a7460',
+                              repeat: [1, 1], layerScale: 0.31,
+                              detailRepeat: 7, detailScale: 0.85 }, opts || {});
+
+    const A = stone(o.baseTint, { repeat: o.repeat, rough: 0.92, bump: 2.4, grain: 16 });
+    const B = stone(o.layerTint, { repeat: [1, 1], rough: 0.82, bump: 3.1, grain: 14 });
+
+    A.userData.layered = {
+      map: B.map, normalMap: B.normalMap, roughnessMap: B.roughnessMap,
+      detailNormal: detailNormal(256, 2.4),
+      /* Both repeats multiply the base UV, which three has already scaled by
+         A's own repeat — so these are ratios, not tile counts. */
+      repeat: new THREE.Vector2(o.layerScale, o.layerScale),
+      detailRepeat: new THREE.Vector2(o.detailRepeat, o.detailRepeat),
+      detailScale: o.detailScale
+    };
+    A.userData.pbr = 'rock';
+    A.needsUpdate = true;
+    // B's own material shell is not used; only its maps are
+    B.dispose();
+    return A;
   }
 
   /* ---------- painted bulkhead with hazard striping ---------- */
@@ -268,6 +386,8 @@
   function reset() {
     for (const m of cache.values()) {
       for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k]) m[k].dispose();
+      const L = m.userData.layered;
+      if (L) for (const t of [L.map, L.normalMap, L.roughnessMap, L.detailNormal]) if (t) t.dispose();
       m.dispose();
     }
     cache.clear();
@@ -307,5 +427,6 @@
   }
 
   SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal,
+                   stone, detailNormal, layeredGround,
                    tileUVs, tiledBox, reset, canvasOf: canvas };
 })(window.SF);

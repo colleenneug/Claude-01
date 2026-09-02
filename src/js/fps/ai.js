@@ -74,10 +74,14 @@
     /* ---------- construction ---------- */
     function buildRig(spec) {
       const g = new THREE.Group();
+      /* Hostile armour is armour: the house metal values, with a grain
+         running down the body so its highlights stretch as it moves. */
       const skin = new THREE.MeshStandardMaterial({
-        color: spec.colour, metalness: 0.7, roughness: 0.55,
+        color: spec.colour,
+        metalness: SF.shading.METAL.metalness, roughness: SF.shading.METAL.roughness,
         emissive: new THREE.Color(0xff2222), emissiveIntensity: 0
       });
+      SF.shading.anisotropic(skin, 0.4, new THREE.Vector3(0, 1, 0));
       const glow = new THREE.MeshStandardMaterial({
         color: 0x0a0a0c, emissive: new THREE.Color(spec.glow), emissiveIntensity: 2.4,
         metalness: 0.4, roughness: 0.4

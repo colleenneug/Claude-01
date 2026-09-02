@@ -1086,7 +1086,13 @@
     void sessionStart;
   }
 
+  /* launch() is the same path the campaign rows take, exposed so an
+     automated run can drop straight into a mission without clicking
+     through the menus. It is the one entry point the smoke tests use;
+     window.__m is the mission it produces. */
+  function launch(index) { missionIndex = index; return drop(); }
+
   SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury, openCoop,
-            openContracts, renderContracts, appraise,
+            openContracts, renderContracts, appraise, launch,
             get character() { return ch; } };
 })(window.SF);

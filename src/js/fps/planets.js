@@ -259,24 +259,71 @@
     const group = new THREE.Group();
     const R = ZONE_R;
 
-    scene.background = new THREE.Color(spec.sky.mid);
+    /* The clear colour is written straight into the linear HDR buffer
+       without going through a material, so it has to be converted by hand
+       or the sky sits at a different brightness from everything in it. */
+    scene.background = new THREE.Color(spec.sky.mid).convertSRGBToLinear();
     /* Thin the fog right out: at this scale the old density was a wall two
        hundred metres away. */
     scene.fog = new THREE.FogExp2(spec.fog, spec.fogDensity * 0.12);
     buildSky(scene, spec);
 
-    /* Ground. One large slab, with the texture repeated hard so it does not
-       smear across a kilometre. */
-    const groundMat = SF.materials.painted(spec.ground, { repeat: [110, 110] });
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(R * 2.3, 1, R * 2.3), groundMat);
-    ground.position.y = -0.5;
+    /* ---------- ground ----------
+       Two stone layers blended per vertex, over a detail normal. A single
+       repeating texture across six hundred metres reads as wallpaper from
+       any height; the blend mask below is fractal noise, so the ground
+       breaks into slow patches of coarse and fine material the way real
+       terrain does, and the detail normal keeps grit under your boots.
+       See fps/shading.js for the shader side. */
+    const groundMat = SF.materials.layeredGround({
+      baseTint: spec.ground,
+      layerTint: '#' + new THREE.Color(spec.ground).offsetHSL(0.02, -0.08, 0.09).getHexString(),
+      repeat: [110, 110],
+      layerScale: 0.29,
+      detailRepeat: 6,
+      detailScale: 0.55
+    });
+
+    const SEG = 96;
+    const groundGeo = new THREE.PlaneGeometry(R * 2.3, R * 2.3, SEG, SEG);
+    groundGeo.rotateX(-Math.PI / 2);
+
+    /* Blend weights: three octaves of value noise sampled on the grid. */
+    (function paintBlend() {
+      const hash = (x, y) => {
+        const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+        return n - Math.floor(n);
+      };
+      const smooth = (t) => t * t * (3 - 2 * t);
+      const value = (x, y) => {
+        const xi = Math.floor(x), yi = Math.floor(y);
+        const xf = smooth(x - xi), yf = smooth(y - yi);
+        return (hash(xi, yi) * (1 - xf) + hash(xi + 1, yi) * xf) * (1 - yf) +
+               (hash(xi, yi + 1) * (1 - xf) + hash(xi + 1, yi + 1) * xf) * yf;
+      };
+      const pos = groundGeo.attributes.position;
+      const blend = new Float32Array(pos.count);
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i) * 0.02, z = pos.getZ(i) * 0.02;
+        let v = value(x, z) * 0.6 + value(x * 2.7, z * 2.7) * 0.27 + value(x * 6.1, z * 6.1) * 0.13;
+        // push the mask towards its ends so the patches read as material
+        // changes rather than as a continuous smear between two colours
+        blend[i] = THREE.MathUtils.clamp((v - 0.42) * 2.6 + 0.5, 0, 1);
+      }
+      groundGeo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
+    })();
+
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.position.y = 0;
     ground.receiveShadow = true;
     group.add(ground);
 
     /* ---------- cover ----------
        Thousands of rocks at this scale, so they are drawn as instanced
        meshes: one draw call each rather than one per rock. */
-    const rockMat = SF.materials.painted(spec.rockTint, { repeat: [2, 2] });
+    /* Alien rock: a noise-textured stone base, almost no reflectivity, and
+       all of its detail carried by a strong normal map. */
+    const rockMat = SF.materials.stone(spec.rockTint, { repeat: [2, 2], rough: 0.95, bump: 3.0 });
     const crystalMat = new THREE.MeshStandardMaterial({
       color: 0x7fc0dc, emissive: new THREE.Color(0x2f9fd0), emissiveIntensity: 0.45,
       metalness: 0.1, roughness: 0.12, transparent: true, opacity: 0.86
