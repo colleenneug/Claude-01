@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vanguard HUD — component preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/css/d2hud.css">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #05080d;
+    font-family: 'Chakra Petch', system-ui, sans-serif;
+    color: #cfe3ee;
+    overflow: hidden;
+  }
+
+  /* Something with detail behind the HUD, so the panel blur has a job. */
+  #stage {
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(900px 600px at 62% 38%, #1b3550 0%, transparent 62%),
+      radial-gradient(700px 500px at 20% 78%, #3a1f36 0%, transparent 60%),
+      repeating-linear-gradient(115deg, #0a1018 0 26px, #0d141d 26px 52px),
+      #05080d;
+  }
+  #stage::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(120,180,220,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(120,180,220,.05) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  /* ---- the inspector ---- */
+  #panel {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(520px, 86vw);
+    background: rgba(8, 13, 19, 0.82);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(79, 225, 213, 0.3);
+    padding: 20px 22px;
+    z-index: 40;
+  }
+  #panel h1 {
+    margin: 0 0 4px; font-size: 15px; letter-spacing: .22em; color: #4FE1D5;
+    font-weight: 600; text-transform: uppercase;
+  }
+  #panel p {
+    margin: 0 0 16px; font-size: 12px; line-height: 1.6;
+    color: rgba(207, 227, 238, .62);
+  }
+  .row { display: grid; grid-template-columns: 92px 1fr 46px; gap: 10px;
+         align-items: center; margin-bottom: 9px; }
+  .row label {
+    font-family: 'Share Tech Mono', monospace; font-size: 9.5px;
+    letter-spacing: .15em; text-transform: uppercase; color: rgba(207,227,238,.6);
+  }
+  .row output {
+    font-family: 'Share Tech Mono', monospace; font-size: 11px;
+    color: #4FE1D5; text-align: right; font-variant-numeric: tabular-nums;
+  }
+  input[type=range] { width: 100%; accent-color: #4FE1D5; }
+  .btns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  button {
+    font-family: 'Share Tech Mono', monospace; font-size: 9.5px; letter-spacing: .16em;
+    padding: 7px 12px; background: transparent; color: #4FE1D5;
+    border: 1px solid rgba(79,225,213,.35); cursor: pointer; transition: .15s;
+  }
+  button:hover { background: rgba(79,225,213,.14); border-color: #4FE1D5; }
+  button.amber { color: #F3A01C; border-color: rgba(243,160,28,.4); }
+  button.amber:hover { background: rgba(243,160,28,.14); }
+  #spec {
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(79,225,213,.18);
+    font-family: 'Share Tech Mono', monospace; font-size: 9.5px; line-height: 1.9;
+    color: rgba(207,227,238,.5); letter-spacing: .06em;
+  }
+  #spec b { color: rgba(207,227,238,.8); font-weight: 400; }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="hud-host"></div>
+
+  <div id="panel">
+    <h1>Vanguard HUD</h1>
+    <p>The component is live behind this panel. Drag anything to see it respond;
+       every measurement is fixed by the spec, not by these controls.</p>
+
+    <div class="row">
+      <label for="health">Health</label>
+      <input id="health" type="range" min="0" max="100" value="100">
+      <output id="health-o">100</output>
+    </div>
+    <div class="row">
+      <label for="shield">Shield</label>
+      <input id="shield" type="range" min="0" max="100" value="100">
+      <output id="shield-o">100</output>
+    </div>
+    <div class="row">
+      <label for="grenade">Grenade</label>
+      <input id="grenade" type="range" min="0" max="100" value="100">
+      <output id="grenade-o">100</output>
+    </div>
+    <div class="row">
+      <label for="melee">Melee</label>
+      <input id="melee" type="range" min="0" max="100" value="100">
+      <output id="melee-o">100</output>
+    </div>
+    <div class="row">
+      <label for="super">Super</label>
+      <input id="super" type="range" min="0" max="100" value="100">
+      <output id="super-o">100</output>
+    </div>
+    <div class="row">
+      <label for="mag">Magazine</label>
+      <input id="mag" type="range" min="0" max="60" value="24">
+      <output id="mag-o">24</output>
+    </div>
+
+    <div class="btns">
+      <button id="btn-hit">TAKE A HIT</button>
+      <button id="btn-fire">FIRE A BURST</button>
+      <button class="amber" id="btn-super">CHARGE THE SUPER</button>
+      <button id="btn-hide">HIDE THIS PANEL</button>
+    </div>
+
+    <div id="spec">
+      <div>VITALS <b>300 × 4</b> · three segments · <b>2px</b> gaps · <b>30 / 70</b> split</div>
+      <div>ABILITIES <b>40 × 40</b> · 1px border · <b>45°</b> chamfer, top right</div>
+      <div>WEAPON <b>3rem</b> magazine · <b>1.2rem</b> reserve · <b>60°</b> divider</div>
+      <div>FRAME 1px · <b>20px</b> inset · labels tracked <b>0.15em</b></div>
+    </div>
+  </div>
+
+<script src="src/js/fps/d2hud.js"></script>
+<script>
+(function () {
+  'use strict';
+  const hud = SF.d2hud.create(document.getElementById('hud-host'));
+  hud.setName('VEER-7');
+  hud.setWeapon('ARC LANCE');
+
+  const state = { health: 1, shield: 1, grenade: 1, melee: 1, super: 1, mag: 24, reserve: 168 };
+
+  function paint() {
+    hud.vitals(state.health, state.shield);
+    hud.ability('grenade', state.grenade);
+    hud.ability('melee', state.melee);
+    hud.ability('super', state.super);
+    hud.ammo(state.mag, state.reserve);
+  }
+
+  const bind = (id, key, scale) => {
+    const el = document.getElementById(id), out = document.getElementById(id + '-o');
+    el.addEventListener('input', () => {
+      state[key] = +el.value / scale;
+      out.textContent = el.value;
+      paint();
+    });
+    return el;
+  };
+  const sliders = {
+    health: bind('health', 'health', 100),
+    shield: bind('shield', 'shield', 100),
+    grenade: bind('grenade', 'grenade', 100),
+    melee: bind('melee', 'melee', 100),
+    super: bind('super', 'super', 100),
+    mag: bind('mag', 'mag', 1)
+  };
+  const sync = () => {
+    sliders.health.value = Math.round(state.health * 100);
+    sliders.shield.value = Math.round(state.shield * 100);
+    sliders.super.value = Math.round(state.super * 100);
+    sliders.mag.value = state.mag;
+    for (const k of ['health', 'shield', 'super', 'mag']) {
+      document.getElementById(k + '-o').textContent = sliders[k].value;
+    }
+  };
+
+  document.getElementById('btn-hit').addEventListener('click', () => {
+    if (state.shield > 0) state.shield = Math.max(0, state.shield - 0.34);
+    else state.health = Math.max(0, state.health - 0.25);
+    sync(); paint();
+  });
+  document.getElementById('btn-fire').addEventListener('click', () => {
+    state.mag = Math.max(0, state.mag - 6);
+    sync(); paint();
+  });
+  document.getElementById('btn-super').addEventListener('click', () => {
+    state.super = state.super >= 1 ? 0.2 : 1;
+    sync(); paint();
+  });
+  document.getElementById('btn-hide').addEventListener('click', () => {
+    const p = document.getElementById('panel');
+    p.style.display = 'none';
+    setTimeout(() => { p.style.display = ''; }, 4000);
+  });
+
+  paint();
+})();
+</script>
+</body>
+</html>

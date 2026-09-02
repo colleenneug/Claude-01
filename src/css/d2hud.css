@@ -1,0 +1,248 @@
+/* ============================================================
+   VANGUARD HUD — a modular readout built to a fixed spec.
+
+   Every number in here is prescribed rather than tuned: 300x4 for the
+   vitals bar, 2px between its segments, 40x40 ability panels with a 1px
+   border and a 45-degree chamfer, 3rem over 1.2rem for the ammo, a
+   60-degree divider between them, and a 1px frame inset 20px from the
+   viewport. Where the spec is followed to the pixel it is called out,
+   so a later edit knows what it is allowed to move.
+
+   The component is self-contained: one root element, one stylesheet,
+   no dependency on the game's own palette variables.
+   ============================================================ */
+
+.vhud, .vhud *, .vhud *::before, .vhud *::after {
+  /* The component may be dropped into a page with no reset of its own, and
+     the prescribed sizes are outer sizes: a 40x40 panel with a 1px border
+     measures 42 under content-box. */
+  box-sizing: border-box;
+}
+
+.vhud {
+  /* ---- the palette, verbatim ---- */
+  --shield: #4FE1D5;          /* electric teal */
+  --health: #FFFFFF;          /* pure white */
+  --super:  #F3A01C;          /* vibrant amber */
+  --panel:  rgba(10, 15, 20, 0.45);
+
+  --frame-inset: 20px;        /* the container frame's distance from the edge */
+  --track: 0.15em;            /* ultra-wide, for the microscopic labels */
+
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: 'Chakra Petch', 'Share Tech Mono', ui-monospace, system-ui, sans-serif;
+  color: #dfe9ef;
+}
+
+/* ---------- the container frame ----------
+   1px, inset 20px on every side. It is the outermost thing, so every
+   other element is positioned against the same inset. */
+.vhud-frame {
+  position: absolute;
+  inset: var(--frame-inset);
+  border: 1px solid rgba(79, 225, 213, 0.28);
+  pointer-events: none;
+}
+
+/* corner ticks, so the frame reads as an instrument and not as a box */
+.vhud-frame::before,
+.vhud-frame::after {
+  content: '';
+  position: absolute;
+  width: 14px; height: 14px;
+  border: 1px solid var(--shield);
+}
+.vhud-frame::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.vhud-frame::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+/* ---------- panels ----------
+   The prescribed background, with the blur behind it. */
+.vhud-panel {
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* ---------- vitals ----------
+   300px wide, 4px tall, three segments separated by 2px gaps. The first
+   segment is 30% of the bar and is health; the remaining 70% is shield,
+   carried across the two segments that follow. */
+.vhud-vitals {
+  position: absolute;
+  top: calc(var(--frame-inset) + 26px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+}
+
+.vhud-bar {
+  width: 300px;
+  height: 4px;
+  display: grid;
+  /* Exactly 30% of the bar for health, and the 70% that remains for shield,
+     carried across two segments. The two 2px gaps come out of the shield
+     half so the health segment measures a true 30% of 300px — 90px, 103px,
+     103px, with 2px twice between them. */
+  grid-template-columns: 30% calc(35% - 2px) calc(35% - 2px);
+  gap: 2px;
+}
+
+.vhud-seg {
+  position: relative;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.13);
+  overflow: hidden;
+}
+.vhud-seg i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  width: 100%;
+  transition: width 0.18s linear;
+}
+.vhud-seg.health i {
+  background: var(--health);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
+}
+.vhud-seg.shield i {
+  background: var(--shield);
+  box-shadow: 0 0 8px rgba(79, 225, 213, 0.6);
+}
+
+.vhud-vitals-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: var(--track);
+  color: rgba(223, 233, 239, 0.62);
+}
+.vhud-vitals-label b { font-weight: 400; color: var(--shield); }
+
+/* ---------- abilities ----------
+   Three 40x40 panels, 1px border, and a 45-degree chamfer on the
+   top-right corner cut out of the panel itself. */
+.vhud-abilities {
+  position: absolute;
+  left: calc(var(--frame-inset) + 26px);
+  bottom: calc(var(--frame-inset) + 26px);
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+.vhud-ability { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+
+.vhud-slot {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--shield);
+  /* the chamfer: a 45-degree cut, 10px along each edge of the top-right */
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.vhud-slot .vhud-glyph {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--shield);
+  opacity: 0.9;
+}
+/* the charge, filling from the bottom */
+.vhud-slot .vhud-fill {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: rgba(79, 225, 213, 0.22);
+  transition: height 0.2s linear;
+}
+.vhud-ability.ready .vhud-slot { box-shadow: 0 0 12px rgba(79, 225, 213, 0.45); }
+
+/* the super, when it is charged, takes the amber */
+.vhud-ability.super.ready .vhud-slot {
+  border-color: var(--super);
+  box-shadow: 0 0 16px rgba(243, 160, 28, 0.55);
+}
+.vhud-ability.super.ready .vhud-glyph { color: var(--super); }
+.vhud-ability.super.ready .vhud-fill { background: rgba(243, 160, 28, 0.28); }
+.vhud-ability.super.ready .vhud-label { color: var(--super); }
+
+.vhud-label {
+  font-size: 7.5px;
+  text-transform: uppercase;
+  letter-spacing: var(--track);
+  color: rgba(223, 233, 239, 0.55);
+  white-space: nowrap;
+}
+
+/* ---------- weapon ----------
+   Magazine at 3rem in a light weight, reserve at 1.2rem, separated by a
+   1px rule leaning 60 degrees off the horizontal. */
+.vhud-weapon {
+  position: absolute;
+  right: calc(var(--frame-inset) + 26px);
+  bottom: calc(var(--frame-inset) + 26px);
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 10px 16px;
+}
+
+.vhud-mag {
+  font-size: 3rem;
+  font-weight: 300;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+}
+
+/* 60 degrees from horizontal, drawn as a rotated 1px rule */
+.vhud-divider {
+  width: 1px;
+  height: 46px;
+  background: rgba(223, 233, 239, 0.5);
+  transform: rotate(30deg);       /* a 1px vertical rule rotated 30deg sits
+                                     at 60deg to the horizontal */
+  transform-origin: 50% 50%;
+  margin: 0 4px 6px;
+}
+
+.vhud-reserve {
+  font-size: 1.2rem;
+  font-weight: 300;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: rgba(223, 233, 239, 0.75);
+  padding-bottom: 4px;
+}
+
+.vhud-weapon-name {
+  position: absolute;
+  right: 16px;
+  bottom: -14px;
+  font-size: 7.5px;
+  text-transform: uppercase;
+  letter-spacing: var(--track);
+  color: rgba(223, 233, 239, 0.5);
+  white-space: nowrap;
+}
+
+/* ---------- reticle ---------- */
+.vhud-reticle {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 22px; height: 22px;
+  transform: translate(-50%, -50%);
+}
+.vhud-reticle span {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.85);
+}
+.vhud-reticle span:nth-child(1) { left: 50%; top: 0; width: 1px; height: 6px; margin-left: -0.5px; }
+.vhud-reticle span:nth-child(2) { left: 50%; bottom: 0; width: 1px; height: 6px; margin-left: -0.5px; }
+.vhud-reticle span:nth-child(3) { top: 50%; left: 0; height: 1px; width: 6px; margin-top: -0.5px; }
+.vhud-reticle span:nth-child(4) { top: 50%; right: 0; height: 1px; width: 6px; margin-top: -0.5px; }
