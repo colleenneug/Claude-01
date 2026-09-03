@@ -285,9 +285,11 @@ TEST(overlap_events_fire_once_each) {
     mover->movable = true;
     mover->rerunConstruction();
 
+    // Count only this mover. Play also spawns a player, whose collision
+    // capsule legitimately overlaps a trigger sitting at the origin.
     int begins = 0, ends = 0;
-    trigger->onBeginOverlap.bind([&](Actor*) { ++begins; });
-    trigger->onEndOverlap.bind([&](Actor*) { ++ends; });
+    trigger->onBeginOverlap.bind([&](Actor* other) { if (other == mover) ++begins; });
+    trigger->onEndOverlap.bind([&](Actor* other) { if (other == mover) ++ends; });
 
     f.world.beginPlay();
     f.world.tick(1.0f / 60.0f);
@@ -522,7 +524,9 @@ TEST(script_overlap_event) {
     CHECK(graph->link(ev, "Then", set, "In"));
     f.assets.addScript(std::move(graph));
 
-    auto* trigger = f.world.spawn<TriggerVolume>("Trigger");
+    // Away from the origin: play spawns a player there, and its collision
+    // capsule would trip the trigger before the mover ever arrives.
+    auto* trigger = f.world.spawn<TriggerVolume>("Trigger", {30, 0, 0});
     trigger->extent = {2, 2, 2};
     trigger->rerunConstruction();
     auto* sc = trigger->addComponent<ScriptComponent>("Script");
@@ -537,7 +541,7 @@ TEST(script_overlap_event) {
     f.world.tick(1.0f / 60.0f);
     CHECK(!sc->instance()->getVariable("touched").boolean());
 
-    mover->setLocation(Vec3::Zero);
+    mover->setLocation({30, 0, 0});
     f.world.tick(1.0f / 60.0f);
     CHECK(sc->instance()->getVariable("touched").boolean());
 }

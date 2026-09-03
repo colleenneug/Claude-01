@@ -119,6 +119,13 @@ Character::Character() {
     charMove_->maxSpeed = 7.0f;
     movement_ = charMove_;
 
+    // Collision presence. Without it nothing in the world can detect the
+    // player: triggers never fire and overlap queries come back empty,
+    // because the movement component's sweep is a query, not a collider.
+    capsule_ = addComponent<CapsuleComponent>("Capsule", mesh_);
+    capsule_->radius = charMove_->capsuleRadius;
+    capsule_->halfHeight = charMove_->capsuleHalfHeight;
+
     yawAffectsBody = true;
 }
 
@@ -136,6 +143,16 @@ void Character::onConstruct() {
     }
     if (mesh_) mesh_->visible = !firstPerson;
     if (charMove_) charMove_->maxSpeed = walkSpeed;
+    if (capsule_ && charMove_) {
+        // The collider tracks the movement shape, so widening the
+        // character in the details panel widens what triggers see.
+        capsule_->radius = charMove_->capsuleRadius;
+        capsule_->halfHeight = charMove_->capsuleHalfHeight;
+        // The mesh may be scaled by the actor; the collider must not be
+        // scaled twice, so it sits at unit scale under the mesh.
+        capsule_->setScale(Vec3::One);
+        capsule_->updateCollider();
+    }
     health = std::min(health, maxHealth);
 }
 

@@ -113,6 +113,40 @@ FORGE_CLASS_END()
 FORGE_REGISTER(StaticMeshComponent)
 
 // -----------------------------------------------------------------
+//  CapsuleComponent
+// -----------------------------------------------------------------
+
+CapsuleComponent::CapsuleComponent() {
+    collisionShape = (int)CollisionShape::Capsule;
+    // Overlap rather than Block: the owner's movement component already
+    // sweeps this shape against the world, so blocking here would have
+    // the character collide with itself.
+    collisionResponse = (int)CollisionResponse::Overlap;
+    mobility = (int)Mobility::Movable;
+    castShadow = false;
+}
+
+Vec3 CapsuleComponent::collisionExtent() const {
+    // A capsule collider reads x as the radius and y as the half height
+    // including the caps.
+    return {radius, halfHeight + radius, radius};
+}
+
+Box CapsuleComponent::localBounds() const {
+    const Vec3 e = collisionExtent();
+    return Box::fromCenterExtents(Vec3::Zero, e);
+}
+
+FORGE_CLASS_BEGIN(CapsuleComponent)
+    FORGE_DISPLAY("Capsule Collision")
+    FORGE_CATEGORY("Component")
+    FORGE_PROP(radius).range(0.05f, 5.0f).cat("Capsule")
+    FORGE_PROP(halfHeight).range(0.0f, 10.0f).cat("Capsule")
+        .tooltip("Centre to cap centre. The total height is this plus twice the radius.")
+FORGE_CLASS_END()
+FORGE_REGISTER(CapsuleComponent)
+
+// -----------------------------------------------------------------
 //  CameraComponent
 // -----------------------------------------------------------------
 

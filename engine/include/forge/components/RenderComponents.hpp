@@ -59,6 +59,22 @@ public:
     Material* resolvedMaterial() const;
 };
 
+// A capsule of collision with nothing drawn. This is what gives a
+// character a presence in the world: its movement component sweeps its
+// own shape, but without a collider here nothing else -- a trigger
+// volume, an overlap query, a projectile -- can detect it at all.
+class CapsuleComponent : public PrimitiveComponent {
+    FORGE_OBJECT(CapsuleComponent, PrimitiveComponent)
+public:
+    CapsuleComponent();
+
+    float radius = 0.4f;
+    float halfHeight = 0.9f;   // centre to cap centre, caps excluded
+
+    Vec3 collisionExtent() const override;
+    Box localBounds() const override;
+};
+
 class CameraComponent : public SceneComponent {
     FORGE_OBJECT(CameraComponent, SceneComponent)
 public:

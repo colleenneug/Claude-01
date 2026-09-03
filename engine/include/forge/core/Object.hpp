@@ -105,11 +105,15 @@ struct Property {
     bool transient = false;        // never written to disk
     bool multiline = false;
     std::vector<std::string> enumNames;
+    mutable std::string derivedLabel_;
 
     std::function<PropertyValue(const Object*)> get;
     std::function<void(Object*, const PropertyValue&)> set;
 
-    const std::string& label() const { return display.empty() ? name : display; }
+    // The name shown in the editor. Falls back to a title-cased version
+    // of the identifier, so "ambientIntensity" reads as "Ambient
+    // Intensity" without every class spelling it out.
+    const std::string& label() const;
 };
 
 // -----------------------------------------------------------------

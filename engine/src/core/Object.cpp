@@ -1,6 +1,7 @@
 #include "forge/core/Object.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 
 namespace forge {
@@ -78,6 +79,27 @@ std::string PropertyValue::toDisplayString() const {
         case PropType::Color: return asColor.toHex();
     }
     return {};
+}
+
+// -----------------------------------------------------------------
+//  Property
+// -----------------------------------------------------------------
+
+const std::string& Property::label() const {
+    if (!display.empty()) return display;
+    if (!derivedLabel_.empty()) return derivedLabel_;
+    // Split camelCase and snake_case into words and capitalise each.
+    std::string out;
+    for (size_t i = 0; i < name.size(); ++i) {
+        const char c = name[i];
+        if (c == '_' || c == '-') { out += ' '; continue; }
+        const bool boundary = i > 0 && std::isupper((unsigned char)c) &&
+                              !std::isupper((unsigned char)name[i - 1]);
+        if (boundary) out += ' ';
+        out += (i == 0 || out.back() == ' ') ? (char)std::toupper((unsigned char)c) : c;
+    }
+    derivedLabel_ = out.empty() ? name : out;
+    return derivedLabel_;
 }
 
 // -----------------------------------------------------------------

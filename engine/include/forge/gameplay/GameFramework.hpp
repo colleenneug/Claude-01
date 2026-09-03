@@ -90,6 +90,7 @@ public:
     CharacterMovementComponent* characterMovement() const { return charMove_; }
     StaticMeshComponent* meshComponent() const { return mesh_; }
     SpringArmComponent* springArm() const { return arm_; }
+    CapsuleComponent* capsule() const { return capsule_; }
 
     void jump();
 
@@ -110,6 +111,7 @@ public:
 
 private:
     StaticMeshComponent* mesh_ = nullptr;
+    CapsuleComponent* capsule_ = nullptr;
     SpringArmComponent* arm_ = nullptr;
     CameraComponent* camera_ = nullptr;
     CharacterMovementComponent* charMove_ = nullptr;

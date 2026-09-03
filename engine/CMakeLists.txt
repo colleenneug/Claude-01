@@ -80,9 +80,15 @@ if(FORGE_BUILD_EDITOR)
     target_link_libraries(forge-player PRIVATE forge)
 endif()
 
+# The sample's gameplay classes are a library of their own so the game
+# can be both played by the application and driven by a test.
 if(FORGE_BUILD_SAMPLES)
+    add_library(skyforge STATIC samples/skyforge/Skyforge.cpp)
+    target_link_libraries(skyforge PUBLIC forge)
+    target_include_directories(skyforge PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/samples/skyforge")
+
     add_executable(forge-sample samples/skyforge/main.cpp)
-    target_link_libraries(forge-sample PRIVATE forge)
+    target_link_libraries(forge-sample PRIVATE skyforge)
 endif()
 
 # ---------------------------------------------------------------
@@ -90,7 +96,7 @@ endif()
 # ---------------------------------------------------------------
 if(FORGE_BUILD_TESTS)
     enable_testing()
-    foreach(suite Math Core Scene Render)
+    foreach(suite Math Core Scene Render Editor)
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/Test${suite}.cpp")
             add_executable(test-${suite} tests/Test${suite}.cpp)
             target_link_libraries(test-${suite} PRIVATE forge)
@@ -98,4 +104,12 @@ if(FORGE_BUILD_TESTS)
             add_test(NAME ${suite} COMMAND test-${suite})
         endif()
     endforeach()
+
+    # The game suite plays the sample, so it needs the sample's classes.
+    if(FORGE_BUILD_SAMPLES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/TestGame.cpp")
+        add_executable(test-Game tests/TestGame.cpp)
+        target_link_libraries(test-Game PRIVATE skyforge)
+        target_include_directories(test-Game PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+        add_test(NAME Game COMMAND test-Game)
+    endif()
 endif()
