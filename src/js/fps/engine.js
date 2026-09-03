@@ -320,6 +320,25 @@ void main(){
 
   const BLOOM_LEVELS = 5;
 
+  /* ---------- quality ----------
+     Cascaded shadows and a ten-pass composite are not free: three shadow
+     maps mean three extra passes over the whole scene every frame, before
+     anything is drawn to the screen. On a machine that cannot afford that,
+     a beautiful frame arriving twenty times a second is worse than a plain
+     one arriving sixty times, so the rig measures itself and steps down
+     until it fits. Each tier gives up the least valuable thing left. */
+  const TIERS = [
+    { name: 'high',    pixelRatio: 1.75, mips: 5, rays: true,  dof: true,
+      shadow: [2048, 1024, 1024], motes: 1.00 },
+    { name: 'medium',  pixelRatio: 1.25, mips: 4, rays: true,  dof: true,
+      shadow: [1024, 1024, 512],  motes: 0.70 },
+    { name: 'low',     pixelRatio: 1.00, mips: 3, rays: false, dof: true,
+      shadow: [1024, 512, 512],   motes: 0.45 },
+    { name: 'minimal', pixelRatio: 0.75, mips: 2, rays: false, dof: false,
+      shadow: [768, 512, 512],    motes: 0.20 }
+  ];
+
+
   function create(canvas) {
     const renderer = new THREE.WebGLRenderer({
       canvas: canvas, antialias: true, powerPreference: 'high-performance'
@@ -424,6 +443,57 @@ void main(){
 
     let width = 1, height = 1;
 
+    /* ---------- quality state ---------- */
+    const listeners = [];
+    const maxPixelRatio = Math.min(window.devicePixelRatio || 1, 1.75);
+    let tier = 0;
+    let activeMips = TIERS[0].mips;
+    let raysOn = TIERS[0].rays;
+    let dofOn = TIERS[0].dof;
+    let auto = true;
+    let downgrades = 0;
+    let emaMs = 16, slowFrames = 0, fastFrames = 0, lastFrameAt = 0;
+
+    function applyTier(i) {
+      tier = Math.max(0, Math.min(TIERS.length - 1, i));
+      const q = TIERS[tier];
+      activeMips = q.mips;
+      raysOn = q.rays;
+      dofOn = q.dof;
+      if (!raysOn) composite.u.uRays.value = 0;
+      renderer.setPixelRatio(Math.min(maxPixelRatio, q.pixelRatio));
+      resize();
+      for (const fn of listeners) { try { fn(q, tier); } catch (err) { void err; } }
+    }
+
+    /* Frame pacing. The rig watches a smoothed frame time rather than any
+       single frame, because one slow frame is a garbage collection and a
+       hundred of them is a machine that cannot keep up. */
+    function trackFrame() {
+      const t = performance.now();
+      if (lastFrameAt) {
+        const ms = t - lastFrameAt;
+        // a gap this long is a backgrounded tab, not a slow frame
+        if (ms < 250) emaMs += (ms - emaMs) * 0.1;
+      }
+      lastFrameAt = t;
+      if (!auto) return;
+
+      if (emaMs > 26) { slowFrames++; fastFrames = 0; }
+      else if (emaMs < 13) { fastFrames++; slowFrames = 0; }
+      else { slowFrames = 0; fastFrames = 0; }
+
+      if (slowFrames > 90 && tier < TIERS.length - 1) {
+        slowFrames = 0; downgrades++;
+        applyTier(tier + 1);
+      } else if (tier > 0 && fastFrames > 600 * (downgrades + 1)) {
+        // climbing back is deliberately much harder than falling, so the
+        // rig cannot sit oscillating between two tiers
+        fastFrames = 0;
+        applyTier(tier - 1);
+      }
+    }
+
     function resize() {
       const w = canvas.clientWidth || window.innerWidth;
       const h = canvas.clientHeight || window.innerHeight;
@@ -474,6 +544,8 @@ void main(){
     }
 
     function render(time, damage) {
+      trackFrame();
+
       // ---- scene, in linear HDR
       renderer.setRenderTarget(sceneRT);
       renderer.clear();
@@ -486,12 +558,12 @@ void main(){
       /* ---- bloom: down the chain, then back up, summing as it goes.
          The upsample blends additively, so those targets must not be
          cleared first — the sum is the whole point. */
-      for (let i = 1; i < BLOOM_LEVELS; i++) {
+      for (let i = 1; i < activeMips; i++) {
         downPass.u.tDiffuse.value = mips[i - 1].texture;
         downPass.u.uTexel.value.set(1 / mips[i - 1].width, 1 / mips[i - 1].height);
         draw(downPass, mips[i], true);
       }
-      for (let i = BLOOM_LEVELS - 1; i > 0; i--) {
+      for (let i = activeMips - 1; i > 0; i--) {
         upPass.u.tDiffuse.value = mips[i].texture;
         upPass.u.uTexel.value.set(1 / mips[i].width, 1 / mips[i].height);
         draw(upPass, mips[i - 1], false);
@@ -499,14 +571,14 @@ void main(){
 
       // ---- light shafts, radial-blurred out of the same bright buffer
       const uv = sunScreen();
-      if (composite.u.uRays.value > 0.001 && uv.y < 1.5) {
+      if (raysOn && composite.u.uRays.value > 0.001 && uv.y < 1.5) {
         raysPass.u.tDiffuse.value = mips[1].texture;
         raysPass.u.uSunUv.value.copy(uv);
         draw(raysPass, raysRT, true);
       }
 
       // ---- depth of field, only worth the pass while aiming
-      if (canDepth && composite.u.uAim.value > 0.001) {
+      if (canDepth && dofOn && composite.u.uAim.value > 0.001) {
         dofPass.u.tDiffuse.value = sceneRT.texture;
         dofPass.u.tDepth.value = sceneRT.depthTexture;
         dofPass.u.uTexel.value.set(1 / dofRT.width, 1 / dofRT.height);
@@ -519,6 +591,7 @@ void main(){
       c.tBloom.value = mips[0].texture;
       c.tRays.value = raysRT.texture;
       c.tDof.value = dofRT.texture;
+      c.uAim.value = dofOn ? c.uAim.value : 0;
       c.tDepth.value = sceneRT.depthTexture || null;
       c.uTime.value = time;
       c.uDamage.value = damage || 0;
@@ -563,7 +636,20 @@ void main(){
       },
 
       /* 0 at the hip, 1 fully down the sights. */
-      setAim(t) { composite.u.uAim.value = THREE.MathUtils.clamp(t, 0, 1); },
+      setAim(t) { composite.u.uAim.value = dofOn ? THREE.MathUtils.clamp(t, 0, 1) : 0; },
+
+      /* Quality. Anything that costs frames per tier — the shadow map sizes,
+         how much dust there is — registers here rather than polling. */
+      quality: {
+        TIERS,
+        get tier() { return tier; },
+        get name() { return TIERS[tier].name; },
+        get frameMs() { return +emaMs.toFixed(2); },
+        get auto() { return auto; },
+        set auto(v) { auto = !!v; },
+        set(i) { auto = false; applyTier(i); },
+        onChange(fn) { listeners.push(fn); fn(TIERS[tier], tier); }
+      },
 
       set(name, value) {
         const u = composite.u[name];

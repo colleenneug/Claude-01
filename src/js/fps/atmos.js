@@ -68,7 +68,11 @@ void main() {
   gl_Position = projectionMatrix * mv;
 
   float dist = max( - mv.z, 0.05 );
-  gl_PointSize = ( uSize * aScale * uPixelRatio ) / dist;
+  /* Clamped hard. Size falls off with distance, so a mote that drifts
+     within a few centimetres of the lens would otherwise be drawn three
+     hundred pixels across — four thousand of those, blended additively,
+     is enough overdraw on its own to halve the frame rate. */
+  gl_PointSize = clamp( ( uSize * aScale * uPixelRatio ) / dist, 1.0, 7.0 * uPixelRatio );
 
   /* Fade in past the near plane, and out at the edge of the box so motes
      do not pop into existence at the boundary. */
@@ -156,6 +160,12 @@ void main() {
         colour: new THREE.Color(spec.colour), inscatter: spec.inscatter
       },
       setSun(dirWorld) { dust.mat.uniforms.uSunDir.value.copy(dirWorld).normalize(); },
+      /* Thin the dust out by drawing fewer of them. The buffer is untouched,
+         so this costs nothing and is reversible. */
+      setFraction(f) {
+        const n = Math.max(0, Math.round(spec.motes * Math.max(0, Math.min(1, f))));
+        dust.geo.setDrawRange(0, n);
+      },
       setDensity(v) { dust.mat.uniforms.uOpacity.value = v; },
       update(dt, camPos, time) {
         dust.mat.uniforms.uTime.value = time;

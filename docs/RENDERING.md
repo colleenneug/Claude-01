@@ -241,6 +241,97 @@ than of the light.
 
 ---
 
+## 4. Paying for it
+
+Cascaded shadows and a ten-pass composite are not free — three shadow maps
+mean three extra passes over the whole scene every frame, before anything is
+drawn to the screen. A beautiful frame arriving twenty times a second is worse
+than a plain one arriving sixty times, so `engine.js` measures its own frame
+time and steps down until it fits.
+
+| Tier | Pixel ratio | Bloom levels | Shafts | DoF | Shadow maps | Dust |
+|---|---|---|---|---|---|---|
+| high | 1.75 | 5 | yes | yes | 2048 / 1024 / 1024 | 100% |
+| medium | 1.25 | 4 | yes | yes | 1024 / 1024 / 512 | 70% |
+| low | 1.0 | 3 | no | yes | 1024 / 512 / 512 | 45% |
+| minimal | 0.75 | 2 | no | no | 768 / 512 / 512 | 20% |
+
+The rig watches a smoothed frame time rather than any single frame — one slow
+frame is a garbage collection, a hundred of them is a machine that cannot keep
+up. Ninety consecutive frames over 26 ms drops a tier. Climbing back is
+deliberately much harder than falling (and harder again after each drop), so
+it cannot sit oscillating between two tiers.
+
+Anything that costs frames registers with `eng.quality.onChange()` rather than
+polling: `csm.setMapSizes()` resizes the shadow maps in place, and
+`atmos.setFraction()` thins the dust by draw range, which costs nothing and is
+reversible.
+
+`eng.quality.set(n)` pins a tier and turns the automatic stepping off;
+`eng.quality.auto = true` hands it back. `eng.quality.frameMs` is what it is
+currently seeing.
+
+### Things that were costing frames
+
+Two bugs found by measuring rather than by reading:
+
+* **Dust motes had no size clamp.** `gl_PointSize` fell off with distance, so a
+  mote drifting within a few centimetres of the lens was drawn three hundred
+  pixels across. Four thousand of those, blended additively, is enough overdraw
+  on its own to halve the frame rate. Now clamped to seven pixels.
+* **Specular aliasing from roughness 0.25.** Not a frame cost, but the reason
+  the deck grating crawled with rainbow sparkle. See the specular
+  anti-aliasing patch above.
+
+---
+
+## 5. Hostiles
+
+`hostiles.js`. Each enemy used to be a capsule, a sphere and two more capsules
+— readable at a glance, which is what a shooter needs, but reading as a
+placeholder. Each archetype is now assembled from a few dozen primitives in a
+joint hierarchy:
+
+* **Walkers** — pelvis, segmented torso with overlapping ribs, a reactor seam,
+  a back pack with vents, shoulder plates sloping up to a collar and neck, a
+  head with a brow and a lit visor slit, pauldrons, two-segment arms and legs
+  with real elbows and knees, and either a shoulder mount or a forearm cannon
+  if the type is ranged.
+* **Flyers** — a core inside a split cowl, a segmented ring that turns around
+  it, a recessed optic, three fins, a thruster with its wash, and two
+  manipulator arms hanging below to give it a sense of scale.
+
+Three things keep that affordable with thirty of them on screen: geometry is
+built once per type and shared by every instance; the armour material is built
+once per type and *cloned* per instance, so the maps are shared but the hit
+flash is not; and the joints are plain `Object3D`s, so posing is a handful of
+Euler assignments rather than skinning. Three enemies come to about 100 meshes
+over 8 materials and 63 geometries.
+
+### Armour
+
+`materials.armourPlate()`. What separates armour from a coloured capsule is
+wear: paint goes first along every plate edge, bare metal shows through the
+chips, and grime runs down from each seam. The **metalness map** is the part
+that matters most — the painted areas are a dielectric and the chips are metal,
+so one surface has two completely different responses to light instead of one
+averaged compromise.
+
+Each part's UVs are scaled by its real size, so one armour plate is the same
+twenty-eight centimetres across wherever it appears. Without that, a texture
+mapped straight onto a twenty-centimetre elbow shows the same four plates as
+the whole torso, and the enemy ends up dressed in tweed.
+
+### Walking
+
+The knee only bends one way, the torso counter-rotates against the legs, and
+the whole body rises and falls on each step — the three things that separate
+walking from two capsules swinging past each other. The stride is driven by how
+fast the enemy is *actually* moving, so one pinned against a wall stops walking
+on the spot. Heads track the player within limits, which reads as attention.
+
+---
+
 ## Verifying it
 
 `SF.ui.launch(missionIndex)` drops straight into a mission without clicking
