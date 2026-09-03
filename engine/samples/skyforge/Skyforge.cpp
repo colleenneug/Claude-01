@@ -16,18 +16,18 @@ namespace skyforge {
 
 Orb::Orb() {
     name = "Orb";
-    mesh_ = addComponent<StaticMeshComponent>("Mesh");
-    mesh_->mesh = "Sphere";
-    mesh_->material = "GlowCyan";
-    mesh_->collisionResponse = (int)CollisionResponse::Overlap;
-    mesh_->mobility = (int)Mobility::Movable;
-    mesh_->collisionPadding = Vec3(0.35f);   // forgiving to walk into
-    setRoot(mesh_);
+    auto* mesh = addComponent<StaticMeshComponent>("Mesh");
+    mesh->mesh = "Sphere";
+    mesh->material = "GlowCyan";
+    mesh->collisionResponse = (int)CollisionResponse::Overlap;
+    mesh->mobility = (int)Mobility::Movable;
+    mesh->collisionPadding = Vec3(0.35f);   // forgiving to walk into
+    setRoot(mesh);
 
-    spin_ = addComponent<RotatingMovementComponent>("Spin");
-    spin_->rotationRate = {0, 90, 0};
-    spin_->bobAmplitude = 0.22f;
-    spin_->bobSpeed = 0.7f;
+    auto* spin = addComponent<RotatingMovementComponent>("Spin");
+    spin->rotationRate = {0, 90, 0};
+    spin->bobAmplitude = 0.22f;
+    spin->bobSpeed = 0.7f;
 
     addTag("orb");
     tickEnabled = false;
@@ -58,13 +58,13 @@ FORGE_REGISTER(Orb)
 
 MovingPlatform::MovingPlatform() {
     name = "Moving Platform";
-    mesh_ = addComponent<StaticMeshComponent>("Mesh");
-    mesh_->mesh = "Cube";
-    mesh_->material = "Steel";
+    auto* mesh = addComponent<StaticMeshComponent>("Mesh");
+    mesh->mesh = "Cube";
+    mesh->material = "Steel";
     // Movable, or its collider would stay where the level file left it
     // and the player would be standing on thin air.
-    mesh_->mobility = (int)Mobility::Movable;
-    setRoot(mesh_);
+    mesh->mobility = (int)Mobility::Movable;
+    setRoot(mesh);
     tickEnabled = true;
 }
 
@@ -201,7 +201,9 @@ StaticMeshActor* platform(World& w, const std::string& name, const Vec3& at, con
     return a;
 }
 
-void buildLevelImpl(World& w, AssetLibrary& assets) {
+} // namespace
+
+void buildLevel(World& w, AssetLibrary& assets) {
     w.setLevelName("Skyforge");
     w.settings().gameModeClass = "SkyforgeGameMode";
     w.settings().backgroundColor = Color::fromHex("#5b7fa8");
@@ -296,12 +298,6 @@ void buildLevelImpl(World& w, AssetLibrary& assets) {
     goalLight->radius = 16.0f;
     goalLight->lightColor = Color::fromHex("#ffb454");
     goalLight->rerunConstruction();
-}
-
-}  // namespace
-
-void buildLevel(World& world, AssetLibrary& assets) {
-    buildLevelImpl(world, assets);
 }
 
 } // namespace skyforge

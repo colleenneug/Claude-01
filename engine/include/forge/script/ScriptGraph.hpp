@@ -228,6 +228,12 @@ public:
     Actor* owner() const { return instance.owner(); }
     World* world() const { return instance.world(); }
     Actor* eventOther() const { return instance.eventOther_; }
+    // Every Actor.* node reads an optional "Target" pin and falls back to
+    // the node's own actor when it is unwired -- this is that pattern.
+    Actor* target(const std::string& pin = "Target") {
+        Actor* a = in(pin).asActor;
+        return a ? a : owner();
+    }
 
     ScriptValue& state() { return instance.nodeState_[node.id]; }
 

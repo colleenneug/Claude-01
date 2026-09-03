@@ -416,6 +416,17 @@ uint32_t hashString(const std::string& s);
 float valueNoise(float x, float y, uint32_t seed = 0);
 float fbm(float x, float y, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f, uint32_t seed = 0);
 
+// -----------------------------------------------------------------
+//  Strings — just enough to keep every case-insensitive search in the
+//  engine (the palette filter, the content browser, the script node
+//  search) off its own hand-rolled lowering loop.
+// -----------------------------------------------------------------
+
+std::string toLower(const std::string& s);
+// Whether `haystack` contains `needle`, ignoring case. An empty needle
+// always matches, which is what lets a filter box start empty.
+bool containsCI(const std::string& haystack, const std::string& needle);
+
 // Small deterministic PRNG. Seeded streams keep procedural content stable
 // between runs, which matters when a level references generated content.
 class Random {

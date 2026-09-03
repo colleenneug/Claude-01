@@ -34,8 +34,6 @@ public:
     float value = 1.0f;
 
 private:
-    StaticMeshComponent* mesh_ = nullptr;
-    RotatingMovementComponent* spin_ = nullptr;
     bool collected_ = false;
 };
 
@@ -52,7 +50,6 @@ public:
     float speed = 0.25f;
 
 private:
-    StaticMeshComponent* mesh_ = nullptr;
     Vec3 origin_{0, 0, 0};
     float phase_ = 0.0f;
 };

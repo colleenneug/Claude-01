@@ -60,7 +60,6 @@ public:
     // bias meaningful when the map's extent changes -- expressed in
     // normalised depth it would silently scale with the range.
     float shadowBias = 0.02f;
-    bool wireframe = false;
     // Draws every item's collision-free bounding box. An editor aid.
     bool showBounds = false;
 
@@ -92,6 +91,13 @@ private:
     Framebuffer* target_ = nullptr;
     std::vector<float> depth_;
     int width_ = 0, height_ = 0;
+
+    // Light directions, normalized once per render() call rather than
+    // once per shaded pixel -- a scene's directions are unit length by
+    // construction, but shade() cannot assume that of an arbitrary
+    // caller-built RenderScene, so this is where the cost is paid once.
+    Vec3 sunDirUnit_{0, -1, 0};
+    std::vector<Vec3> lightDirsUnit_;
 
     // Shadow map: an orthographic depth buffer in the sun's space.
     std::vector<float> shadowDepth_;

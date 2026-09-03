@@ -8,6 +8,21 @@
 
 namespace forge {
 
+namespace {
+// A capsule collapses to a segment of spheres for hit-testing: the two
+// caps and the middle. When the half height is ~0 the capsule really is
+// a sphere, so one sample is returned instead of three identical ones --
+// shared by Collider::raycast, collidersTouch, capsuleOverlaps and
+// moveCapsule, which had each grown their own copy of this.
+int capsuleSamples(const Vec3& centre, const Vec3& axis, float halfHeight, Vec3 out[3]) {
+    if (halfHeight < 1e-4f) { out[0] = centre; return 1; }
+    out[0] = centre - axis * halfHeight;
+    out[1] = centre;
+    out[2] = centre + axis * halfHeight;
+    return 3;
+}
+} // namespace
+
 // -----------------------------------------------------------------
 //  Collider
 // -----------------------------------------------------------------
@@ -139,16 +154,16 @@ bool Collider::raycast(const Ray& ray, float maxDist, float& outT, Vec3& outNorm
     // Capsule: solve against the axis segment by sampling the two caps
     // and the centre. Exact enough for gameplay traces, and far cheaper
     // than the quartic the closed form needs.
-    Vec3 axis = rotation * Vec3::Up;
+    Vec3 pts[3];
+    const int n = capsuleSamples(position, rotation * Vec3::Up, halfHeight, pts);
     bool any = false;
     float best = maxDist;
-    for (int i = -1; i <= 1; ++i) {
-        Vec3 c = position + axis * (halfHeight * (float)i);
+    for (int i = 0; i < n; ++i) {
         float t;
-        if (!raySphere(ray, c, radius, best, t)) continue;
+        if (!raySphere(ray, pts[i], radius, best, t)) continue;
         best = t;
         outT = t;
-        outNormal = (ray.at(t) - c).normalized();
+        outNormal = (ray.at(t) - pts[i]).normalized();
         any = true;
     }
     return any;
@@ -316,7 +331,7 @@ HitResult PhysicsScene::raycast(const Vec3& origin, const Vec3& direction, float
     sweep.expand(origin + dir * maxDistance);
     sweep = sweep.grown(0.05f);
 
-    std::vector<Collider*> list = near(sweep);
+    std::vector<Collider*>& list = near(sweep);
     float best = maxDistance;
     for (Collider* c : list) {
         if (!c->enabled || c->response == CollisionResponse::None) continue;
@@ -354,15 +369,17 @@ std::vector<Actor*> PhysicsScene::overlapSphere(const Vec3& centre, float radius
 bool PhysicsScene::capsuleOverlaps(const Vec3& centre, float radius, float halfHeight,
                                    const SweepParams& params) {
     Box box = Box::fromCenterExtents(centre, Vec3{radius, radius + halfHeight, radius});
+    // centre never changes here, so the sample points are the same for
+    // every candidate collider -- compute them once rather than per hit.
+    Vec3 pts[3];
+    const int count = capsuleSamples(centre, Vec3::Up, halfHeight, pts);
     for (Collider* c : near(box)) {
         if (c->response != CollisionResponse::Block || !c->enabled) continue;
         if (ignored(params.ignore, c->actor)) continue;
         if (params.filter && !params.filter(c->actor, c->component)) continue;
-        for (int k = -1; k <= 1; ++k) {
-            if (halfHeight < 1e-4f && k != 0) continue;
-            Vec3 p{centre.x, centre.y + halfHeight * (float)k, centre.z};
+        for (int k = 0; k < count; ++k) {
             Vec3 n; float d;
-            if (c->resolveSphere(p, radius, n, d)) return true;
+            if (c->resolveSphere(pts[k], radius, n, d)) return true;
         }
     }
     return false;
@@ -389,7 +406,10 @@ MoveResult PhysicsScene::moveCapsule(const Vec3& start, float radius, float half
         // pushing out of one surface pushes into another.
         for (int iter = 0; iter < 4; ++iter) {
             Box box = Box::fromCenterExtents(out.position, Vec3{radius, radius + halfHeight, radius}).grown(0.02f);
-            std::vector<Collider*> list = near(box);
+            // near() hands back its own scratch buffer precisely so a hot
+            // per-substep, per-iteration call like this one does not
+            // allocate; copying it into a fresh vector here defeated that.
+            std::vector<Collider*>& list = near(box);
             bool moved = false;
 
             for (Collider* c : list) {
@@ -399,11 +419,14 @@ MoveResult PhysicsScene::moveCapsule(const Vec3& start, float radius, float half
 
                 // A capsule is a segment of spheres; the two caps and the
                 // middle catch everything a level throws at a character.
-                for (int k = -1; k <= 1; ++k) {
-                    if (halfHeight < 1e-4f && k != 0) continue;
-                    Vec3 p{out.position.x, out.position.y + halfHeight * (float)k, out.position.z};
+                // Resampled per collider (not hoisted above this loop):
+                // out.position can move between colliders within the same
+                // iter pass, and each check must use the corrected position.
+                Vec3 pts[3];
+                const int count = capsuleSamples(out.position, Vec3::Up, halfHeight, pts);
+                for (int k = 0; k < count; ++k) {
                     Vec3 n; float depth;
-                    if (!c->resolveSphere(p, radius, n, depth)) continue;
+                    if (!c->resolveSphere(pts[k], radius, n, depth)) continue;
 
                     out.position += n * (depth + 0.0005f);
                     moved = true;
@@ -461,9 +484,10 @@ bool PhysicsScene::collidersTouch(const Collider* a, const Collider* b) const {
     if (a->shape == CollisionShape::Sphere) return b->resolveSphere(a->position, a->radius, n, d);
     if (b->shape == CollisionShape::Sphere) return a->resolveSphere(b->position, b->radius, n, d);
     if (a->shape == CollisionShape::Capsule) {
-        Vec3 axis = a->rotation * Vec3::Up;
-        for (int k = -1; k <= 1; ++k)
-            if (b->resolveSphere(a->position + axis * (a->halfHeight * (float)k), a->radius, n, d)) return true;
+        Vec3 pts[3];
+        const int count = capsuleSamples(a->position, a->rotation * Vec3::Up, a->halfHeight, pts);
+        for (int k = 0; k < count; ++k)
+            if (b->resolveSphere(pts[k], a->radius, n, d)) return true;
         return false;
     }
     if (b->shape == CollisionShape::Capsule) return collidersTouch(b, a);

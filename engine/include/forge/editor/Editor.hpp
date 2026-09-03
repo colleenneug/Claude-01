@@ -109,6 +109,15 @@ public:
     float gridSnap = 0.0f;
 
 private:
+    // The X/Y/Z convention the gizmo, the axis indicator and the
+    // colour-coded Vec3 property rows all share, in that order.
+    static const Vec3 kAxisDirections[3];
+    static const Color kAxisColors[3];
+
+    // Sets the status-bar message, and how long it stays before the bar
+    // falls back to showing the selection.
+    void setStatus(const std::string& message, float seconds = 3.0f);
+
     // ---- panels ----
     void drawToolbar(const Rect& r);
     void drawPalette(const Rect& r);

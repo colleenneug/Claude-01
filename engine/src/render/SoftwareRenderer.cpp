@@ -145,16 +145,18 @@ Color SoftwareRenderer::shade(const Vec3& worldPos, const Vec3& normalIn, const 
     };
 
     if (scene.hasSun && scene.sun.intensity > 0.0f) {
-        const Vec3 toSun = -scene.sun.direction.normalized();
+        const Vec3 toSun = -sunDirUnit_;
         const float shadow = scene.environment.shadows ? sunShadowFactor(worldPos, n) : 1.0f;
         if (shadow > 0.0f)
             accumulate(toSun, scene.sun.color.rgb() * (scene.sun.intensity * shadow));
     }
 
-    for (const LightItem& light : scene.lights) {
+    for (size_t i = 0; i < scene.lights.size(); ++i) {
+        const LightItem& light = scene.lights[i];
         if (light.intensity <= 0.0f) continue;
+        const Vec3& dirUnit = lightDirsUnit_[i];
         if (light.kind == LightKind::Directional) {
-            accumulate(-light.direction.normalized(), light.color.rgb() * light.intensity);
+            accumulate(-dirUnit, light.color.rgb() * light.intensity);
             continue;
         }
         Vec3 toLight = light.position - worldPos;
@@ -169,7 +171,7 @@ Color SoftwareRenderer::shade(const Vec3& worldPos, const Vec3& normalIn, const 
         float attenuation = window / (1.0f + dist * dist);
 
         if (light.kind == LightKind::Spot) {
-            const float cosAngle = dot(-toLight, light.direction.normalized());
+            const float cosAngle = dot(-toLight, dirUnit);
             const float denom = std::max(1e-4f, light.innerCos - light.outerCos);
             attenuation *= saturate((cosAngle - light.outerCos) / denom);
             if (attenuation <= 0.0f) continue;
@@ -247,7 +249,7 @@ void SoftwareRenderer::renderShadowMap(const RenderScene& scene, const RenderVie
     // Fit the map around the camera rather than the whole level: a level
     // a kilometre across would otherwise get a metre per texel.
     const Vec3 focus = view.cameraPosition;
-    const Vec3 sunDir = scene.sun.direction.normalized();
+    const Vec3 sunDir = sunDirUnit_;   // set once at the top of render()
     const Vec3 eye = focus - sunDir * (shadowExtent * 2.0f);
     Vec3 up = std::fabs(sunDir.y) > 0.95f ? Vec3{0, 0, 1} : Vec3::Up;
 
@@ -449,6 +451,11 @@ void SoftwareRenderer::render(Framebuffer& target, const RenderScene& scene, con
     height_ = target.height();
     depth_.assign((size_t)width_ * (size_t)height_, 1.0f);
 
+    sunDirUnit_ = scene.sun.direction.normalized();
+    lightDirsUnit_.resize(scene.lights.size());
+    for (size_t i = 0; i < scene.lights.size(); ++i)
+        lightDirsUnit_[i] = scene.lights[i].direction.normalized();
+
     // Sky: a vertical gradient from the horizon colour to the zenith,
     // which reads as a sky without costing a cubemap.
     for (int y = 0; y < height_; ++y) {
@@ -476,35 +483,22 @@ void SoftwareRenderer::render(Framebuffer& target, const RenderScene& scene, con
     }
 
     // Editor overlays, drawn after the scene so they are never occluded.
-    if (showBounds || wireframe) {
-        for (const DrawItem& item : scene.items) {
-            if (!item.worldBounds.valid()) continue;
-            if (!showBounds && !item.selected) continue;
-            const Box& b = item.worldBounds;
-            const Color c = item.selected ? Color::fromHex("#ffb454") : Color::fromHex("#5fa8d3");
-            const Vec3 corners[8] = {
-                {b.min.x, b.min.y, b.min.z}, {b.max.x, b.min.y, b.min.z},
-                {b.max.x, b.min.y, b.max.z}, {b.min.x, b.min.y, b.max.z},
-                {b.min.x, b.max.y, b.min.z}, {b.max.x, b.max.y, b.min.z},
-                {b.max.x, b.max.y, b.max.z}, {b.min.x, b.max.y, b.max.z}};
-            const int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},
-                                      {6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-            for (const auto& e : edges) drawLine3D(target, viewProj, corners[e[0]], corners[e[1]], c);
-        }
-    } else {
-        for (const DrawItem& item : scene.items) {
-            if (!item.selected || !item.worldBounds.valid()) continue;
-            const Box& b = item.worldBounds;
-            const Color c = Color::fromHex("#ffb454");
-            const Vec3 corners[8] = {
-                {b.min.x, b.min.y, b.min.z}, {b.max.x, b.min.y, b.min.z},
-                {b.max.x, b.min.y, b.max.z}, {b.min.x, b.min.y, b.max.z},
-                {b.min.x, b.max.y, b.min.z}, {b.max.x, b.max.y, b.min.z},
-                {b.max.x, b.max.y, b.max.z}, {b.min.x, b.max.y, b.max.z}};
-            const int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},
-                                      {6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-            for (const auto& e : edges) drawLine3D(target, viewProj, corners[e[0]], corners[e[1]], c);
-        }
+    // Every item's box in showBounds mode, or just the selected item's
+    // otherwise -- one loop covers both, since skipping unselected items
+    // when showBounds is off already reduces to the selected-only case.
+    for (const DrawItem& item : scene.items) {
+        if (!item.worldBounds.valid()) continue;
+        if (!showBounds && !item.selected) continue;
+        const Box& b = item.worldBounds;
+        const Color c = item.selected ? Color::fromHex("#ffb454") : Color::fromHex("#5fa8d3");
+        const Vec3 corners[8] = {
+            {b.min.x, b.min.y, b.min.z}, {b.max.x, b.min.y, b.min.z},
+            {b.max.x, b.min.y, b.max.z}, {b.min.x, b.min.y, b.max.z},
+            {b.min.x, b.max.y, b.min.z}, {b.max.x, b.max.y, b.min.z},
+            {b.max.x, b.max.y, b.max.z}, {b.min.x, b.max.y, b.max.z}};
+        const int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},
+                                  {6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
+        for (const auto& e : edges) drawLine3D(target, viewProj, corners[e[0]], corners[e[1]], c);
     }
 
     // Resolve: exposure, tone map, vignette. Done as a pass rather than

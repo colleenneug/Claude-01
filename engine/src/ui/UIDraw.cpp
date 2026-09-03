@@ -195,13 +195,12 @@ std::string UIDraw::ellipsize(const std::string& s, float maxWidth) {
 void UIDraw::textClipped(const Rect& r, const std::string& s, const Color& c, float padding) {
     const float avail = r.w - padding * 2.0f;
     if (avail <= 0.0f) return;
-    std::string shown = s;
-    if (textWidth(shown) > avail) {
-        const int fits = std::max(0, (int)(avail / charWidth()) - 1);
-        shown = s.substr(0, (size_t)std::min((size_t)fits, s.size())) + "...";
-        while (textWidth(shown) > avail && shown.size() > 3) shown.erase(shown.size() - 4, 1);
-    }
-    text(r.x + padding, r.y + (r.h - lineHeight()) * 0.5f, shown, c);
+    const float y = r.y + (r.h - lineHeight()) * 0.5f;
+    // The common case is a label that already fits, so check before
+    // reaching for ellipsize() — most labels drawn every frame never
+    // need the truncated copy at all.
+    if (textWidth(s) <= avail) { text(r.x + padding, y, s, c); return; }
+    text(r.x + padding, y, ellipsize(s, avail), c);
 }
 
 } // namespace forge

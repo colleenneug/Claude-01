@@ -157,26 +157,18 @@ std::vector<std::string> NodeLibrary::categories() const {
 }
 
 std::vector<const NodeDef*> NodeLibrary::search(const std::string& query) const {
-    std::string q;
-    for (char c : query) q += (char)std::tolower((unsigned char)c);
+    const std::string q = toLower(query);
     std::vector<const NodeDef*> out;
     if (q.empty()) {
         for (const NodeDef& d : defs_) out.push_back(&d);
         return out;
     }
-    auto lower = [](const std::string& s) {
-        std::string r;
-        for (char c : s) r += (char)std::tolower((unsigned char)c);
-        return r;
-    };
     // Exact-prefix matches first, so typing "br" puts Branch on top
     // rather than burying it under anything mentioning "branch".
-    for (const NodeDef& d : defs_) if (lower(d.display).rfind(q, 0) == 0) out.push_back(&d);
+    for (const NodeDef& d : defs_) if (toLower(d.display).rfind(q, 0) == 0) out.push_back(&d);
     for (const NodeDef& d : defs_) {
         if (std::find(out.begin(), out.end(), &d) != out.end()) continue;
-        if (lower(d.display).find(q) != std::string::npos ||
-            lower(d.category).find(q) != std::string::npos ||
-            lower(d.tooltip).find(q) != std::string::npos)
+        if (containsCI(d.display, query) || containsCI(d.category, query) || containsCI(d.tooltip, query))
             out.push_back(&d);
     }
     return out;

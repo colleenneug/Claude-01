@@ -1,5 +1,6 @@
 #include "forge/math/Math.hpp"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 
@@ -668,5 +669,21 @@ Vec3 Random::onSphere() {
     return {r * std::cos(a), r * std::sin(a), z};
 }
 Vec3 Random::inSphere() { return onSphere() * std::cbrt(unit()); }
+
+// -----------------------------------------------------------------
+//  Strings
+// -----------------------------------------------------------------
+
+std::string toLower(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) out += (char)std::tolower((unsigned char)c);
+    return out;
+}
+
+bool containsCI(const std::string& haystack, const std::string& needle) {
+    if (needle.empty()) return true;
+    return toLower(haystack).find(toLower(needle)) != std::string::npos;
+}
 
 } // namespace forge

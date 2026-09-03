@@ -20,13 +20,7 @@ namespace forge {
 
 namespace {
 
-bool matchesFilter(const std::string& text, const std::string& filter) {
-    if (filter.empty()) return true;
-    std::string a, b;
-    for (char c : text) a += (char)std::tolower((unsigned char)c);
-    for (char c : filter) b += (char)std::tolower((unsigned char)c);
-    return a.find(b) != std::string::npos;
-}
+bool matchesFilter(const std::string& text, const std::string& filter) { return containsCI(text, filter); }
 
 std::string formatNumber(double v, int decimals = 1) {
     char buf[64];
@@ -99,9 +93,10 @@ void Editor::drawPalette(const Rect& r) {
     const auto classes = ClassRegistry::get().derivedFrom("Actor", true);
     std::vector<const ClassInfo*> shown;
     for (const ClassInfo* c : classes) {
+        // GameMode and PlayerController are marked notPlaceable() at
+        // registration for exactly this reason, so this check needs no
+        // special case for them.
         if (!c->placeable()) continue;
-        // The framework classes are spawned by play, not placed by hand.
-        if (c->isA("GameMode") || c->isA("PlayerController")) continue;
         if (!matchesFilter(c->displayName(), paletteFilter_) &&
             !matchesFilter(c->category(), paletteFilter_))
             continue;
@@ -221,7 +216,9 @@ bool Editor::drawProperty(const Rect& row, Object& object, const Property& prop)
             break;
         }
         case PropType::Enum: {
-            std::vector<std::string> options(prop.enumNames.begin(), prop.enumNames.end());
+            // enumNames is already the vector<string> the dropdown wants;
+            // this row is redrawn every frame, so skip copying it.
+            const std::vector<std::string>& options = prop.enumNames;
             int sel = value.asInt;
             if (ui_.dropdown(r.inset(2.0f, 2.0f, 4.0f, 2.0f), fieldId, options, sel)) {
                 value.asInt = sel;
@@ -245,8 +242,7 @@ bool Editor::drawProperty(const Rect& row, Object& object, const Property& prop)
             float comps[3] = {isRotator ? value.asRotator.pitch : value.asVec3.x,
                               isRotator ? value.asRotator.yaw : value.asVec3.y,
                               isRotator ? value.asRotator.roll : value.asVec3.z};
-            const Color axisColors[3] = {Color::fromHex("#e05252"), Color::fromHex("#5ad25a"),
-                                         Color::fromHex("#4f8ff0")};
+            const Color* axisColors = kAxisColors;
             const float each = r.w / 3.0f;
             for (int i = 0; i < 3; ++i) {
                 Rect cell{r.x + each * (float)i, r.y, each, r.h};
@@ -313,20 +309,20 @@ void Editor::drawComponentTree(const Rect& r, Actor& actor, float& y) {
         if (head.bottom() < r.y || head.y > r.bottom()) {
             // Still has to advance y for the properties it is skipping.
             for (const Property* p : comp->getClass()->allProperties())
-                if (!p->hidden && p->name != "name") y += rowH;
+                if (!p->hidden) y += rowH;
             continue;
         }
 
         const std::string title = comp->name + "  (" + comp->getClass()->displayName() + ")";
         if (!ui_.collapsingHeader(head, title, "comp" + comp->name + std::to_string(actor.id()))) {
             for (const Property* p : comp->getClass()->allProperties())
-                if (!p->hidden && p->name != "name") y += rowH;
+                if (!p->hidden) y += rowH;
             continue;
         }
 
         std::string category;
         for (const Property* p : comp->getClass()->allProperties()) {
-            if (p->hidden || p->name == "name") continue;
+            if (p->hidden) continue;
             if (p->category != category) {
                 category = p->category;
                 const Rect catRow{r.x + 8.0f, y, r.w - 8.0f, rowH};
@@ -371,7 +367,7 @@ void Editor::drawDetails(const Rect& r) {
                 contentH += rowH;
                 std::string cat;
                 for (const Property* p : c->getClass()->allProperties()) {
-                    if (p->hidden || p->name == "name") continue;
+                    if (p->hidden) continue;
                     if (p->category != cat) { cat = p->category; contentH += rowH; }
                     contentH += rowH;
                 }
@@ -563,10 +559,9 @@ void Editor::drawViewportOverlay(const Rect& r) {
     // Axis indicator, bottom left: which way is X, Y and Z from here.
     const Vec2 origin{r.x + 42.0f, r.bottom() - 42.0f};
     const Quat inv = camera_.rotation.toQuat().inverse();
-    const Vec3 axes[3] = {Vec3::Right, Vec3::Up, Vec3::Back * -1.0f};
+    const Vec3* axes = kAxisDirections;
     const char* labels[3] = {"X", "Y", "Z"};
-    const Color colors[3] = {Color::fromHex("#e05252"), Color::fromHex("#5ad25a"),
-                             Color::fromHex("#4f8ff0")};
+    const Color* colors = kAxisColors;
     for (int i = 0; i < 3; ++i) {
         const Vec3 v = inv * axes[i];
         const Vec2 tip{origin.x + v.x * 26.0f, origin.y - v.y * 26.0f};

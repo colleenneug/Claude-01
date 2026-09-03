@@ -23,7 +23,7 @@ FORGE_CLASS_BEGIN(ActorComponent)
     FORGE_DISPLAY("Component")
     FORGE_CATEGORY("Component")
     FORGE_DESCRIBE("Behaviour attached to an actor.")
-    FORGE_PROP(name).cat("Component")
+    FORGE_PROP(name).cat("Component").hidden()   // already shown in the component's header row
     FORGE_PROP(tickEnabled).cat("Component").label("Tick Enabled")
 FORGE_CLASS_END()
 FORGE_REGISTER(ActorComponent)

@@ -12,7 +12,17 @@
 
 namespace forge {
 
+const Vec3 Editor::kAxisDirections[3] = {Vec3::Right, Vec3::Up, Vec3::Back * -1.0f};
+const Color Editor::kAxisColors[3] = {Color::fromHex("#e05252"), Color::fromHex("#5ad25a"),
+                                      Color::fromHex("#4f8ff0")};
+
 Editor::Editor() = default;
+
+void Editor::setStatus(const std::string& message, float seconds) {
+    statusMessage_ = message;
+    statusTimer_ = seconds;
+}
+
 Editor::~Editor() = default;
 
 void Editor::setup() {
@@ -21,8 +31,7 @@ void Editor::setup() {
     editWorld_ = std::make_unique<World>(true);
     editWorld_->setAssets(&assets_);
     createDefaultLevel();
-    statusMessage_ = "Forge " + std::string("1.0.0") + " ready";
-    statusTimer_ = 4.0f;
+    setStatus("Forge " + std::string("1.0.0") + " ready", 4.0f);
 }
 
 void Editor::createDefaultLevel() {
@@ -75,26 +84,22 @@ void Editor::newLevel() {
     selection_ = nullptr;
     levelPath_.clear();
     createDefaultLevel();
-    statusMessage_ = "New level";
-    statusTimer_ = 3.0f;
+    setStatus("New level");
 }
 
 bool Editor::saveLevel(const std::string& path) {
     const std::string target = path.empty() ? levelPath_ : path;
     if (target.empty()) {
-        statusMessage_ = "No path to save to";
-        statusTimer_ = 3.0f;
+        setStatus("No path to save to");
         return false;
     }
     if (!LevelSerializer::saveToFile(*editWorld_, target)) {
-        statusMessage_ = "Could not write " + target;
-        statusTimer_ = 4.0f;
+        setStatus("Could not write " + target, 4.0f);
         return false;
     }
     levelPath_ = target;
     dirty_ = false;
-    statusMessage_ = "Saved " + target;
-    statusTimer_ = 3.0f;
+    setStatus("Saved " + target);
     return true;
 }
 
@@ -103,16 +108,14 @@ bool Editor::loadLevel(const std::string& path) {
     auto fresh = std::make_unique<World>(true);
     fresh->setAssets(&assets_);
     if (!LevelSerializer::loadFromFile(*fresh, path)) {
-        statusMessage_ = "Could not load " + path;
-        statusTimer_ = 4.0f;
+        setStatus("Could not load " + path, 4.0f);
         return false;
     }
     editWorld_ = std::move(fresh);
     selection_ = nullptr;
     levelPath_ = path;
     dirty_ = false;
-    statusMessage_ = "Loaded " + path;
-    statusTimer_ = 3.0f;
+    setStatus("Loaded " + path);
     return true;
 }
 
@@ -131,21 +134,18 @@ void Editor::play() {
     playWorld_->setAssets(&assets_);
     if (!LevelSerializer::loadWorld(*playWorld_, snapshot)) {
         playWorld_.reset();
-        statusMessage_ = "Could not start play";
-        statusTimer_ = 4.0f;
+        setStatus("Could not start play", 4.0f);
         return;
     }
     playWorld_->beginPlay();
-    statusMessage_ = "Playing - press Escape or Stop to return";
-    statusTimer_ = 3.0f;
+    setStatus("Playing - press Escape or Stop to return");
 }
 
 void Editor::stop() {
     if (!playWorld_) return;
     playWorld_->endPlay();
     playWorld_.reset();
-    statusMessage_ = "Stopped";
-    statusTimer_ = 2.0f;
+    setStatus("Stopped", 2.0f);
 }
 
 void Editor::togglePause() {
@@ -177,8 +177,7 @@ Actor* Editor::spawnClass(const ClassInfo* cls) {
     if (a) {
         select(a);
         markDirty();
-        statusMessage_ = "Added " + a->actorName();
-        statusTimer_ = 2.0f;
+        setStatus("Added " + a->actorName(), 2.0f);
     }
     return a;
 }
@@ -189,8 +188,7 @@ void Editor::deleteSelection() {
     selection_->destroy();
     selection_ = nullptr;
     markDirty();
-    statusMessage_ = "Deleted " + name;
-    statusTimer_ = 2.0f;
+    setStatus("Deleted " + name, 2.0f);
 }
 
 void Editor::duplicateSelection() {
@@ -203,8 +201,7 @@ void Editor::duplicateSelection() {
     copy->addOffset({1.0f, 0.0f, 1.0f});
     select(copy);
     markDirty();
-    statusMessage_ = "Duplicated";
-    statusTimer_ = 2.0f;
+    setStatus("Duplicated", 2.0f);
 }
 
 void Editor::focusSelection() {
@@ -461,9 +458,8 @@ void Editor::drawGizmo(const Rect& r, const RenderView& view) {
     const float dist = distance(view.cameraPosition, origin);
     const float length = std::max(0.35f, dist * 0.16f);
 
-    const Vec3 axes[3] = {Vec3::Right, Vec3::Up, Vec3::Back * -1.0f};
-    const Color colors[3] = {Color::fromHex("#e05252"), Color::fromHex("#5ad25a"),
-                             Color::fromHex("#4f8ff0")};
+    const Vec3* axes = kAxisDirections;
+    const Color* colors = kAxisColors;
 
     d.pushClip(r);
     for (int i = 0; i < 3; ++i) {
@@ -505,7 +501,7 @@ bool Editor::handleGizmoDrag(const Rect& r, const RenderView& view) {
 
     const float dist = distance(view.cameraPosition, origin);
     const float length = std::max(0.35f, dist * 0.16f);
-    const Vec3 axes[3] = {Vec3::Right, Vec3::Up, Vec3::Back * -1.0f};
+    const Vec3* axes = kAxisDirections;
 
     if (!gizmoDragging_) {
         gizmoAxis_ = -1;

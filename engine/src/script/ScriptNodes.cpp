@@ -402,8 +402,7 @@ void registerCoreNodes() {
     define("Actor.GetLocation", "Get Location", "Actor", "An actor's position in the world.",
            {pin("Target", PinType::Actor, true), pin("Location", PinType::Vec3, false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                e.out("Location", ScriptValue::make(a ? a->transform().position : Vec3::Zero));
                return 0;
            }, false, true);
@@ -412,8 +411,7 @@ void registerCoreNodes() {
            {exec("In", true), pin("Target", PinType::Actor, true),
             pin("Location", PinType::Vec3, true), exec("Then", false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                if (a) a->setLocation(e.in("Location").vector());
                return 0;
            });
@@ -422,8 +420,7 @@ void registerCoreNodes() {
            {exec("In", true), pin("Target", PinType::Actor, true),
             pin("Delta", PinType::Vec3, true), exec("Then", false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                if (a) a->addOffset(e.in("Delta").vector());
                return 0;
            });
@@ -431,8 +428,7 @@ void registerCoreNodes() {
     define("Actor.GetRotation", "Get Rotation", "Actor", "An actor's rotation in degrees.",
            {pin("Target", PinType::Actor, true), pin("Rotation", PinType::Rotator, false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                e.out("Rotation", ScriptValue::make(a ? a->rotation() : Rotator{}));
                return 0;
            }, false, true);
@@ -441,8 +437,7 @@ void registerCoreNodes() {
            {exec("In", true), pin("Target", PinType::Actor, true),
             pin("Rotation", PinType::Rotator, true), exec("Then", false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                if (a) a->setRotation(e.in("Rotation").rotator());
                return 0;
            });
@@ -451,8 +446,7 @@ void registerCoreNodes() {
            {exec("In", true), pin("Target", PinType::Actor, true),
             pin("Delta", PinType::Rotator, true), exec("Then", false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                if (a) a->addRotation(e.in("Delta").rotator());
                return 0;
            });
@@ -461,8 +455,7 @@ void registerCoreNodes() {
            {exec("In", true), pin("Target", PinType::Actor, true),
             pin("Scale", PinType::Vec3, true, ScriptValue::make(Vec3::One)), exec("Then", false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                if (a) a->setScale(e.in("Scale").vector());
                return 0;
            });
@@ -470,8 +463,7 @@ void registerCoreNodes() {
     define("Actor.Destroy", "Destroy Actor", "Actor", "Removes an actor from the world.",
            {exec("In", true), pin("Target", PinType::Actor, true), exec("Then", false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                if (a) a->destroy();
                return 0;
            });
@@ -479,8 +471,7 @@ void registerCoreNodes() {
     define("Actor.GetName", "Get Actor Name", "Actor", "An actor's display name.",
            {pin("Target", PinType::Actor, true), pin("Name", PinType::String, false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                e.out("Name", ScriptValue::make(a ? a->actorName() : std::string()));
                return 0;
            }, false, true);
@@ -489,8 +480,7 @@ void registerCoreNodes() {
            {pin("Target", PinType::Actor, true), pin("Tag", PinType::String, true),
             pin("Result", PinType::Bool, false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                e.out("Result", ScriptValue::make(a && a->hasTag(e.in("Tag").text())));
                return 0;
            }, false, true);
@@ -500,8 +490,7 @@ void registerCoreNodes() {
            {exec("In", true), pin("Target", PinType::Actor, true),
             pin("Value", PinType::Wildcard, true), exec("Then", false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                if (!a) return 0;
                const std::string& prop = e.config("property");
                // Reflection means a script can reach anything the details
@@ -515,8 +504,7 @@ void registerCoreNodes() {
            "Reads any reflected property by name. Name it in Details.",
            {pin("Target", PinType::Actor, true), pin("Value", PinType::Wildcard, false)},
            [](ScriptExec& e) {
-               Actor* a = e.in("Target").asActor;
-               if (!a) a = e.owner();
+               Actor* a = e.target();
                PropertyValue v;
                if (a && a->getProperty(e.config("property"), v))
                    e.out("Value", ScriptValue::fromProperty(v));
