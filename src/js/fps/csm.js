@@ -212,6 +212,20 @@ float sfCsmWeight( vec2 band ) {
         }
       },
 
+      /* Resize the shadow maps in place. three allocates the map lazily from
+         mapSize, so dropping the existing one is what makes a new size take
+         effect; it costs one reallocation, which is why this only ever runs
+         on a quality change. */
+      setMapSizes(sizes) {
+        for (let i = 0; i < lights.length; i++) {
+          const want = sizes[Math.min(i, sizes.length - 1)];
+          const shadow = lights[i].shadow;
+          if (shadow.mapSize.x === want) continue;
+          shadow.mapSize.setScalar(want);
+          if (shadow.map) { shadow.map.dispose(); shadow.map = null; }
+        }
+      },
+
       dispose() {
         for (const l of lights) {
           if (l.shadow.map) l.shadow.map.dispose();

@@ -4525,6 +4525,136 @@ window.SF = window.SF || {};
     });
   }
 
+  /* ---------- combat armour ----------
+     What separates armour from a coloured capsule is wear. A plate that
+     has been shot at has paint missing along every edge and corner, bare
+     metal showing through the chips, and grime running down from each
+     seam. The metalness map is the part that matters most: the painted
+     areas are a dielectric and the chips are metal, so the same surface
+     has two completely different responses to light instead of one
+     averaged compromise. */
+  function armourPlate(tint, opts) {
+    const o = Object.assign({ size: 256, repeat: [1, 1], panel: 64,
+                              wear: 1, rough: 0.55 }, opts || {});
+    const S = o.size, P = o.panel;
+    const base = new THREE.Color(tint);
+    const hex = (c) => '#' + c.getHexString();
+    const bare = base.clone().lerp(new THREE.Color(0xb9c0c8), 0.72);
+
+    const alb = canvas(S), a = alb.getContext('2d');
+    a.fillStyle = hex(base); a.fillRect(0, 0, S, S);
+
+    // plate-to-plate colour drift, so no two panels are the same shade
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        const c = base.clone().offsetHSL((Math.random() - 0.5) * 0.02, 0,
+                                         (Math.random() - 0.5) * 0.10);
+        a.fillStyle = hex(c); a.fillRect(x, y, P, P);
+      }
+    }
+
+    // seams between plates, darkened by whatever has collected in them
+    a.strokeStyle = 'rgba(8,9,12,0.75)'; a.lineWidth = 2;
+    for (let i = 0; i <= S; i += P) {
+      a.beginPath(); a.moveTo(i, 0); a.lineTo(i, S); a.stroke();
+      a.beginPath(); a.moveTo(0, i); a.lineTo(S, i); a.stroke();
+    }
+
+    /* Edge wear: paint goes first where the plate is handled or hit, which
+       is along its border. Drawn as bare metal dashes hugging the seams. */
+    a.strokeStyle = hex(bare);
+    for (let i = 0; i <= S; i += P) {
+      for (const [horiz, off] of [[true, 2], [true, -2], [false, 2], [false, -2]]) {
+        a.lineWidth = 1 + Math.random() * 1.6;
+        a.setLineDash([3 + Math.random() * 14, 6 + Math.random() * 22]);
+        a.globalAlpha = 0.35 + Math.random() * 0.4;
+        a.beginPath();
+        if (horiz) { a.moveTo(i + off, 0); a.lineTo(i + off, S); }
+        else { a.moveTo(0, i + off); a.lineTo(S, i + off); }
+        a.stroke();
+      }
+    }
+    a.setLineDash([]); a.globalAlpha = 1;
+
+    // chips and scrapes across the faces
+    const chips = Math.round(120 * o.wear);
+    for (let i = 0; i < chips; i++) {
+      const x = Math.random() * S, y = Math.random() * S;
+      const w = 1 + Math.random() * 7, hgt2 = 1 + Math.random() * 4;
+      a.fillStyle = hex(bare); a.globalAlpha = 0.3 + Math.random() * 0.55;
+      a.beginPath(); a.ellipse(x, y, w, hgt2, Math.random() * 3.14, 0, Math.PI * 2); a.fill();
+    }
+    a.globalAlpha = 1;
+    grime(a, S, 16, 0.4);
+    noise(a, S, 14);
+
+    /* Height: plates stand proud, seams cut in, bolt heads sit on top. */
+    const hgt = canvas(S), h = hgt.getContext('2d');
+    h.fillStyle = '#8c8c8c'; h.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        h.fillStyle = 'rgba(255,255,255,0.30)';
+        h.fillRect(x + 3, y + 3, P - 6, P - 6);       // the raised plate face
+      }
+    }
+    h.strokeStyle = '#1e1e1e'; h.lineWidth = 3;
+    for (let i = 0; i <= S; i += P) {
+      h.beginPath(); h.moveTo(i, 0); h.lineTo(i, S); h.stroke();
+      h.beginPath(); h.moveTo(0, i); h.lineTo(S, i); h.stroke();
+    }
+    h.fillStyle = '#e8e8e8';
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        for (const [bx, by] of [[9, 9], [P - 9, 9], [9, P - 9], [P - 9, P - 9]]) {
+          h.beginPath(); h.arc(x + bx, y + by, 2.6, 0, Math.PI * 2); h.fill();
+        }
+      }
+    }
+    noise(h, S, 8);
+
+    /* Metalness: paint is a dielectric, the chips underneath are not. Redrawn
+       rather than derived, so the chips line up with the albedo exactly. */
+    const met = canvas(S), mt = met.getContext('2d');
+    mt.fillStyle = 'rgb(38,38,38)'; mt.fillRect(0, 0, S, S);   // painted: ~0.15
+    mt.fillStyle = 'rgb(255,255,255)';
+    mt.globalAlpha = 0.85;
+    for (let i = 0; i <= S; i += P) {
+      for (const off of [2, -2]) {
+        mt.lineWidth = 2; mt.strokeStyle = 'rgba(255,255,255,0.7)';
+        mt.setLineDash([6, 16]);
+        mt.beginPath(); mt.moveTo(i + off, 0); mt.lineTo(i + off, S); mt.stroke();
+        mt.beginPath(); mt.moveTo(0, i + off); mt.lineTo(S, i + off); mt.stroke();
+      }
+    }
+    mt.setLineDash([]);
+    for (let i = 0; i < chips; i++) {
+      mt.beginPath();
+      mt.ellipse(Math.random() * S, Math.random() * S, 1 + Math.random() * 7,
+                 1 + Math.random() * 4, Math.random() * 3.14, 0, Math.PI * 2);
+      mt.fill();
+    }
+    mt.globalAlpha = 1;
+
+    const rgh = canvas(S), r = rgh.getContext('2d');
+    const v = o.rough * 255 | 0;
+    r.fillStyle = `rgb(${v},${v},${v})`; r.fillRect(0, 0, S, S);
+    grime(r, S, 14, 0.45);
+    noise(r, S, 34);
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: texture(alb, o.repeat, true),
+      normalMap: texture(heightToNormal(blur(hgt, 1), 1.5), o.repeat),
+      roughnessMap: texture(rgh, o.repeat),
+      metalnessMap: texture(met, o.repeat),
+      metalness: 1.0,
+      roughness: 1.0,
+      normalScale: new THREE.Vector2(1.0, 1.0)
+    });
+    mat.userData.roughMean = o.rough;
+    mat.userData.pbr = 'metal';
+    return mat;
+  }
+
   /* ---------- glowing strip / screen ---------- */
   function emissive(color, intensity) {
     return new THREE.MeshStandardMaterial({
@@ -4579,7 +4709,7 @@ window.SF = window.SF || {};
      mission builds fresh ones instead of reusing disposed objects. */
   function reset() {
     for (const m of cache.values()) {
-      for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k]) m[k].dispose();
+      for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) if (m[k]) m[k].dispose();
       const L = m.userData.layered;
       if (L) for (const t of [L.map, L.normalMap, L.roughnessMap, L.detailNormal]) if (t) t.dispose();
       m.dispose();
@@ -4621,7 +4751,7 @@ window.SF = window.SF || {};
   }
 
   SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal,
-                   stone, detailNormal, layeredGround,
+                   stone, detailNormal, layeredGround, armourPlate,
                    tileUVs, tiledBox, reset, canvasOf: canvas };
 })(window.SF);
 
@@ -5301,6 +5431,20 @@ float sfCsmWeight( vec2 band ) {
         }
       },
 
+      /* Resize the shadow maps in place. three allocates the map lazily from
+         mapSize, so dropping the existing one is what makes a new size take
+         effect; it costs one reallocation, which is why this only ever runs
+         on a quality change. */
+      setMapSizes(sizes) {
+        for (let i = 0; i < lights.length; i++) {
+          const want = sizes[Math.min(i, sizes.length - 1)];
+          const shadow = lights[i].shadow;
+          if (shadow.mapSize.x === want) continue;
+          shadow.mapSize.setScalar(want);
+          if (shadow.map) { shadow.map.dispose(); shadow.map = null; }
+        }
+      },
+
       dispose() {
         for (const l of lights) {
           if (l.shadow.map) l.shadow.map.dispose();
@@ -5392,7 +5536,11 @@ void main() {
   gl_Position = projectionMatrix * mv;
 
   float dist = max( - mv.z, 0.05 );
-  gl_PointSize = ( uSize * aScale * uPixelRatio ) / dist;
+  /* Clamped hard. Size falls off with distance, so a mote that drifts
+     within a few centimetres of the lens would otherwise be drawn three
+     hundred pixels across — four thousand of those, blended additively,
+     is enough overdraw on its own to halve the frame rate. */
+  gl_PointSize = clamp( ( uSize * aScale * uPixelRatio ) / dist, 1.0, 7.0 * uPixelRatio );
 
   /* Fade in past the near plane, and out at the edge of the box so motes
      do not pop into existence at the boundary. */
@@ -5480,6 +5628,12 @@ void main() {
         colour: new THREE.Color(spec.colour), inscatter: spec.inscatter
       },
       setSun(dirWorld) { dust.mat.uniforms.uSunDir.value.copy(dirWorld).normalize(); },
+      /* Thin the dust out by drawing fewer of them. The buffer is untouched,
+         so this costs nothing and is reversible. */
+      setFraction(f) {
+        const n = Math.max(0, Math.round(spec.motes * Math.max(0, Math.min(1, f))));
+        dust.geo.setDrawRange(0, n);
+      },
       setDensity(v) { dust.mat.uniforms.uOpacity.value = v; },
       update(dt, camPos, time) {
         dust.mat.uniforms.uTime.value = time;
@@ -5820,6 +5974,25 @@ void main(){
 
   const BLOOM_LEVELS = 5;
 
+  /* ---------- quality ----------
+     Cascaded shadows and a ten-pass composite are not free: three shadow
+     maps mean three extra passes over the whole scene every frame, before
+     anything is drawn to the screen. On a machine that cannot afford that,
+     a beautiful frame arriving twenty times a second is worse than a plain
+     one arriving sixty times, so the rig measures itself and steps down
+     until it fits. Each tier gives up the least valuable thing left. */
+  const TIERS = [
+    { name: 'high',    pixelRatio: 1.75, mips: 5, rays: true,  dof: true,
+      shadow: [2048, 1024, 1024], motes: 1.00 },
+    { name: 'medium',  pixelRatio: 1.25, mips: 4, rays: true,  dof: true,
+      shadow: [1024, 1024, 512],  motes: 0.70 },
+    { name: 'low',     pixelRatio: 1.00, mips: 3, rays: false, dof: true,
+      shadow: [1024, 512, 512],   motes: 0.45 },
+    { name: 'minimal', pixelRatio: 0.75, mips: 2, rays: false, dof: false,
+      shadow: [768, 512, 512],    motes: 0.20 }
+  ];
+
+
   function create(canvas) {
     const renderer = new THREE.WebGLRenderer({
       canvas: canvas, antialias: true, powerPreference: 'high-performance'
@@ -5924,6 +6097,57 @@ void main(){
 
     let width = 1, height = 1;
 
+    /* ---------- quality state ---------- */
+    const listeners = [];
+    const maxPixelRatio = Math.min(window.devicePixelRatio || 1, 1.75);
+    let tier = 0;
+    let activeMips = TIERS[0].mips;
+    let raysOn = TIERS[0].rays;
+    let dofOn = TIERS[0].dof;
+    let auto = true;
+    let downgrades = 0;
+    let emaMs = 16, slowFrames = 0, fastFrames = 0, lastFrameAt = 0;
+
+    function applyTier(i) {
+      tier = Math.max(0, Math.min(TIERS.length - 1, i));
+      const q = TIERS[tier];
+      activeMips = q.mips;
+      raysOn = q.rays;
+      dofOn = q.dof;
+      if (!raysOn) composite.u.uRays.value = 0;
+      renderer.setPixelRatio(Math.min(maxPixelRatio, q.pixelRatio));
+      resize();
+      for (const fn of listeners) { try { fn(q, tier); } catch (err) { void err; } }
+    }
+
+    /* Frame pacing. The rig watches a smoothed frame time rather than any
+       single frame, because one slow frame is a garbage collection and a
+       hundred of them is a machine that cannot keep up. */
+    function trackFrame() {
+      const t = performance.now();
+      if (lastFrameAt) {
+        const ms = t - lastFrameAt;
+        // a gap this long is a backgrounded tab, not a slow frame
+        if (ms < 250) emaMs += (ms - emaMs) * 0.1;
+      }
+      lastFrameAt = t;
+      if (!auto) return;
+
+      if (emaMs > 26) { slowFrames++; fastFrames = 0; }
+      else if (emaMs < 13) { fastFrames++; slowFrames = 0; }
+      else { slowFrames = 0; fastFrames = 0; }
+
+      if (slowFrames > 90 && tier < TIERS.length - 1) {
+        slowFrames = 0; downgrades++;
+        applyTier(tier + 1);
+      } else if (tier > 0 && fastFrames > 600 * (downgrades + 1)) {
+        // climbing back is deliberately much harder than falling, so the
+        // rig cannot sit oscillating between two tiers
+        fastFrames = 0;
+        applyTier(tier - 1);
+      }
+    }
+
     function resize() {
       const w = canvas.clientWidth || window.innerWidth;
       const h = canvas.clientHeight || window.innerHeight;
@@ -5974,6 +6198,8 @@ void main(){
     }
 
     function render(time, damage) {
+      trackFrame();
+
       // ---- scene, in linear HDR
       renderer.setRenderTarget(sceneRT);
       renderer.clear();
@@ -5986,12 +6212,12 @@ void main(){
       /* ---- bloom: down the chain, then back up, summing as it goes.
          The upsample blends additively, so those targets must not be
          cleared first — the sum is the whole point. */
-      for (let i = 1; i < BLOOM_LEVELS; i++) {
+      for (let i = 1; i < activeMips; i++) {
         downPass.u.tDiffuse.value = mips[i - 1].texture;
         downPass.u.uTexel.value.set(1 / mips[i - 1].width, 1 / mips[i - 1].height);
         draw(downPass, mips[i], true);
       }
-      for (let i = BLOOM_LEVELS - 1; i > 0; i--) {
+      for (let i = activeMips - 1; i > 0; i--) {
         upPass.u.tDiffuse.value = mips[i].texture;
         upPass.u.uTexel.value.set(1 / mips[i].width, 1 / mips[i].height);
         draw(upPass, mips[i - 1], false);
@@ -5999,14 +6225,14 @@ void main(){
 
       // ---- light shafts, radial-blurred out of the same bright buffer
       const uv = sunScreen();
-      if (composite.u.uRays.value > 0.001 && uv.y < 1.5) {
+      if (raysOn && composite.u.uRays.value > 0.001 && uv.y < 1.5) {
         raysPass.u.tDiffuse.value = mips[1].texture;
         raysPass.u.uSunUv.value.copy(uv);
         draw(raysPass, raysRT, true);
       }
 
       // ---- depth of field, only worth the pass while aiming
-      if (canDepth && composite.u.uAim.value > 0.001) {
+      if (canDepth && dofOn && composite.u.uAim.value > 0.001) {
         dofPass.u.tDiffuse.value = sceneRT.texture;
         dofPass.u.tDepth.value = sceneRT.depthTexture;
         dofPass.u.uTexel.value.set(1 / dofRT.width, 1 / dofRT.height);
@@ -6019,6 +6245,7 @@ void main(){
       c.tBloom.value = mips[0].texture;
       c.tRays.value = raysRT.texture;
       c.tDof.value = dofRT.texture;
+      c.uAim.value = dofOn ? c.uAim.value : 0;
       c.tDepth.value = sceneRT.depthTexture || null;
       c.uTime.value = time;
       c.uDamage.value = damage || 0;
@@ -6063,7 +6290,20 @@ void main(){
       },
 
       /* 0 at the hip, 1 fully down the sights. */
-      setAim(t) { composite.u.uAim.value = THREE.MathUtils.clamp(t, 0, 1); },
+      setAim(t) { composite.u.uAim.value = dofOn ? THREE.MathUtils.clamp(t, 0, 1) : 0; },
+
+      /* Quality. Anything that costs frames per tier — the shadow map sizes,
+         how much dust there is — registers here rather than polling. */
+      quality: {
+        TIERS,
+        get tier() { return tier; },
+        get name() { return TIERS[tier].name; },
+        get frameMs() { return +emaMs.toFixed(2); },
+        get auto() { return auto; },
+        set auto(v) { auto = !!v; },
+        set(i) { auto = false; applyTier(i); },
+        onChange(fn) { listeners.push(fn); fn(TIERS[tier], tier); }
+      },
 
       set(name, value) {
         const u = composite.u[name];
@@ -7419,6 +7659,456 @@ void main(){
 })(window.SF);
 
 
+/* ==== src/js/fps/hostiles.js ==== */
+/* ============================================================
+   Hostile rigs.
+
+   The enemies used to be a capsule, a sphere and two more capsules for
+   limbs — readable at a glance, which is what a shooter needs, but they
+   read as placeholders because a real machine has a silhouette made of
+   parts: plates that overlap, joints that bend one way, a head sunk
+   into a collar, something venting at the back.
+
+   So each archetype is assembled here out of a few dozen primitives
+   arranged in a joint hierarchy, wearing the worn armour material from
+   fps/materials.js. Three things keep that affordable with thirty of
+   them on screen:
+
+     * geometry is built once per type and shared by every instance;
+     * the armour material is built once per type and *cloned* per
+       instance, so the maps are shared but the hit flash is not;
+     * joints are plain Object3Ds, so posing is a handful of Euler
+       assignments rather than skinning.
+
+   The rig keeps the shape ai.js expects — group, head, limbs, materials
+   — and adds pose(), which does the walking.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+
+  const geoCache = new Map();     // typeId -> { parts }
+  const matCache = new Map();     // typeId -> { armour, glow, visor }
+  const junk = [];                // everything to dispose between missions
+
+  function keep(x) { junk.push(x); return x; }
+
+  /* ---------- texel density ----------
+     Every primitive's UVs span 0..1, so an armour texture mapped straight
+     onto a twenty-centimetre elbow shows the same four plates as the whole
+     torso does, and the enemy ends up dressed in tweed. Each part therefore
+     has its UVs scaled by its real size, so one armour plate is the same
+     twenty-eight centimetres across wherever it appears. */
+  const TILE = 1.1;                       // metres covered by one texture tile
+
+  function scaleUV(geo, su, sv) {
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+    uv.needsUpdate = true;
+    return keep(geo);
+  }
+
+  /* Box faces each run along a different pair of the box's dimensions, in
+     the order +X, -X, +Y, -Y, +Z, -Z, four vertices apiece. */
+  function box(w, h, d) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const uv = geo.attributes.uv;
+    const spans = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) {
+      const su = spans[f][0] / TILE, sv = spans[f][1] / TILE;
+      for (let i = 0; i < 4; i++) {
+        const k = f * 4 + i;
+        uv.setXY(k, uv.getX(k) * su, uv.getY(k) * sv);
+      }
+    }
+    uv.needsUpdate = true;
+    return keep(geo);
+  }
+
+  const cyl = (rt, rb, h, seg) => scaleUV(
+    new THREE.CylinderGeometry(rt, rb, h, seg || 10),
+    (2 * Math.PI * Math.max(rt, rb)) / TILE, h / TILE);
+
+  const sph = (r, w, h) => scaleUV(
+    new THREE.SphereGeometry(r, w || 12, h || 10),
+    (2 * Math.PI * r) / TILE, (Math.PI * r) / TILE);
+
+  /* A part is placed relative to its parent joint, so the joint can rotate
+     around the shoulder or knee rather than around the middle of the limb. */
+  function joint(parent, x, y, z) {
+    const j = new THREE.Object3D();
+    j.position.set(x, y, z);
+    parent.add(j);
+    return j;
+  }
+
+  function part(parent, geo, mat, x, y, z, rx, ry, rz) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x || 0, y || 0, z || 0);
+    if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    parent.add(m);
+    return m;
+  }
+
+  /* ---------- materials ----------
+     One armour texture set per type, cloned per instance. A clone shares
+     every map by reference, so thirty marauders cost one set of canvases
+     and thirty cheap uniform blocks. */
+  function baseMaterials(typeId, spec) {
+    if (matCache.has(typeId)) return matCache.get(typeId);
+
+    const armour = SF.materials.armourPlate(spec.colour, {
+      size: 256,
+      panel: spec.elite || spec.boss ? 52 : 64,
+      wear: spec.elite || spec.boss ? 1.5 : 1,
+      rough: 0.5
+    });
+    SF.shading.anisotropic(armour, 0.4, new THREE.Vector3(0, 1, 0));
+
+    /* The lit parts: an optic, a reactor seam, thruster wash. Nearly black
+       when unlit, so they read as light sources rather than paint. */
+    const glow = new THREE.MeshStandardMaterial({
+      /* Bright enough to bloom a little, not so bright that the tone curve
+         clips it to white and throws its colour away. */
+      color: 0x07080b, emissive: new THREE.Color(spec.glow), emissiveIntensity: 0.75,
+      metalness: 0.2, roughness: 0.35
+    });
+    glow.userData.pbr = 'skip';
+
+    /* Visor: dark, near-mirror glass over the optic behind it. */
+    const visor = new THREE.MeshStandardMaterial({
+      color: 0x05070a, metalness: 1.0, roughness: 0.08,
+      emissive: new THREE.Color(spec.glow), emissiveIntensity: 0.9
+    });
+    SF.shading.anisotropic(visor, 0.55, new THREE.Vector3(1, 0, 0));
+
+    const set = { armour, glow, visor };
+    matCache.set(typeId, set);
+    return set;
+  }
+
+  /* ---------- geometry sets ----------
+     Sized off the type's own height and radius, so one builder serves a
+     one-metre drone and a three-metre elite. */
+  function walkerGeo(h, r, heavy) {
+    const w = heavy ? 1.25 : 1;
+    return {
+      pelvis:   box(r * 1.5 * w, h * 0.10, r * 1.0),
+      abdomen:  box(r * 1.30 * w, h * 0.13, r * 0.92),
+      chest:    box(r * 1.95 * w, h * 0.20, r * 1.15),
+      chestTop: box(r * 1.70 * w, h * 0.05, r * 1.05),
+      collar:   cyl(r * 0.56, r * 0.72, h * 0.06, 10),
+      neck:     cyl(r * 0.34, r * 0.42, h * 0.085, 8),
+      skull:    box(r * 0.94, r * 0.86, r * 0.98),
+      brow:     box(r * 1.00, r * 0.18, r * 0.34),
+      trap:     box(r * 0.60, r * 0.30, r * 0.66),
+      visor:    box(r * 0.58, r * 0.11, r * 0.06),
+      jaw:      box(r * 0.62, r * 0.24, r * 0.66),
+      pauldron: sph(r * 0.52, 10, 8),
+      upperArm: cyl(r * 0.17, r * 0.15, h * 0.19, 8),
+      elbow:    sph(r * 0.17, 8, 6),
+      foreArm:  cyl(r * 0.15, r * 0.12, h * 0.18, 8),
+      hand:     box(r * 0.22, r * 0.26, r * 0.20),
+      hip:      sph(r * 0.26, 8, 6),
+      thigh:    cyl(r * 0.24, r * 0.20, h * 0.23, 8),
+      knee:     sph(r * 0.21, 8, 6),
+      shin:     cyl(r * 0.20, r * 0.15, h * 0.23, 8),
+      foot:     box(r * 0.34, h * 0.045, r * 0.72),
+      pack:     box(r * 1.30 * w, h * 0.17, r * 0.34),
+      vent:     cyl(r * 0.13, r * 0.16, h * 0.09, 7),
+      core:     cyl(r * 0.13, r * 0.13, r * 0.05, 10),
+      cannon:   box(r * 0.46, r * 0.42, h * 0.30),
+      barrel:   cyl(r * 0.11, r * 0.13, h * 0.24, 8),
+      rib:      box(r * 1.86 * w, h * 0.022, r * 1.18)
+    };
+  }
+
+  function flyerGeo(h, r) {
+    return {
+      hull:     sph(r * 0.62, 14, 10),
+      cowlTop:  cyl(r * 0.50, r * 0.66, r * 0.30, 12),
+      cowlLow:  cyl(r * 0.60, r * 0.30, r * 0.34, 12),
+      ringSeg:  box(r * 0.30, r * 0.11, r * 0.16),
+      lensRim:  cyl(r * 0.28, r * 0.24, r * 0.16, 12),
+      lens:     cyl(r * 0.19, r * 0.19, r * 0.05, 12),
+      fin:      box(r * 0.09, r * 0.44, r * 0.62),
+      thruster: cyl(r * 0.20, r * 0.28, r * 0.26, 10),
+      wash:     cyl(r * 0.17, r * 0.05, r * 0.14, 10),
+      armSeg:   cyl(r * 0.06, r * 0.05, r * 0.42, 6),
+      claw:     box(r * 0.08, r * 0.20, r * 0.08)
+    };
+  }
+
+  function geometryFor(typeId, spec) {
+    if (geoCache.has(typeId)) return geoCache.get(typeId);
+    const g = spec.flying ? flyerGeo(spec.height, spec.radius)
+                          : walkerGeo(spec.height, spec.radius, !!(spec.elite || spec.boss));
+    geoCache.set(typeId, g);
+    return g;
+  }
+
+  /* ---------- the walker ----------
+     Head centre sits at 93% of height and the torso straddles 58%, because
+     that is where ai.js puts the head and body hit spheres. The silhouette
+     is built around those two points rather than the other way round. */
+  function buildWalker(spec, G, M) {
+    const h = spec.height, r = spec.radius;
+    const heavy = !!(spec.elite || spec.boss);
+    const group = new THREE.Group();
+
+    const A = M.armour, GL = M.glow;
+
+    // spine
+    const hips = joint(group, 0, h * 0.46, 0);
+    part(hips, G.pelvis, A, 0, 0, 0);
+    const spine = joint(hips, 0, h * 0.05, 0);
+    part(spine, G.abdomen, A, 0, h * 0.055, 0);
+    const chestJ = joint(spine, 0, h * 0.14, 0);
+    part(chestJ, G.chest, A, 0, 0, 0);
+    part(chestJ, G.chestTop, A, 0, h * 0.11, heavy ? -r * 0.05 : 0);
+    // overlapping ribs down the front, so the torso is not one slab
+    for (let i = 0; i < 3; i++) part(chestJ, G.rib, A, 0, -h * 0.055 + i * h * 0.045, 0);
+    // reactor seam
+    part(chestJ, G.core, GL, 0, h * 0.005, -r * 0.60, Math.PI / 2, 0, 0);
+
+    // back pack and its vents
+    part(chestJ, G.pack, A, 0, h * 0.01, r * 0.72);
+    for (const s of [-1, 1]) {
+      part(chestJ, G.vent, A, s * r * 0.48, h * 0.10, r * 0.74);
+      part(chestJ, G.vent, GL, s * r * 0.48, h * 0.155, r * 0.74).scale.setScalar(0.55);
+    }
+
+    // head: skull, brow, a lit visor slit, and a jaw sunk into the collar
+    part(chestJ, G.collar, A, 0, h * 0.13, 0);
+    /* Plates sloping up from each shoulder to the collar. Without them the
+       head reads as a box parked on a shelf; with them the shoulders lead
+       the eye up to it. */
+    for (const s2 of [-1, 1]) {
+      const trap = part(chestJ, G.trap, A, s2 * r * 0.52, h * 0.115, 0);
+      trap.rotation.z = s2 * 0.42;
+    }
+    // a neck, so the head is attached to the body rather than hovering there
+    part(chestJ, G.neck, A, 0, h * 0.170, 0);
+    const neck = joint(chestJ, 0, h * 0.155, 0);
+    const headJ = joint(neck, 0, h * 0.93 - h * 0.46 - h * 0.05 - h * 0.14 - h * 0.155, 0);
+    const skull = part(headJ, G.skull, A, 0, 0, 0);
+    part(headJ, G.brow, A, 0, r * 0.30, -r * 0.34);
+    part(headJ, G.visor, M.visor, 0, r * 0.02, -r * 0.45);
+    part(headJ, G.jaw, A, 0, -r * 0.30, -r * 0.12);
+
+    // shoulders, arms
+    const limbs = [];
+    for (const side of [-1, 1]) {
+      const shoulder = joint(chestJ, side * r * (heavy ? 0.94 : 0.84), h * 0.055, 0);
+      const pauldron = part(shoulder, G.pauldron, A, side * r * 0.10, h * 0.012, 0);
+      pauldron.scale.set(1.02, 0.78, 1.05);
+      part(shoulder, G.upperArm, A, 0, -h * 0.095, 0);
+      const elbow = joint(shoulder, 0, -h * 0.19, 0);
+      part(elbow, G.elbow, A, 0, 0, 0);
+      part(elbow, G.foreArm, A, 0, -h * 0.09, 0);
+      const hand = part(elbow, G.hand, A, 0, -h * 0.195, -r * 0.04);
+      limbs.push({ side, shoulder, elbow, hand, arm: shoulder });
+    }
+
+    // hips, legs
+    for (let i = 0; i < 2; i++) {
+      const side = i ? 1 : -1;
+      const hipJ = joint(hips, side * r * 0.45, -h * 0.02, 0);
+      part(hipJ, G.hip, A, 0, 0, 0);
+      part(hipJ, G.thigh, A, 0, -h * 0.115, 0);
+      const knee = joint(hipJ, 0, -h * 0.23, 0);
+      part(knee, G.knee, A, 0, 0, 0);
+      part(knee, G.shin, A, 0, -h * 0.115, 0);
+      part(knee, G.foot, A, 0, -h * 0.195, -r * 0.14);
+      limbs[i].knee = knee;
+      limbs[i].hip = hipJ;
+      limbs[i].leg = hipJ;                       // ai.js still knows this name
+    }
+
+    /* Ranged types carry the weapon rather than mime it: a shoulder mount
+       for the heavies, a forearm cannon for everyone else. */
+    let muzzle = null;
+    if (spec.ranged) {
+      if (heavy) {
+        const mount = joint(chestJ, r * 1.05, h * 0.10, 0);
+        part(mount, G.cannon, A, 0, r * 0.30, -h * 0.02);
+        muzzle = part(mount, G.barrel, A, 0, r * 0.30, -h * 0.17, Math.PI / 2, 0, 0);
+        part(mount, G.lensRim || G.core, GL, 0, r * 0.30, -h * 0.29, Math.PI / 2, 0, 0);
+      } else {
+        const fore = limbs[1].elbow;
+        part(fore, G.cannon, A, 0, -h * 0.10, -r * 0.28).scale.set(0.8, 0.8, 0.8);
+        muzzle = part(fore, G.barrel, A, 0, -h * 0.13, -r * 0.55, Math.PI / 2, 0, 0);
+        part(fore, G.core, GL, 0, -h * 0.13, -r * 0.72, Math.PI / 2, 0, 0).scale.setScalar(0.7);
+      }
+    }
+
+    return { group, limbs, head: skull, headJ, chestJ, hips, spine, muzzle, flying: false };
+  }
+
+  /* ---------- the flyer ----------
+     A core inside a split cowl, a ring of segments that spins around it, one
+     big optic, three fins and a thruster underneath. Everything a walker
+     uses to read as a body, replaced with something that reads as a machine
+     with nothing inside it. */
+  function buildFlyer(spec, G, M) {
+    const r = spec.radius;
+    const group = new THREE.Group();
+    const A = M.armour, GL = M.glow;
+
+    const core = joint(group, 0, spec.height * 0.62, 0);
+    part(core, G.hull, A, 0, 0, 0).scale.set(1, 0.86, 1.12);
+    part(core, G.cowlTop, A, 0, r * 0.34, 0);
+    part(core, G.cowlLow, A, 0, -r * 0.36, 0);
+
+    // the optic, recessed in a rim so it reads as a lens rather than a dot
+    part(core, G.lensRim, A, 0, 0, -r * 0.62, Math.PI / 2, 0, 0);
+    const eye = part(core, G.lens, GL, 0, 0, -r * 0.70, Math.PI / 2, 0, 0);
+
+    // fins
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const fin = part(core, G.fin, A, Math.sin(a) * r * 0.66, -r * 0.05, Math.cos(a) * r * 0.66);
+      fin.rotation.y = a;
+      fin.rotation.z = 0.22;
+    }
+
+    // the ring: separate segments, so it reads as machinery when it turns
+    const ring = new THREE.Object3D();
+    core.add(ring);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const seg = part(ring, G.ringSeg, i % 2 ? GL : A,
+                       Math.sin(a) * r * 1.02, 0, Math.cos(a) * r * 1.02);
+      seg.rotation.y = a;
+    }
+
+    // thruster and its wash
+    part(core, G.thruster, A, 0, -r * 0.62, 0);
+    part(core, G.wash, GL, 0, -r * 0.82, 0);
+
+    // two manipulator arms hanging below, which give it a sense of scale
+    const claws = [];
+    for (const side of [-1, 1]) {
+      const shoulder = joint(core, side * r * 0.34, -r * 0.5, -r * 0.1);
+      shoulder.rotation.x = 0.5;
+      part(shoulder, G.armSeg, A, 0, -r * 0.21, 0);
+      const elbow = joint(shoulder, 0, -r * 0.42, 0);
+      elbow.rotation.x = -0.9;
+      part(elbow, G.claw, A, 0, -r * 0.10, 0);
+      claws.push({ shoulder, elbow, side });
+    }
+
+    return { group, limbs: [{ ring }], head: eye, headJ: core, chestJ: core,
+             ring, claws, muzzle: eye, flying: true };
+  }
+
+  /* ---------- posing ----------
+     Two gaits and an idle. The knee only bends one way, the torso counter-
+     rotates against the legs, and the whole body rises and falls on each
+     step — the three things that separate walking from two capsules
+     swinging past each other. */
+  function poseWalker(rig, phase, speed, dt) {
+    const swing = Math.sin(phase) * Math.min(0.62, 0.16 + speed * 0.20);
+    const stride = Math.min(1, speed / 2.6);
+
+    for (const l of rig.limbs) {
+      const s = l.side;
+      const leg = swing * s;
+      l.hip.rotation.x = leg;
+      // a knee that bends backwards is the single clearest tell of a fake walk
+      l.knee.rotation.x = Math.max(0, -leg) * 1.7 + 0.06;
+      l.shoulder.rotation.x = -leg * 0.72;
+      l.shoulder.rotation.z = s * (0.06 + stride * 0.05);
+      l.elbow.rotation.x = -0.32 - Math.max(0, leg) * 0.55;
+    }
+
+    // rise and fall twice per stride, and lean into the movement
+    rig.hips.position.y = rig.baseHipY + Math.abs(Math.sin(phase)) * 0.035 * stride;
+    rig.chestJ.rotation.y = -swing * 0.16;
+    rig.hips.rotation.y = swing * 0.10;
+    rig.spine.rotation.x = 0.07 + stride * 0.11;
+
+    // breathing, so a standing enemy is not a statue
+    if (stride < 0.05) {
+      rig.spine.rotation.x = 0.07 + Math.sin(phase * 0.6) * 0.012;
+    }
+    void dt;
+  }
+
+  function poseFlyer(rig, phase, speed, dt) {
+    rig.ring.rotation.y += dt * (2.2 + speed * 1.1);
+    rig.chestJ.rotation.z = Math.sin(phase * 0.7) * 0.10;
+    rig.chestJ.rotation.x = 0.06 + Math.min(0.3, speed * 0.08);
+    for (const c of rig.claws) {
+      c.shoulder.rotation.x = 0.5 + Math.sin(phase * 0.9 + c.side) * 0.10;
+      c.elbow.rotation.x = -0.9 + Math.sin(phase * 1.3 + c.side) * 0.12;
+    }
+  }
+
+  /* ---------- entry point ---------- */
+  function build(typeId, spec) {
+    const G = geometryFor(typeId, spec);
+    const base = baseMaterials(typeId, spec);
+
+    /* Per-instance clones: the maps are shared by reference, so this is a
+       few small objects, but the hit flash and the death fade belong to one
+       enemy rather than to every enemy of that type. */
+    const M = {
+      armour: base.armour.clone(),
+      glow: base.glow.clone(),
+      visor: base.visor.clone()
+    };
+    /* The hit flash rides the armour's emissive, so the clone needs a colour
+       to raise. ai.js drives the intensity; this only says what colour it
+       flashes when something lands. */
+    M.armour.emissive = new THREE.Color(0xff2222);
+    M.armour.emissiveIntensity = 0;
+    M.armour.userData = Object.assign({}, base.armour.userData);
+    M.visor.userData = Object.assign({}, base.visor.userData);
+    M.glow.userData = Object.assign({}, base.glow.userData);
+
+    const rig = spec.flying ? buildFlyer(spec, G, M) : buildWalker(spec, G, M);
+    rig.baseHipY = rig.hips ? rig.hips.position.y : 0;
+    rig.materials = [M.armour, M.glow, M.visor];
+
+    rig.pose = function (phase, speed, dt) {
+      if (rig.flying) poseFlyer(rig, phase, speed, dt);
+      else poseWalker(rig, phase, speed, dt);
+    };
+
+    /* The head lags the turn slightly and tips towards whatever it is
+       looking at, which reads as attention. */
+    rig.look = function (pitch, yawOffset) {
+      if (!rig.headJ || rig.flying) return;
+      rig.headJ.rotation.x = THREE.MathUtils.clamp(pitch, -0.5, 0.5);
+      rig.headJ.rotation.y = THREE.MathUtils.clamp(yawOffset, -0.7, 0.7);
+    };
+
+    return rig;
+  }
+
+  /* Geometry and the base materials outlive any one enemy, so they are not
+     caught by the scene traversal that disposes a finished mission. */
+  function reset() {
+    for (const g of junk) g.dispose();
+    junk.length = 0;
+    for (const set of matCache.values()) {
+      for (const m of [set.armour, set.glow, set.visor]) {
+        for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) {
+          if (m[k]) m[k].dispose();
+        }
+        m.dispose();
+      }
+    }
+    geoCache.clear();
+    matCache.clear();
+  }
+
+  SF.hostiles = { build, reset };
+})(window.SF);
+
+
 /* ==== src/js/fps/ai.js ==== */
 /* ============================================================
    Hostiles.
@@ -7493,59 +8183,22 @@ void main(){
        exactly the same — the damage is just reported to the host to apply. */
     let remote = false;
 
-    /* ---------- construction ---------- */
-    function buildRig(spec) {
-      const g = new THREE.Group();
-      /* Hostile armour is armour: the house metal values, with a grain
-         running down the body so its highlights stretch as it moves. */
-      const skin = new THREE.MeshStandardMaterial({
-        color: spec.colour,
-        metalness: SF.shading.METAL.metalness, roughness: SF.shading.METAL.roughness,
-        emissive: new THREE.Color(0xff2222), emissiveIntensity: 0
-      });
-      SF.shading.anisotropic(skin, 0.4, new THREE.Vector3(0, 1, 0));
-      const glow = new THREE.MeshStandardMaterial({
-        color: 0x0a0a0c, emissive: new THREE.Color(spec.glow), emissiveIntensity: 2.4,
-        metalness: 0.4, roughness: 0.4
-      });
-
-      const h = spec.height, r = spec.radius;
-      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.8, h * 0.42, 4, 10), skin);
-      torso.position.y = h * 0.58;
-      const head = new THREE.Mesh(new THREE.SphereGeometry(r * 0.52, 14, 12), skin);
-      head.position.y = h * 0.93;
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(r * 0.2, 10, 8), glow);
-      eye.position.set(0, h * 0.93, -r * 0.44);
-      g.add(torso, head, eye);
-
-      const limbs = [];
-      if (!spec.flying) {
-        for (const side of [-1, 1]) {
-          const arm = new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.2, h * 0.34, 3, 6), skin);
-          arm.position.set(side * r * 0.95, h * 0.6, 0);
-          const leg = new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.26, h * 0.34, 3, 6), skin);
-          leg.position.set(side * r * 0.42, h * 0.2, 0);
-          g.add(arm, leg);
-          limbs.push({ arm, leg, side });
-        }
-      } else {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.1, r * 0.14, 8, 20), glow);
-        ring.rotation.x = Math.PI / 2;
-        ring.position.y = h * 0.55;
-        g.add(ring);
-        limbs.push({ ring });
-      }
-
-      for (const c of g.children) { c.castShadow = true; c.receiveShadow = true; }
+    /* ---------- construction ----------
+       The rig itself lives in fps/hostiles.js: a joint hierarchy of armour
+       plates rather than the capsules this used to stack. Geometry and the
+       armour texture set are shared per type; only the material clones and
+       the joint transforms belong to the individual. */
+    function buildRig(typeId, spec) {
+      const rig = SF.hostiles.build(typeId, spec);
       // the halo is a pooled light, not a child light: adding one per enemy
       // would change the scene light count and recompile every shader
-      const halo = lights.attach(spec.glow, 1.1, 8);
-      return { group: g, limbs, head, halo, materials: [skin, glow] };
+      rig.halo = lights.attach(spec.glow, 1.1, 8);
+      return rig;
     }
 
     function spawn(typeId, x, z) {
       const spec = TYPES[typeId];
-      const rig = buildRig(spec);
+      const rig = buildRig(typeId, spec);
       rig.group.position.set(x, 0, z);
       scene.add(rig.group);
 
@@ -7757,18 +8410,20 @@ void main(){
         }
 
         // pose
-        e.bob += dt * (1.5 + e.vel.length() * 1.4);
-        if (e.spec.flying) {
-          e.pos.y = 0.85 + Math.sin(e.bob) * 0.18;
-          if (e.rig.limbs[0] && e.rig.limbs[0].ring) e.rig.limbs[0].ring.rotation.z += dt * 3.4;
-        } else {
-          e.pos.y = 0;
-          const swing = Math.sin(e.bob * 2.4) * Math.min(0.6, e.vel.length() * 0.22);
-          for (const l of e.rig.limbs) {
-            if (!l.arm) continue;
-            l.arm.rotation.x = swing * l.side;
-            l.leg.rotation.x = -swing * l.side;
-          }
+        const groundSpeed = Math.hypot(e.vel.x, e.vel.z);
+        // the stride is driven by how fast it is actually moving, so a
+        // hostile pinned against a wall stops walking on the spot
+        e.bob += dt * (e.spec.flying ? 2.0 : 1.4 + groundSpeed * 2.2);
+        e.pos.y = e.spec.flying ? 0.85 + Math.sin(e.bob) * 0.18 : 0;
+        e.rig.pose(e.bob, groundSpeed, dt);
+        if (e.rig.look) {
+          const dx = playerPos.x - e.pos.x, dz = playerPos.z - e.pos.z;
+          const want = Math.atan2(dx, dz) + Math.PI;
+          let off = want - e.rig.group.rotation.y;
+          while (off > Math.PI) off -= Math.PI * 2;
+          while (off < -Math.PI) off += Math.PI * 2;
+          const dy = (playerPos.y + 1.5) - (e.pos.y + e.spec.height * 0.93);
+          e.rig.look(-Math.atan2(dy, Math.hypot(dx, dz)), off);
         }
         e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
         e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
@@ -7920,10 +8575,8 @@ void main(){
         while (d < -Math.PI) d += Math.PI * 2;
         e.rig.group.rotation.y += d * Math.min(1, 12 * dt);
 
-        e.bob += dt * 2.4;
-        if (e.spec.flying && e.rig.limbs[0] && e.rig.limbs[0].ring) {
-          e.rig.limbs[0].ring.rotation.z += dt * 3.4;
-        }
+        e.bob += dt * (e.spec.flying ? 2.0 : 1.4 + e.vel.length() * 2.2);
+        e.rig.pose(e.bob, e.vel.length(), dt);
         e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
       }
     }
@@ -11337,6 +11990,13 @@ void main(){
     atmos.setSun(sunDir);
     eng.setFog(atmos.fog);
 
+    /* One place decides how much the picture costs, and the shadow maps and
+       the dust follow it. Fires immediately with the current tier. */
+    eng.quality.onChange((q) => {
+      csm.setMapSizes(q.shadow);
+      atmos.setFraction(q.motes);
+    });
+
 
     const player = SF.player.create(camera, level);
     /* Each mission opens where the last one closed: at the near edge of its
@@ -11485,7 +12145,8 @@ void main(){
          not asking to shoot. Without this the only route to recapture was
          through the pause menu. */
       if (e.button === 0 && lockAvailable && document.pointerLockElement !== canvas) {
-        requestLock();
+        // ignore the click that arrives with the Escape that just freed us
+        if (performance.now() - releasedAt > 400) requestLock();
         return;
       }
       if (e.button === 0) firing = true;
@@ -11502,6 +12163,7 @@ void main(){
       if (e.button === 2) weapon.setAds(false);
     }
     function onKeyDown(e) {
+      // Escape has its own capture-phase listener; see onEscape below
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
       if (e.code === 'KeyT' && body) {
@@ -11513,16 +12175,44 @@ void main(){
       if (e.code === 'ShiftLeft' && runner) runner.setBoost(true);
       if (e.code === 'KeyR') weapon.reload();
       if (e.code === 'KeyQ' || e.code === 'KeyE') weapon.useAbility();
-      if (e.code === 'Escape' && !state.paused && !state.over) {
-        if (document.pointerLockElement === canvas) document.exitPointerLock();
-        else pause(true);
+    }
+
+    /* ---------- Escape ----------
+       While the pointer is locked, most browsers swallow Escape entirely and
+       release the lock themselves, so this never runs for that first press —
+       which is why it must not assume it did. It looks at what is actually
+       true right now: still locked, release; free but playing, pause; already
+       paused, resume. And it records the moment the pointer came free, so the
+       click that Escape's own key-up sometimes generates cannot immediately
+       take the mouse back and make Escape look broken. */
+    let releasedAt = 0;
+    let lastEscape = 0;
+
+    function onEscape() {
+      if (state.over) return;
+      // one press, one action, however many listeners saw it
+      const now = performance.now();
+      if (now - lastEscape < 250) return;
+      lastEscape = now;
+      if (document.pointerLockElement === canvas) {
+        releasedAt = performance.now();
+        document.exitPointerLock();
+        return;
       }
+      if (state.paused) { pause(false); requestLock(); return; }
+      if (state.running) pause(true);
     }
     function onContext(e) { e.preventDefault(); }
 
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('keydown', onKeyDown);
+    /* A second listener, in the capture phase, so Escape still lands if
+       anything downstream stops the event. onEscape is idempotent. */
+    function onEscapeCapture(e) {
+      if (e.code === 'Escape' || e.key === 'Escape') onEscape();
+    }
+    document.addEventListener('keydown', onEscapeCapture, true);
     canvas.addEventListener('contextmenu', onContext);
 
     /* Pointer lock needs a fresh user gesture, and an artifact viewer may
@@ -11535,6 +12225,7 @@ void main(){
     function onLockChange() {
       const locked = document.pointerLockElement === canvas;
       if (locked) { hadLock = true; applyLookMode(); return; }
+      releasedAt = performance.now();
       /* Escape hands the mouse back, and that is all it does: the game keeps
          running behind a free cursor, and clicking the view takes the mouse
          again. Escape twice — once to release, once with the cursor free —
@@ -12160,6 +12851,7 @@ void main(){
       awaitingEngage = false;
       document.removeEventListener('pointerdown', onEngageInput);
       document.removeEventListener('keydown', onEngageInput);
+      document.removeEventListener('keydown', onEscapeCapture, true);
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
       if (runner) runner.destroy();
@@ -12188,6 +12880,7 @@ void main(){
       eng.dispose();
       eng.renderer.dispose();
       SF.materials.reset();          // the traverse above disposed the shared cache
+      SF.hostiles.reset();           // shared rig geometry outlives any one enemy
       hud.setVisible(false);
       onExit(state.exitTo);
     }

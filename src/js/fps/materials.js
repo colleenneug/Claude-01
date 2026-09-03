@@ -331,6 +331,136 @@
     });
   }
 
+  /* ---------- combat armour ----------
+     What separates armour from a coloured capsule is wear. A plate that
+     has been shot at has paint missing along every edge and corner, bare
+     metal showing through the chips, and grime running down from each
+     seam. The metalness map is the part that matters most: the painted
+     areas are a dielectric and the chips are metal, so the same surface
+     has two completely different responses to light instead of one
+     averaged compromise. */
+  function armourPlate(tint, opts) {
+    const o = Object.assign({ size: 256, repeat: [1, 1], panel: 64,
+                              wear: 1, rough: 0.55 }, opts || {});
+    const S = o.size, P = o.panel;
+    const base = new THREE.Color(tint);
+    const hex = (c) => '#' + c.getHexString();
+    const bare = base.clone().lerp(new THREE.Color(0xb9c0c8), 0.72);
+
+    const alb = canvas(S), a = alb.getContext('2d');
+    a.fillStyle = hex(base); a.fillRect(0, 0, S, S);
+
+    // plate-to-plate colour drift, so no two panels are the same shade
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        const c = base.clone().offsetHSL((Math.random() - 0.5) * 0.02, 0,
+                                         (Math.random() - 0.5) * 0.10);
+        a.fillStyle = hex(c); a.fillRect(x, y, P, P);
+      }
+    }
+
+    // seams between plates, darkened by whatever has collected in them
+    a.strokeStyle = 'rgba(8,9,12,0.75)'; a.lineWidth = 2;
+    for (let i = 0; i <= S; i += P) {
+      a.beginPath(); a.moveTo(i, 0); a.lineTo(i, S); a.stroke();
+      a.beginPath(); a.moveTo(0, i); a.lineTo(S, i); a.stroke();
+    }
+
+    /* Edge wear: paint goes first where the plate is handled or hit, which
+       is along its border. Drawn as bare metal dashes hugging the seams. */
+    a.strokeStyle = hex(bare);
+    for (let i = 0; i <= S; i += P) {
+      for (const [horiz, off] of [[true, 2], [true, -2], [false, 2], [false, -2]]) {
+        a.lineWidth = 1 + Math.random() * 1.6;
+        a.setLineDash([3 + Math.random() * 14, 6 + Math.random() * 22]);
+        a.globalAlpha = 0.35 + Math.random() * 0.4;
+        a.beginPath();
+        if (horiz) { a.moveTo(i + off, 0); a.lineTo(i + off, S); }
+        else { a.moveTo(0, i + off); a.lineTo(S, i + off); }
+        a.stroke();
+      }
+    }
+    a.setLineDash([]); a.globalAlpha = 1;
+
+    // chips and scrapes across the faces
+    const chips = Math.round(120 * o.wear);
+    for (let i = 0; i < chips; i++) {
+      const x = Math.random() * S, y = Math.random() * S;
+      const w = 1 + Math.random() * 7, hgt2 = 1 + Math.random() * 4;
+      a.fillStyle = hex(bare); a.globalAlpha = 0.3 + Math.random() * 0.55;
+      a.beginPath(); a.ellipse(x, y, w, hgt2, Math.random() * 3.14, 0, Math.PI * 2); a.fill();
+    }
+    a.globalAlpha = 1;
+    grime(a, S, 16, 0.4);
+    noise(a, S, 14);
+
+    /* Height: plates stand proud, seams cut in, bolt heads sit on top. */
+    const hgt = canvas(S), h = hgt.getContext('2d');
+    h.fillStyle = '#8c8c8c'; h.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        h.fillStyle = 'rgba(255,255,255,0.30)';
+        h.fillRect(x + 3, y + 3, P - 6, P - 6);       // the raised plate face
+      }
+    }
+    h.strokeStyle = '#1e1e1e'; h.lineWidth = 3;
+    for (let i = 0; i <= S; i += P) {
+      h.beginPath(); h.moveTo(i, 0); h.lineTo(i, S); h.stroke();
+      h.beginPath(); h.moveTo(0, i); h.lineTo(S, i); h.stroke();
+    }
+    h.fillStyle = '#e8e8e8';
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        for (const [bx, by] of [[9, 9], [P - 9, 9], [9, P - 9], [P - 9, P - 9]]) {
+          h.beginPath(); h.arc(x + bx, y + by, 2.6, 0, Math.PI * 2); h.fill();
+        }
+      }
+    }
+    noise(h, S, 8);
+
+    /* Metalness: paint is a dielectric, the chips underneath are not. Redrawn
+       rather than derived, so the chips line up with the albedo exactly. */
+    const met = canvas(S), mt = met.getContext('2d');
+    mt.fillStyle = 'rgb(38,38,38)'; mt.fillRect(0, 0, S, S);   // painted: ~0.15
+    mt.fillStyle = 'rgb(255,255,255)';
+    mt.globalAlpha = 0.85;
+    for (let i = 0; i <= S; i += P) {
+      for (const off of [2, -2]) {
+        mt.lineWidth = 2; mt.strokeStyle = 'rgba(255,255,255,0.7)';
+        mt.setLineDash([6, 16]);
+        mt.beginPath(); mt.moveTo(i + off, 0); mt.lineTo(i + off, S); mt.stroke();
+        mt.beginPath(); mt.moveTo(0, i + off); mt.lineTo(S, i + off); mt.stroke();
+      }
+    }
+    mt.setLineDash([]);
+    for (let i = 0; i < chips; i++) {
+      mt.beginPath();
+      mt.ellipse(Math.random() * S, Math.random() * S, 1 + Math.random() * 7,
+                 1 + Math.random() * 4, Math.random() * 3.14, 0, Math.PI * 2);
+      mt.fill();
+    }
+    mt.globalAlpha = 1;
+
+    const rgh = canvas(S), r = rgh.getContext('2d');
+    const v = o.rough * 255 | 0;
+    r.fillStyle = `rgb(${v},${v},${v})`; r.fillRect(0, 0, S, S);
+    grime(r, S, 14, 0.45);
+    noise(r, S, 34);
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: texture(alb, o.repeat, true),
+      normalMap: texture(heightToNormal(blur(hgt, 1), 1.5), o.repeat),
+      roughnessMap: texture(rgh, o.repeat),
+      metalnessMap: texture(met, o.repeat),
+      metalness: 1.0,
+      roughness: 1.0,
+      normalScale: new THREE.Vector2(1.0, 1.0)
+    });
+    mat.userData.roughMean = o.rough;
+    mat.userData.pbr = 'metal';
+    return mat;
+  }
+
   /* ---------- glowing strip / screen ---------- */
   function emissive(color, intensity) {
     return new THREE.MeshStandardMaterial({
@@ -385,7 +515,7 @@
      mission builds fresh ones instead of reusing disposed objects. */
   function reset() {
     for (const m of cache.values()) {
-      for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k]) m[k].dispose();
+      for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) if (m[k]) m[k].dispose();
       const L = m.userData.layered;
       if (L) for (const t of [L.map, L.normalMap, L.roughnessMap, L.detailNormal]) if (t) t.dispose();
       m.dispose();
@@ -427,6 +557,6 @@
   }
 
   SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal,
-                   stone, detailNormal, layeredGround,
+                   stone, detailNormal, layeredGround, armourPlate,
                    tileUVs, tiledBox, reset, canvasOf: canvas };
 })(window.SF);

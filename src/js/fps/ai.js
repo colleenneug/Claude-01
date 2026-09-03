@@ -71,59 +71,22 @@
        exactly the same — the damage is just reported to the host to apply. */
     let remote = false;
 
-    /* ---------- construction ---------- */
-    function buildRig(spec) {
-      const g = new THREE.Group();
-      /* Hostile armour is armour: the house metal values, with a grain
-         running down the body so its highlights stretch as it moves. */
-      const skin = new THREE.MeshStandardMaterial({
-        color: spec.colour,
-        metalness: SF.shading.METAL.metalness, roughness: SF.shading.METAL.roughness,
-        emissive: new THREE.Color(0xff2222), emissiveIntensity: 0
-      });
-      SF.shading.anisotropic(skin, 0.4, new THREE.Vector3(0, 1, 0));
-      const glow = new THREE.MeshStandardMaterial({
-        color: 0x0a0a0c, emissive: new THREE.Color(spec.glow), emissiveIntensity: 2.4,
-        metalness: 0.4, roughness: 0.4
-      });
-
-      const h = spec.height, r = spec.radius;
-      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.8, h * 0.42, 4, 10), skin);
-      torso.position.y = h * 0.58;
-      const head = new THREE.Mesh(new THREE.SphereGeometry(r * 0.52, 14, 12), skin);
-      head.position.y = h * 0.93;
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(r * 0.2, 10, 8), glow);
-      eye.position.set(0, h * 0.93, -r * 0.44);
-      g.add(torso, head, eye);
-
-      const limbs = [];
-      if (!spec.flying) {
-        for (const side of [-1, 1]) {
-          const arm = new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.2, h * 0.34, 3, 6), skin);
-          arm.position.set(side * r * 0.95, h * 0.6, 0);
-          const leg = new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.26, h * 0.34, 3, 6), skin);
-          leg.position.set(side * r * 0.42, h * 0.2, 0);
-          g.add(arm, leg);
-          limbs.push({ arm, leg, side });
-        }
-      } else {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.1, r * 0.14, 8, 20), glow);
-        ring.rotation.x = Math.PI / 2;
-        ring.position.y = h * 0.55;
-        g.add(ring);
-        limbs.push({ ring });
-      }
-
-      for (const c of g.children) { c.castShadow = true; c.receiveShadow = true; }
+    /* ---------- construction ----------
+       The rig itself lives in fps/hostiles.js: a joint hierarchy of armour
+       plates rather than the capsules this used to stack. Geometry and the
+       armour texture set are shared per type; only the material clones and
+       the joint transforms belong to the individual. */
+    function buildRig(typeId, spec) {
+      const rig = SF.hostiles.build(typeId, spec);
       // the halo is a pooled light, not a child light: adding one per enemy
       // would change the scene light count and recompile every shader
-      const halo = lights.attach(spec.glow, 1.1, 8);
-      return { group: g, limbs, head, halo, materials: [skin, glow] };
+      rig.halo = lights.attach(spec.glow, 1.1, 8);
+      return rig;
     }
 
     function spawn(typeId, x, z) {
       const spec = TYPES[typeId];
-      const rig = buildRig(spec);
+      const rig = buildRig(typeId, spec);
       rig.group.position.set(x, 0, z);
       scene.add(rig.group);
 
@@ -335,18 +298,20 @@
         }
 
         // pose
-        e.bob += dt * (1.5 + e.vel.length() * 1.4);
-        if (e.spec.flying) {
-          e.pos.y = 0.85 + Math.sin(e.bob) * 0.18;
-          if (e.rig.limbs[0] && e.rig.limbs[0].ring) e.rig.limbs[0].ring.rotation.z += dt * 3.4;
-        } else {
-          e.pos.y = 0;
-          const swing = Math.sin(e.bob * 2.4) * Math.min(0.6, e.vel.length() * 0.22);
-          for (const l of e.rig.limbs) {
-            if (!l.arm) continue;
-            l.arm.rotation.x = swing * l.side;
-            l.leg.rotation.x = -swing * l.side;
-          }
+        const groundSpeed = Math.hypot(e.vel.x, e.vel.z);
+        // the stride is driven by how fast it is actually moving, so a
+        // hostile pinned against a wall stops walking on the spot
+        e.bob += dt * (e.spec.flying ? 2.0 : 1.4 + groundSpeed * 2.2);
+        e.pos.y = e.spec.flying ? 0.85 + Math.sin(e.bob) * 0.18 : 0;
+        e.rig.pose(e.bob, groundSpeed, dt);
+        if (e.rig.look) {
+          const dx = playerPos.x - e.pos.x, dz = playerPos.z - e.pos.z;
+          const want = Math.atan2(dx, dz) + Math.PI;
+          let off = want - e.rig.group.rotation.y;
+          while (off > Math.PI) off -= Math.PI * 2;
+          while (off < -Math.PI) off += Math.PI * 2;
+          const dy = (playerPos.y + 1.5) - (e.pos.y + e.spec.height * 0.93);
+          e.rig.look(-Math.atan2(dy, Math.hypot(dx, dz)), off);
         }
         e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
         e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
@@ -498,10 +463,8 @@
         while (d < -Math.PI) d += Math.PI * 2;
         e.rig.group.rotation.y += d * Math.min(1, 12 * dt);
 
-        e.bob += dt * 2.4;
-        if (e.spec.flying && e.rig.limbs[0] && e.rig.limbs[0].ring) {
-          e.rig.limbs[0].ring.rotation.z += dt * 3.4;
-        }
+        e.bob += dt * (e.spec.flying ? 2.0 : 1.4 + e.vel.length() * 2.2);
+        e.rig.pose(e.bob, e.vel.length(), dt);
         e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
       }
     }

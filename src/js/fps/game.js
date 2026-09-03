@@ -98,6 +98,13 @@
     atmos.setSun(sunDir);
     eng.setFog(atmos.fog);
 
+    /* One place decides how much the picture costs, and the shadow maps and
+       the dust follow it. Fires immediately with the current tier. */
+    eng.quality.onChange((q) => {
+      csm.setMapSizes(q.shadow);
+      atmos.setFraction(q.motes);
+    });
+
 
     const player = SF.player.create(camera, level);
     /* Each mission opens where the last one closed: at the near edge of its
@@ -246,7 +253,8 @@
          not asking to shoot. Without this the only route to recapture was
          through the pause menu. */
       if (e.button === 0 && lockAvailable && document.pointerLockElement !== canvas) {
-        requestLock();
+        // ignore the click that arrives with the Escape that just freed us
+        if (performance.now() - releasedAt > 400) requestLock();
         return;
       }
       if (e.button === 0) firing = true;
@@ -263,6 +271,7 @@
       if (e.button === 2) weapon.setAds(false);
     }
     function onKeyDown(e) {
+      // Escape has its own capture-phase listener; see onEscape below
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
       if (e.code === 'KeyT' && body) {
@@ -274,16 +283,44 @@
       if (e.code === 'ShiftLeft' && runner) runner.setBoost(true);
       if (e.code === 'KeyR') weapon.reload();
       if (e.code === 'KeyQ' || e.code === 'KeyE') weapon.useAbility();
-      if (e.code === 'Escape' && !state.paused && !state.over) {
-        if (document.pointerLockElement === canvas) document.exitPointerLock();
-        else pause(true);
+    }
+
+    /* ---------- Escape ----------
+       While the pointer is locked, most browsers swallow Escape entirely and
+       release the lock themselves, so this never runs for that first press —
+       which is why it must not assume it did. It looks at what is actually
+       true right now: still locked, release; free but playing, pause; already
+       paused, resume. And it records the moment the pointer came free, so the
+       click that Escape's own key-up sometimes generates cannot immediately
+       take the mouse back and make Escape look broken. */
+    let releasedAt = 0;
+    let lastEscape = 0;
+
+    function onEscape() {
+      if (state.over) return;
+      // one press, one action, however many listeners saw it
+      const now = performance.now();
+      if (now - lastEscape < 250) return;
+      lastEscape = now;
+      if (document.pointerLockElement === canvas) {
+        releasedAt = performance.now();
+        document.exitPointerLock();
+        return;
       }
+      if (state.paused) { pause(false); requestLock(); return; }
+      if (state.running) pause(true);
     }
     function onContext(e) { e.preventDefault(); }
 
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('keydown', onKeyDown);
+    /* A second listener, in the capture phase, so Escape still lands if
+       anything downstream stops the event. onEscape is idempotent. */
+    function onEscapeCapture(e) {
+      if (e.code === 'Escape' || e.key === 'Escape') onEscape();
+    }
+    document.addEventListener('keydown', onEscapeCapture, true);
     canvas.addEventListener('contextmenu', onContext);
 
     /* Pointer lock needs a fresh user gesture, and an artifact viewer may
@@ -296,6 +333,7 @@
     function onLockChange() {
       const locked = document.pointerLockElement === canvas;
       if (locked) { hadLock = true; applyLookMode(); return; }
+      releasedAt = performance.now();
       /* Escape hands the mouse back, and that is all it does: the game keeps
          running behind a free cursor, and clicking the view takes the mouse
          again. Escape twice — once to release, once with the cursor free —
@@ -921,6 +959,7 @@
       awaitingEngage = false;
       document.removeEventListener('pointerdown', onEngageInput);
       document.removeEventListener('keydown', onEngageInput);
+      document.removeEventListener('keydown', onEscapeCapture, true);
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
       if (runner) runner.destroy();
@@ -949,6 +988,7 @@
       eng.dispose();
       eng.renderer.dispose();
       SF.materials.reset();          // the traverse above disposed the shared cache
+      SF.hostiles.reset();           // shared rig geometry outlives any one enemy
       hud.setVisible(false);
       onExit(state.exitTo);
     }
