@@ -149,6 +149,7 @@ void AssetLibrary::createStarterContent() {
         t->colorA = Color::fromHex(a);
         t->colorB = Color::fromHex(b);
         t->scale = scale;
+        t->width = t->height = 256;
         t->rebuild();
         addTexture(std::move(t));
     };

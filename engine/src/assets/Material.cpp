@@ -47,7 +47,11 @@ void Texture::rebuild() {
                 case TextureKind::Grid: {
                     float fx = u * sx - std::floor(u * sx);
                     float fy = v * sx - std::floor(v * sx);
-                    const float lineWidth = 0.06f;
+                    // Width in texels, not as a fraction of a cell: at a
+                    // fraction, a fine grid on a small texture produces
+                    // sub-pixel lines and the pattern disappears.
+                    const float cellPixels = (float)width / sx;
+                    const float lineWidth = std::max(0.04f, 1.5f / std::max(1.0f, cellPixels));
                     t = (fx < lineWidth || fy < lineWidth) ? 1.0f : 0.0f;
                     break;
                 }
