@@ -190,8 +190,13 @@
         if (eq[slot]) plateMats[slot].color.set(G.rarityOf(eq[slot].rarity).colour);
       }
       const cls = SF.classes.CLASSES[character.cls];
-      suitMat.color.set(cls ? cls.accent : '#1d232c');
-      suitMat.color.multiplyScalar(0.32);
+      const worn = SF.cosmetics && SF.cosmetics.suitColours(character);
+      if (worn) {
+        suitMat.color.set(worn.suit);
+      } else {
+        suitMat.color.set(cls ? cls.accent : '#1d232c');
+        suitMat.color.multiplyScalar(0.32);
+      }
     }
 
     let spin = 0.6, raf = 0, dragging = false, lastX = 0;

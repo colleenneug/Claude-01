@@ -27,6 +27,46 @@
     SF.cursor.reset();
   }
 
+  /* Is anything on the page at all? Every path that hides the screens —
+     dropping into a mission, the debrief — is supposed to put something else
+     up. If one of them throws first, the player is left facing a blank page
+     with nothing to click, and a reload only starts the same sequence again.
+     So: a way back, and something that calls it. */
+  function nothingVisible() {
+    if (document.body.classList.contains('in-mission')) return false;
+    if (document.body.classList.contains('booting')) return false;
+    if (!$('#loading').hidden) return false;
+    return !$$('.screen').some((s) => s.classList.contains('active'));
+  }
+
+  function recover(why) {
+    $('#loading').hidden = true;
+    $('#engage').hidden = true;
+    $('#pause-menu').hidden = true;
+    document.body.classList.remove('in-mission', 'booting');
+    $('#gl').hidden = true;
+    if (mission) { try { mission.destroy(); } catch (e) { /* already gone */ } mission = null; }
+    if (ch && slotIndex >= 0) openCampaign(slotIndex);
+    else { renderSlots(); show('slots'); }
+    if (why) toast('RECOVERED — ' + why, 'bad');
+  }
+
+  /* Anything that escapes to the top level takes the UI down with it unless
+     something puts a screen back up. */
+  function installSafetyNet() {
+    const trip = (label) => {
+      if (!nothingVisible()) return;
+      recover(label);
+    };
+    window.addEventListener('error', (e) => trip((e.message || 'ERROR').slice(0, 60)));
+    window.addEventListener('unhandledrejection', (e) => {
+      const m = e && e.reason && (e.reason.message || String(e.reason));
+      trip((m || 'FAILED').slice(0, 60));
+    });
+    // and a slow backstop, for a blank page nothing reported
+    setInterval(() => { if (nothingVisible()) recover('BLANK SCREEN'); }, 4000);
+  }
+
   /* ---------------- boot ---------------- */
 
   const BOOT_LINES = [
@@ -64,13 +104,13 @@
           out += line[i++];
           row.innerHTML = out;
           if (i % 3 === 0) SF.audio.sfx.type();
-          await wait(6);
+          await wait(2);
         }
         row.innerHTML = line;
       }
-      await wait(line ? 70 : 120);
+      await wait(line ? 34 : 60);
     }
-    await wait(700);
+    await wait(320);
     if (bootAborted) return;
     document.body.classList.remove('booting');
     show('title');
@@ -276,6 +316,21 @@
       body.appendChild(row);
     }
 
+    /* The station is always open. It is the one place on this screen that
+       is not a fight, so it goes first rather than buried under the list. */
+    const hubRow = el('button', 'camp-row station');
+    hubRow.dataset.hover = 'DOCK';
+    hubRow.innerHTML =
+      '<div class="camp-n">⌂</div>' +
+      '<div>' +
+        '<div class="camp-name">THE CRADLE</div>' +
+        '<div class="camp-obj">INTERNATIONAL SPACE STATION · DIVISION HOME PORT</div>' +
+        '<div class="camp-diff"><i></i><i></i><i></i><i></i><i></i></div>' +
+      '</div>' +
+      '<div class="camp-state next">OPEN</div>';
+    hubRow.addEventListener('click', () => { missionIndex = 'cradle'; drop(); });
+    body.insertBefore(hubRow, body.firstChild);
+
     /* Orbital destinations open once the habitat ring is behind you. */
     const skyOpen = SF.planets.unlocked(ch);
     for (const dest of SF.planets.DESTINATIONS) {
@@ -398,9 +453,263 @@
 
   /* ---------------- armoury ---------------- */
 
+  /* ---------------- contracts ---------------- */
+  function openContracts() {
+    if (!ch) return;
+    const B = SF.bounties;
+    B.ensure(ch);
+    B.restock(ch);
+    $('#ct-who').textContent = `${ch.name} · ${ch.contractsDone} COMPLETED`;
+    const ctPurse = $('#ct-purse');
+    if (ctPurse) { ctPurse.innerHTML = ''; ctPurse.appendChild(purseStrip()); }
+    show('contracts');
+    renderContracts();
+    SF.audio.sfx.open();
+  }
+
+  /* One card shape for both columns: the difference is the button on it. */
+  function contractCard(b, mode) {
+    const B = SF.bounties;
+    const done = B.complete(b);
+    const pct = Math.min(100, Math.round((b.have / b.need) * 100));
+    const r = B.reward(b);
+    const card = el('div', 'ct-card' + (done ? ' done' : ''));
+    card.style.setProperty('--tc', B.TIER_COLOUR[b.tier]);
+    card.innerHTML =
+      `<div class="ct-name">${b.name}<span class="ct-tier">${B.TIER_NAMES[b.tier]}</span></div>` +
+      `<div class="ct-text">${b.text}</div>` +
+      (mode === 'active'
+        ? `<div class="ct-bar"><i style="width:${pct}%"></i></div>` +
+          `<div class="ct-prog">${b.have} / ${b.need}${done ? ' &nbsp;·&nbsp; READY' : ''}</div>`
+        : `<div class="ct-pay">${r.xp} XP &nbsp;·&nbsp; ${r.parts} PARTS &nbsp;·&nbsp; SALVAGE</div>`);
+    return card;
+  }
+
+  function renderContracts() {
+    const B = SF.bounties;
+    B.ensure(ch);
+    const active = $('#ct-active');
+    const board = $('#ct-board');
+    active.innerHTML = '';
+    board.innerHTML = '';
+
+    $('#ct-slots').textContent = ch.bounties.length + ' / ' + B.MAX_ACTIVE;
+    $('#ct-done').textContent = ch.board.length + ' OFFERED';
+    const rr = $('#btn-reroll');
+    if (rr) {
+      const short = SF.economy.shortOf(ch, SF.economy.PRICE.reroll);
+      rr.textContent = 'NEW BOARD · ' + SF.economy.priceText(SF.economy.PRICE.reroll);
+      rr.disabled = !!short;
+      rr.dataset.hover = short ? 'NOT ENOUGH CHITS' : 'CLEAR AND REPOST';
+    }
+
+    if (!ch.bounties.length) {
+      active.appendChild(el('div', 'item-empty', 'NOTHING TAKEN. THE BOARD IS TO YOUR RIGHT.'));
+    }
+    for (const b of ch.bounties) {
+      const card = contractCard(b, 'active');
+      const drop = el('button', 'ct-btn ghost', 'ABANDON');
+      drop.dataset.hover = 'GIVE IT BACK';
+      drop.addEventListener('click', () => {
+        B.abandon(ch, b.uid);
+        B.refreshBoard(ch);
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.back();
+        renderContracts();
+      });
+      card.appendChild(drop);
+      active.appendChild(card);
+    }
+
+    const full = ch.bounties.length >= B.MAX_ACTIVE;
+    if (!ch.board.length) board.appendChild(el('div', 'item-empty', 'THE BOARD IS EMPTY.'));
+    for (const b of ch.board) {
+      const card = contractCard(b, 'board');
+      const take = el('button', 'ct-btn', full ? 'NO ROOM' : 'TAKE');
+      take.disabled = full;
+      take.dataset.hover = full ? 'FINISH ONE FIRST' : 'ACCEPT';
+      take.addEventListener('click', () => {
+        if (!B.accept(ch, b.uid)) return;
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.confirm();
+        renderContracts();
+      });
+      card.appendChild(take);
+      board.appendChild(card);
+    }
+
+    const ready = B.readyCount(ch);
+    const claim = $('#btn-claim');
+    claim.disabled = !ready;
+    claim.textContent = ready ? 'COLLECT ' + ready + ' CONTRACT' + (ready === 1 ? '' : 'S')
+                              : 'NOTHING READY';
+  }
+
+  /* The Rook takes anything you are not wearing and pays in parts. Rare and
+     better is left alone unless you say otherwise, because losing a good roll
+     to a careless keypress is not a mistake worth allowing. */
+  function appraise() {
+    const G = SF.gear;
+    const preview = G.breakdownPreview(ch, 'uncommon');
+    if (!preview.count) {
+      said('THE ROOK', 'Nothing here I would take. Come back with worse.');
+      return;
+    }
+    const out = G.breakdown(ch, 'uncommon');
+    SF.storage.save(slotIndex, ch);
+    SF.audio.sfx.confirm();
+    const parts = Object.keys(out.parts).filter((k) => out.parts[k])
+      .map((k) => out.parts[k] + '× ' + G.partOf(k).name).join(', ');
+    said('THE ROOK', `${out.count} pieces down to ${out.total} parts and ` +
+                     `${SF.economy.priceText(out.purse)}. ${parts}.`);
+    renderArmoury();
+  }
+
+  function claimContracts() {
+    const out = SF.bounties.claim(ch);
+    if (!out) return;
+    const notes = SF.classes.grantXp(ch, out.xp);
+    SF.storage.save(slotIndex, ch);
+    SF.audio.sfx.win();
+    const parts = Object.keys(out.parts).filter((k) => out.parts[k])
+      .map((k) => out.parts[k] + '× ' + SF.gear.partOf(k).name).join(', ');
+    said('SHAW', `${out.count} settled. ${SF.economy.priceText(out.purse)}, ` +
+                 `${out.xp} experience, ${parts || 'no parts'}, ` +
+                 `${out.drops.length} piece${out.drops.length === 1 ? '' : 's'} of salvage.` +
+                 (notes.length ? ' ' + notes.join(' ') : ''));
+    renderContracts();
+  }
+
+  /* The purse, drawn the same way wherever it appears. */
+  function purseStrip() {
+    const E = SF.economy;
+    E.ensure(ch);
+    const row = el('div', 'purse-row');
+    row.innerHTML = E.CURRENCIES.map((c) =>
+      `<span class="pr-c" style="--pc:${c.colour}" title="${c.line}">` +
+      `<b>${ch.purse[c.id] || 0}</b><i>${c.name}</i></span>`).join('');
+    return row;
+  }
+
+  /* Voss's store. Chits are the answer to "I did not get the drop I wanted",
+     which is the job a soft currency exists to do. */
+  function buildStore(ch) {
+    const E = SF.economy, G = SF.gear;
+    const store = el('div', 'store');
+    store.innerHTML = '<div class="bench-head"><span>THE STORE</span>' +
+                      '<span class="bh-stock">VOSS TAKES CHITS</span></div>';
+    const rows = el('div', 'bench-rows');
+
+    const stock = [
+      { name: 'RUNNER PART', desc: 'One part over the counter, whatever is on the shelf.',
+        cost: E.PRICE.part, take: () => {
+          const pick = G.PARTS[Math.floor(Math.random() * G.PARTS.length)];
+          const bundle = {}; bundle[pick.id] = 1;
+          G.grantParts(ch, bundle);
+          return '1× ' + pick.name;
+        } },
+      { name: 'PARTS CRATE', desc: 'Five parts, mixed, cheaper by the box.',
+        cost: E.PRICE.partBundle, take: () => {
+          const bundle = G.rollParts(5);
+          G.grantParts(ch, bundle);
+          return Object.keys(bundle).filter((k) => bundle[k])
+            .map((k) => bundle[k] + '× ' + G.partOf(k).name).join(', ');
+        } },
+      { name: 'SALVAGE CASE', desc: 'Two rolls of gear at your rank. No promises.',
+        cost: E.PRICE.salvageCase, take: () => {
+          const drops = G.rollDrops(ch, Math.min(16, 4 + ch.level), false);
+          G.grant(ch, drops);
+          return drops.map((d) => d.name).join(', ');
+        } },
+      { name: 'PRIME, TRADED', desc: 'A prime at the price of a prime. Voss is not a charity.',
+        cost: E.PRICE.primeTrade, take: () => { E.earn(ch, { prime: 1 }); return '1× PRIME'; } }
+    ];
+
+    for (const item of stock) {
+      const short = E.shortOf(ch, item.cost);
+      const row = el('div', 'bench-row' + (short ? ' blocked' : ''));
+      row.innerHTML =
+        '<div class="br-main">' +
+          `<div class="br-name">${item.name}</div>` +
+          `<div class="br-desc">${item.desc}</div>` +
+          `<div class="br-gain">${E.priceText(item.cost)}</div>` +
+        '</div><div class="br-side"></div>';
+      const buy = el('button', 'br-fit', short ? 'NEED ' + short.name : 'BUY');
+      buy.disabled = !!short;
+      buy.dataset.hover = short ? 'NOT ENOUGH' : 'PAY VOSS';
+      buy.addEventListener('click', () => {
+        if (!E.spend(ch, item.cost)) return;
+        const got = item.take();
+        SF.storage.save(slotIndex, ch);
+        SF.audio.sfx.confirm();
+        said('VOSS', got + '. Pleasure.');
+        renderArmoury();
+      });
+      row.querySelector('.br-side').appendChild(buy);
+      rows.appendChild(row);
+    }
+    store.appendChild(rows);
+    return store;
+  }
+
+  /* The wardrobe. Chits buy paint, and paint changes no number at all —
+     which is exactly what a soft currency should be able to buy, or it is
+     only a slower route to power. Two in each set are earned instead. */
+  function buildWardrobe(ch) {
+    const C = SF.cosmetics, E = SF.economy;
+    C.ensure(ch);
+    const box = el('div', 'wardrobe');
+    box.innerHTML = '<div class="bench-head"><span>THE WARDROBE</span>' +
+                    '<span class="bh-stock">PAINT ONLY. NOTHING HERE MAKES YOU STRONGER.</span></div>';
+
+    for (const set of C.SETS) {
+      const head = el('div', 'wd-set');
+      head.innerHTML = `<span>${set.name}</span><em>${set.line}</em>`;
+      box.appendChild(head);
+
+      const grid = el('div', 'wd-grid');
+      for (const item of set.list) {
+        const owned = C.owns(ch, set.id, item.id);
+        const wornNow = ch.worn[set.id] === item.id;
+        const block = C.blocker(ch, set.id, item.id);
+        const a = item.suit || item.shell || '#4a525c';
+        const bcol = item.trim || item.glow || '#9fb0c0';
+
+        const card = el('button', 'wd-card' + (wornNow ? ' on' : '') + (owned ? '' : ' locked'));
+        card.style.setProperty('--a', a);
+        card.style.setProperty('--b', bcol);
+        card.innerHTML =
+          '<span class="wd-chip"><i></i><b></b></span>' +
+          `<span class="wd-name">${item.name}</span>` +
+          `<span class="wd-foot">${
+            wornNow ? 'WORN'
+            : owned ? 'OWNED'
+            : item.price == null ? (item.earn || 'EARNED')
+            : E.priceText({ chits: item.price })}</span>`;
+        card.dataset.hover = wornNow ? 'ALREADY ON' : owned ? 'WEAR IT'
+                            : item.price == null ? 'NOT YET' : 'BUY AND WEAR';
+        card.disabled = wornNow || (!owned && !!block);
+        card.title = item.note || item.earn || '';
+        card.addEventListener('click', () => {
+          if (!owned && !C.buy(ch, set.id, item.id)) return;
+          C.wear(ch, set.id, item.id);
+          SF.storage.save(slotIndex, ch);
+          SF.audio.sfx.confirm();
+          if (!owned) said('VOSS', item.name + '. Wear it in good health.');
+          renderArmoury();
+          if (dossier) dossier.setLook(ch);
+        });
+        grid.appendChild(card);
+      }
+      box.appendChild(grid);
+    }
+    return box;
+  }
+
   function openArmoury() {
     if (!ch) return;
     SF.gear.ensure(ch);
+    SF.cosmetics.ensure(ch);
     const cls = SF.classes.CLASSES[ch.cls];
     $('#arm-who').textContent = `${ch.name} · ${cls.name} · RANK ${ch.level}`;
     show('armoury');
@@ -426,7 +735,8 @@
 
       const head = el('div', 'bench-head');
       head.innerHTML = '<span>UPGRADE BENCH</span>' +
-        `<span class="bh-stock">${held} PART${held === 1 ? '' : 'S'} IN STOCK</span>`;
+        `<span class="bh-stock">${held} PART${held === 1 ? '' : 'S'} · ` +
+        `${SF.economy.balance(ch, 'prime')} PRIME</span>`;
       bench.appendChild(head);
 
       if (!runner) {
@@ -449,7 +759,8 @@
             `<div class="br-name">${part.name}<span class="br-have">×${have}</span></div>` +
             `<div class="br-desc">${part.desc}</div>` +
             `<div class="br-gain">${part.line.replace('{v}', part.per)} each &nbsp;·&nbsp; ` +
-              `NOW ${part.line.replace('{v}', fitted * part.per)}</div>` +
+              `NOW ${part.line.replace('{v}', fitted * part.per)}` +
+              `<span class="br-cost">${SF.economy.priceText(SF.economy.PRICE.fitPart)} TO FIT</span></div>` +
           `</div>` +
           `<div class="br-side"><div class="br-pips">${pips}</div></div>`;
 
@@ -470,11 +781,13 @@
 
       const total = G.PARTS.reduce((a, p) => a + G.fittedCount(runner, p.id), 0);
       const strip = el('button', 'bench-strip');
-      strip.textContent = total ? 'STRIP FRAME — RECOVER ' + total : 'NOTHING FITTED';
-      strip.disabled = !total;
+      const stripCost = SF.economy.priceText(SF.economy.PRICE.strip);
+      strip.textContent = total ? 'STRIP FRAME — RECOVER ' + total + ' · ' + stripCost
+                                : 'NOTHING FITTED';
+      strip.disabled = !total || !SF.economy.canAfford(ch, SF.economy.PRICE.strip);
       strip.dataset.hover = 'RECOVER EVERY PART';
       strip.addEventListener('click', () => {
-        G.stripParts(ch, runner);
+        if (G.stripParts(ch, runner) < 0) return;
         SF.storage.save(slotIndex, ch);
         SF.audio.sfx.back();
         renderArmoury();
@@ -488,6 +801,8 @@
     const a = G.armourStats(ch);
     $('#arm-power-sub').textContent =
       `+${a.hp} VITALS · ${a.resist.toFixed(0)}% RESIST · RANK ${ch.level}`;
+    const purseBox = $('#arm-purse');
+    if (purseBox) { purseBox.innerHTML = ''; purseBox.appendChild(purseStrip()); }
 
     /* ---- equipment, one block per slot ---- */
     const gearBox = $('#arm-gear');
@@ -534,6 +849,9 @@
       if (slot.id === 'runner') block.appendChild(buildBench(ch, equipped));
       gearBox.appendChild(block);
     }
+
+    gearBox.appendChild(buildStore(ch));
+    gearBox.appendChild(buildWardrobe(ch));
 
     /* ---- appearance ---- */
     const look = $('#arm-look');
@@ -623,13 +941,14 @@
     show('none');
     $('#loading').hidden = false;
 
-    const steps = [
-      ['GENERATING HULL SURFACES', 0.25],
-      ['BUILDING DECK GEOMETRY', 0.5],
-      ['SEEDING HOSTILE PATTERNS', 0.72],
-      ['SPINNING UP OPTICS', 0.9],
-      ['LINK ESTABLISHED', 1]
-    ];
+    const steps = missionIndex === 'cradle'
+      ? [['MATCHING ORBIT', 0.3], ['HARD DOCK', 0.6],
+         ['PRESSURISING COLLAR', 0.85], ['WELCOME BACK', 1]]
+      : [['GENERATING HULL SURFACES', 0.25],
+         ['BUILDING DECK GEOMETRY', 0.5],
+         ['SEEDING HOSTILE PATTERNS', 0.72],
+         ['SPINNING UP OPTICS', 0.9],
+         ['LINK ESTABLISHED', 1]];
     for (const [label, pct] of steps) {
       $('#lo-step').textContent = label;
       $('#lo-fill').style.width = (pct * 100) + '%';
@@ -648,21 +967,40 @@
 
     // one frame for the browser to paint the loading state before the build
     await wait(60);
-    mission = SF.game.create(ch, missionIndex, exitMission);
-    window.__m = mission;               // handle for automated smoke tests
+    try {
+      mission = SF.game.create(ch, missionIndex, exitMission);
+      window.__m = mission;             // handle for automated smoke tests
+      mission.start();
+    } catch (err) {
+      /* A build that throws used to leave every screen hidden and the loading
+         card up forever — a white page with no way out of it. */
+      mission = null;
+      $('#loading').hidden = true;
+      recover((err && err.message ? err.message : 'INSERTION FAILED').slice(0, 60));
+      return;
+    }
     $('#loading').hidden = true;
-    mission.start();
     $('#engage').hidden = false;
   }
 
-  function exitMission() {
+  /* A line from whoever you just dealt with, through the existing rail. */
+  function said(who, text) { toast(`<b>${who}</b> &nbsp;${text}`, 'said'); }
+
+  function exitMission(reason) {
     mission = null;
     document.body.classList.remove('in-mission');
     $('#gl').hidden = true;
     $('#pause-menu').hidden = true;
     $('#engage').hidden = true;
     $('#screen-end').classList.remove('active');
-    if (ch) openCampaign(slotIndex); else { renderSlots(); show('slots'); }
+    if (!ch) { renderSlots(); show('slots'); return; }
+    /* A station terminal names where it is sending you, so walking up to the
+       armoury kiosk opens the armoury rather than dumping you on the list. */
+    if (reason === 'armoury') { openCampaign(slotIndex); openArmoury(); return; }
+    if (reason === 'coop') { openCampaign(slotIndex); openCoop(); return; }
+    if (reason === 'contracts') { openCampaign(slotIndex); openContracts(); return; }
+    if (reason === 'appraise') { openCampaign(slotIndex); openArmoury(); appraise(); return; }
+    openCampaign(slotIndex);
   }
 
   async function abandon() {
@@ -731,15 +1069,30 @@
       mission.pause(false);
       mission.requestLock();
     });
+    $('#btn-claim').addEventListener('click', claimContracts);
+    $('#btn-reroll').addEventListener('click', () => {
+      if (!SF.bounties.reroll(ch)) return;
+      SF.storage.save(slotIndex, ch);
+      SF.audio.sfx.click();
+      renderContracts();
+    });
     $('#btn-abandon').addEventListener('click', abandon);
     $('#btn-debrief').addEventListener('click', () => { if (mission) mission.destroy(); });
 
     window.addEventListener('beforeunload', () => {
       if (ch && slotIndex >= 0) SF.storage.save(slotIndex, ch);
     });
+    installSafetyNet();
     void sessionStart;
   }
 
+  /* launch() is the same path the campaign rows take, exposed so an
+     automated run can drop straight into a mission without clicking
+     through the menus. It is the one entry point the smoke tests use;
+     window.__m is the mission it produces. */
+  function launch(index) { missionIndex = index; return drop(); }
+
   SF.ui = { runBoot, skipBoot, bind, show, renderSlots, openCampaign, openArmoury, openCoop,
+            openContracts, renderContracts, appraise, launch,
             get character() { return ch; } };
 })(window.SF);

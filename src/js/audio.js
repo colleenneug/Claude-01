@@ -97,6 +97,8 @@
     hurt:       () => { noise(0.2, 0.3, 700); tone(150, 0.2, 'sawtooth', 0.16, 80); },
     step:       () => noise(0.055, 0.07, 380),
     land:       () => { noise(0.14, 0.2, 320); tone(90, 0.12, 'sine', 0.12, 55); },
+    /* A long scrape that falls away, which is what a slide sounds like. */
+    slide:      () => { noise(0.85, 0.16, 2600); tone(160, 0.5, 'sawtooth', 0.07, 60); },
     emp:        () => { tone(2200, 0.5, 'sawtooth', 0.22, 60); noise(0.45, 0.3, 4000); },
     phase:      () => { tone(300, 0.24, 'sine', 0.16, 1700); noise(0.14, 0.1, 2400); },
     comms:      () => { tone(1250, 0.045, 'square', 0.07); setTimeout(() => tone(950, 0.05, 'square', 0.06), 60); },

@@ -17,12 +17,17 @@
     let spreadPx = 8;
 
     const api = {
+      /* Health is the first segment; the barrier fills the two after it,
+         so an overshield drains the far segment before the near one. */
       refreshVitals(hp, maxHp, shield) {
-        $('#v-hp').style.width = Math.max(0, (hp / maxHp) * 100) + '%';
+        const h = Math.max(0, Math.min(1, hp / maxHp));
+        const s = Math.max(0, Math.min(1, shield / 100));
+        $('#v-hp').style.width = (h * 100) + '%';
+        $('#v-sh-a').style.width = (Math.min(1, s * 2) * 100) + '%';
+        $('#v-sh').style.width = (Math.max(0, s * 2 - 1) * 100) + '%';
         $('#v-hp-text').textContent = Math.max(0, Math.ceil(hp));
-        $('#v-sh').style.width = Math.min(100, (shield / 100) * 100) + '%';
         $('#v-sh-text').textContent = Math.ceil(shield);
-        root.classList.toggle('critical', hp / maxHp < 0.3);
+        root.classList.toggle('critical', h < 0.3);
       },
 
       /* The dread meter. `frac` is 0..1; `rapture` flips the bar over to the
@@ -30,6 +35,7 @@
       refreshDread(frac, rapture) {
         const f = Math.max(0, Math.min(1, frac || 0));
         $('#v-dread').style.width = (f * 100) + '%';
+        $('#v-dread-text').textContent = Math.round(f * 100);
         root.classList.toggle('rapture', !!rapture);
         root.classList.toggle('dread-full', f >= 1 && !rapture);
       },
@@ -44,7 +50,8 @@
 
       refreshAbility(w) {
         const pct = w.abilityCool > 0 ? 1 - w.abilityCool / w.ability.cooldown : 1;
-        $('#ab-fill').style.width = (pct * 100) + '%';
+        // the panel charges from the bottom, not left to right
+        $('#ab-fill').style.height = (pct * 100) + '%';
         $('#ab-name').textContent = w.ability.name;
         $('#ability').classList.toggle('ready', w.abilityCool <= 0);
       },
@@ -135,6 +142,44 @@
         const el = $('#runner-speed');
         if (el) el.textContent = kmh;
       },
+      /* What is in the purse, so a crate paying out means something. */
+      purse(p) {
+        const box = $('#purse-hud');
+        if (!box || !p) return;
+        box.hidden = false;
+        box.innerHTML = SF.economy.CURRENCIES.map((c) =>
+          `<span class="pu" style="--pc:${c.colour}">` +
+          `<i>${c.short}</i>${p[c.id] || 0}</span>`).join('');
+      },
+
+      /* The contracts you are carrying, and how they are going. */
+      contracts(list) {
+        const box = $('#contract-hud');
+        if (!box) return;
+        box.hidden = !list || !list.length;
+        if (box.hidden) return;
+        const B = SF.bounties;
+        box.innerHTML = list.map((b) => {
+          const pct = Math.min(100, Math.round((b.have / b.need) * 100));
+          const done = b.have >= b.need;
+          return `<div class="ch-row${done ? ' done' : ''}" style="--tc:${B.TIER_COLOUR[b.tier]}">` +
+                 `<div class="ch-name"><span>${b.name}</span>` +
+                 `<i>${done ? 'READY' : b.have + '/' + b.need}</i></div>` +
+                 `<div class="ch-bar"><i style="width:${pct}%"></i></div></div>`;
+        }).join('');
+      },
+
+      /* The operative's name, over the vitals. */
+      setWho(name) { const e = $('#v-who'); if (e) e.textContent = name; },
+
+      /* Which deck of the station you are standing on. */
+      deck(letter) {
+        const el = $('#deck-tag');
+        if (!el) return;
+        el.hidden = !letter;
+        if (letter) el.textContent = 'DECK ' + letter;
+      },
+
       /* The boost cell: how much charge is left, and whether it is burning. */
       runnerCell(frac, burning) {
         const el = $('#runner-cell');
@@ -164,8 +209,9 @@
         box.hidden = max === 0;
         if (!max) return;
         if (box.childElementCount !== max + 1) {
-          box.innerHTML = '<span class="h-label">RETURNS</span>';
+          box.innerHTML = '';
           for (let i = 0; i < max; i++) box.appendChild(el('i'));
+          box.appendChild(el('span', 'h-label', 'RETURNS'));
         }
         Array.from(box.querySelectorAll('i')).forEach((c, i) => c.classList.toggle('spent', i >= left));
       },

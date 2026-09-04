@@ -264,7 +264,11 @@
         }
       }
 
-      if (anyHit) { w.hits++; hud.hitMarker(anyHead); if (anyHead) w.headshots++; }
+      if (anyHit) {
+        w.hits++;
+        hud.hitMarker(anyHead);
+        if (anyHead) { w.headshots++; if (ctx.onHeadshot) ctx.onHeadshot(); }
+      }
 
       player.addRecoil(spec.recoil.pitch * (w.ads ? 0.6 : 1),
                        (Math.random() - 0.5) * spec.recoil.yaw * 2);
@@ -287,8 +291,9 @@
     }
 
     function useAbility() {
-      if (w.abilityCool > 0) return;
+      if (w.abilityCool > 0) return false;
       w.abilityCool = ability.cooldown;
+      if (ctx.onAbility) ctx.onAbility();
 
       if (ctx.classId === 'bulwark') {
         /* The ward is fed by what is close enough to take from: a barrier

@@ -248,6 +248,14 @@ input::placeholder{ color:rgba(108,139,160,.6); letter-spacing:.14em; }
 .screen.active{ display:flex; flex-direction:column; animation: screenIn .32s ease-out; }
 @keyframes screenIn{ from{ opacity:0; transform:translateY(8px); } }
 
+/* While booting, the boot screen is the only thing on the page — and it has
+   to be *shown*, not merely un-hidden. `.screen` is display:none by default,
+   so without this line nothing at all renders until the sequence finishes and
+   `show('title')` runs: a blank page on every load and every reload. */
 body.booting .screen:not(#screen-boot){ display:none !important; }
+body.booting #screen-boot{ display:flex !important; flex-direction:column; }
+/* ...but never over a live mission. Nothing should be able to leave the boot
+   log floating in the middle of the game. */
+body.in-mission #screen-boot{ display:none !important; }
 
 .hidden{ display:none !important; }

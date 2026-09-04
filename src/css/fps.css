@@ -48,74 +48,174 @@ body.in-mission #vignette{ opacity:.55; }
 #hitmarker.head span{ background:var(--blood); height:3px; }
 @keyframes hitPop{ 0%{ opacity:1; transform:scale(.7);} 100%{ opacity:0; transform:scale(1.35);} }
 
-/* ---------- vitals / ammo ---------- */
-.hud-corner{ position:absolute; bottom:30px; }
-#vitals{ left:38px; width:250px; }
-#ammo{ right:38px; text-align:right; }
+/* ---------- the readouts ----------
+   Rebuilt to the Vanguard spec: an electric-teal barrier over pure white
+   health, a vibrant amber for anything charged, and panels that are a
+   dark wash over a blur rather than a solid fill. The measurements below
+   are the prescribed ones — 300x4 for the vitals, 2px between segments,
+   40x40 for a kit panel with a 45-degree corner cut, 3rem over 1.2rem for
+   the ammunition, and a 1px frame inset 20px from the edge. */
+:root{
+  /* The Vanguard HUD's measurements are base's; its colours are the Deep's.
+     Gold is deliberately absent — it belongs to the Pale, i.e. to the things
+     you are shooting at, so the interface must not share it. */
+  --v-shield: #9d7bff;
+  --v-health: #FFFFFF;
+  --v-super:  #7de3a8;
+  --v-panel:  rgba(10, 15, 20, 0.45);
+  --v-track:  .15em;
+}
 
-.hud-label{
-  font-family:var(--font-mono); font-size:9px; letter-spacing:.3em; color:var(--ink-dim);
-  margin-bottom:5px;
+/* the container frame */
+#hud-frame{
+  position:absolute; inset:20px;
+  border:1px solid rgba(157,123,255,.22);
+  pointer-events:none;
 }
-.hud-bar{ height:9px; background:rgba(0,0,0,.5); border:1px solid rgba(157,123,255,.28); overflow:hidden; }
-.hud-bar i{ display:block; height:100%; width:100%; transition:width .18s linear; }
-.hud-bar i.hp{ background:linear-gradient(90deg,#ff4d5e,#ff9a5e); box-shadow:0 0 10px rgba(255,77,94,.6); }
-.hud-bar i.sh{ background:linear-gradient(90deg,#9d7bff,#c4aaff); box-shadow:0 0 10px rgba(157,123,255,.6); }
-.hud-num{
-  font-family:var(--font-mono); color:#eafcff; text-shadow:0 2px 8px rgba(0,0,0,.9);
-  font-size:34px; line-height:1; margin-top:6px;
+#hud-frame::before, #hud-frame::after{
+  content:''; position:absolute; width:14px; height:14px;
+  border:1px solid var(--v-shield);
 }
+#hud-frame::before{ top:-1px; left:-1px; border-right:0; border-bottom:0; }
+#hud-frame::after{ bottom:-1px; right:-1px; border-left:0; border-top:0; }
+
+/* ---- vitals: top centre, 300x4, three segments 2px apart ---- */
+#vitals{
+  position:absolute; top:46px; left:50%; transform:translateX(-50%);
+  width:300px;
+}
+.vt-head, .vt-foot{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:var(--v-track);
+  color:rgba(207,227,238,.6);
+}
+.vt-head{ margin-bottom:7px; }
+.vt-head b{ color:var(--v-shield); font-weight:400; }
+.vt-foot{ margin-top:6px; }
+.vt-foot span{
+  font-size:13px; color:#fff; font-variant-numeric:tabular-nums;
+  letter-spacing:.06em;
+}
+.vt-foot i{ font-style:normal; }
+
+.vt-bar{
+  width:300px; height:4px; display:grid;
+  /* 30% health, the remaining 70% of barrier across two segments */
+  grid-template-columns:30% calc(35% - 2px) calc(35% - 2px);
+  gap:2px;
+}
+.vt-seg{ position:relative; height:4px; background:rgba(255,255,255,.13); overflow:hidden; }
+.vt-seg i{
+  position:absolute; inset:0 auto 0 0; display:block; width:100%;
+  transition:width .18s linear;
+}
+.vt-seg.health i{ background:var(--v-health); box-shadow:0 0 8px rgba(255,255,255,.55); }
+.vt-seg.shield i{ background:var(--v-shield); box-shadow:0 0 8px rgba(157,123,255,.6); }
+#fps-hud.critical .vt-seg.health i{
+  background:var(--blood); box-shadow:0 0 10px rgba(255,77,94,.7);
+  animation:vtPulse .9s ease-in-out infinite;
+}
+@keyframes vtPulse{ 50%{ opacity:.55; } }
+
 /* ---- the dread meter ----
-   Violet while it fills, and it takes the whole HUD with it at full. */
-.dread-bar{ border-color:rgba(157,123,255,.34); }
-#v-dread{
-  width:0%;
-  background:linear-gradient(90deg,#5a2fb0,#9d7bff);
-  box-shadow:0 0 10px rgba(157,123,255,.55);
+   A fourth track under the vitals, in the same 300px measure. It is the one
+   part of the HUD that is allowed to get loud: at a full meter it pulses, and
+   in Rapture it goes pale and bleeds light. */
+.vt-dread{
+  width:300px; height:4px; margin-top:7px;
+  background:rgba(255,255,255,.13); overflow:hidden;
 }
-#fps-hud.dread-full .dread-bar{ border-color:rgba(157,123,255,.9); }
-#fps-hud.dread-full #v-dread{ animation: dreadReady .7s ease-in-out infinite; }
-#fps-hud.rapture .dread-bar{ border-color:rgba(226,200,255,.95); }
+#v-dread{
+  display:block; height:100%; width:0%;
+  background:linear-gradient(90deg,#5a2fb0,#9d7bff);
+  box-shadow:0 0 8px rgba(157,123,255,.6);
+  transition:width .18s linear;
+}
+#fps-hud.dread-full #v-dread{ animation:dreadReady .7s ease-in-out infinite; }
+@keyframes dreadReady{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.7); } }
+
 #fps-hud.rapture #v-dread{
   background:linear-gradient(90deg,#9d7bff,#e8ddff);
   box-shadow:0 0 18px rgba(200,170,255,.95), 0 0 44px rgba(157,123,255,.5);
 }
-@keyframes dreadReady{
-  0%,100%{ filter:brightness(1); }
-  50%{ filter:brightness(1.65); }
+#fps-hud.rapture .vt-head #v-dread-text{ color:#e8ddff; }
+
+@media (prefers-reduced-motion: reduce){
+  #fps-hud.dread-full #v-dread{ animation:none; }
 }
 
-#vitals .hud-num{ font-size:28px; }
-#fps-hud.critical #v-hp-text{ color:var(--blood); animation: critPulse 1s ease-in-out infinite; }
-@keyframes critPulse{ 50%{ opacity:.45; } }
+/* ---- kit: the ability panel and the harness charges, bottom left ---- */
+#kit{
+  position:absolute; left:46px; bottom:46px;
+  display:flex; align-items:flex-end; gap:16px;
+}
+#ability{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+.kit-slot{
+  position:relative; width:40px; height:40px;
+  border:1px solid var(--v-shield);
+  clip-path:polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+  display:grid; place-items:center; overflow:hidden;
+}
+.kit-slot i{
+  position:absolute; left:0; right:0; bottom:0; height:0;
+  background:rgba(157,123,255,.22); transition:height .2s linear;
+}
+.kit-glyph{ font-size:15px; line-height:1; color:var(--v-shield); font-weight:400; }
+.kit-label{
+  font-family:var(--font-mono); font-size:7.5px; letter-spacing:var(--v-track);
+  color:rgba(207,227,238,.55); text-transform:uppercase; white-space:nowrap;
+}
+.kit-key{
+  font-family:var(--font-mono); font-size:7px; letter-spacing:var(--v-track);
+  color:rgba(207,227,238,.32);
+}
+#ability.ready .kit-slot{
+  border-color:var(--v-super); box-shadow:0 0 14px rgba(125,227,168,.5);
+}
+#ability.ready .kit-glyph{ color:var(--v-super); }
+#ability.ready .kit-slot i{ background:rgba(125,227,168,.26); }
+#ability.ready .kit-label{ color:var(--v-super); }
 
-#ammo .hud-num b{ font-size:44px; color:#fff; }
-#ammo .hud-num span{ font-size:20px; color:var(--ink-dim); }
-#ammo.empty .hud-num b{ color:var(--blood); }
-#weapon-name{ font-family:var(--font-mono); font-size:11px; letter-spacing:.22em; color:var(--amber); margin-top:4px; }
+/* ---- ammunition: 3rem over 1.2rem, split by a rule at 60 degrees ---- */
+#ammo{
+  position:absolute; right:46px; bottom:46px; text-align:right;
+}
+.am-row{ display:flex; align-items:flex-end; justify-content:flex-end; gap:10px; }
+.am-row b{
+  font-size:3rem; font-weight:300; line-height:.9; color:#fff;
+  font-variant-numeric:tabular-nums;
+}
+.am-rule{
+  width:1px; height:42px; background:rgba(207,227,238,.5);
+  transform:rotate(30deg); margin:0 2px 5px;
+}
+.am-row span{
+  font-size:1.2rem; font-weight:300; line-height:1; padding-bottom:4px;
+  color:rgba(207,227,238,.75); font-variant-numeric:tabular-nums;
+}
+#ammo.empty .am-row b{ color:var(--blood); }
+#weapon-name{
+  font-family:var(--font-mono); font-size:7.5px; letter-spacing:var(--v-track);
+  color:rgba(207,227,238,.5); margin-top:4px; text-transform:uppercase;
+}
 #reload-tag{
-  font-family:var(--font-mono); font-size:11px; letter-spacing:.18em; color:var(--blood);
-  margin-top:4px; animation: critPulse 1.1s ease-in-out infinite;
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:var(--v-track);
+  color:var(--v-super); margin-top:4px;
 }
 #reload-tag[hidden]{ display:none; }
 
-#ability{ position:absolute; bottom:30px; left:50%; transform:translateX(-50%); width:210px; text-align:center; }
-#ability .hud-bar{ height:5px; }
-#ab-name{ font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; color:var(--ink-dim); margin-bottom:5px; }
-#ability.ready #ab-name{ color:var(--lime); text-shadow:0 0 10px rgba(125,255,155,.5); }
-#ability.ready .hud-bar i{ background:linear-gradient(90deg,#7de3a8,#9d7bff); }
-#ab-key{ font-family:var(--font-mono); font-size:9px; letter-spacing:.2em; color:rgba(108,139,160,.75); margin-top:5px; }
-
 /* ---------- objective / comms / feed ---------- */
 #hud-objective{
-  position:absolute; top:26px; left:50%; transform:translateX(-50%);
+  position:absolute; top:104px; left:50%; transform:translateX(-50%);
   font-family:var(--font-mono); font-size:12px; letter-spacing:.14em; color:var(--ink);
-  text-shadow:0 2px 10px rgba(0,0,0,.9); background:rgba(4,8,14,.5);
-  border-left:2px solid var(--amber); padding:7px 16px;
+  text-shadow:0 2px 10px rgba(0,0,0,.9);
+  background:var(--v-panel); backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  border-left:2px solid var(--v-super); padding:7px 16px;
 }
-#hud-objective b{ color:var(--amber); margin-right:9px; }
+#hud-objective b{ color:var(--v-super); margin-right:9px; }
 
-#kill-feed{ position:absolute; top:70px; right:38px; display:flex; flex-direction:column; gap:5px; align-items:flex-end; }
+#kill-feed{ position:absolute; top:200px; right:46px; display:flex; flex-direction:column; gap:5px; align-items:flex-end; }
 .kf-line{
   font-family:var(--font-mono); font-size:11px; letter-spacing:.12em; color:var(--ink-dim);
   background:rgba(4,8,14,.55); padding:4px 10px; animation: kfIn .2s ease-out;
@@ -326,22 +426,23 @@ body.in-mission #vignette{ opacity:.55; }
 /* comms lines must clear the boss bar during the final mission */
 #fps-hud.boss-fight #subtitle{ bottom: 260px; }
 
-/* ---------- harness charges ---------- */
+/* ---------- harness charges ----------
+   Small chamfered pips beside the ability panel, so the two read as one
+   kit block rather than two unrelated widgets. */
 #harness{
-  /* clears the vitals stack, which is three rows tall now that dread sits under
-     the barrier — see #vitals above */
-  position:absolute; left:38px; bottom:188px; display:flex; align-items:center; gap:6px;
+  display:flex; align-items:center; gap:5px; padding-bottom:3px;
 }
 #harness[hidden]{ display:none; }
 #harness .h-label{
-  font-family:var(--font-mono); font-size:9px; letter-spacing:.28em; color:var(--ink-dim);
-  margin-right:4px;
+  font-family:var(--font-mono); font-size:7px; letter-spacing:var(--v-track);
+  color:rgba(207,227,238,.4); margin-left:3px;
 }
 #harness i{
-  width:16px; height:5px; background:var(--lime); display:block;
-  box-shadow:0 0 8px rgba(125,255,155,.55);
+  width:8px; height:14px; display:block;
+  background:var(--v-shield); box-shadow:0 0 7px rgba(157,123,255,.5);
+  clip-path:polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 0 100%);
 }
-#harness i.spent{ background:rgba(108,139,160,.35); box-shadow:none; }
+#harness i.spent{ background:rgba(207,227,238,.16); box-shadow:none; }
 
 /* ---------- death ---------- */
 #death{
@@ -377,7 +478,7 @@ body.in-mission #vignette{ opacity:.55; }
 
 /* squad readout during a mission */
 #squad-hud{
-  position:absolute; top:76px; left:38px; display:flex; flex-direction:column; gap:5px;
+  position:absolute; top:46px; left:46px; display:flex; flex-direction:column; gap:5px;
 }
 #squad-hud[hidden]{ display:none; }
 .sq-live{
@@ -386,19 +487,88 @@ body.in-mission #vignette{ opacity:.55; }
 }
 .sq-live b{ color:var(--c); font-weight:400; }
 .sq-live .sq-bar{ width:46px; height:4px; background:rgba(255,255,255,.14); display:block; }
-.sq-live .sq-bar i{ display:block; height:100%; background:var(--lime); }
+.sq-live .sq-bar i{ display:block; height:100%; background:var(--v-shield); }
 .sq-live.down b{ color:var(--blood); }
+
+/* which deck of the station you are on — top centre, under the objective */
+#deck-tag{
+  position:absolute; top:146px; left:50%; transform:translateX(-50%);
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.3em;
+  color:var(--v-super); background:var(--v-panel);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  padding:4px 12px; border:1px solid rgba(125,227,168,.32);
+  clip-path:polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
+}
+#deck-tag[hidden]{ display:none; }
+
+/* ---------- in-mission controls ----------
+   Bottom left, above the vitals. They exist because the two things a player
+   most often wants mid-mission — recapturing the mouse and changing the view
+   — were both keyboard-only, and one of them you could not do at all once
+   the pointer had escaped. */
+#hud-controls{
+  position:absolute; left:46px; bottom:132px; display:flex; flex-direction:column;
+  gap:5px; align-items:flex-start; pointer-events:none;
+}
+#hud-controls div{
+  display:flex; align-items:center; gap:8px;
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.18em;
+  color:rgba(207,227,238,.78);
+  text-shadow:0 1px 6px rgba(0,0,0,.85);
+}
+#hud-controls i{
+  font-style:normal; min-width:26px; text-align:center; padding:2px 5px;
+  border:1px solid rgba(157,123,255,.3); color:var(--v-shield);
+  background:var(--v-panel);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+}
+#hint-lock.locked i{ color:var(--v-shield); border-color:rgba(157,123,255,.55); }
+#hint-lock.free i{ color:var(--v-super); border-color:rgba(125,227,168,.5); }
+#hint-lock.blocked{ color:var(--blood); }
+#hint-pov.third{ color:var(--v-super); }
+#hint-pov.third i{ color:var(--v-super); border-color:rgba(125,227,168,.5); }
+
+/* the purse, top right above the contracts */
+#purse-hud{
+  position:absolute; right:46px; top:46px; display:flex; gap:14px;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.14em;
+}
+#purse-hud[hidden]{ display:none; }
+.pu{ color:#eafcff; font-variant-numeric:tabular-nums; }
+.pu i{ font-style:normal; color:var(--pc); margin-right:5px; letter-spacing:.2em; }
+
+/* live contracts, top right under the event panel's slot */
+#contract-hud{
+  position:absolute; right:46px; top:76px; width:250px; text-align:left;
+  display:flex; flex-direction:column; gap:6px;
+}
+#contract-hud[hidden]{ display:none; }
+.ch-row{
+  background:var(--v-panel); backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  border-left:2px solid var(--tc, var(--v-shield));
+  padding:6px 10px;
+}
+.ch-name{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; color:#eafcff;
+  display:flex; justify-content:space-between; gap:8px;
+}
+.ch-name i{ font-style:normal; color:var(--tc, var(--cyan)); font-variant-numeric:tabular-nums; }
+.ch-bar{ height:3px; background:rgba(255,255,255,.13); margin-top:5px; }
+.ch-bar i{ display:block; height:100%; background:var(--tc, var(--cyan)); transition:width .3s; }
+.ch-row.done{ border-left-color:var(--lime); }
+.ch-row.done .ch-name i{ color:var(--lime); }
 
 /* ---------- runner readout ---------- */
 /* Bottom-left, opposite the ammo block: the speed is the part you read at
    a glance, so it is the only thing here that is large. */
 #runner-panel{
-  position:absolute; left:38px; bottom:118px; text-align:left;
-  border-left:2px solid var(--cyan); padding:6px 0 6px 12px;
+  position:absolute; left:46px; bottom:210px; text-align:left;
+  border-left:2px solid var(--v-shield); padding:8px 0 8px 12px;
 }
 #runner-panel[hidden]{ display:none; }
 .rn-speed{
-  font-family:var(--font-mono); color:#eafcff; line-height:1;
+  font-family:var(--font-mono); color:#fff; line-height:1;
   font-size:30px; font-variant-numeric:tabular-nums;
   text-shadow:0 0 14px rgba(157,123,255,.55);
 }
@@ -412,18 +582,18 @@ body.in-mission #vignette{ opacity:.55; }
   background:rgba(255,255,255,.13); overflow:hidden;
 }
 .rn-cell i{
-  display:block; height:100%; width:100%; background:var(--cyan);
+  display:block; height:100%; width:100%; background:var(--v-shield);
   box-shadow:0 0 10px rgba(157,123,255,.6); transition:width .08s linear;
 }
-.rn-cell i.burning{ background:var(--amber); box-shadow:0 0 14px rgba(255,180,84,.85); }
+.rn-cell i.burning{ background:var(--v-super); box-shadow:0 0 14px rgba(125,227,168,.85); }
 .rn-cell i.dry{ background:var(--blood); box-shadow:none; }
 .rn-hint{
   font-family:var(--font-mono); font-size:8.5px; letter-spacing:.2em;
   color:rgba(108,139,160,.72); margin-top:6px;
 }
 #runner-name{
-  font-family:var(--font-mono); font-size:11px; letter-spacing:.2em;
-  color:var(--cyan); margin-top:7px;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:var(--v-track);
+  color:var(--v-shield); margin-top:7px;
 }
 #runner-kind{
   font-family:var(--font-mono); font-size:9px; letter-spacing:.2em;
@@ -432,8 +602,10 @@ body.in-mission #vignette{ opacity:.55; }
 
 /* ---------- public events ---------- */
 #event-panel{
-  position:absolute; right:38px; top:150px; width:260px;
-  background:rgba(4,8,14,.55); border-left:2px solid var(--amber);
+  position:absolute; right:46px; top:200px; width:260px;
+  background:var(--v-panel); backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  border-left:2px solid var(--v-super);
   padding:12px 14px; text-align:left;
 }
 #event-panel[hidden]{ display:none; }
@@ -442,8 +614,8 @@ body.in-mission #vignette{ opacity:.55; }
   font-family:var(--font-mono); font-size:9px; letter-spacing:.22em; color:var(--ink-dim);
   margin-bottom:7px;
 }
-.ev-tag{ color:var(--amber); }
-#event-dist{ color:var(--cyan); }
+.ev-tag{ color:var(--v-super); }
+#event-dist{ color:var(--v-shield); }
 #event-timer{ font-variant-numeric:tabular-nums; color:#eafcff; }
 #event-name{ font-size:14px; letter-spacing:.14em; color:#eafcff; }
 #event-line{
@@ -451,6 +623,7 @@ body.in-mission #vignette{ opacity:.55; }
 }
 .ev-track{ height:5px; background:rgba(255,255,255,.12); margin-top:9px; }
 .ev-track i{
-  display:block; height:100%; width:0%; background:linear-gradient(90deg,#ffb454,#7de3a8);
-  box-shadow:0 0 10px rgba(255,180,84,.6); transition:width .3s;
+  display:block; height:100%; width:0%;
+  background:linear-gradient(90deg,#7de3a8,#9d7bff);
+  box-shadow:0 0 10px rgba(125,227,168,.6); transition:width .3s;
 }

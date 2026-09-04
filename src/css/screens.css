@@ -5,6 +5,11 @@
 /* ---------- boot ---------- */
 #screen-boot{ align-items:center; justify-content:center; }
 .boot-wrap{ width:min(760px, 88vw); }
+.boot-skip{
+  margin-top:22px; font-family:var(--font-mono); font-size:10px; letter-spacing:.26em;
+  color:rgba(108,139,160,.65); animation: bootPulse 1.8s ease-in-out infinite;
+}
+@keyframes bootPulse{ 50%{ color:rgba(94,234,255,.75); } }
 #boot-log{
   font-family:var(--font-mono); font-size:13px; line-height:1.75; color:var(--cyan);
   margin:0; white-space:pre-wrap; text-shadow:0 0 8px rgba(157,123,255,.35);
@@ -273,6 +278,103 @@
 .item-pow{ float:right; font-family:var(--font-mono); font-size:11px; color:var(--amber); }
 .item-empty{ font-family:var(--font-mono); font-size:11px; color:rgba(108,139,160,.65); letter-spacing:.12em; }
 
+/* ---------- the purse ---------- */
+/* Two numbers, always in the same place, on every screen that spends them. */
+.purse-row{ display:flex; gap:20px; }
+.pr-c{ display:flex; align-items:baseline; gap:7px; }
+.pr-c b{
+  font-family:var(--font-mono); font-size:19px; color:var(--pc); font-weight:400;
+  font-variant-numeric:tabular-nums; text-shadow:0 0 12px color-mix(in srgb, var(--pc) 45%, transparent);
+}
+.pr-c i{ font-style:normal; font-family:var(--font-mono); font-size:9px;
+         letter-spacing:.22em; color:var(--ink-dim); }
+.arm-purse{ border-top:1px solid var(--line); padding-top:12px; }
+.ct-purse{ margin-top:14px; }
+
+/* the store, sharing the bench's row shape */
+.store{ border:1px solid var(--line); background:var(--panel); padding:14px 16px; }
+.br-cost{
+  display:block; margin-top:3px; color:var(--pc, #b98cff);
+  color:#b98cff; letter-spacing:.16em; font-size:9px;
+}
+.bench-row.blocked .br-cost{ color:rgba(108,139,160,.7); }
+#btn-reroll{ margin-top:4px; }
+
+/* ---------- the wardrobe ---------- */
+.wardrobe{ border:1px solid var(--line); background:var(--panel); padding:14px 16px; }
+.wd-set{
+  display:flex; align-items:baseline; gap:12px; margin:14px 0 9px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.24em; color:var(--cyan);
+}
+.wd-set em{ font-style:normal; font-family:var(--font-ui); font-size:11px;
+            letter-spacing:0; color:var(--ink-dim); }
+.wd-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(146px,1fr)); gap:8px; }
+.wd-card{
+  display:flex; flex-direction:column; gap:7px; padding:10px;
+  border:1px solid var(--line); background:rgba(94,234,255,.03); text-align:left;
+  transition:.15s;
+}
+.wd-card:hover:not(:disabled){ border-color:var(--line-hot); transform:translateY(-2px); }
+.wd-card.on{ border-color:var(--b); background:color-mix(in srgb, var(--b) 12%, transparent); }
+.wd-card.locked{ opacity:.55; }
+.wd-card:disabled{ cursor:none; }
+.wd-chip{ display:block; height:30px; position:relative; border:1px solid rgba(255,255,255,.14); }
+.wd-chip i{ position:absolute; inset:0; background:var(--a); display:block; }
+.wd-chip b{ position:absolute; right:0; top:0; bottom:0; width:34%; background:var(--b); display:block; }
+.wd-name{ font-size:11.5px; letter-spacing:.06em; color:#eafcff; line-height:1.3; }
+.wd-foot{ font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; color:var(--ink-dim); }
+.wd-card.on .wd-foot{ color:var(--b); }
+
+/* ---------- contracts ---------- */
+.ct-body{
+  padding:14px 6vw; display:grid; grid-template-columns:1fr 1fr;
+  grid-template-rows:minmax(0, 1fr); gap:22px; flex:1; min-height:0;
+}
+.ct-col{ display:flex; flex-direction:column; min-height:0; gap:10px; }
+.ct-head{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.26em; color:var(--amber);
+  border-bottom:1px solid var(--line); padding-bottom:8px;
+}
+#ct-active, #ct-board{ overflow:auto; display:flex; flex-direction:column; gap:9px; min-height:0; flex:1; }
+.ct-card{
+  border:1px solid var(--line); border-left:3px solid var(--tc, var(--ink-dim));
+  background:var(--panel); padding:12px 14px; position:relative;
+}
+.ct-card.done{ background:rgba(125,255,155,.07); border-color:rgba(125,255,155,.4); }
+.ct-name{
+  font-size:14px; letter-spacing:.16em; color:#eafcff;
+  display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+}
+.ct-tier{ font-family:var(--font-mono); font-size:9px; letter-spacing:.2em; color:var(--tc); }
+.ct-text{ font-size:12px; line-height:1.55; color:var(--ink-dim); margin-top:6px; }
+.ct-bar{ height:5px; background:rgba(255,255,255,.13); margin-top:10px; }
+.ct-bar i{ display:block; height:100%; background:var(--tc); box-shadow:0 0 8px var(--tc); }
+.ct-prog{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em;
+  color:var(--ink-dim); margin-top:5px;
+}
+.ct-card.done .ct-prog{ color:var(--lime); }
+.ct-pay{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.12em;
+  color:var(--lime); margin-top:8px;
+}
+.ct-btn{
+  margin-top:10px; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.18em;
+  padding:5px 12px; border:1px solid var(--line); background:transparent;
+  color:var(--cyan); transition:.14s;
+}
+.ct-btn:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(94,234,255,.12); }
+.ct-btn:disabled{ color:rgba(108,139,160,.55); border-color:rgba(108,139,160,.25); }
+.ct-btn.ghost{ color:var(--ink-dim); }
+.ct-btn.ghost:hover{ color:var(--blood); border-color:var(--blood); background:rgba(255,77,94,.1); }
+#btn-claim{ margin-top:4px; }
+@media (max-width: 900px){ .ct-body{ grid-template-columns:1fr; } }
+
+/* a vendor's reply on the toast rail */
+.toast.said{ border-left-color:var(--magenta); max-width:420px; }
+.toast.said b{ color:var(--magenta); font-weight:400; letter-spacing:.16em; }
+
 /* ---------- the runner bench ---------- */
 /* Sits under the runner list inside its own slot block, so fitting a part
    reads as something you do to the frame above it. */
@@ -329,6 +431,13 @@
 }
 .es-drop .d-name{ font-size:12.5px; color:#eafcff; }
 .es-drop .d-meta{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; color:var(--rc); margin-top:3px; }
+
+/* the station reads as somewhere to be rather than something to clear */
+.camp-row.station{ border-color:rgba(94,234,255,.45); background:rgba(94,234,255,.05); }
+.camp-row.station .camp-n{ color:var(--cyan); font-size:26px; }
+.camp-row.station:hover:not(:disabled){
+  border-color:var(--cyan); box-shadow:0 0 18px rgba(94,234,255,.3); }
+.camp-row.station .camp-diff{ visibility:hidden; }
 
 .camp-row.destination{ border-color:rgba(255,180,84,.4); }
 .camp-row.destination .camp-n{ color:var(--amber); font-size:24px; }

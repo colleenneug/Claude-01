@@ -10,18 +10,21 @@
   const { $, clamp } = SF.util;
 
   function create(character, missionIndex, onExit) {
-    /* A mission reference is either a campaign index or a destination id. */
-    const isPlanet = typeof missionIndex === 'string';
-    const mission = isPlanet ? SF.planets.asMission(SF.planets.byId(missionIndex))
+    /* A reference is a campaign index, a destination id, or the hub. */
+    const isHub = missionIndex === 'cradle';
+    const isPlanet = !isHub && typeof missionIndex === 'string';
+    const mission = isHub ? SF.station.asMission()
+                  : isPlanet ? SF.planets.asMission(SF.planets.byId(missionIndex))
                              : SF.campaign.byIndex(missionIndex);
     // destinations scale with the wave reached, not the mission number
-    let scale = SF.campaign.scaleFor(isPlanet ? 5 : missionIndex - 1);
+    let scale = SF.campaign.scaleFor(isHub ? 0 : isPlanet ? 5 : missionIndex - 1);
 
     const canvas = $('#gl');
     const eng = SF.engine.create(canvas);
     const { scene, camera } = eng;
 
-    const level = isPlanet ? SF.planets.buildArena(scene, mission.planet)
+    const level = isHub ? SF.station.build(scene)
+                : isPlanet ? SF.planets.buildArena(scene, mission.planet)
                            : SF.level.build(scene);
     const missionSpec = mission;
 
@@ -29,25 +32,89 @@
        changing the scene's light count recompiles every shader, so nothing
        ever adds or removes one after this. The boss arena is far larger than
        a corridor, so it gets a few more slots. */
-    const lights = SF.lights.create(scene, missionSpec.boss ? 12 : 8);
+    const lights = SF.lights.create(scene, missionSpec.boss || isHub ? 12 : 8);
     for (const e of level.emitters) lights.addStatic(e.x, e.y, e.z, e.colour, e.intensity, e.distance);
     const lightSpec = isPlanet ? mission.planet.light
-                               : { key: 0x9ec4dd, keyI: 0.6, hemiSky: 0x4a6479,
-                                   hemiGround: 0x141a22, hemiI: 0.95 };
+                     : isHub ? { key: 0xfff3e0, keyI: 2.4, hemiSky: 0x9fc4e8,
+                                 hemiGround: 0x2a3038, hemiI: 1.7 }
+                             : { key: 0x9ec4dd, keyI: 0.6, hemiSky: 0x4a6479,
+                                 hemiGround: 0x141a22, hemiI: 0.95 };
+
+    /* Image-based lighting: without it every metal surface reflects nothing
+       and reads as grey plastic. One prefiltered cube map, built at load,
+       free thereafter. See fps/envmap.js. */
+    const envTarget = SF.envmap.build(eng.renderer,
+      isHub ? 'station' : isPlanet ? (mission.planet.id === 'frozen' ? 'ice' : 'desert') : 'ship');
+    scene.environment = envTarget.texture;
+
+    /* An interior you can see across: the ship's corridor fog is far too
+       thick for a room seventy metres wide. */
+    if (isHub) scene.fog = new THREE.FogExp2(0x101927, 0.0035);
     scene.add(new THREE.HemisphereLight(lightSpec.hemiSky, lightSpec.hemiGround, lightSpec.hemiI));
-    const key = new THREE.DirectionalLight(lightSpec.key, lightSpec.keyI);
-    key.position.set(8, 20, -12);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    key.shadow.camera.near = 1; key.shadow.camera.far = 90;
-    key.shadow.camera.left = -45; key.shadow.camera.right = 45;
-    key.shadow.camera.top = 45; key.shadow.camera.bottom = -45;
-    scene.add(key);
+
+    /* ---------- the sun ----------
+       Low. A light overhead lays a shadow directly under whatever casts it
+       and the ground reads flat; drop it towards the horizon and every
+       crate, railing and rock throws a shadow several times its own length
+       across the floor, which is what makes a place look modelled rather
+       than painted. Twenty degrees of elevation: shadows about three times
+       the height of whatever casts them, while surfaces facing up still
+       catch enough sun to show their own shape. */
+    const sunDir = (isHub ? new THREE.Vector3(0.62, -0.36, 0.42)
+                          : new THREE.Vector3(-0.68, -0.34, -0.36)).normalize();
+
+    /* Cascaded shadow maps, so that low sun still resolves the edge of a
+       handrail at arm's length and the far side of the arena at once.
+       See fps/csm.js. */
+    const csm = SF.csm.create(scene, camera, {
+      cascades: 3,
+      near: 1,
+      far: isHub ? 190 : isPlanet ? 240 : 110,
+      mapSizes: [2048, 2048, 1024],
+      fade: 2.5,
+      colour: lightSpec.key,
+      intensity: lightSpec.keyI * 1.35,
+      direction: sunDir,
+      backOff: isPlanet ? 140 : 90
+    });
+
+    eng.setSun(sunDir, lightSpec.key, isPlanet ? 0.95 : 1.10);
+
+    if (isHub) {
+      /* A little fill from below, standing in for the light the Earth throws
+         up through the cupola and the windows. Added after the cascades so
+         it keeps its own directional slot past the cascade mask. */
+      const earthshine = new THREE.DirectionalLight(0x6fb6ff, 0.5);
+      earthshine.position.set(10, -20, 14);
+      scene.add(earthshine);
+      scene.add(new THREE.AmbientLight(0x2c3a4a, 0.9));
+    }
+
+    /* Airborne dust and the fog the composite integrates through. */
+    const atmosKey = isHub ? 'station'
+                   : isPlanet ? (mission.planet.id === 'frozen' ? 'ice' : 'desert')
+                   : 'ship';
+    const atmos = SF.atmos.create(scene, eng.renderer, atmosKey);
+    atmos.setSun(sunDir);
+    eng.setFog(atmos.fog);
+
+    /* One place decides how much the picture costs, and the shadow maps and
+       the dust follow it. Fires immediately with the current tier. */
+    eng.quality.onChange((q) => {
+      csm.setMapSizes(q.shadow);
+      atmos.setFraction(q.motes);
+    });
+
 
     const player = SF.player.create(camera, level);
     /* Each mission opens where the last one closed: at the near edge of its
        own sector, facing down the ship. */
     (function placeStart() {
+      if (isHub) {
+        player.state.pos.copy(level.playerStart);
+        player.state.yaw = Math.PI;      // facing down the arrivals tube
+        return;
+      }
       if (isPlanet) {
         player.state.pos.copy(level.playerStart);
         player.state.yaw = Math.PI;
@@ -58,6 +125,30 @@
       player.state.yaw = Math.PI;
     })();
     const hud = SF.hud.create();
+
+    /* Contracts are counters that live on the character, so they tick over
+       here and are still there when you get back to the station. */
+    SF.bounties.ensure(character);
+    SF.economy.ensure(character);
+    SF.cosmetics.ensure(character);
+    /* Everything that pays, pays here, so the run's takings are one number. */
+    const takings = { chits: 0, prime: 0 };
+    function pay(bundle) {
+      if (!bundle) return;
+      takings.chits += bundle.chits || 0;
+      takings.prime += bundle.prime || 0;
+      SF.economy.earn(character, bundle);
+      hud.purse(character.purse);
+    }
+    function bounty(track, amount) {
+      const filled = SF.bounties.note(character, track, amount);
+      if (filled) {
+        for (const b of filled) hud.killFeed('CONTRACT READY — ' + b.name);
+        SF.audio.sfx.objective();
+        SF.storage.save(character.slot, character);
+      }
+      hud.contracts(character.bounties);
+    }
 
     SF.gear.ensure(character);
     const armour = SF.gear.armourStats(character);
@@ -86,7 +177,7 @@
       dread: 0, rapture: 0, dreadIdle: 0, lastKillHead: false,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
-      wave: 0, onPad: false, extractT: 0, events: 0, parts: 0,
+      wave: 0, onPad: false, extractT: 0, events: 0, parts: 0, exitTo: null,
       spawned: false, bossBeaten: false,
       respawns: 0, maxRespawns: 0, deaths: 0, dying: false, respawnT: 0, started: false
     };
@@ -96,6 +187,10 @@
     let patrol = null;
     let runner = null;                  // the transit frame, on open ground only
     let chests = null;
+    let hub = null;                     // lifts and terminals, in the station
+    let crew = null;                    // the people standing in it
+    let body = null;                    // your own operative, in third person
+    let bodyWasOn = false;              // third person, put aside while riding
 
     const ai = SF.ai.create({
       scene, level, lights,
@@ -103,6 +198,7 @@
       onPlayerHit(amount, from) { hurtPlayer(amount * scale.damage, from); },
       onKill(e) {
         state.kills++;
+        bounty('kills', 1);
         // a destination's reference is an id, not a number — use its tier instead
         const tier = isPlanet ? 6 + state.wave : missionIndex;
         state.xp += Math.round(e.spec.xp * (1 + 0.1 * (tier - 1)));
@@ -168,6 +264,7 @@
       });
     }
     let netAccum = 0;
+    let rideMetres = 0;
 
     const pickups = SF.pickups.create({ scene, level, lights, hud });
 
@@ -185,13 +282,17 @@
       /* Riding, the shot leaves from a point on the camera's centre line
          rather than from the eye, so the crosshair still means something
          with the camera sitting behind the rider. */
-      originOverride: () => (runner && runner.mounted ? runner.shotOrigin() : null),
+      originOverride: () => (runner && runner.mounted ? runner.shotOrigin()
+                           : body ? body.shotOrigin() : null),
       spreadScale: () => (runner && runner.mounted
         ? (runner.boosting ? 3.2 : 1.8)      // one hand on the bars
         : null),
       /* Shots can press the boss's resonance nodes as well as hit enemies. */
       rayNode: (o, d, r) => (boss ? boss.rayNode(o, d, r) : null),
-      onNode: (i) => { if (boss) boss.hitNode(i); },
+      onNode: (i) => { if (boss) boss.hitNode(i); bounty('nodes', 1); },
+      onHeadshot: () => bounty('heads', 1),
+      // reported from inside, so a press on cooldown does not count
+      onAbility: () => bounty('ability', 1),
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
       onPhase(t) { state.phase = t; },
       damageScale: () => (state.rapture > 0 ? RAPTURE_DAMAGE : 1),
@@ -205,6 +306,14 @@
 
     function onMouseDown(e) {
       if (!state.running || state.paused) return;
+      /* Unlocked but able to lock: the click is asking for the mouse back,
+         not asking to shoot. Without this the only route to recapture was
+         through the pause menu. */
+      if (e.button === 0 && lockAvailable && document.pointerLockElement !== canvas) {
+        // ignore the click that arrives with the Escape that just freed us
+        if (performance.now() - releasedAt > 400) requestLock();
+        return;
+      }
       if (e.button === 0) firing = true;
       if (e.button === 2) weapon.setAds(true);
     }
@@ -219,22 +328,56 @@
       if (e.button === 2) weapon.setAds(false);
     }
     function onKeyDown(e) {
+      // Escape has its own capture-phase listener; see onEscape below
       if (!state.running) return;
       if (e.code === 'KeyF') extractHeld = true;
+      if (e.code === 'KeyT' && body) {
+        const on = body.toggle();
+        hud.pickup(on ? 'THIRD PERSON' : 'FIRST PERSON');
+        refreshControls();
+      }
       if (e.code === 'KeyV' && runner) runner.toggle();
       if (e.code === 'ShiftLeft' && runner) runner.setBoost(true);
       if (e.code === 'KeyR') weapon.reload();
       if (e.code === 'KeyQ' || e.code === 'KeyE') weapon.useAbility();
-      if (e.code === 'Escape' && !state.paused && !state.over) {
-        if (document.pointerLockElement === canvas) document.exitPointerLock();
-        else pause(true);
+    }
+
+    /* ---------- Escape ----------
+       While the pointer is locked, most browsers swallow Escape entirely and
+       release the lock themselves, so this never runs for that first press —
+       which is why it must not assume it did. It looks at what is actually
+       true right now: still locked, release; free but playing, pause; already
+       paused, resume. And it records the moment the pointer came free, so the
+       click that Escape's own key-up sometimes generates cannot immediately
+       take the mouse back and make Escape look broken. */
+    let releasedAt = 0;
+    let lastEscape = 0;
+
+    function onEscape() {
+      if (state.over) return;
+      // one press, one action, however many listeners saw it
+      const now = performance.now();
+      if (now - lastEscape < 250) return;
+      lastEscape = now;
+      if (document.pointerLockElement === canvas) {
+        releasedAt = performance.now();
+        document.exitPointerLock();
+        return;
       }
+      if (state.paused) { pause(false); requestLock(); return; }
+      if (state.running) pause(true);
     }
     function onContext(e) { e.preventDefault(); }
 
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('keydown', onKeyDown);
+    /* A second listener, in the capture phase, so Escape still lands if
+       anything downstream stops the event. onEscape is idempotent. */
+    function onEscapeCapture(e) {
+      if (e.code === 'Escape' || e.key === 'Escape') onEscape();
+    }
+    document.addEventListener('keydown', onEscapeCapture, true);
     canvas.addEventListener('contextmenu', onContext);
 
     /* Pointer lock needs a fresh user gesture, and an artifact viewer may
@@ -247,14 +390,19 @@
     function onLockChange() {
       const locked = document.pointerLockElement === canvas;
       if (locked) { hadLock = true; applyLookMode(); return; }
-      // losing a lock we actually held means the player pressed Escape
-      if (hadLock && state.running && !state.over) pause(true);
-      else applyLookMode();
+      releasedAt = performance.now();
+      /* Escape hands the mouse back, and that is all it does: the game keeps
+         running behind a free cursor, and clicking the view takes the mouse
+         again. Escape twice — once to release, once with the cursor free —
+         is what opens the pause menu, through onKeyDown. */
+      applyLookMode();
+      if (hadLock && state.running && !state.over) hud.pickup('MOUSE RELEASED — CLICK TO LOCK');
     }
 
     /* Locked when we hold the pointer, free-look (with edge steering) when
        lock is unavailable, off while paused or before engaging. */
     function applyLookMode() {
+      refreshControls();
       if (!state.running || state.paused || state.over) { player.setMode('off'); return; }
       player.setMode(document.pointerLockElement === canvas ? 'locked' : 'free');
     }
@@ -279,6 +427,28 @@
       setTimeout(() => { if (document.pointerLockElement !== canvas) applyLookMode(); }, 400);
     }
 
+    /* ---------- what the keys are doing ----------
+       Both of these are keyboard, not buttons: T changes the view, and the
+       mouse stays captured until Escape gives it back. The strip says which
+       state you are in, because neither is visible otherwise. */
+    const povHint = $('#hint-pov');
+    const lockHint = $('#hint-lock');
+
+    function refreshControls() {
+      if (!povHint || !lockHint) return;
+      const third = !!(body && body.enabled);
+      povHint.innerHTML = '<i>T</i>POV · ' + (third ? '3RD' : '1ST');
+      povHint.classList.toggle('third', third);
+
+      const locked = document.pointerLockElement === canvas;
+      lockHint.innerHTML = locked ? '<i>ESC</i>MOUSE LOCKED'
+                         : lockAvailable ? '<i>CLICK</i>TO LOCK THE MOUSE'
+                                         : '<i>—</i>MOUSE LOCK BLOCKED HERE';
+      lockHint.classList.toggle('locked', locked);
+      lockHint.classList.toggle('free', !locked && lockAvailable);
+      lockHint.classList.toggle('blocked', !lockAvailable);
+    }
+
     /* ---------- mission flow ---------- */
 
     /* Hostiles appear ahead of the player and at a distance, never beside or
@@ -298,7 +468,39 @@
       return best || { x: zone.cx, z: zone.z1 - 2 };
     }
 
+    /* The first-person weapon is drawn only when the camera is actually at
+       the eye — third person or a runner both take it away, and either can
+       end without the other. */
+    function refreshViewmodel() {
+      weapon.view.visible = !(body && body.enabled) && !(runner && runner.mounted);
+    }
+
     function beginMission() {
+      /* Third person is available on every mission, not just in the station:
+         the body is built once here and shown when the view is toggled. */
+      body = SF.body.create({
+        scene, camera, player, character,
+        onToggle: refreshViewmodel
+      });
+
+      if (mission.hub) {
+        hub = SF.hub.create({
+          level, player, hud, character,
+          onTerminal: (id) => { state.exitTo = id; complete(); }
+        });
+        crew = SF.crew.create({
+          scene, level, player, hud, character,
+          onVendor: (v) => { state.exitTo = v.id; complete(); }
+        });
+        hud.contracts(character.bounties);
+      hud.purse(character.purse);
+      hud.setWho(character.name);
+      hud.objective('<b>THE CRADLE</b> ' + mission.objective);
+        state.spawned = true;
+        SF.audio.sfx.objective();
+        return;
+      }
+
       const zone = level.zones[mission.zone];
       if (mission.patrol) {
         player.setSpeedScale(2.1);        // a kilometre of ground needs the legs
@@ -313,6 +515,8 @@
             state.parts += Object.keys(parts).reduce((a, k) => a + parts[k], 0);
             state.xp += 120 * tier;
             state.events++;
+            pay(SF.economy.PAY.event(tier));
+            bounty('events', 1);
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
             hud.say('CHOIRMASTER', name + ' resolved. Salvage is yours.', 4200);
@@ -323,7 +527,13 @@
           scene, camera, player, hud, lights, character,
           isOpenZone: true, baseSpeedScale: 2.1,
           // the first-person weapon has no place in a third-person view
-          onMount: (on) => { weapon.view.visible = !on; },
+          onMount: (on) => {
+            // the runner draws its own rider, and takes the chase camera with it
+            if (on) { bodyWasOn = body && body.enabled; if (body) body.setEnabled(false); }
+            else if (bodyWasOn && body) { body.setEnabled(true); bodyWasOn = false; }
+            refreshViewmodel();
+            refreshControls();
+          },
           onCrash: (dmg) => hurtPlayer(dmg, null)
         });
         chests = SF.chests.create({
@@ -342,15 +552,23 @@
             for (const k of Object.keys(parts)) {
               if (parts[k]) hud.killFeed('PARTS — ' + parts[k] + '× ' + SF.gear.partOf(k).name);
             }
+            pay(kind.tierBonus ? SF.economy.PAY.vault() : SF.economy.PAY.cache());
+            bounty('crates', 1);
             hud.say('CHOIRMASTER', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
 
+        hud.contracts(character.bounties);
+        hud.purse(character.purse);
+        hud.setWho(character.name);
         hud.objective('<b>PATROL</b> ' + mission.objective);
         state.spawned = true;
         SF.audio.sfx.objective();
         return;
       }
+      hud.contracts(character.bounties);
+      hud.purse(character.purse);
+      hud.setWho(character.name);
       hud.objective(`<b>${mission.n}/${SF.campaign.LAST}</b> ${mission.objective}`);
 
       if (hosting) {
@@ -369,7 +587,12 @@
           scene, level, lights, ai, hud, player,
           hpScale: scale.hp, dmgScale: scale.damage,
           onPlayerHit: (amt, from) => hurtPlayer(amt, from),
-          onDefeated: () => { if (!state.bossBeaten) { state.bossBeaten = true; complete(); } }
+          onDefeated: () => {
+            if (state.bossBeaten) return;
+            state.bossBeaten = true;
+            pay(SF.economy.PAY.boss());
+            complete();
+          }
         });
         hud.bossShow('THE FIRST LIGHT', 'FIRST TO SAY YES / TWO HUNDRED THOUSAND STRONG');
         hud.bossNodes(SF.boss.NODE_COLOUR);   // one definition, in fps/boss.js
@@ -482,6 +705,33 @@
       if (chests) chests.update(dt, extractHeld);
     }
 
+    /* The airlock is the way out. Everything else in the station is a place
+       to stand; QUEST is the one spot that ends the visit. */
+    function hubTick(dt) {
+      const inLock = Math.abs(player.position.x) < 8 && player.position.z > 40 &&
+                     player.position.y < 2;
+      if (inLock !== state.onPad) {
+        state.onPad = inLock;
+        if (!inLock) hud.pickup('');
+      }
+      if (!inLock) {
+        state.extractT = 0;
+        // a person you are standing in front of takes the key first
+        const talking = crew && crew.update(dt, extractHeld, camera);
+        if (!talking) hub.update(dt, extractHeld);
+        hud.deck(hub.deckOf());
+        return;
+      }
+      if (extractHeld) {
+        state.extractT += dt;
+        hud.pickup('CYCLING AIRLOCK ' + Math.max(0, (1.4 - state.extractT)).toFixed(1) + 's');
+        if (state.extractT >= 1.4) { state.exitTo = 'campaign'; complete(); }
+      } else {
+        state.extractT = 0;
+        hud.pickup('HOLD F — LEAVE THE CRADLE');
+      }
+    }
+
     function runBeats(dt) {
       state.stepT += dt;
       while (state.beatIdx < mission.beats.length && state.stepT >= mission.beats[state.beatIdx][0]) {
@@ -492,6 +742,7 @@
     }
 
     function checkCleared() {
+      if (mission.hub) return;                  // you leave the station, it does not end
       if (mission.boss) return;                 // the boss ends its own mission
       if (mission.patrol) return;               // a patrol ends when you leave
       if (!hosting) return;                     // the host calls the sector clear
@@ -506,8 +757,12 @@
       state.over = true;
       state.running = false;
       document.exitPointerLock();
+      /* You do not clear the station, you leave it. No debrief, no salvage —
+         straight back to whatever the terminal or the airlock asked for. */
+      if (mission.hub) { SF.storage.save(character.slot, character); destroy(); return; }
       const notes = SF.classes.grantXp(character, state.xp);
-      if (!isPlanet) SF.campaign.markCleared(character, missionIndex, state.time);
+      pay(isPlanet ? SF.economy.PAY.patrol(state.events) : SF.economy.PAY.mission(mission.n));
+      if (!isPlanet) { SF.campaign.markCleared(character, missionIndex, state.time); bounty('missions', 1); }
       else {
         character.expeditions = character.expeditions || {};
         const best = character.expeditions[missionIndex] || 0;
@@ -559,6 +814,8 @@
         ['RETURNS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE OFFERED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ...(state.parts ? [['RUNNER PARTS', state.parts]] : []),
+        ...(takings.chits ? [['CHITS', takings.chits]] : []),
+        ...(takings.prime ? [['PRIME', takings.prime]] : []),
         ['RANK', character.level]
       ].map(([k, v]) => `<div class="es-row"><span>${k}</span><b>${v}</b></div>`).join('') +
         notes.map((n) => `<div class="es-up">${n}</div>`).join('') +
@@ -587,12 +844,30 @@
     let last = performance.now();
     let raf = 0;
 
+    /* Everything the picture needs that is not the simulation: refit the
+       shadow cascades to wherever the camera is now, drift the dust, and
+       tell the composite how far down the sights the weapon is — depth of
+       field only costs a pass while you are actually aiming. */
+    function renderTick(dt, now) {
+      csm.update();
+      atmos.update(dt, camera.position, now / 1000);
+      eng.setAim(weapon.state.adsAmount || 0);
+    }
+
     function frame(now) {
       raf = requestAnimationFrame(frame);
-      const dt = Math.min(0.05, (now - last) / 1000);
+      /* Clamped at both ends. A frame timestamp is the time the frame began,
+         which after a long synchronous build can be *earlier* than the moment
+         we recorded as `last` — so the first dt after engaging is negative,
+         by about as long as the build took. Everything downstream then runs
+         backwards for one frame: the damage tint decays upward and the screen
+         comes up red, the clock steps back, and the controller integrates in
+         reverse. */
+      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
       last = now;
       if (!state.running || state.paused) {
         lights.update(dt, camera.position);
+        renderTick(dt, now);
         eng.render(now / 1000, state.damageFlash);
         return;
       }
@@ -602,6 +877,7 @@
         state.respawnT -= dt;
         if (state.respawnT <= 0) respawn();
         lights.update(dt, camera.position);
+        renderTick(dt, now);
         eng.render(now / 1000, Math.max(state.damageFlash, 0.75));
         return;
       }
@@ -664,10 +940,23 @@
         }
       }
 
-      if (runner) runner.update(dt);
+      if (runner) {
+        runner.update(dt);
+        if (runner.mounted) {
+          rideMetres += Math.hypot(player.state.vel.x, player.state.vel.z) * dt;
+          if (rideMetres >= 25) {
+            const whole = Math.floor(rideMetres);
+            bounty('ride', whole);
+            character.metresRidden = (character.metresRidden || 0) + whole;
+            rideMetres %= 1;
+          }
+        }
+      }
+      if (body) body.update(dt);
       pickups.update(dt, player.position, weapon);
       runBeats(dt);
       if (mission.patrol) patrolTick(dt);
+      if (mission.hub) hubTick(dt);
       if (boss) boss.update(dt, player.position);
       checkCleared();
 
@@ -675,6 +964,7 @@
       hud.updateCrosshair(dt, base + Math.hypot(player.state.vel.x, player.state.vel.z) * 1.6);
       hud.refreshAbility(weapon.state);
 
+      renderTick(dt, now);
       eng.render(now / 1000, state.damageFlash);
     }
 
@@ -705,6 +995,13 @@
       state.started = true;
       weapon.prewarm(eng.renderer, scene, camera);
       ai.prewarm(eng.renderer, scene, camera);
+      /* House PBR rules, applied to the finished world in one sweep rather
+         than trusted to every call site that ever made a material: anything
+         authored as metal is pinned to 0.85 / 0.25 and given a grain, and
+         every texture gets the driver's full anisotropic filtering. Run here
+         rather than at build time so it also catches the crew, the lifts and
+         the transit frame. See fps/shading.js. */
+      SF.shading.enforce(scene, { aniso: 0.4 });
       eng.renderer.compile(scene, camera);
       hud.setVisible(true);
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
@@ -737,6 +1034,10 @@
       cancelAnimationFrame(raf);
       raf = 0;
       player.setSurge(1);            // never strand rapture's speed bonus
+      /* Contracts tick over during a mission but are only banked when
+         something else happens to save. Leaving any way at all — abandoning,
+         a last death, or walking out of the station — has to keep them. */
+      if (character.slot != null) SF.storage.save(character.slot, character);
       canvas.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('keydown', onKeyDown);
@@ -745,10 +1046,15 @@
       awaitingEngage = false;
       document.removeEventListener('pointerdown', onEngageInput);
       document.removeEventListener('keydown', onEngageInput);
+      document.removeEventListener('keydown', onEscapeCapture, true);
       document.removeEventListener('pointerlockchange', onLockChange);
       pickups.destroy();
       if (runner) runner.destroy();
       if (chests) chests.destroy();
+      if (body) body.destroy();
+      if (hub) hub.destroy();
+      if (crew) crew.destroy();
+      hud.contracts([]);
       hud.runner(null);
       if (patrol) patrol.destroy();
       if (boss) boss.destroy();
@@ -762,16 +1068,25 @@
         if (o.geometry) o.geometry.dispose();
         if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
       });
+      scene.environment = null;
+      envTarget.dispose();
+      atmos.dispose();
+      csm.dispose();
+      eng.dispose();
       eng.renderer.dispose();
       SF.materials.reset();          // the traverse above disposed the shared cache
+      SF.hostiles.reset();           // shared rig geometry outlives any one enemy
       hud.setVisible(false);
-      onExit();
+      onExit(state.exitTo);
     }
 
     return { start, engage, destroy, pause, requestLock, state, player, weapon, ai, level,
              engine: eng, hurt: hurtPlayer, pickupsRef: pickups, remotesRef: remotes,
              get patrolRef() { return patrol; },
              get runnerRef() { return runner; },
+             get hubRef() { return hub; },
+             get crewRef() { return crew; },
+             get bodyRef() { return body; },
              get chestsRef() { return chests; },
              get bossRef() { return boss; } };
   }

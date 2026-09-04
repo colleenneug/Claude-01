@@ -21,7 +21,11 @@
   function texture(cv, repeat, srgb) {
     const t = new THREE.CanvasTexture(cv);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    /* Anisotropic filtering. A floor texture seen at a grazing angle —
+       which is most of the floor, most of the time — collapses to grey mush
+       a few metres out under plain trilinear filtering; this is what keeps
+       the plating readable all the way to the far wall. */
+    t.anisotropy = (SF.shading && SF.shading.maxAnisotropy) || 8;
     if (srgb) t.encoding = THREE.sRGBEncoding;   // albedo only; data maps stay linear
     if (repeat) t.repeat.set(repeat[0], repeat[1]);
     return t;
@@ -141,7 +145,7 @@
     grime(r, S, 22, 0.5);
     noise(r, S, 40);
 
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       map: texture(alb, o.repeat, true),
       normalMap: texture(heightToNormal(blur(hgt, 2), 1.3), o.repeat),
       roughnessMap: texture(rgh, o.repeat),
@@ -149,6 +153,11 @@
       roughness: 1.0,
       normalScale: new THREE.Vector2(0.8, 0.8)
     });
+    /* A roughness map multiplies the scalar, so anything retargeting this
+       material later has to know what the map averages. */
+    mat.userData.roughMean = o.rough;
+    mat.userData.pbr = 'metal';
+    return mat;
   }
 
   /* ---------- deck grating ---------- */
@@ -170,12 +179,121 @@
     for (let x = 0; x < S; x += bar + gap) h.fillRect(x, 0, bar, S);
     for (let y = 0; y < S; y += (bar + gap) * 2) h.fillRect(0, y, S, 8);
 
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       map: texture(alb, o.repeat, true),
       normalMap: texture(heightToNormal(blur(hgt, 2), 1.8), o.repeat),
       metalness: 0.9, roughness: 0.55,
       normalScale: new THREE.Vector2(1.0, 1.0)
     });
+    mat.userData.pbr = 'metal';
+    return mat;
+  }
+
+  /* ---------- bare stone ----------
+     Rock is the opposite of hull plating: no panels, no seams, almost no
+     reflection, and all of its character in the normal map. The albedo is
+     deliberately flat and mottled — a rock face that reads as detailed
+     because of the light falling across it, not because of its colour. */
+  function stone(tint, opts) {
+    const o = Object.assign({ size: 512, repeat: [1, 1], rough: 0.94,
+                              bump: 2.6, grain: 22 }, opts || {});
+    const S = o.size;
+    const base = new THREE.Color(tint);
+
+    const alb = canvas(S), a = alb.getContext('2d');
+    a.fillStyle = '#' + base.getHexString(); a.fillRect(0, 0, S, S);
+    // broad mineral mottling, then finer flecks over the top
+    for (const [count, min, max, alpha] of [[70, S * 0.06, S * 0.20, 0.10],
+                                            [260, 2, 14, 0.16]]) {
+      for (let i = 0; i < count; i++) {
+        const r = min + Math.random() * (max - min);
+        const l = (Math.random() - 0.5) * 0.5;
+        const c = base.clone().offsetHSL(0, (Math.random() - 0.5) * 0.06, l * 0.35);
+        a.fillStyle = `rgba(${c.r * 255 | 0},${c.g * 255 | 0},${c.b * 255 | 0},${alpha})`;
+        a.beginPath(); a.arc(Math.random() * S, Math.random() * S, r, 0, Math.PI * 2); a.fill();
+      }
+    }
+    noise(a, S, o.grain);
+
+    /* Height: overlapping blobs at three scales. Fractal, so the normal map
+       has both the shape of the outcrop and the pitting in its surface. */
+    const hgt = canvas(S), h = hgt.getContext('2d');
+    h.fillStyle = '#808080'; h.fillRect(0, 0, S, S);
+    for (const [count, min, max, alpha] of [[90, S * 0.05, S * 0.18, 0.20],
+                                            [340, 4, 22, 0.24],
+                                            [1200, 1, 5, 0.30]]) {
+      for (let i = 0; i < count; i++) {
+        const r = min + Math.random() * (max - min);
+        const up = Math.random() > 0.5;
+        h.fillStyle = up ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`;
+        h.beginPath(); h.arc(Math.random() * S, Math.random() * S, r, 0, Math.PI * 2); h.fill();
+      }
+    }
+    noise(h, S, 26);
+
+    const rgh = canvas(S), r = rgh.getContext('2d');
+    const v = o.rough * 255 | 0;
+    r.fillStyle = `rgb(${v},${v},${v})`; r.fillRect(0, 0, S, S);
+    noise(r, S, 30);
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: texture(alb, o.repeat, true),
+      normalMap: texture(heightToNormal(blur(hgt, 1), o.bump), o.repeat),
+      roughnessMap: texture(rgh, o.repeat),
+      metalness: 0.0,              // stone is a dielectric; it must not be metal
+      roughness: 1.0,
+      normalScale: new THREE.Vector2(1.5, 1.5)
+    });
+    mat.userData.roughMean = o.rough;
+    mat.userData.pbr = 'rock';
+    return mat;
+  }
+
+  /* A tight, tileable grain used as a detail normal over both terrain
+     layers. Its whole job is to survive being magnified: whatever the
+     layer maps are doing, standing on the ground still shows grit. */
+  function detailNormal(size, strength) {
+    const S = size || 256;
+    const hgt = canvas(S), h = hgt.getContext('2d');
+    h.fillStyle = '#808080'; h.fillRect(0, 0, S, S);
+    for (let i = 0; i < 2600; i++) {
+      const r = 0.6 + Math.random() * 2.6;
+      h.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
+      h.beginPath(); h.arc(Math.random() * S, Math.random() * S, r, 0, Math.PI * 2); h.fill();
+    }
+    noise(h, S, 40);
+    return texture(heightToNormal(blur(hgt, 1), strength || 2.2), [1, 1]);
+  }
+
+  /* ---------- layered terrain ----------
+     Two full material layers plus a detail normal, blended per vertex.
+     One repeating ground texture is visibly wallpaper from any height;
+     two layers under a slow noise mask break the tile up into patches of
+     different stuff, and the detail normal puts the microscopic surface
+     back at close range. The blending itself lives in the shader patch in
+     fps/shading.js; this only builds the maps. */
+  function layeredGround(opts) {
+    const o = Object.assign({ baseTint: '#6b5545', layerTint: '#8a7460',
+                              repeat: [1, 1], layerScale: 0.31,
+                              detailRepeat: 7, detailScale: 0.85 }, opts || {});
+
+    const A = stone(o.baseTint, { repeat: o.repeat, rough: 0.92, bump: 2.4, grain: 16 });
+    const B = stone(o.layerTint, { repeat: [1, 1], rough: 0.82, bump: 3.1, grain: 14 });
+
+    A.userData.layered = {
+      map: B.map, normalMap: B.normalMap, roughnessMap: B.roughnessMap,
+      detailNormal: detailNormal(256, 2.4),
+      /* Both repeats multiply the base UV, which three has already scaled by
+         A's own repeat — so these are ratios, not tile counts. */
+      repeat: new THREE.Vector2(o.layerScale, o.layerScale),
+      detailRepeat: new THREE.Vector2(o.detailRepeat, o.detailRepeat),
+      detailScale: o.detailScale
+    };
+    A.userData.pbr = 'rock';
+    A.needsUpdate = true;
+    // B's own material shell is not used; only its maps are
+    B.dispose();
+    return A;
   }
 
   /* ---------- painted bulkhead with hazard striping ---------- */
@@ -213,6 +331,136 @@
     });
   }
 
+  /* ---------- combat armour ----------
+     What separates armour from a coloured capsule is wear. A plate that
+     has been shot at has paint missing along every edge and corner, bare
+     metal showing through the chips, and grime running down from each
+     seam. The metalness map is the part that matters most: the painted
+     areas are a dielectric and the chips are metal, so the same surface
+     has two completely different responses to light instead of one
+     averaged compromise. */
+  function armourPlate(tint, opts) {
+    const o = Object.assign({ size: 256, repeat: [1, 1], panel: 64,
+                              wear: 1, rough: 0.55 }, opts || {});
+    const S = o.size, P = o.panel;
+    const base = new THREE.Color(tint);
+    const hex = (c) => '#' + c.getHexString();
+    const bare = base.clone().lerp(new THREE.Color(0xb9c0c8), 0.72);
+
+    const alb = canvas(S), a = alb.getContext('2d');
+    a.fillStyle = hex(base); a.fillRect(0, 0, S, S);
+
+    // plate-to-plate colour drift, so no two panels are the same shade
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        const c = base.clone().offsetHSL((Math.random() - 0.5) * 0.02, 0,
+                                         (Math.random() - 0.5) * 0.10);
+        a.fillStyle = hex(c); a.fillRect(x, y, P, P);
+      }
+    }
+
+    // seams between plates, darkened by whatever has collected in them
+    a.strokeStyle = 'rgba(8,9,12,0.75)'; a.lineWidth = 2;
+    for (let i = 0; i <= S; i += P) {
+      a.beginPath(); a.moveTo(i, 0); a.lineTo(i, S); a.stroke();
+      a.beginPath(); a.moveTo(0, i); a.lineTo(S, i); a.stroke();
+    }
+
+    /* Edge wear: paint goes first where the plate is handled or hit, which
+       is along its border. Drawn as bare metal dashes hugging the seams. */
+    a.strokeStyle = hex(bare);
+    for (let i = 0; i <= S; i += P) {
+      for (const [horiz, off] of [[true, 2], [true, -2], [false, 2], [false, -2]]) {
+        a.lineWidth = 1 + Math.random() * 1.6;
+        a.setLineDash([3 + Math.random() * 14, 6 + Math.random() * 22]);
+        a.globalAlpha = 0.35 + Math.random() * 0.4;
+        a.beginPath();
+        if (horiz) { a.moveTo(i + off, 0); a.lineTo(i + off, S); }
+        else { a.moveTo(0, i + off); a.lineTo(S, i + off); }
+        a.stroke();
+      }
+    }
+    a.setLineDash([]); a.globalAlpha = 1;
+
+    // chips and scrapes across the faces
+    const chips = Math.round(120 * o.wear);
+    for (let i = 0; i < chips; i++) {
+      const x = Math.random() * S, y = Math.random() * S;
+      const w = 1 + Math.random() * 7, hgt2 = 1 + Math.random() * 4;
+      a.fillStyle = hex(bare); a.globalAlpha = 0.3 + Math.random() * 0.55;
+      a.beginPath(); a.ellipse(x, y, w, hgt2, Math.random() * 3.14, 0, Math.PI * 2); a.fill();
+    }
+    a.globalAlpha = 1;
+    grime(a, S, 16, 0.4);
+    noise(a, S, 14);
+
+    /* Height: plates stand proud, seams cut in, bolt heads sit on top. */
+    const hgt = canvas(S), h = hgt.getContext('2d');
+    h.fillStyle = '#8c8c8c'; h.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        h.fillStyle = 'rgba(255,255,255,0.30)';
+        h.fillRect(x + 3, y + 3, P - 6, P - 6);       // the raised plate face
+      }
+    }
+    h.strokeStyle = '#1e1e1e'; h.lineWidth = 3;
+    for (let i = 0; i <= S; i += P) {
+      h.beginPath(); h.moveTo(i, 0); h.lineTo(i, S); h.stroke();
+      h.beginPath(); h.moveTo(0, i); h.lineTo(S, i); h.stroke();
+    }
+    h.fillStyle = '#e8e8e8';
+    for (let y = 0; y < S; y += P) {
+      for (let x = 0; x < S; x += P) {
+        for (const [bx, by] of [[9, 9], [P - 9, 9], [9, P - 9], [P - 9, P - 9]]) {
+          h.beginPath(); h.arc(x + bx, y + by, 2.6, 0, Math.PI * 2); h.fill();
+        }
+      }
+    }
+    noise(h, S, 8);
+
+    /* Metalness: paint is a dielectric, the chips underneath are not. Redrawn
+       rather than derived, so the chips line up with the albedo exactly. */
+    const met = canvas(S), mt = met.getContext('2d');
+    mt.fillStyle = 'rgb(38,38,38)'; mt.fillRect(0, 0, S, S);   // painted: ~0.15
+    mt.fillStyle = 'rgb(255,255,255)';
+    mt.globalAlpha = 0.85;
+    for (let i = 0; i <= S; i += P) {
+      for (const off of [2, -2]) {
+        mt.lineWidth = 2; mt.strokeStyle = 'rgba(255,255,255,0.7)';
+        mt.setLineDash([6, 16]);
+        mt.beginPath(); mt.moveTo(i + off, 0); mt.lineTo(i + off, S); mt.stroke();
+        mt.beginPath(); mt.moveTo(0, i + off); mt.lineTo(S, i + off); mt.stroke();
+      }
+    }
+    mt.setLineDash([]);
+    for (let i = 0; i < chips; i++) {
+      mt.beginPath();
+      mt.ellipse(Math.random() * S, Math.random() * S, 1 + Math.random() * 7,
+                 1 + Math.random() * 4, Math.random() * 3.14, 0, Math.PI * 2);
+      mt.fill();
+    }
+    mt.globalAlpha = 1;
+
+    const rgh = canvas(S), r = rgh.getContext('2d');
+    const v = o.rough * 255 | 0;
+    r.fillStyle = `rgb(${v},${v},${v})`; r.fillRect(0, 0, S, S);
+    grime(r, S, 14, 0.45);
+    noise(r, S, 34);
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: texture(alb, o.repeat, true),
+      normalMap: texture(heightToNormal(blur(hgt, 1), 1.5), o.repeat),
+      roughnessMap: texture(rgh, o.repeat),
+      metalnessMap: texture(met, o.repeat),
+      metalness: 1.0,
+      roughness: 1.0,
+      normalScale: new THREE.Vector2(1.0, 1.0)
+    });
+    mat.userData.roughMean = o.rough;
+    mat.userData.pbr = 'metal';
+    return mat;
+  }
+
   /* ---------- glowing strip / screen ---------- */
   function emissive(color, intensity) {
     return new THREE.MeshStandardMaterial({
@@ -228,17 +476,34 @@
     if (cache.has(name)) return cache.get(name);
     let m;
     switch (name) {
-      case 'hull':     m = hullPlate({ base: '#59636f', repeat: [2, 1] }); break;
-      case 'hullDark': m = hullPlate({ base: '#3d4550', dark: '#252b33', rough: 0.7, repeat: [2, 1] }); break;
-      case 'ceiling':  m = hullPlate({ base: '#454c56', cell: 96, repeat: [3, 3] }); break;
-      case 'floor':    m = grating({ repeat: [4, 4] }); break;
-      case 'deck':     m = hullPlate({ base: '#4d545e', cell: 96, rough: 0.7, repeat: [4, 4] }); break;
-      case 'hazard':   m = painted('#484a54', { hazard: true, repeat: [2, 1] }); break;
+      /* Every one of these repeats exactly once: the geometry sets the tiling
+         now (see tiledBox), so a per-material repeat would multiply on top of
+         it and the density would depend on which material a wall happened to
+         use rather than on how big the wall is. */
+      case 'hull':     m = hullPlate({ base: '#59636f', repeat: [1, 1] }); break;
+      case 'hullDark': m = hullPlate({ base: '#3d4550', dark: '#252b33', rough: 0.7, repeat: [1, 1] }); break;
+      case 'ceiling':  m = hullPlate({ base: '#454c56', cell: 96, repeat: [1, 1] }); break;
+      case 'floor':    m = grating({ repeat: [1, 1] }); break;
+      case 'deck':     m = hullPlate({ base: '#4d545e', cell: 96, rough: 0.7, repeat: [1, 1] }); break;
+      case 'hazard':   m = painted('#484a54', { hazard: true, repeat: [1, 1] }); break;
       case 'panelRed': m = painted('#5a2b2b', { repeat: [1, 1] }); break;
       case 'crate':    m = painted('#67707c', { repeat: [1, 1] }); break;
       case 'pipe':     m = new THREE.MeshStandardMaterial({ color: 0x6a707a, metalness: 0.95, roughness: 0.35 }); break;
       case 'glass':    m = new THREE.MeshStandardMaterial({ color: 0x0a1a22, metalness: 0.1, roughness: 0.05,
                             transparent: true, opacity: 0.35 }); break;
+      /* The station sizes its own tiling per surface (see tiledBox), so its
+         materials repeat exactly once and let the geometry decide. */
+      case 'stnHull':  m = hullPlate({ base: '#6d7783', repeat: [1, 1] }); break;
+      case 'stnDark':  m = hullPlate({ base: '#48505b', dark: '#2b323b', rough: 0.68, repeat: [1, 1] }); break;
+      case 'stnDeck':  m = hullPlate({ base: '#5b636e', cell: 96, rough: 0.62, repeat: [1, 1] }); break;
+      case 'stnGrate': m = grating({ repeat: [1, 1] }); break;
+      case 'stnPaint': m = painted('#7a828e', { repeat: [1, 1] }); break;
+      /* The cupola's panes are the one window in the game you look at rather
+         than through, so they are much clearer than a bulkhead port. */
+      case 'stnPane':  m = new THREE.MeshStandardMaterial({ color: 0xbcd8ea, metalness: 0.1,
+                            roughness: 0.08, transparent: true, opacity: 0.1,
+                            envMapIntensity: 0.12, depthWrite: false, side: THREE.DoubleSide });
+                       break;
       default:         m = new THREE.MeshStandardMaterial({ color: 0x808080 });
     }
     cache.set(name, m);
@@ -250,12 +515,48 @@
      mission builds fresh ones instead of reusing disposed objects. */
   function reset() {
     for (const m of cache.values()) {
-      for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k]) m[k].dispose();
+      for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) if (m[k]) m[k].dispose();
+      const L = m.userData.layered;
+      if (L) for (const t of [L.map, L.normalMap, L.roughnessMap, L.detailNormal]) if (t) t.dispose();
       m.dispose();
     }
     cache.clear();
   }
 
+  /* ---------- texel density ----------
+     A material carries one repeat setting, shared by every mesh using it. So
+     a plate texture tuned for a two-metre crate is smeared across a sixty-
+     metre deck, and the deck reads as a painted backdrop rather than as
+     plating. Rewriting a box's own UVs fixes it per surface: every face is
+     scaled so one texture tile covers the same real distance everywhere.
+
+     Face order in a BoxGeometry is +X, -X, +Y, -Y, +Z, -Z, four vertices
+     each at one segment, and each face's U and V run along a different pair
+     of the box's dimensions. */
+  function tileUVs(geo, w, h, d, tile) {
+    const uv = geo.attributes.uv;
+    if (!uv || uv.count !== 24) return geo;
+    const T = tile || 2;
+    const spans = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) {
+      const [su, sv] = spans[f];
+      const ru = Math.max(1, Math.round(su / T));
+      const rv = Math.max(1, Math.round(sv / T));
+      for (let i = 0; i < 4; i++) {
+        const k = f * 4 + i;
+        uv.setXY(k, uv.getX(k) * ru, uv.getY(k) * rv);
+      }
+    }
+    uv.needsUpdate = true;
+    return geo;
+  }
+
+  /* A box whose texture covers a fixed real-world distance per tile. */
+  function tiledBox(w, h, d, tile) {
+    return tileUVs(new THREE.BoxGeometry(w, h, d), w, h, d, tile);
+  }
+
   SF.materials = { get, hullPlate, grating, painted, emissive, heightToNormal,
-                   reset, canvasOf: canvas };
+                   stone, detailNormal, layeredGround, armourPlate,
+                   tileUVs, tiledBox, reset, canvasOf: canvas };
 })(window.SF);
