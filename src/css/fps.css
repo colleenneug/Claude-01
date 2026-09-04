@@ -56,9 +56,12 @@ body.in-mission #vignette{ opacity:.55; }
    40x40 for a kit panel with a 45-degree corner cut, 3rem over 1.2rem for
    the ammunition, and a 1px frame inset 20px from the edge. */
 :root{
-  --v-shield: #4FE1D5;
+  /* The Vanguard HUD's measurements are base's; its colours are the Deep's.
+     Gold is deliberately absent — it belongs to the Pale, i.e. to the things
+     you are shooting at, so the interface must not share it. */
+  --v-shield: #9d7bff;
   --v-health: #FFFFFF;
-  --v-super:  #F3A01C;
+  --v-super:  #7de3a8;
   --v-panel:  rgba(10, 15, 20, 0.45);
   --v-track:  .15em;
 }
@@ -66,7 +69,7 @@ body.in-mission #vignette{ opacity:.55; }
 /* the container frame */
 #hud-frame{
   position:absolute; inset:20px;
-  border:1px solid rgba(79,225,213,.22);
+  border:1px solid rgba(157,123,255,.22);
   pointer-events:none;
 }
 #hud-frame::before, #hud-frame::after{
@@ -107,12 +110,39 @@ body.in-mission #vignette{ opacity:.55; }
   transition:width .18s linear;
 }
 .vt-seg.health i{ background:var(--v-health); box-shadow:0 0 8px rgba(255,255,255,.55); }
-.vt-seg.shield i{ background:var(--v-shield); box-shadow:0 0 8px rgba(79,225,213,.6); }
+.vt-seg.shield i{ background:var(--v-shield); box-shadow:0 0 8px rgba(157,123,255,.6); }
 #fps-hud.critical .vt-seg.health i{
   background:var(--blood); box-shadow:0 0 10px rgba(255,77,94,.7);
   animation:vtPulse .9s ease-in-out infinite;
 }
 @keyframes vtPulse{ 50%{ opacity:.55; } }
+
+/* ---- the dread meter ----
+   A fourth track under the vitals, in the same 300px measure. It is the one
+   part of the HUD that is allowed to get loud: at a full meter it pulses, and
+   in Rapture it goes pale and bleeds light. */
+.vt-dread{
+  width:300px; height:4px; margin-top:7px;
+  background:rgba(255,255,255,.13); overflow:hidden;
+}
+#v-dread{
+  display:block; height:100%; width:0%;
+  background:linear-gradient(90deg,#5a2fb0,#9d7bff);
+  box-shadow:0 0 8px rgba(157,123,255,.6);
+  transition:width .18s linear;
+}
+#fps-hud.dread-full #v-dread{ animation:dreadReady .7s ease-in-out infinite; }
+@keyframes dreadReady{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.7); } }
+
+#fps-hud.rapture #v-dread{
+  background:linear-gradient(90deg,#9d7bff,#e8ddff);
+  box-shadow:0 0 18px rgba(200,170,255,.95), 0 0 44px rgba(157,123,255,.5);
+}
+#fps-hud.rapture .vt-head #v-dread-text{ color:#e8ddff; }
+
+@media (prefers-reduced-motion: reduce){
+  #fps-hud.dread-full #v-dread{ animation:none; }
+}
 
 /* ---- kit: the ability panel and the harness charges, bottom left ---- */
 #kit{
@@ -128,7 +158,7 @@ body.in-mission #vignette{ opacity:.55; }
 }
 .kit-slot i{
   position:absolute; left:0; right:0; bottom:0; height:0;
-  background:rgba(79,225,213,.22); transition:height .2s linear;
+  background:rgba(157,123,255,.22); transition:height .2s linear;
 }
 .kit-glyph{ font-size:15px; line-height:1; color:var(--v-shield); font-weight:400; }
 .kit-label{
@@ -140,10 +170,10 @@ body.in-mission #vignette{ opacity:.55; }
   color:rgba(207,227,238,.32);
 }
 #ability.ready .kit-slot{
-  border-color:var(--v-super); box-shadow:0 0 14px rgba(243,160,28,.5);
+  border-color:var(--v-super); box-shadow:0 0 14px rgba(125,227,168,.5);
 }
 #ability.ready .kit-glyph{ color:var(--v-super); }
-#ability.ready .kit-slot i{ background:rgba(243,160,28,.26); }
+#ability.ready .kit-slot i{ background:rgba(125,227,168,.26); }
 #ability.ready .kit-label{ color:var(--v-super); }
 
 /* ---- ammunition: 3rem over 1.2rem, split by a rule at 60 degrees ---- */
@@ -246,7 +276,7 @@ body.in-mission #vignette{ opacity:.55; }
 #end-sub{ margin:0 0 26px; font-size:14px; color:var(--ink-dim); line-height:1.7; }
 #end-stats{ text-align:left; margin-bottom:26px; }
 .es-row{ display:flex; justify-content:space-between; padding:8px 2px;
-  border-bottom:1px dashed rgba(94,234,255,.16); font-family:var(--font-mono); font-size:12px;
+  border-bottom:1px dashed rgba(157,123,255,.16); font-family:var(--font-mono); font-size:12px;
   color:var(--ink-dim); letter-spacing:.1em; }
 .es-row b{ color:#eafcff; font-weight:400; }
 .es-up{ margin-top:10px; font-family:var(--font-mono); font-size:12px; color:var(--lime);
@@ -260,7 +290,7 @@ body.in-mission #vignette{ opacity:.55; }
 #loading[hidden]{ display:none; }
 #loading .lo-title{ font-size:20px; letter-spacing:.34em; color:var(--cyan); margin-bottom:14px; }
 #loading .lo-step{ font-family:var(--font-mono); font-size:12px; letter-spacing:.16em; color:var(--ink-dim); }
-#loading .lo-bar{ width:min(420px,70vw); height:3px; background:rgba(94,234,255,.14); margin:20px auto 0; }
+#loading .lo-bar{ width:min(420px,70vw); height:3px; background:rgba(157,123,255,.14); margin:20px auto 0; }
 #loading .lo-bar i{ display:block; height:100%; width:0%; background:var(--cyan);
   box-shadow:0 0 12px var(--cyan); transition:width .25s ease; }
 #loading .lo-hint{ margin-top:26px; font-family:var(--font-mono); font-size:11px;
@@ -316,11 +346,11 @@ body.in-mission #vignette{ opacity:.55; }
   transition:width .25s cubic-bezier(.2,.8,.3,1);
 }
 /* while the shield is up the bar reads as unavailable, not as damage */
-#boss-bar.shielded .boss-track{ border-color:rgba(94,234,255,.7); }
+#boss-bar.shielded .boss-track{ border-color:rgba(157,123,255,.7); }
 #boss-bar.shielded .boss-track i{ filter:grayscale(.65) brightness(.75); }
 #boss-bar.shielded .boss-track::after{
   content:''; position:absolute; inset:0;
-  background:repeating-linear-gradient(115deg, transparent 0 9px, rgba(94,234,255,.16) 9px 18px);
+  background:repeating-linear-gradient(115deg, transparent 0 9px, rgba(157,123,255,.16) 9px 18px);
   pointer-events:none;
 }
 .boss-track{ position:relative; }
@@ -409,7 +439,7 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #harness i{
   width:8px; height:14px; display:block;
-  background:var(--v-shield); box-shadow:0 0 7px rgba(79,225,213,.5);
+  background:var(--v-shield); box-shadow:0 0 7px rgba(157,123,255,.5);
   clip-path:polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 0 100%);
 }
 #harness i.spent{ background:rgba(207,227,238,.16); box-shadow:none; }
@@ -466,7 +496,7 @@ body.in-mission #vignette{ opacity:.55; }
   font-family:var(--font-mono); font-size:10px; letter-spacing:.3em;
   color:var(--v-super); background:var(--v-panel);
   backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
-  padding:4px 12px; border:1px solid rgba(243,160,28,.32);
+  padding:4px 12px; border:1px solid rgba(125,227,168,.32);
   clip-path:polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
 }
 #deck-tag[hidden]{ display:none; }
@@ -488,15 +518,15 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #hud-controls i{
   font-style:normal; min-width:26px; text-align:center; padding:2px 5px;
-  border:1px solid rgba(79,225,213,.3); color:var(--v-shield);
+  border:1px solid rgba(157,123,255,.3); color:var(--v-shield);
   background:var(--v-panel);
   backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
 }
-#hint-lock.locked i{ color:var(--v-shield); border-color:rgba(79,225,213,.55); }
-#hint-lock.free i{ color:var(--v-super); border-color:rgba(243,160,28,.5); }
+#hint-lock.locked i{ color:var(--v-shield); border-color:rgba(157,123,255,.55); }
+#hint-lock.free i{ color:var(--v-super); border-color:rgba(125,227,168,.5); }
 #hint-lock.blocked{ color:var(--blood); }
 #hint-pov.third{ color:var(--v-super); }
-#hint-pov.third i{ color:var(--v-super); border-color:rgba(243,160,28,.5); }
+#hint-pov.third i{ color:var(--v-super); border-color:rgba(125,227,168,.5); }
 
 /* the purse, top right above the contracts */
 #purse-hud{
@@ -540,7 +570,7 @@ body.in-mission #vignette{ opacity:.55; }
 .rn-speed{
   font-family:var(--font-mono); color:#fff; line-height:1;
   font-size:30px; font-variant-numeric:tabular-nums;
-  text-shadow:0 0 14px rgba(79,225,213,.55);
+  text-shadow:0 0 14px rgba(157,123,255,.55);
 }
 .rn-speed i{
   font-style:normal; font-size:10px; letter-spacing:.22em;
@@ -553,9 +583,9 @@ body.in-mission #vignette{ opacity:.55; }
 }
 .rn-cell i{
   display:block; height:100%; width:100%; background:var(--v-shield);
-  box-shadow:0 0 10px rgba(79,225,213,.6); transition:width .08s linear;
+  box-shadow:0 0 10px rgba(157,123,255,.6); transition:width .08s linear;
 }
-.rn-cell i.burning{ background:var(--v-super); box-shadow:0 0 14px rgba(243,160,28,.85); }
+.rn-cell i.burning{ background:var(--v-super); box-shadow:0 0 14px rgba(125,227,168,.85); }
 .rn-cell i.dry{ background:var(--blood); box-shadow:none; }
 .rn-hint{
   font-family:var(--font-mono); font-size:8.5px; letter-spacing:.2em;
@@ -594,6 +624,6 @@ body.in-mission #vignette{ opacity:.55; }
 .ev-track{ height:5px; background:rgba(255,255,255,.12); margin-top:9px; }
 .ev-track i{
   display:block; height:100%; width:0%;
-  background:linear-gradient(90deg,#F3A01C,#4FE1D5);
-  box-shadow:0 0 10px rgba(243,160,28,.6); transition:width .3s;
+  background:linear-gradient(90deg,#7de3a8,#9d7bff);
+  box-shadow:0 0 10px rgba(125,227,168,.6); transition:width .3s;
 }

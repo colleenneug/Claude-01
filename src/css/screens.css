@@ -12,7 +12,7 @@
 @keyframes bootPulse{ 50%{ color:rgba(94,234,255,.75); } }
 #boot-log{
   font-family:var(--font-mono); font-size:13px; line-height:1.75; color:var(--cyan);
-  margin:0; white-space:pre-wrap; text-shadow:0 0 8px rgba(94,234,255,.35);
+  margin:0; white-space:pre-wrap; text-shadow:0 0 8px rgba(157,123,255,.35);
 }
 #boot-log .ok{ color:var(--lime); }
 #boot-log .warn{ color:var(--amber); }
@@ -31,7 +31,7 @@
 .title-wrap h1{
   font-size: clamp(42px, 8vw, 92px); font-weight:700; letter-spacing:.1em;
   margin:0; color:#eafcff;
-  text-shadow: 0 0 22px rgba(94,234,255,.45), 0 0 70px rgba(94,234,255,.18);
+  text-shadow: 0 0 22px rgba(157,123,255,.45), 0 0 70px rgba(157,123,255,.18);
 }
 .glitch{ position:relative; }
 .glitch::before, .glitch::after{
@@ -96,19 +96,19 @@
 }
 .slot.empty{ align-items:center; justify-content:center; text-align:center; }
 .slot.empty .bay{ position:absolute; top:24px; left:22px; right:22px; }
-.slot-empty-mark{ font-size:52px; color:rgba(94,234,255,.22); line-height:1; margin-bottom:14px; }
+.slot-empty-mark{ font-size:52px; color:rgba(157,123,255,.22); line-height:1; margin-bottom:14px; }
 .slot-empty-txt{ font-family:var(--font-mono); font-size:12px; letter-spacing:.24em; color:var(--ink-dim); }
 .slot:hover .slot-empty-mark{ color:var(--cyan); text-shadow:var(--glow-cyan); }
 
 .slot-glyph{
   width:74px; height:74px; margin:0 auto 14px; display:grid; place-items:center;
   border:1px solid var(--line-hot); border-radius:50%; font-size:30px;
-  box-shadow: inset 0 0 22px rgba(94,234,255,.15);
+  box-shadow: inset 0 0 22px rgba(157,123,255,.15);
 }
 .slot-name{ text-align:center; font-size:19px; letter-spacing:.16em; color:#eafcff; }
 .slot-class{ text-align:center; font-family:var(--font-mono); font-size:11px; letter-spacing:.2em; margin-top:5px; }
 .slot-meta{ margin-top:18px; display:flex; flex-direction:column; gap:7px; font-family:var(--font-mono); font-size:11px; color:var(--ink-dim); }
-.slot-meta .row{ display:flex; justify-content:space-between; border-bottom:1px dashed rgba(94,234,255,.13); padding-bottom:5px; }
+.slot-meta .row{ display:flex; justify-content:space-between; border-bottom:1px dashed rgba(157,123,255,.13); padding-bottom:5px; }
 .slot-meta .row b{ color:var(--ink); font-weight:400; }
 .slot-actions{ margin-top:auto; padding-top:18px; display:flex; gap:8px; }
 .slot-actions .btn{ flex:1; }
@@ -136,7 +136,7 @@
 .class-card:hover{ border-color:var(--line-hot); transform:translateX(4px); }
 .class-card:hover::after{ opacity:1; box-shadow:0 0 14px var(--accent, var(--cyan)); }
 .class-card.selected{
-  border-color:var(--accent); background:linear-gradient(100deg, rgba(94,234,255,.14), rgba(10,20,34,.4));
+  border-color:var(--accent); background:linear-gradient(100deg, rgba(157,123,255,.14), rgba(10,20,34,.4));
   transform:translateX(6px);
 }
 .class-card.selected::after{ opacity:1; width:4px; box-shadow:0 0 18px var(--accent); }
@@ -223,7 +223,7 @@
               min-height:0; overflow:auto; }
 #dossier-canvas{
   width:100%; height:360px; display:block; cursor:none;
-  background:radial-gradient(circle at 50% 35%, rgba(94,234,255,.10), transparent 68%);
+  background:radial-gradient(circle at 50% 35%, rgba(157,123,255,.10), transparent 68%);
   border:1px solid var(--line);
 }
 .arm-power{ text-align:center; border-top:1px solid var(--line); padding-top:12px; }
@@ -265,9 +265,9 @@
 .item{
   text-align:left; padding:10px 12px; border:1px solid var(--line);
   border-left:3px solid var(--rc, var(--ink-dim));
-  background:rgba(94,234,255,.03); transition:.15s;
+  background:rgba(157,123,255,.03); transition:.15s;
 }
-.item:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(94,234,255,.1); transform:translateX(3px); }
+.item:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(157,123,255,.1); transform:translateX(3px); }
 .item.on{ border-color:var(--rc); background:color-mix(in srgb, var(--rc) 14%, transparent); }
 .item-name{ font-size:13px; letter-spacing:.06em; color:#eafcff; line-height:1.35; }
 .item-meta{
@@ -477,7 +477,7 @@
 .squad-row{
   display:grid; grid-template-columns:34px 1fr auto; gap:12px; align-items:center;
   padding:10px 12px; border:1px solid var(--line); border-left:3px solid var(--accent);
-  background:rgba(94,234,255,.04);
+  background:rgba(157,123,255,.04);
 }
 .sq-glyph{ font-size:18px; color:var(--accent); text-align:center; }
 .sq-name{ font-size:14px; letter-spacing:.1em; color:#eafcff; }

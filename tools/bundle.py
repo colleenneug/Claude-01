@@ -25,6 +25,13 @@ body = body.rsplit('\n', 1)[0].rstrip()
 
 fonts = re.search(r'<link href="https://fonts\.googleapis[^>]+>', html).group(0)
 
+# Take the title from index.html rather than repeating it here: hardcoding it once
+# already let the single-file build keep an old name after the game was renamed.
+title_match = re.search(r'<title>(.*?)</title>', html, re.S)
+if not title_match:
+    raise SystemExit('index.html has no <title>; cannot name the bundle')
+title = title_match.group(1).strip()
+
 # Inline anything under assets/ as a data URI. The runtime looks its paths up in
 # window.__ASSETS first, so the same code works unbundled and bundled.
 import base64, mimetypes
@@ -42,7 +49,7 @@ if asset_dir.is_dir():
 asset_js = 'window.__ASSETS = ' + json.dumps(assets) + ';'
 print(f'  inlined {len(assets)} asset(s)')
 
-out = f"""<title>Erebus Cradle</title>
+out = f"""<title>{title}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 {fonts}
@@ -62,7 +69,7 @@ document.body.classList.add('booting');
 {js}
 </script>
 """
-dest = root / 'dist' / 'erebus-cradle.html'
+dest = root / 'dist' / 'the-deep-choir.html'
 dest.parent.mkdir(exist_ok=True)
 dest.write_text(out)
 print('wrote', dest, f'({len(out) // 1024} KB)')

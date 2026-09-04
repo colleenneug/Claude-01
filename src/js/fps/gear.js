@@ -12,17 +12,21 @@
 (function (SF) {
   'use strict';
 
+  /* Five rungs that have to be tellable apart at a glance across a room, on
+     armour plating as well as in a list — so the ladder keeps its
+     grey/green/blue/purple/gold spacing rather than collapsing into the
+     violet the rest of the interface moved to. */
   const RARITY = [
     { id: 'common',   name: 'COMMON',   colour: '#9fb0c0', mult: 1.00, affixes: 0, weight: 100 },
-    { id: 'uncommon', name: 'UNCOMMON', colour: '#7dff9b', mult: 1.10, affixes: 1, weight: 52 },
-    { id: 'rare',     name: 'RARE',     colour: '#5eeaff', mult: 1.22, affixes: 2, weight: 24 },
+    { id: 'uncommon', name: 'UNCOMMON', colour: '#7de3a8', mult: 1.10, affixes: 1, weight: 52 },
+    { id: 'rare',     name: 'RARE',     colour: '#5aa8ff', mult: 1.22, affixes: 2, weight: 24 },
     { id: 'epic',     name: 'EPIC',     colour: '#b98cff', mult: 1.40, affixes: 3, weight: 8 },
     { id: 'exotic',   name: 'EXOTIC',   colour: '#ffb454', mult: 1.65, affixes: 4, weight: 2 }
   ];
   const rarityOf = (id) => RARITY.find((r) => r.id === id) || RARITY[0];
   const rarityRank = (id) => RARITY.findIndex((r) => r.id === id);
 
-  /* Later missions bias the roll upward: by the Conductor, common is rare
+  /* Later missions bias the roll upward: by the First Light, common is rare
      and exotic is a real possibility. */
   function rollRarity(missionN) {
     const tilt = Math.max(0, (missionN - 1) / 15);          // 0 at mission 1, 1 at 16
@@ -37,11 +41,11 @@
   }
 
   /* ---------- naming ---------- */
-  const PREFIX = ['SALVAGED', 'MARK-VII', 'COLONIAL', 'ARK-PATTERN', 'RECLAIMED', 'DIVISION',
+  const PREFIX = ['GRAVEBORN', 'UNLIT', 'BURIED', 'ARK-PATTERN', 'RECLAIMED', 'SUNLESS',
                   'HOLLOWED', 'QUIET', 'LONG-CROSSING', 'YEAR-SIX'];
-  const SUFFIX = ['OF THE GARDEN', 'OF DECK ZERO', 'OF THE LONG SPINE', 'OF THE FALSE SKY',
-                  'OF THE CHOIR', 'OF WARD SIX', 'OF THE THRESHOLD'];
-  const EXOTIC_NAMES = ['LULLABY', 'THE GREEN DOOR', 'NINE HOURS', 'ADA', 'ONE NOTE', 'REST'];
+  const SUFFIX = ['OF THE GARDEN', 'OF THE RELIQUARY', 'OF THE LONG SPINE', 'OF THE FALSE SKY',
+                  'OF THE UNBLESSED', 'OF WARD SIX', 'OF THE THRESHOLD'];
+  const EXOTIC_NAMES = ['LULLABY', 'THE GREEN DOOR', 'NINE HOURS', 'ADA', 'LAST REFUSAL', 'REST'];
 
   /* ---------- affixes ---------- */
   const WEAPON_AFFIXES = [
@@ -88,7 +92,7 @@
     { id: 'runner', name: 'RUNNER' }
   ];
 
-  /* Runners: the salvaged transit frames Division issues for open ground.
+  /* Runners: the salvaged transit frames the Deep digs up for open ground.
      Two families that handle nothing alike. */
   const RUNNERS = {
     courser: {
@@ -288,7 +292,7 @@
     const count = isBoss ? 3 : (Math.random() < 0.45 ? 2 : 1);
     for (let i = 0; i < count; i++) {
       let rarity = rollRarity(missionN);
-      if (isBoss && rarityRank(rarity) < 2) rarity = 'rare';     // no junk from the Conductor
+      if (isBoss && rarityRank(rarity) < 2) rarity = 'rare';     // no junk from the First Light
       const roll = Math.random();
       if (roll < 0.34) drops.push(makeWeapon(character.cls, rarity, missionN));
       else if (roll < 0.46) drops.push(makeRunner(
@@ -349,7 +353,7 @@
 
   const SKINS = ['#f0d0b8', '#e0b394', '#c89272', '#a06a48', '#7a4a30', '#5a3520', '#3d2418'];
   const HAIR_COLOURS = ['#141210', '#3a2a1e', '#6b4a2a', '#a8722f', '#c9a227', '#8a8a8a',
-                        '#e8e8e8', '#5eeaff', '#ff5ea8', '#7dff9b'];
+                        '#e8e8e8', '#9d7bff', '#e0556b', '#7de3a8'];
   const HAIR_STYLES = [
     { id: 'shaved',  name: 'SHAVED' },
     { id: 'crop',    name: 'CROP' },

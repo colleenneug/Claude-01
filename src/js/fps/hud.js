@@ -30,6 +30,16 @@
         root.classList.toggle('critical', h < 0.3);
       },
 
+      /* The dread meter. `frac` is 0..1; `rapture` flips the bar over to the
+         spent-all-at-once state, which the CSS animates. */
+      refreshDread(frac, rapture) {
+        const f = Math.max(0, Math.min(1, frac || 0));
+        $('#v-dread').style.width = (f * 100) + '%';
+        $('#v-dread-text').textContent = Math.round(f * 100);
+        root.classList.toggle('rapture', !!rapture);
+        root.classList.toggle('dread-full', f >= 1 && !rapture);
+      },
+
       refreshAmmo(w) {
         $('#a-mag').textContent = w.ammo;
         $('#a-reserve').textContent = w.reserve;
@@ -201,7 +211,7 @@
         if (box.childElementCount !== max + 1) {
           box.innerHTML = '';
           for (let i = 0; i < max; i++) box.appendChild(el('i'));
-          box.appendChild(el('span', 'h-label', 'HARNESS'));
+          box.appendChild(el('span', 'h-label', 'RETURNS'));
         }
         Array.from(box.querySelectorAll('i')).forEach((c, i) => c.classList.toggle('spent', i >= left));
       },
@@ -210,7 +220,7 @@
         const o = $('#death');
         o.hidden = !show;
         if (!show) return;
-        $('#death-msg').textContent = message || 'TRAUMA HARNESS ENGAGING';
+        $('#death-msg').textContent = message || 'THE DEEP IS NOT DONE WITH YOU';
         $('#death-sub').textContent = remaining > 0
           ? remaining + (remaining === 1 ? ' CHARGE REMAINING' : ' CHARGES REMAINING')
           : 'NO CHARGES REMAINING';

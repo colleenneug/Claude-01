@@ -26,7 +26,7 @@
     const key = new THREE.DirectionalLight(0xdff0ff, 1.5);
     key.position.set(2.4, 4, 3);
     scene.add(key);
-    const rim = new THREE.PointLight(0x5eeaff, 12, 9, 2);
+    const rim = new THREE.PointLight(0x9d7bff, 12, 9, 2);
     rim.position.set(-2.2, 2.4, -1.8);
     scene.add(rim);
 
@@ -80,7 +80,7 @@
       0, Math.PI * 2, 0, Math.PI * 0.58), plateMats.head);
     helm.position.y = 1.63;
     const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.06),
-      new THREE.MeshStandardMaterial({ color: 0x06131b, emissive: new THREE.Color(0x5eeaff),
+      new THREE.MeshStandardMaterial({ color: 0x06131b, emissive: new THREE.Color(0x9d7bff),
                                        emissiveIntensity: 2.2, roughness: 0.3 }));
     visor.position.set(0, 1.605, 0.2);
 
