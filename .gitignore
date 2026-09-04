@@ -1,2 +1,3 @@
+engine/build/
 # C++ native renderer build output
 cpp/build/
