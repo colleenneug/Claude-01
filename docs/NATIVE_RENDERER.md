@@ -19,7 +19,7 @@ opaque object in the scene uses.
 ## 1 — Physically based materials
 
 **Armour** (`shadeArmour()` in `pbr.frag`): metalness pinned to 0.85,
-roughness to 0.25, both passed down from `Scene.cpp` as `DrawItem::metallic
+roughness to 0.25, both passed down from `Level.cpp`/`Hostile.cpp` as `DrawItem::metallic
 / roughness`. A panel grid is projected triplanar (three axis-aligned 2D
 projections blended by how much the surface normal faces each axis), with
 seams, per-panel colour drift, and chip splotches that push local metalness
@@ -52,7 +52,7 @@ expected.
 ## 2 — Cinematic lighting and atmosphere
 
 **Low-angle sun with cascaded shadows** (`CascadedShadowMap.{h,cpp}`): the
-sun sits at 20° elevation (`Scene::build`), and three shadow cascades —
+sun sits at 20° elevation (`Game::init`), and three shadow cascades —
 2048/2048/1024 — are refit every frame to a bounding sphere around each
 slice of the view frustum, snapped to that cascade's own texel grid so
 edges don't crawl as the camera moves. `pbr.frag`'s `shadowFactor()`
@@ -77,7 +77,7 @@ reconstructed from the depth buffer through the inverse view-projection
 matrix rather than carried as separate tan(fov) parameters, since the full
 matrices are already on hand in a desktop renderer.
 
-**Dust motes** (`motes.vert/frag`, buffer built in `Scene::build`): a fixed
+**Dust motes** (`motes.vert/frag`, buffer built in `Game::init`): a fixed
 buffer of a few thousand points, wrapped into a box around the camera in the
 vertex shader with `mod()` — ported line-for-line from the browser build's
 `atmos.js` — so walking through them gives real parallax at zero CPU cost,
@@ -189,3 +189,29 @@ run covering the full shadow → scene → bloom → DoF → composite pipeline.
 - **This is a rendering demo, not the game.** Missions, inventory, AI,
   economy, and netcode from the browser build were not ported. See
   `cpp/README.md`'s scope note.
+
+
+## Update: this is now a game, not just a demo scene
+
+Everything above still describes the rendering pipeline exactly — nothing
+about the shaders, the cascades, the fog integral, or the post chain
+changed. What changed is what feeds `Renderer::renderFrame()`: the
+free-fly camera and static demo scene this document was originally written
+against were replaced by an actual mission loop (`Game`, `Level`,
+`Player`, `Weapon`, `Hostile`, `Content`) — see `cpp/README.md` for what
+that adds and its own honest scope line. `Scene.{h,cpp}` no longer exists;
+`Game::collect()` is what `Renderer` now calls where `Scene::collect()`
+used to be, and it draws the level plus every live hostile instead of a
+fixed demo layout.
+
+One rendering-adjacent fix came out of that transition worth recording
+here: the armour bump-mapping fade documented above (footprint-based,
+`bumpedNormal()`) still aliased at oblique angles once tested against an
+80m arena wall rather than the small demo props it was originally tuned
+against. Rather than keep tuning a fade coefficient against a moving
+target, armour shipped flat-normal (see the comment at
+`shadeArmour`'s `s.bumpN = n;` in `shaders/pbr.frag`) — the seam/chip/drift
+colour detail is already footprint-faded and alias-free on its own, and a
+flat-shaded panel that reads cleanly beats a detailed one that shimmers.
+Revisiting that bump with a proper analytic derivative, rather than a
+finite-difference one, is the natural follow-up.

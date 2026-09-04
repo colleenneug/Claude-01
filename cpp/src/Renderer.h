@@ -5,7 +5,7 @@
 #include "CascadedShadowMap.h"
 #include "Bloom.h"
 #include "IBL.h"
-#include "Scene.h"
+#include "Game.h"
 #include "Camera.h"
 #include <vector>
 
@@ -30,16 +30,16 @@ public:
   void resize(int width, int height);
   void destroy();
 
-  void renderFrame(const Scene& scene, const Camera& camera, float time, float dt);
+  void renderFrame(const Game& scene, const Camera& camera, float time, float dt);
 
   int shadowDrawCalls = 0;  // filled in each frame, for the on-screen HUD
 
 private:
-  void renderShadowCascades(const Scene& scene, const Camera& camera);
-  void renderSceneToHdr(const Scene& scene, const Camera& camera);
-  void renderMotes(const Scene& scene, const Camera& camera, float time);
+  void renderShadowCascades(const Game& scene, const Camera& camera);
+  void renderSceneToHdr(const Game& scene, const Camera& camera);
+  void renderMotes(const Game& scene, const Camera& camera, float time);
   void renderDof();
-  void renderComposite(const Camera& camera, const Scene& scene, GLuint bloomTex, float time);
+  void renderComposite(const Camera& camera, const Game& scene, GLuint bloomTex, float time);
 
   int width_ = 0, height_ = 0;
 

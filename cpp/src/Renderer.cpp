@@ -42,7 +42,7 @@ void Renderer::destroy() {
 
 // ------------------------------------------------------------- shadow pass
 
-void Renderer::renderShadowCascades(const Scene&, const Camera&) {
+void Renderer::renderShadowCascades(const Game&, const Camera&) {
   depthShader_.use();
   glEnable(GL_POLYGON_OFFSET_FILL);
   glPolygonOffset(2.5f, 4.0f);
@@ -63,7 +63,7 @@ void Renderer::renderShadowCascades(const Scene&, const Camera&) {
 
 // -------------------------------------------------------------- scene pass
 
-void Renderer::renderSceneToHdr(const Scene& scene, const Camera& camera) {
+void Renderer::renderSceneToHdr(const Game& scene, const Camera& camera) {
   sceneHdr_.bind();
   glClearColor(0.02f, 0.018f, 0.03f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -114,7 +114,7 @@ void Renderer::renderSceneToHdr(const Scene& scene, const Camera& camera) {
 
 // ------------------------------------------------------------------ motes
 
-void Renderer::renderMotes(const Scene& scene, const Camera& camera, float time) {
+void Renderer::renderMotes(const Game& scene, const Camera& camera, float time) {
   sceneHdr_.bind();  // still bound from the scene pass, but explicit is cheap
   glDepthMask(GL_FALSE);
   glEnable(GL_BLEND);
@@ -166,7 +166,7 @@ void Renderer::renderDof() {
 
 // -------------------------------------------------------------- composite
 
-void Renderer::renderComposite(const Camera& camera, const Scene& scene, GLuint bloomTex, float time) {
+void Renderer::renderComposite(const Camera& camera, const Game& scene, GLuint bloomTex, float time) {
   // bloomTex was produced by a separate chain of shader programs (Bloom
   // owns its own bright/downsample/upsample passes); the composite shader
   // is bound here, after all of that has finished, so every uniform set
@@ -224,7 +224,7 @@ void Renderer::renderComposite(const Camera& camera, const Scene& scene, GLuint 
 
 // --------------------------------------------------------------- top level
 
-void Renderer::renderFrame(const Scene& scene, const Camera& camera, float time, float dt) {
+void Renderer::renderFrame(const Game& scene, const Camera& camera, float time, float dt) {
   (void)dt;
   drawList_.clear();
   scene.collect(time, drawList_);

@@ -127,8 +127,14 @@ vec3 bumpedNormal(vec3 n, vec3 p, float scale, float strength) {
   // real normal map: once a fragment's own screen-space footprint grows
   // past the bump's period — far away, or at a grazing angle — fade the
   // perturbation out rather than let it alias.
+  // A stronger coefficient than the geometric minimum: on a large flat
+  // surface (an 80m wall, not a 1m crate) enough of the visible area sits
+  // far enough away that the conservative fade left a band of aliasing a
+  // crate-sized test object never showed. Fading twice as eagerly costs
+  // only some up-close bump detail, which a player is far less likely to
+  // notice than a shimmering wall filling most of the frame.
   float footprint = fwidth(p.x) + fwidth(p.y) + fwidth(p.z);
-  float fade = clamp(1.0 - footprint * scale, 0.0, 1.0);
+  float fade = clamp(1.0 - footprint * scale * 2.5, 0.0, 1.0);
 
   return normalize(n - grad * strength * fade);
 }
@@ -160,6 +166,24 @@ ArmourSample shadeArmour(vec3 p, vec3 n, vec3 tint, float baseMetallic, float ba
   float fine = triplanarHeight(p, w, 6.0);
   float chip = smoothstep(0.55, 0.9, fine + seam * 0.4) * clamp(wear, 0.0, 1.6);
 
+  // panelSeam() and the per-cell hash above are step functions in world
+  // space with no filtering at all — fbm()'s own octave fade (see above)
+  // does not touch them. On a wall large enough that many panel cells land
+  // inside one pixel, that is a second, independent source of the same
+  // per-pixel static the bump gradient caused, and it survives even once
+  // the bump is faded out. Fading the whole panel-detail contribution
+  // toward "flat, average plate colour" as a fragment's footprint grows
+  // past one cell is the mip-mapping equivalent for a repeating pattern
+  // that has no mip chain: far away, a plated hull just reads as a
+  // uniform hull, the way a real photographed one would once its rivets
+  // stop being individually resolvable.
+  float panelFootprint = fwidth(uvX.x) * w.x + fwidth(uvY.x) * w.y + fwidth(uvZ.x) * w.z
+                        + fwidth(uvX.y) * w.x + fwidth(uvY.y) * w.y + fwidth(uvZ.y) * w.z;
+  float detailFade = clamp(1.0 - panelFootprint / cell * 1.4, 0.0, 1.0);
+  seam *= detailFade;
+  drift *= detailFade;
+  chip *= detailFade;
+
   vec3 bare = mix(tint, vec3(0.72, 0.74, 0.77), 0.7);
   vec3 albedo = mix(tint * (1.0 + drift * 0.12), bare, chip * 0.6);
   albedo *= (1.0 - seam * 0.35);  // grime collecting in the seam
@@ -170,8 +194,15 @@ ArmourSample shadeArmour(vec3 p, vec3 n, vec3 tint, float baseMetallic, float ba
   // metallic up towards the house value; seams are slightly rougher, where
   // grime sits.
   s.metallic = clamp(mix(baseMetallic * 0.55, baseMetallic, chip), 0.0, 1.0);
-  s.roughness = clamp(baseRoughness + seam * 0.18 + fine * 0.06, 0.03, 1.0);
-  s.bumpN = bumpedNormal(n, p, 1.4, 0.30 + seam * 0.35);
+  s.roughness = clamp(baseRoughness + seam * 0.18 + fine * 0.06 * detailFade, 0.03, 1.0);
+  // A bump gradient here kept aliasing at oblique angles on a surface as
+  // large as a wall even after two rounds of stronger footprint-based
+  // fading (see bumpedNormal's own comment) — the seam/chip/drift detail
+  // above is already footprint-faded and alias-free on its own, so armour
+  // ships flat-normal rather than shipping a bump that still shimmers.
+  // Revisiting this bump with a proper analytic (rather than finite-
+  // difference) derivative is the natural follow-up.
+  s.bumpN = n;
   return s;
 }
 
@@ -317,7 +348,13 @@ void main() {
   roughness = sqrt(clamp(roughness * roughness + widen, 0.0, 1.0));
 
   vec3 F0 = mix(vec3(0.04), albedo, metallic);
-  float NoV = max(dot(N, V), 1e-4);
+  // Clamped well above zero, not just above the divide-by-zero floor: as
+  // NoV approaches zero at a grazing viewing angle, D*G*F / (4*NoV*NoL)
+  // is a near-0/near-0 ratio that is extremely sensitive to the sub-pixel
+  // noise ordinary interpolation leaves in N — which is exactly what was
+  // showing up as a shimmering patch wherever a wall was viewed edge-on,
+  // independent of and on top of the albedo/bump aliasing fixed above.
+  float NoV = max(dot(N, V), 0.02);
 
   // ---------------- direct: the sun ----------------
   vec3 L = normalize(-uSunDir);
@@ -333,7 +370,7 @@ void main() {
     float D = distributionGGX(NoH, roughness);
     float G = geometrySmith(NoV, NoL, roughness);
     vec3 F = fresnelSchlick(VoH, F0);
-    vec3 spec = (D * G * F) / max(4.0 * NoV * NoL, 1e-4);
+    vec3 spec = (D * G * F) / max(4.0 * NoV * max(NoL, 0.02), 1e-4);
     vec3 kd = (vec3(1.0) - F) * (1.0 - metallic);
     vec3 sunRadiance = uSunColour * uSunIntensity;
     direct = (kd * albedo / PI + spec) * sunRadiance * NoL * shadow;

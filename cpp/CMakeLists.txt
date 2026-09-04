@@ -22,7 +22,13 @@ add_executable(erebus_native
   src/CascadedShadowMap.cpp
   src/Bloom.cpp
   src/IBL.cpp
-  src/Scene.cpp
+  src/Level.cpp
+  src/Hostile.cpp
+  src/Player.cpp
+  src/Weapon.cpp
+  src/Hud.cpp
+  src/Content.cpp
+  src/Game.cpp
   src/Renderer.cpp
 )
 
@@ -42,9 +48,14 @@ if(TARGET glm::glm)
 endif()
 target_compile_options(erebus_native PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
-# Ship the shader source tree next to the binary so the executable can find
-# it at runtime with a path relative to argv[0] — no install step needed to
-# just build and run.
+# Ship the shader source tree and the data-driven content (enemy/mission
+# .cfg files) next to the binary so the executable can find both at runtime
+# relative to argv[0] — no install step needed to just build and run. This
+# is also exactly how a monthly content drop reaches players: replace or
+# add files under content/, rebuild (or, once packaged, just ship the
+# updated content/ folder on its own — nothing in it requires recompiling).
 add_custom_command(TARGET erebus_native POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
-          ${CMAKE_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:erebus_native>/shaders)
+          ${CMAKE_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:erebus_native>/shaders
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/content $<TARGET_FILE_DIR:erebus_native>/content)
