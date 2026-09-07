@@ -1,0 +1,196 @@
+/* ============================================================
+   DUSKBORNE — a clean, restrained "luxury brand" UI (near-black,
+   a single pale-gold accent, thin rules, generous space) deliberately
+   set against a dark, hostile 3D world. System fonts only, so the
+   whole game stays a zero-network, open-the-file experience — no
+   webfont fetch to fail in a locked-down environment.
+   ============================================================ */
+
+:root {
+  --ink: #07070a;
+  --panel: #0d0e13;
+  --panel-2: #14151d;
+  --line: rgba(230, 228, 220, 0.14);
+  --gold: #cbab6a;
+  --gold-bright: #e6c98a;
+  --text: #eceae4;
+  --text-dim: #9a9890;
+  --rime: #8fd8ff;
+  --weave: #5ee6a8;
+  --umbral: #9a5ef0;
+  --danger: #d4543a;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%;
+  background: var(--ink); color: var(--text);
+  font-family: -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { font-weight: 600; letter-spacing: 0.08em; margin: 0; text-transform: uppercase; }
+
+button {
+  font-family: inherit; cursor: pointer; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text);
+  padding: 0.85em 1.6em; letter-spacing: 0.12em; text-transform: uppercase;
+  font-size: 0.78rem; transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+button:hover { border-color: var(--gold); color: var(--gold-bright); background: #1a1b24; }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+button.primary { border-color: var(--gold); color: var(--gold-bright); }
+button.primary:hover { background: #241f14; }
+
+#game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #000; }
+
+.screen {
+  position: fixed; inset: 0; display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, #12131a 0%, #07070a 70%);
+  padding: 4vh 4vw;
+}
+.screen.show { display: flex; }
+.screen-scroll { overflow-y: auto; }
+
+.kicker { color: var(--gold); font-size: 0.72rem; letter-spacing: 0.28em; margin-bottom: 0.6em; }
+.title-lockup { text-align: center; }
+.title-lockup h1 { font-size: clamp(2.6rem, 8vw, 5.2rem); letter-spacing: 0.14em; color: var(--text); }
+.title-lockup h1 span { color: var(--gold-bright); }
+.title-sub { color: var(--text-dim); margin-top: 0.8em; font-size: 0.95rem; letter-spacing: 0.04em; max-width: 46ch; text-align: center; }
+
+.menu-stack { display: flex; flex-direction: column; gap: 0.7em; margin-top: 3em; align-items: stretch; width: min(320px, 80vw); }
+
+.hairline { width: 100%; height: 1px; background: var(--line); margin: 2em 0; }
+
+/* ---------- boot ---------- */
+#screen-boot .boot-bar { width: min(360px, 70vw); height: 2px; background: var(--line); margin-top: 2em; position: relative; overflow: hidden; }
+#screen-boot .boot-bar::after {
+  content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 40%;
+  background: var(--gold); animation: boot-sweep 1.1s ease-in-out infinite;
+}
+@keyframes boot-sweep { 0% { left: -40%; } 100% { left: 100%; } }
+
+/* ---------- character creation ---------- */
+.creation-wrap { width: min(1100px, 94vw); }
+.creation-step { display: none; }
+.creation-step.show { display: block; }
+.card-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1em; margin-top: 1.5em; }
+.pick-card {
+  border: 1px solid var(--line); background: var(--panel); padding: 1.4em 1.2em;
+  cursor: pointer; text-align: left; transition: border-color 0.18s, background 0.18s;
+}
+.pick-card:hover { border-color: rgba(203, 171, 106, 0.5); }
+.pick-card.selected { border-color: var(--gold); background: #17140d; }
+.pick-card .swatch { width: 2em; height: 2em; border-radius: 50%; margin-bottom: 0.8em; }
+.pick-card h3 { font-size: 0.95rem; letter-spacing: 0.06em; }
+.pick-card .tag { color: var(--gold); font-size: 0.68rem; letter-spacing: 0.18em; margin: 0.3em 0 0.7em; text-transform: uppercase; }
+.pick-card p { color: var(--text-dim); font-size: 0.82rem; line-height: 1.5; margin: 0; }
+.pick-card .passive { margin-top: 0.8em; font-size: 0.74rem; color: var(--gold-bright); }
+.creation-actions { display: flex; justify-content: space-between; margin-top: 2em; }
+
+/* ---------- hub ---------- */
+.hub-wrap { width: min(980px, 94vw); }
+.hub-header { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; flex-wrap: wrap; }
+.hub-power { color: var(--gold-bright); font-size: 1.1rem; letter-spacing: 0.1em; }
+.hub-power small { color: var(--text-dim); display: block; font-size: 0.65rem; letter-spacing: 0.2em; }
+.mission-list { display: flex; flex-direction: column; gap: 0.8em; margin-top: 1.6em; }
+.mission-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 1em;
+  border: 1px solid var(--line); background: var(--panel); padding: 1.1em 1.4em;
+}
+.mission-row.locked { opacity: 0.45; }
+.mission-row .m-name { letter-spacing: 0.08em; font-size: 0.95rem; }
+.mission-row .m-desc { color: var(--text-dim); font-size: 0.8rem; margin-top: 0.3em; }
+.mission-row .m-status { font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); }
+.mission-row .m-status.planned { color: var(--text-dim); }
+.discipline-row { display: flex; gap: 0.8em; margin-top: 1.4em; flex-wrap: wrap; }
+.discipline-chip {
+  border: 1px solid var(--line); padding: 0.6em 1em; font-size: 0.72rem;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim);
+}
+.discipline-chip.unlocked { color: var(--text); border-color: var(--gold); }
+.hub-tabs { display: flex; gap: 0.5em; margin-top: 2em; }
+.hub-tab { border: 1px solid var(--line); background: transparent; padding: 0.6em 1.1em; font-size: 0.7rem; }
+.hub-tab.active { border-color: var(--gold); color: var(--gold-bright); }
+.hub-pane { display: none; }
+.hub-pane.show { display: block; }
+
+/* ---------- briefing / debrief ---------- */
+.brief-wrap { width: min(680px, 92vw); }
+.brief-wrap p { color: var(--text-dim); line-height: 1.7; font-size: 0.95rem; }
+.brief-actions { display: flex; gap: 0.8em; margin-top: 2em; }
+.debrief-stats { display: flex; gap: 2em; margin: 1.6em 0; flex-wrap: wrap; }
+.debrief-stat { text-align: center; }
+.debrief-stat .v { font-size: 1.6rem; color: var(--gold-bright); letter-spacing: 0.05em; }
+.debrief-stat .l { font-size: 0.66rem; color: var(--text-dim); letter-spacing: 0.18em; text-transform: uppercase; margin-top: 0.3em; }
+.gear-card { border: 1px solid var(--line); padding: 1em 1.3em; margin-top: 0.6em; }
+.gear-card .rarity { font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; }
+
+/* ---------- engage gate ---------- */
+#screen-engage { background: rgba(0,0,0,0.72); cursor: pointer; }
+.engage-box { text-align: center; }
+.engage-box .ring {
+  width: 84px; height: 84px; border: 1px solid var(--gold); border-radius: 50%;
+  margin: 0 auto 1.2em; display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; letter-spacing: 0.2em; color: var(--gold-bright);
+}
+
+/* ---------- mission HUD ---------- */
+#mission-hud { position: fixed; inset: 0; pointer-events: none; display: none; font-variant-numeric: tabular-nums; }
+#mission-hud.show { display: block; }
+#hud-crosshair {
+  position: absolute; left: 50%; top: 50%; width: 20px; height: 20px;
+  margin: -10px 0 0 -10px; border: 1.5px solid rgba(236,234,228,0.75); border-radius: 50%;
+  transition: border-color 0.08s, transform 0.08s;
+}
+#hud-crosshair.hit { border-color: var(--gold-bright); transform: scale(1.3); }
+#hud-crosshair.hit-head { border-color: var(--danger); transform: scale(1.5); }
+
+#hud-vitals-wrap, #hud-ability-wrap { position: absolute; left: 2.4vw; bottom: 3vh; width: 220px; }
+#hud-ability-wrap { bottom: 8.6vh; }
+.hud-bar-label { font-size: 0.62rem; letter-spacing: 0.18em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 0.35em; display: flex; justify-content: space-between; }
+.hud-bar { height: 5px; background: rgba(255,255,255,0.08); position: relative; }
+.hud-bar .fill { height: 100%; background: var(--gold); width: 100%; transition: width 0.15s; }
+#hud-shield-fill { background: var(--rime); position: absolute; inset: 0; }
+#hud-vitals-fill { position: relative; z-index: 1; }
+
+#hud-ability-icon { font-size: 1.4rem; color: var(--text-dim); }
+#mission-hud.ability-ready #hud-ability-icon { color: var(--gold-bright); }
+
+#hud-ammo { position: absolute; right: 2.4vw; bottom: 3vh; font-size: 1.5rem; letter-spacing: 0.06em; color: var(--text); }
+#hud-objective {
+  position: absolute; top: 3vh; left: 50%; transform: translateX(-50%);
+  font-size: 0.75rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold-bright);
+  background: rgba(7,7,10,0.5); padding: 0.5em 1.2em; border: 1px solid var(--line);
+}
+#hud-boss {
+  position: absolute; top: 8vh; left: 50%; transform: translateX(-50%); width: min(520px, 80vw);
+  opacity: 0; transition: opacity 0.3s;
+}
+#hud-boss.show { opacity: 1; }
+#hud-boss-name { text-align: center; font-size: 0.7rem; letter-spacing: 0.2em; color: var(--danger); margin-bottom: 0.3em; text-transform: uppercase; }
+#hud-boss .hud-bar { height: 6px; }
+#hud-boss-fill { background: var(--danger); }
+#hud-killfeed { position: absolute; right: 2.4vw; top: 3vh; text-align: right; width: 260px; }
+.kf-row { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.3em; opacity: 1; transition: opacity 0.5s; }
+.kf-row.fade { opacity: 0; }
+#hud-damage-flash { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 50%, transparent 40%, var(--danger) 140%); opacity: 0; pointer-events: none; }
+#hud-class-label { position: absolute; left: 2.4vw; top: 3vh; font-size: 0.68rem; letter-spacing: 0.18em; color: var(--text-dim); text-transform: uppercase; }
+
+/* ---------- pause ---------- */
+#screen-pause { background: rgba(7,7,10,0.82); }
+
+#db-toast {
+  position: fixed; bottom: 4vh; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--panel-2); border: 1px solid var(--gold); padding: 0.8em 1.4em;
+  font-size: 0.78rem; letter-spacing: 0.08em; opacity: 0; transition: opacity 0.25s, transform 0.25s;
+  pointer-events: none; z-index: 50;
+}
+#db-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@media (max-width: 720px) {
+  .card-row { grid-template-columns: 1fr; }
+  #hud-killfeed { display: none; }
+}
