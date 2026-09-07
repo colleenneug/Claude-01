@@ -1,2 +1,13 @@
 # C++ native renderer build output
 cpp/build/
+
+# Unreal Engine project — everything the editor/UBT regenerates on open/build
+unreal/ErebusCradle/Binaries/
+unreal/ErebusCradle/Intermediate/
+unreal/ErebusCradle/Saved/
+unreal/ErebusCradle/DerivedDataCache/
+unreal/ErebusCradle/.vs/
+unreal/ErebusCradle/*.sln
+unreal/ErebusCradle/*.xcworkspace
+unreal/ErebusCradle/*.VC.db
+unreal/ErebusCradle/*.VC.opendb
