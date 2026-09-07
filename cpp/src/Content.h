@@ -12,7 +12,10 @@
 // The format is deliberately small rather than pulling in a JSON library
 // this project has no offline way to fetch: "key = value" lines, blank
 // lines and #-comments ignored, one enemy per content/enemies/*.cfg file,
-// one mission per content/missions/*.cfg file with repeatable `wave` lines.
+// one weapon per content/weapons/*.cfg file, one mission per
+// content/missions/*.cfg file with repeatable `wave` lines and an optional
+// `weapon = <id>` line picking which content/weapons/*.cfg the player
+// carries into it (defaults to "rifle" if omitted).
 struct EnemyType {
   std::string id, name;
   float hp = 60.0f, speed = 3.0f, damage = 10.0f;
@@ -26,12 +29,31 @@ struct EnemyType {
 
 struct WaveSpawn { std::string enemyId; int count = 1; float radius = 20.0f; };
 
+// One weapon archetype. `pellets > 1` fires that many hitscan rays per
+// trigger pull, each randomised within `spreadDegrees` (a shotgun); `pierce`
+// fires a single ray that damages every hostile it crosses before the wall
+// instead of stopping at the nearest one (an induction rifle). Both default
+// off, so an unset weapon is a plain single-target hitscan.
+struct WeaponType {
+  std::string id, name;
+  float damage = 22.0f;
+  float headshotMultiplier = 2.0f;
+  int magSize = 24;
+  int reserveAmmo = 96;
+  float fireInterval = 0.11f;   // seconds between shots
+  float reloadTime = 1.6f;
+  int pellets = 1;
+  float spreadDegrees = 0.0f;
+  bool pierce = false;
+};
+
 struct MissionDef {
   std::string id, name;
   float arenaSize = 80.0f;
   std::vector<WaveSpawn> waves;
   std::string bossId;       // empty = no boss
   float bossHpMultiplier = 1.0f;
+  std::string weaponId;     // empty = "rifle" (Game::init's fallback)
 };
 
 class Content {
@@ -43,10 +65,12 @@ public:
   bool loadAll(const std::string& dir);
 
   const EnemyType* enemy(const std::string& id) const;
+  const WeaponType* weapon(const std::string& id) const;
   const MissionDef* mission(const std::string& id) const;
   std::vector<std::string> missionIds() const;
 
 private:
   std::unordered_map<std::string, EnemyType> enemies_;
+  std::unordered_map<std::string, WeaponType> weapons_;
   std::unordered_map<std::string, MissionDef> missions_;
 };

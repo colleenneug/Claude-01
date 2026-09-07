@@ -14,6 +14,15 @@ bool Game::init(const std::string& contentDir, const std::string& missionId) {
   }
   mission_ = *def;
 
+  std::string weaponId = mission_.weaponId.empty() ? "rifle" : mission_.weaponId;
+  const WeaponType* wt = content_.weapon(weaponId);
+  if (!wt) {
+    std::fprintf(stderr, "[Game] weapon '%s' not found, falling back to Weapon's built-in defaults\n",
+                 weaponId.c_str());
+  } else {
+    weapon_.configure(*wt);
+  }
+
   level_.build(mission_.arenaSize);
   HostileGeometry::ensure();
 
@@ -123,8 +132,9 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   if (reloadHeld) weapon_.startReload();
 
   if (firePressed && weapon_.canFire()) {
-    ShotResult shot = weapon_.fire(camera.position, camera.forward(), level_, hostiles_);
-    if (shot.hitHostile) {
+    auto shots = weapon_.fire(camera.position, camera.forward(), level_, hostiles_);
+    for (auto& shot : shots) {
+      if (!shot.hitHostile) continue;
       Hostile& h = hostiles_[shot.hostileIndex];
       bool killed = h.takeDamage(shot.damage);
       hitMarkerT = 0.14f;

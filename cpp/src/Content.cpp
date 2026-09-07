@@ -88,6 +88,36 @@ EnemyType parseEnemy(const std::string& id, const fs::path& path) {
   return e;
 }
 
+WeaponType parseWeapon(const std::string& id, const fs::path& path) {
+  WeaponType w;
+  w.id = id;
+  w.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") w.name = v;
+      else if (k == "damage") w.damage = std::stof(v);
+      else if (k == "headshot_multiplier") w.headshotMultiplier = std::stof(v);
+      else if (k == "mag_size") w.magSize = std::stoi(v);
+      else if (k == "reserve_ammo") w.reserveAmmo = std::stoi(v);
+      else if (k == "fire_interval") w.fireInterval = std::stof(v);
+      else if (k == "reload_time") w.reloadTime = std::stof(v);
+      else if (k == "pellets") w.pellets = std::stoi(v);
+      else if (k == "spread_degrees") w.spreadDegrees = std::stof(v);
+      else if (k == "pierce") w.pierce = (v == "true" || v == "1");
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return w;
+}
+
 MissionDef parseMission(const std::string& id, const fs::path& path) {
   MissionDef m;
   m.id = id;
@@ -122,6 +152,7 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
       if (keyValue(line, k, v)) {
         if (k == "name") m.name = v;
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
+        else if (k == "weapon") m.weaponId = v;
       }
     }
   }
@@ -146,6 +177,15 @@ bool Content::loadAll(const std::string& dir) {
     }
   }
 
+  fs::path weaponDir = root / "weapons";
+  if (fs::exists(weaponDir)) {
+    for (auto& entry : fs::directory_iterator(weaponDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      weapons_[id] = parseWeapon(id, entry.path());
+    }
+  }
+
   fs::path missionDir = root / "missions";
   if (fs::exists(missionDir)) {
     for (auto& entry : fs::directory_iterator(missionDir)) {
@@ -155,14 +195,19 @@ bool Content::loadAll(const std::string& dir) {
     }
   }
 
-  std::printf("[Content] loaded %zu enemy type(s), %zu mission(s) from %s\n",
-              enemies_.size(), missions_.size(), dir.c_str());
+  std::printf("[Content] loaded %zu enemy type(s), %zu weapon type(s), %zu mission(s) from %s\n",
+              enemies_.size(), weapons_.size(), missions_.size(), dir.c_str());
   return true;
 }
 
 const EnemyType* Content::enemy(const std::string& id) const {
   auto it = enemies_.find(id);
   return it == enemies_.end() ? nullptr : &it->second;
+}
+
+const WeaponType* Content::weapon(const std::string& id) const {
+  auto it = weapons_.find(id);
+  return it == weapons_.end() ? nullptr : &it->second;
 }
 
 const MissionDef* Content::mission(const std::string& id) const {

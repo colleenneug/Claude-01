@@ -2,17 +2,21 @@
 
 A standalone C++/OpenGL desktop build combining the cinematic, physically
 based renderer (see `../docs/NATIVE_RENDERER.md`) with an actual mission
-loop: a physical player with collision, a hitscan weapon, hostiles with real
-AI (idle → chase → attack → die), and missions loaded from **plain text
-files under `content/`, not compiled in** — adding next month's mission or
-boss is dropping a `.cfg` file into `content/missions/`, not a code change.
+loop: a physical player with collision, a roster of hitscan weapons,
+hostiles with real AI (idle → chase → attack → die), and missions loaded
+from **plain text files under `content/`, not compiled in** — adding next
+month's mission, enemy or weapon is dropping a `.cfg` file into
+`content/missions/`, `content/enemies/` or `content/weapons/`, not a code
+change.
 
-**Scope, honestly stated:** this is Phase 1 — one weapon, one arena shape,
-three enemy archetypes, text-file missions with waves and an optional boss.
-It is not a port of the browser build's inventory, currencies, cosmetics,
-hub, save system, or netcode; see *Roadmap* below for where those land.
-Everything that exists here is real, compiled, and was verified by actually
-running it and reading back live game state — not eyeballed.
+**Scope, honestly stated:** this is Phase 1 plus the first slice of Phase 2
+— one arena shape, six enemy archetypes across two factions, four weapons
+(a standard rifle, a pellet shotgun, a piercing induction rifle and a
+high-rate-of-fire carbine), text-file missions with waves and an optional
+boss. It is not a port of the browser build's inventory, currencies,
+cosmetics, hub, save system, or netcode; see *Roadmap* below for where
+those land. Everything that exists here is real, compiled, and was verified
+by actually running it and reading back live game state — not eyeballed.
 
 No texture, model, or asset files ship with this project — every material
 shades procedurally from world position and normal (see
@@ -60,8 +64,9 @@ progress and mission state, refreshed twice a second.
 
 ## Content: how a monthly drop actually works
 
-Nothing about adding a mission touches C++. Two file types, both plain text
-(`key = value` lines, `#` comments, blank lines ignored):
+Nothing about adding a mission, an enemy, or a weapon touches C++. Three
+file types, all plain text (`key = value` lines, `#` comments, blank lines
+ignored):
 
 **`content/enemies/<id>.cfg`** — one archetype per file:
 
@@ -80,13 +85,36 @@ ranged = true
 xp = 40
 ```
 
-**`content/missions/<id>.cfg`** — an arena size, any number of `wave` lines,
-and an optional `boss` line (spawned once every regular wave is cleared,
-with a health multiplier on top of the boss's own `enemies/*.cfg` stats):
+**`content/weapons/<id>.cfg`** — one loadout per file. `pellets > 1` fires
+that many hitscan rays per trigger pull, each randomised within
+`spread_degrees` (a shotgun — one pull, one shell, several pellets, which is
+also why a shotgun's magazine only drops by one per pull, not eight);
+`pierce` fires a single ray that damages every hostile it crosses before the
+wall instead of stopping at the nearest one (an induction bolt punching
+through). Both default off, so an unset weapon is a plain single-target
+hitscan:
+
+```
+name = MAUL-12
+damage = 17
+pellets = 8
+spread_degrees = 4.0
+headshot_multiplier = 1.4
+mag_size = 6
+reserve_ammo = 30
+fire_interval = 0.8       # seconds between trigger pulls
+reload_time = 2.2
+```
+
+**`content/missions/<id>.cfg`** — an arena size, an optional `weapon = <id>`
+(defaults to `rifle` if omitted), any number of `wave` lines, and an
+optional `boss` line (spawned once every regular wave is cleared, with a
+health multiplier on top of the boss's own `enemies/*.cfg` stats):
 
 ```
 name = The Dig Site: Colossus
 arena = 90
+weapon = whisper
 
 wave scarab 4 30      # enemy id, count, spawn ring radius (metres)
 wave marauder 3 22
@@ -98,14 +126,18 @@ executable (`EREBUS_CONTENT_DIR` overrides the path). A bad or missing
 individual file is logged and skipped rather than aborting the whole load —
 see `Content::loadAll` in `src/Content.cpp`.
 
-## What's actually simulated (Phase 1)
+## What's actually simulated (Phase 1 + first Phase 2 content pass)
 
 - **Player** (`Player.h/.cpp`): gravity, jump, sprint, substepped collision
   against the level so a fast move can't tunnel through a thin wall in one
   frame.
 - **Weapon** (`Weapon.h/.cpp`): hitscan against the level's colliders *and*
   every live hostile's head/body spheres — a crate genuinely blocks a shot
-  to whatever's behind it. Magazine, reserve ammo, reload timer.
+  to whatever's behind it. Magazine, reserve ammo, reload timer, and two
+  content-driven variants on the base single-target case: pellet spread
+  (a shotgun) and piercing (an induction rifle bolt that damages every
+  hostile in line before the wall). Which weapon a mission hands the player
+  is itself content — see `weapon = <id>` in *Content* above.
 - **Hostiles** (`Hostile.h/.cpp`): a procedural armoured rig (shared
   geometry across every instance, regardless of size — see the file's
   header comment) with a state machine — idle until alerted, chase with
@@ -195,8 +227,11 @@ shaders/
 
 ## Roadmap
 
-- **Phase 2** — more content: additional enemy archetypes and weapon
-  types, a proper level-building path beyond one walled arena shape.
+- **Phase 2** — more content. **Done:** a data-driven weapon system
+  (`content/weapons/*.cfg`) alongside three more weapons and three more
+  enemy archetypes (a second faction, on the ice-world roster the browser
+  build's orbital destinations already use). **Still open:** a proper
+  level-building path beyond one walled arena shape.
 - **Phase 3** — the systems that make it a persistent game: gear/loadouts,
   currencies, a save file, a hub to return to between missions.
 - **Phase 4** — packaging as an actual downloadable build (installer,

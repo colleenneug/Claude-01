@@ -1,6 +1,23 @@
 #include "Weapon.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+
+void Weapon::configure(const WeaponType& t) {
+  magSize = t.magSize;
+  ammoInMag = t.magSize;
+  reserveAmmo = t.reserveAmmo;
+  damage = t.damage;
+  headshotMultiplier = t.headshotMultiplier;
+  fireInterval = t.fireInterval;
+  reloadTime = t.reloadTime;
+  pellets = std::max(1, t.pellets);
+  spreadDegrees = t.spreadDegrees;
+  pierce = t.pierce;
+  cooldown = 0.0f;
+  reloadT = 0.0f;
+  reloading = false;
+}
 
 void Weapon::update(float dt) {
   cooldown = std::max(0.0f, cooldown - dt);
@@ -55,22 +72,29 @@ float rayAABB(const glm::vec3& origin, const glm::vec3& dir, const Collider& c) 
   }
   return tmin;
 }
-}  // namespace
 
-ShotResult Weapon::fire(const glm::vec3& origin, const glm::vec3& dir, const Level& level,
-                         std::vector<Hostile>& hostiles) {
-  ShotResult result;
-  if (!canFire()) return result;
+// A perturbed copy of `dir`, randomised within a `maxDegrees` cone — used
+// for shotgun pellets. Builds a basis perpendicular to `dir` and offsets by
+// a random angle on each axis rather than one random axis + angle, which
+// would bias pellets towards the cone's rim instead of spreading evenly.
+glm::vec3 spreadDir(const glm::vec3& dir, float maxDegrees) {
+  if (maxDegrees <= 0.0f) return dir;
+  glm::vec3 helper = std::abs(dir.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+  glm::vec3 right = glm::normalize(glm::cross(dir, helper));
+  glm::vec3 up = glm::cross(right, dir);
+  float rMax = glm::radians(maxDegrees);
+  float a = (((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f) * rMax;
+  float b = (((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f) * rMax;
+  return glm::normalize(dir + right * a + up * b);
+}
 
-  cooldown = fireInterval;
-  ammoInMag--;
+struct HitCandidate { int index; float dist; bool head; };
 
-  float wallDist = 1e6f;
-  for (auto& c : level.colliders()) wallDist = std::min(wallDist, rayAABB(origin, dir, c));
-
-  int bestIndex = -1;
-  float bestDist = wallDist;
-  bool bestHead = false;
+// Every live hostile the ray crosses before `maxDist` (the nearest wall),
+// nearest first.
+std::vector<HitCandidate> castHostiles(const glm::vec3& origin, const glm::vec3& dir,
+                                        std::vector<Hostile>& hostiles, float maxDist) {
+  std::vector<HitCandidate> hits;
   for (size_t i = 0; i < hostiles.size(); i++) {
     Hostile& h = hostiles[i];
     if (!h.blocksShots()) continue;
@@ -78,20 +102,57 @@ ShotResult Weapon::fire(const glm::vec3& origin, const glm::vec3& dir, const Lev
     float bd = raySphere(origin, dir, h.bodyCentre(), h.type->radius * 1.05f * h.bossScale);
     bool isHead = hd >= 0.0f && (bd < 0.0f || hd <= bd);
     float d = isHead ? hd : bd;
-    if (d < 0.0f || d >= bestDist) continue;
-    bestDist = d;
-    bestIndex = (int)i;
-    bestHead = isHead;
+    if (d < 0.0f || d >= maxDist) continue;
+    hits.push_back({(int)i, d, isHead});
   }
+  std::sort(hits.begin(), hits.end(), [](const HitCandidate& a, const HitCandidate& b) {
+    return a.dist < b.dist;
+  });
+  return hits;
+}
+}  // namespace
 
-  if (bestIndex >= 0) {
-    result.hitSomething = true;
-    result.hitHostile = true;
-    result.headshot = bestHead;
-    result.hostileIndex = bestIndex;
-    result.damage = damage * (bestHead ? headshotMultiplier : 1.0f);
-  } else if (wallDist < 1e5f) {
-    result.hitSomething = true;
+std::vector<ShotResult> Weapon::fire(const glm::vec3& origin, const glm::vec3& dir, const Level& level,
+                                      std::vector<Hostile>& hostiles) {
+  std::vector<ShotResult> results;
+  if (!canFire()) return results;
+
+  cooldown = fireInterval;
+  ammoInMag--;
+
+  float wallDist = 1e6f;
+  for (auto& c : level.colliders()) wallDist = std::min(wallDist, rayAABB(origin, dir, c));
+
+  int shotCount = std::max(1, pellets);
+  for (int s = 0; s < shotCount; s++) {
+    bool spread = shotCount > 1 || spreadDegrees > 0.0f;
+    glm::vec3 d = spread ? spreadDir(dir, spreadDegrees) : dir;
+    float wd = wallDist;
+    if (spread) {
+      wd = 1e6f;
+      for (auto& c : level.colliders()) wd = std::min(wd, rayAABB(origin, d, c));
+    }
+
+    auto hits = castHostiles(origin, d, hostiles, wd);
+    if (hits.empty()) {
+      if (wd < 1e5f) {
+        ShotResult r;
+        r.hitSomething = true;
+        results.push_back(r);
+      }
+      continue;
+    }
+
+    size_t take = pierce ? hits.size() : 1;
+    for (size_t k = 0; k < take; k++) {
+      ShotResult r;
+      r.hitSomething = true;
+      r.hitHostile = true;
+      r.headshot = hits[k].head;
+      r.hostileIndex = hits[k].index;
+      r.damage = damage * (hits[k].head ? headshotMultiplier : 1.0f);
+      results.push_back(r);
+    }
   }
-  return result;
+  return results;
 }
