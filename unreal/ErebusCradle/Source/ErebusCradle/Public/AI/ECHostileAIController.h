@@ -29,9 +29,6 @@ protected:
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "AI")
-	TObjectPtr<UAIPerceptionComponent> PerceptionComponent;
-
-	UPROPERTY(VisibleAnywhere, Category = "AI")
 	TObjectPtr<UAISenseConfig_Sight> SightConfig;
 
 	UPROPERTY(Transient)
