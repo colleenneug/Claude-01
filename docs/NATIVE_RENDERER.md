@@ -215,3 +215,10 @@ colour detail is already footprint-faded and alias-free on its own, and a
 flat-shaded panel that reads cleanly beats a detailed one that shimmers.
 Revisiting that bump with a proper analytic derivative, rather than a
 finite-difference one, is the natural follow-up.
+
+A second update, unrelated to rendering: the game now also has gear
+(weapons/armour/cosmetics), a chits currency, a persistent save profile,
+and a keyboard-driven Hub between missions — see `cpp/README.md`. None of
+it touches `Renderer`; `Game::hudAccent()` is the one new signal that
+reaches the HUD rather than the 3D pass, since a cosmetic only recolours
+2D overlay rectangles.

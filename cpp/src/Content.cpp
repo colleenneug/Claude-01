@@ -122,10 +122,85 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
       if (keyValue(line, k, v)) {
         if (k == "name") m.name = v;
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
+        else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
       }
     }
   }
   return m;
+}
+
+WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
+  WeaponDef w;
+  w.id = id;
+  w.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") w.name = v;
+      else if (k == "damage") w.damage = std::stof(v);
+      else if (k == "headshot_multiplier") w.headshotMultiplier = std::stof(v);
+      else if (k == "fire_interval") w.fireInterval = std::stof(v);
+      else if (k == "reload_time") w.reloadTime = std::stof(v);
+      else if (k == "mag_size") w.magSize = std::stoi(v);
+      else if (k == "cost") w.cost = std::stoi(v);
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return w;
+}
+
+ArmorDef parseArmor(const std::string& id, const fs::path& path) {
+  ArmorDef a;
+  a.id = id;
+  a.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") a.name = v;
+      else if (k == "hp_bonus") a.hpBonus = std::stof(v);
+      else if (k == "damage_reduction") a.damageReduction = std::stof(v);
+      else if (k == "cost") a.cost = std::stoi(v);
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return a;
+}
+
+CosmeticDef parseCosmetic(const std::string& id, const fs::path& path) {
+  CosmeticDef c;
+  c.id = id;
+  c.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") c.name = v;
+      else if (k == "accent") c.accent = parseVec3(v, c.accent);
+      else if (k == "cost") c.cost = std::stoi(v);
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return c;
 }
 
 }  // namespace
@@ -155,8 +230,37 @@ bool Content::loadAll(const std::string& dir) {
     }
   }
 
-  std::printf("[Content] loaded %zu enemy type(s), %zu mission(s) from %s\n",
-              enemies_.size(), missions_.size(), dir.c_str());
+  fs::path weaponDir = root / "weapons";
+  if (fs::exists(weaponDir)) {
+    for (auto& entry : fs::directory_iterator(weaponDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      weapons_[id] = parseWeapon(id, entry.path());
+    }
+  }
+
+  fs::path armorDir = root / "armor";
+  if (fs::exists(armorDir)) {
+    for (auto& entry : fs::directory_iterator(armorDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      armor_[id] = parseArmor(id, entry.path());
+    }
+  }
+
+  fs::path cosmeticDir = root / "cosmetics";
+  if (fs::exists(cosmeticDir)) {
+    for (auto& entry : fs::directory_iterator(cosmeticDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      cosmetics_[id] = parseCosmetic(id, entry.path());
+    }
+  }
+
+  std::printf("[Content] loaded %zu enemy type(s), %zu mission(s), %zu weapon(s), "
+              "%zu armor piece(s), %zu cosmetic(s) from %s\n",
+              enemies_.size(), missions_.size(), weapons_.size(), armor_.size(),
+              cosmetics_.size(), dir.c_str());
   return true;
 }
 
@@ -170,9 +274,45 @@ const MissionDef* Content::mission(const std::string& id) const {
   return it == missions_.end() ? nullptr : &it->second;
 }
 
+const WeaponDef* Content::weapon(const std::string& id) const {
+  auto it = weapons_.find(id);
+  return it == weapons_.end() ? nullptr : &it->second;
+}
+
+const ArmorDef* Content::armor(const std::string& id) const {
+  auto it = armor_.find(id);
+  return it == armor_.end() ? nullptr : &it->second;
+}
+
+const CosmeticDef* Content::cosmetic(const std::string& id) const {
+  auto it = cosmetics_.find(id);
+  return it == cosmetics_.end() ? nullptr : &it->second;
+}
+
 std::vector<std::string> Content::missionIds() const {
   std::vector<std::string> out;
   out.reserve(missions_.size());
   for (auto& kv : missions_) out.push_back(kv.first);
+  return out;
+}
+
+std::vector<std::string> Content::weaponIds() const {
+  std::vector<std::string> out;
+  out.reserve(weapons_.size());
+  for (auto& kv : weapons_) out.push_back(kv.first);
+  return out;
+}
+
+std::vector<std::string> Content::armorIds() const {
+  std::vector<std::string> out;
+  out.reserve(armor_.size());
+  for (auto& kv : armor_) out.push_back(kv.first);
+  return out;
+}
+
+std::vector<std::string> Content::cosmeticIds() const {
+  std::vector<std::string> out;
+  out.reserve(cosmetics_.size());
+  for (auto& kv : cosmetics_) out.push_back(kv.first);
   return out;
 }

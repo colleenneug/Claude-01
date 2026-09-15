@@ -7,12 +7,18 @@ AI (idle → chase → attack → die), and missions loaded from **plain text
 files under `content/`, not compiled in** — adding next month's mission or
 boss is dropping a `.cfg` file into `content/missions/`, not a code change.
 
-**Scope, honestly stated:** this is Phase 1 — one weapon, one arena shape,
-three enemy archetypes, text-file missions with waves and an optional boss.
-It is not a port of the browser build's inventory, currencies, cosmetics,
-hub, save system, or netcode; see *Roadmap* below for where those land.
-Everything that exists here is real, compiled, and was verified by actually
-running it and reading back live game state — not eyeballed.
+It now also has a persistent profile — chits (currency), owned and equipped
+gear, completed missions — picked in a keyboard-driven **Hub** between
+missions and saved to disk, so progress carries across runs.
+
+**Scope, honestly stated:** three weapons, three armour pieces, three
+cosmetics, three enemy archetypes, three missions. All of it is real,
+data-driven content under `content/`, not hardcoded — a monthly drop of new
+gear or a new mission is text files, not a code change (see *Content*
+below). What's still not here: co-op/netcode (see the note at the bottom of
+*Roadmap*) and packaging as an actual installable build. Everything that
+exists here is real, compiled, and was verified by actually running it and
+reading back live game state — not eyeballed.
 
 No texture, model, or asset files ship with this project — every material
 shades procedurally from world position and normal (see
@@ -44,6 +50,16 @@ extension.
 
 ## Controls
 
+The game opens in the **Hub**, not straight into a mission:
+
+| Input | Action |
+|---|---|
+| 1 / 2 / 3 | Cycle weapon / armour / cosmetic — equips it if owned, buys-then-equips it if not and it's affordable, otherwise just moves the selection so you can see what you don't own yet |
+| Tab | Cycle the selected mission |
+| Enter or Space | Launch the selected mission |
+
+In a mission:
+
 | Input | Action |
 |---|---|
 | Mouse | Look |
@@ -54,6 +70,7 @@ extension.
 | R | Reload |
 | Right mouse, held | Aim — narrows the FOV and brings depth of field in on the background |
 | Escape | Release the mouse; left click re-captures it |
+| Enter or Space, once the mission has ended | Return to the Hub (saves your profile) |
 
 The window title shows frame time, mission name, player HP, ammo, wave
 progress and mission state, refreshed twice a second.
@@ -93,19 +110,66 @@ wave marauder 3 22
 boss colossus 2.2
 ```
 
+**`content/weapons/<id>.cfg`**, **`content/armor/<id>.cfg`**,
+**`content/cosmetics/<id>.cfg`** — equippable gear, all the same format:
+
+```
+# content/weapons/marksman_carbine.cfg
+name = Marksman Carbine
+damage = 42
+headshot_multiplier = 2.6
+fire_interval = 0.32     # seconds between shots
+reload_time = 2.0
+mag_size = 12
+cost = 220                # chits; 0 = starter gear, owned from a fresh profile
+```
+
+```
+# content/armor/scout_rig.cfg
+name = Scout Rig
+hp_bonus = 20
+damage_reduction = 0.05   # fraction of incoming damage absorbed
+cost = 120
+```
+
+```
+# content/cosmetics/ember.cfg
+name = Ember
+accent = 1.0, 0.65, 0.3    # recolours the HUD: health-full, ammo pips, crosshair
+cost = 90
+```
+
+A mission can also pay out currency on its first completion:
+
+```
+reward = 40    # chits, paid once — add this line to a mission.cfg
+```
+
 Content is loaded once at startup from the `content/` directory next to the
 executable (`EREBUS_CONTENT_DIR` overrides the path). A bad or missing
 individual file is logged and skipped rather than aborting the whole load —
 see `Content::loadAll` in `src/Content.cpp`.
 
-## What's actually simulated (Phase 1)
+## What's actually simulated
 
+- **Profile** (`Profile.h/.cpp`): chits, owned/equipped weapon, armour and
+  cosmetic, completed-mission list. Saved as a plain `key = value` file
+  (`ProfileStore::save`/`load`, default path `save.dat`, `EREBUS_SAVE_PATH`
+  overrides it); a first run with no save file gets a fresh profile with
+  starter gear already granted, never a "no save" error state.
+- **Hub** (`Hub.h/.cpp`): the between-mission loadout/mission picker — see
+  *Controls* above. Cycling an unowned item buys it if it's affordable;
+  Hud's `drawHub` renders it back as swatches (green = equipped, blue =
+  owned, dim grey/red = affordable/not), the same bar-and-colour language
+  the mission HUD speaks, since this project has no text rendering.
 - **Player** (`Player.h/.cpp`): gravity, jump, sprint, substepped collision
   against the level so a fast move can't tunnel through a thin wall in one
-  frame.
+  frame. Equipped armour raises `maxHp` and shaves a fraction off every hit
+  taken (`Player::damageReduction`), applied in `Game::update`.
 - **Weapon** (`Weapon.h/.cpp`): hitscan against the level's colliders *and*
   every live hostile's head/body spheres — a crate genuinely blocks a shot
-  to whatever's behind it. Magazine, reserve ammo, reload timer.
+  to whatever's behind it. Magazine, reserve ammo, reload timer — all of it
+  set from the equipped `WeaponDef` at mission start.
 - **Hostiles** (`Hostile.h/.cpp`): a procedural armoured rig (shared
   geometry across every instance, regardless of size — see the file's
   header comment) with a state machine — idle until alerted, chase with
@@ -119,12 +183,15 @@ see `Content::loadAll` in `src/Content.cpp`.
   never start out wedged inside a crate.
 - **Missions** (`Game.h/.cpp`): spawns every wave immediately, holds the
   boss back until the waves are clear, tracks win (all hostiles Gone) and
-  loss (player HP 0) conditions.
+  loss (player HP 0) conditions, and on a first win pays the mission's
+  `reward` chits into the profile via `Profile::recordMissionComplete` (a
+  repeat clear doesn't pay out again).
 - **HUD** (`Hud.h/.cpp`): health bar, ammo pips + reload sweep, a crosshair
-  with a hit-marker flash, a wave-progress bar, a boss health bar. No text
-  rendering — this project has no offline way to fetch a font-rendering
-  library, so numbers and names aren't drawn yet. Everything shown is
-  genuinely wired to live state.
+  with a hit-marker flash, a wave-progress bar, a boss health bar — tinted
+  by the equipped cosmetic's accent colour. No text rendering — this
+  project has no offline way to fetch a font-rendering library, so numbers
+  and names aren't drawn yet, in the Hub or in a mission. Everything shown
+  is genuinely wired to live state.
 
 ## Verifying it without a display
 
@@ -141,13 +208,27 @@ a way to prove movement, combat and mission state actually work:
 - `EREBUS_DEBUG_AUTOAIM=1` — snaps the camera onto the nearest hostile
   every frame. A verification aid only, **never enabled by default** —
   it exists so firing can be exercised without simulating real mouse input.
-- `EREBUS_LOG_STATE=<path.json>` — at `EREBUS_MAX_FRAMES`, writes mission
-  state, player HP/position, ammo and wave progress as one JSON line.
+- `EREBUS_LOG_STATE=<path.json>` — at `EREBUS_MAX_FRAMES`, writes one JSON
+  line of live state: mission progress/HP/ammo/chits if in a mission,
+  or chits/equipped gear/selected mission if still in the Hub
+  (`"appState"` says which).
+- `EREBUS_SAVE_PATH=<path>` — profile save file location (default
+  `save.dat`); point it at a scratch path so a test run never touches a
+  real player's progress.
+- `EREBUS_SKIP_HUB=1` — boot straight into `--mission` with whatever's
+  currently equipped, bypassing the Hub — every verification flow that
+  predates the Hub still lands in a mission on frame 0.
+- `EREBUS_HUB_SCRIPT="1,2,mission,launch"` — drives the Hub deterministically
+  with no real keyboard: one comma-separated token consumed per frame while
+  still in the Hub (`"1"`/`"2"`/`"3"` cycle-equip-or-buy a category,
+  `"mission"` cycles the mission, `"launch"` commits) — the same idea as
+  `EREBUS_FORCE_FORWARD`, but for menu input.
 
 ```
 Xvfb :99 -screen 0 1280x800x24 &
 DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 \
-  EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 \
+  EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_SKIP_HUB=1 \
+  EREBUS_SAVE_PATH=/tmp/save.dat \
   EREBUS_LOG_STATE=/tmp/state.json EREBUS_MAX_FRAMES=400 \
   ./build/erebus_native --mission debug_single
 ```
@@ -163,8 +244,11 @@ CMakeLists.txt
 content/
   enemies/*.cfg           enemy archetypes — see "Content" above
   missions/*.cfg          mission definitions
+  weapons/*.cfg           equippable weapons
+  armor/*.cfg             equippable armour
+  cosmetics/*.cfg         HUD accent skins
 src/
-  main.cpp                window, input, frame loop, headless verification hooks
+  main.cpp                window, input, Hub/Mission state machine, headless verification hooks
   Gl.h                    GLEW/GLFW/GLM include point + glCheck()
   Shader.{h,cpp}          program compile/link, cached uniform locations
   Camera.{h,cpp}          view: look direction, FOV, the aim blend
@@ -175,12 +259,14 @@ src/
   Bloom.{h,cpp}           5-level downsample/tent-upsample bloom
   IBL.{h,cpp}             room capture -> prefiltered cubemap
   Renderer.{h,cpp}        orchestrates one frame, shadow pass through composite
-  Content.{h,cpp}         loads enemies/missions from content/
+  Content.{h,cpp}         loads enemies/missions/weapons/armor/cosmetics from content/
+  Profile.{h,cpp}         persistent save: chits, owned/equipped gear, completed missions
+  Hub.{h,cpp}             between-mission loadout/mission picker
   Level.{h,cpp}           arena geometry + AABB colliders
-  Player.{h,cpp}          physical controller: gravity, jump, collision
+  Player.{h,cpp}          physical controller: gravity, jump, collision, armour damage reduction
   Weapon.{h,cpp}          hitscan vs level + hostiles
   Hostile.{h,cpp}         rig, AI state machine, stuck-avoidance steering
-  Hud.{h,cpp}             2D overlay: bars, pips, crosshair
+  Hud.{h,cpp}             2D overlay: bars, pips, crosshair, hub swatches
   Game.{h,cpp}            owns and drives all of the above
 shaders/
   pbr.vert / pbr.frag     the one material program every opaque object uses
@@ -195,12 +281,21 @@ shaders/
 
 ## Roadmap
 
-- **Phase 2** — more content: additional enemy archetypes and weapon
-  types, a proper level-building path beyond one walled arena shape.
-- **Phase 3** — the systems that make it a persistent game: gear/loadouts,
-  currencies, a save file, a hub to return to between missions.
+- ~~**Phase 2** — more content: additional enemy archetypes and weapon
+  types.~~ Done for weapons/armour/cosmetics (three each, all data-driven —
+  see *Content*); a proper level-building path beyond one walled arena
+  shape is still open.
+- ~~**Phase 3** — the systems that make it a persistent game: gear/loadouts,
+  currencies, a save file, a hub to return to between missions.~~ Done —
+  see *Profile* and *Hub* above.
 - **Phase 4** — packaging as an actual downloadable build (installer,
   versioning) rather than something built from source.
+
+Ideas that came up but were deliberately left out of this pass, since they
+weren't asked for: a per-kill bounty economy (chits currently pay out once
+per mission clear, not per kill — see the comment in `Game::update`), and
+armour/weapon rarity tiers or stat rolls beyond the fixed stats a `.cfg`
+file declares.
 
 Not roadmapped, and worth saying plainly rather than leaving implicit:
 **co-op/netcode** is not planned for this native build in the near term —

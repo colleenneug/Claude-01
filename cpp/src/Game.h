@@ -6,6 +6,7 @@
 #include "Weapon.h"
 #include "Hostile.h"
 #include "Camera.h"
+#include "Profile.h"
 #include <string>
 #include <vector>
 
@@ -21,8 +22,13 @@ public:
   // Loads content/, finds `missionId` in it, builds the level and spawns
   // its waves. Returns false (and logs why) if the mission or any enemy
   // type it references can't be found — a bad content file should refuse
-  // to start rather than silently spawn nothing.
-  bool init(const std::string& contentDir, const std::string& missionId);
+  // to start rather than silently spawn nothing. `profile`'s equipped
+  // weapon/armour/cosmetic are looked up in the same content_ and applied
+  // to the live Weapon/Player/Hud accent before the mission starts; Game
+  // keeps a pointer to it so a mission completion can pay out chits and
+  // mark the mission completed directly, once, without main.cpp having to
+  // poll missionState() itself.
+  bool init(const std::string& contentDir, const std::string& missionId, Profile& profile);
   void destroy();
 
   // window/dt drive the player; camera is both read (for aim direction)
@@ -50,6 +56,7 @@ public:
   float bossHpFraction() const;
   float hitMarkerT = 0.0f;
   float damageFlashT = 0.0f;
+  glm::vec3 hudAccent() const { return hudAccent_; }
 
 private:
   void spawnBossIfReady();
@@ -64,6 +71,10 @@ private:
   bool bossPending_ = false;
   int bossIndex_ = -1;
   MissionState missionState_ = MissionState::InProgress;
+
+  Profile* profile_ = nullptr;
+  bool rewardApplied_ = false;
+  glm::vec3 hudAccent_{0.85f, 0.95f, 1.0f};
 
   GLuint moteVao_ = 0, moteVbo_ = 0;
   int moteCount_ = 2400;
