@@ -1,0 +1,190 @@
+<title>Urban Sandbox 3D</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="src/css/style.css">
+
+<!-- ===== Auth screen (local device profile) ===== -->
+<div id="auth-screen" class="screen">
+  <div class="auth-card">
+    <p class="eyebrow">Singleplayer Sandbox</p>
+    <h1>URBAN SANDBOX 3D</h1>
+    <p class="tagline">A living city to explore freely &mdash; wander the streets, climb the rooftops, chat with the locals, and shape the city block by block.</p>
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-tab="login">Log In</button>
+      <button type="button" class="auth-tab" data-tab="signup">Sign Up</button>
+    </div>
+
+    <form id="login-form" class="auth-form">
+      <label>Name<input type="text" id="login-username" autocomplete="username" required></label>
+      <label>Password<input type="password" id="login-password" autocomplete="current-password" required></label>
+      <button type="submit" class="btn-primary">Log In</button>
+    </form>
+
+    <form id="signup-form" class="auth-form hidden">
+      <label>Name<input type="text" id="signup-username" autocomplete="username" required minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+"></label>
+      <label>Password<input type="password" id="signup-password" autocomplete="new-password" required minlength="4"></label>
+      <button type="submit" class="btn-primary">Create Save</button>
+    </form>
+
+    <p id="auth-error" class="auth-error hidden"></p>
+    <p class="fine-print">Saved on this device only &mdash; a local profile, not a networked account.</p>
+  </div>
+</div>
+
+<!-- ===== Role select screen ===== -->
+<div id="role-screen" class="screen hidden">
+  <div class="auth-card auth-card-wide">
+    <h1>CHOOSE YOUR ROLE</h1>
+    <p class="tagline">Your role decides how you play the city.</p>
+    <div class="role-grid" id="role-grid"></div>
+  </div>
+</div>
+
+<!-- ===== Confirm / main-menu screen ===== -->
+<div id="confirm-screen" class="screen hidden">
+  <div class="auth-card">
+    <p class="eyebrow">Singleplayer Sandbox</p>
+    <h1>URBAN SANDBOX 3D</h1>
+    <div class="confirm-role-badge"><span id="confirm-role-icon" class="confirm-role-icon"></span><span id="confirm-role-name"></span></div>
+    <p id="confirm-desc" class="tagline"></p>
+
+    <div class="controls-recap">
+      <div><b>Move</b><span>WASD</span></div>
+      <div><b>Jump</b><span>Space</span></div>
+      <div><b>Climb walls</b><span>Space + W into a wall</span></div>
+      <div><b>Sprint</b><span>Shift</span></div>
+      <div><b>Buy property</b><span>F (look at building)</span></div>
+      <div><b>Talk</b><span>E near a person</span></div>
+      <div><b>Rob / arrest</b><span>R near a bank or person</span></div>
+      <div><b>Drive</b><span>V near a car</span></div>
+      <div><b>Travel</b><span>T at the airport</span></div>
+    </div>
+
+    <p class="powers-heading">Your powers</p>
+    <ul id="confirm-powers" class="powers-recap"></ul>
+
+    <button type="button" id="btn-enter-city" class="btn-primary">Enter the City</button>
+    <button type="button" id="btn-kids-city" class="btn-secondary">&#10024; Kids City (no combat)</button>
+    <button type="button" id="btn-change-role" class="btn-tertiary">&#8635; Change Role</button>
+  </div>
+</div>
+
+<!-- ===== Game canvas + HUD ===== -->
+<div id="game-screen" class="screen hidden">
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud-topleft" class="hud-panel">
+    <div id="hud-role" class="hud-row hud-role"><span class="dot"></span><span id="hud-role-name">Criminal</span></div>
+    <div class="hud-row hud-money"><span class="icon">$</span><span id="hud-money">0</span><span id="hud-income" class="hud-income"></span></div>
+    <div id="hud-weapon-row" class="hud-row hud-weapon hidden"><span class="icon">&#128299;</span><span>Pistol</span></div>
+    <div id="hud-energy-row" class="hud-row hud-energy hidden">
+      <span class="icon">&#9889;</span>
+      <div class="energy-bar"><div id="hud-energy-fill" class="energy-fill"></div></div>
+      <span id="hud-energy-value">100</span>
+    </div>
+    <div class="hud-row hud-health">
+      <span class="icon">&#10084;&#65039;</span>
+      <div class="health-bar"><div id="hud-health-fill" class="health-fill"></div></div>
+      <span id="hud-health-value">100</span>
+    </div>
+  </div>
+
+  <div id="hud-topright" class="hud-panel">
+    <div class="hud-row hud-online"><span class="icon">&#128100;</span>Singleplayer</div>
+    <button type="button" class="menu-btn" data-panel="business">&#127974; Business</button>
+    <button type="button" class="menu-btn" data-panel="build">&#128296; Build</button>
+    <button type="button" id="btn-camera" class="menu-btn">&#128065; 1st Person</button>
+    <button type="button" id="btn-powers-menu" class="menu-btn hidden" data-panel="powers">&#9889; Powers</button>
+    <button type="button" class="menu-btn" data-panel="leaderboard">&#127942; Leaderboard</button>
+  </div>
+
+  <div id="prompt" class="prompt hidden"></div>
+  <div id="dialog-box" class="dialog-box hidden"></div>
+
+  <div id="panel-business" class="side-panel hidden">
+    <h2>Business</h2>
+    <div id="business-list"></div>
+    <button type="button" class="btn-close" data-close="business">Close</button>
+  </div>
+
+  <div id="panel-build" class="side-panel hidden">
+    <h2>Build</h2>
+    <p class="panel-hint">Click in the world to drop a block. Right-click a block you placed to remove it.</p>
+    <div class="build-swatches" id="build-swatches"></div>
+    <button type="button" class="btn-close" data-close="build">Close</button>
+  </div>
+
+  <div id="panel-powers" class="side-panel hidden">
+    <h2>Powers</h2>
+    <div id="powers-list"></div>
+    <button type="button" class="btn-close" data-close="powers">Close</button>
+  </div>
+
+  <div id="panel-leaderboard" class="side-panel hidden">
+    <h2>Leaderboard</h2>
+    <p class="panel-hint">Every profile saved on this device, ranked by cash.</p>
+    <ol id="leaderboard-list"></ol>
+    <button type="button" class="btn-close" data-close="leaderboard">Close</button>
+  </div>
+
+  <div id="panel-travel" class="side-panel hidden">
+    <h2>Fast Travel</h2>
+    <div id="travel-list"></div>
+    <button type="button" class="btn-close" data-close="travel">Close</button>
+  </div>
+
+  <div id="bank-heist" class="side-panel heist-panel hidden">
+    <div class="heist-header">
+      <div class="heist-title"><span class="heist-icon">&#127974;</span><div><strong>Cracking the Safe</strong><div class="panel-hint">Bank heist in progress</div></div></div>
+      <button type="button" id="heist-close" class="icon-btn">&#10005;</button>
+    </div>
+    <div class="heist-status-row">
+      <div id="heist-tumblers" class="heist-tumblers"></div>
+      <div class="heist-timer">&#9201; <span id="heist-timer-value">30</span>s</div>
+    </div>
+    <div class="safe-dial-wrap">
+      <div class="safe-dial-ring">
+        <div id="safe-needle" class="safe-needle"></div>
+        <div id="safe-readout" class="safe-readout">00</div>
+      </div>
+    </div>
+    <div class="feedback-row">
+      <span class="feedback-label">Feedback</span>
+      <div class="feedback-bar"><div id="feedback-fill" class="feedback-fill"></div></div>
+      <span class="feedback-label">Cool</span>
+    </div>
+    <div class="heist-controls">
+      <button type="button" id="heist-turn-left" class="turn-btn">&lsaquo; Turn</button>
+      <button type="button" id="heist-lock" class="lock-btn">&#128274; Lock</button>
+      <button type="button" id="heist-turn-right" class="turn-btn">Turn &rsaquo;</button>
+    </div>
+    <p id="bank-result" class="panel-hint"></p>
+  </div>
+
+  <div class="controls-bar">
+    <span><b>WASD</b> move</span>
+    <span><b>Space</b> jump</span>
+    <span><b>Space+W</b> on a wall to climb</span>
+    <span><b>Shift</b> sprint</span>
+    <span><b>F</b> buy property</span>
+    <span><b>E</b> talk</span>
+    <span id="controls-rob"><b>R</b> rob/arrest</span>
+    <span><b>V</b> drive</span>
+    <span><b>T</b> travel (at the airport)</span>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="src/js/api.js"></script>
+<script src="src/js/economy.js"></script>
+<script src="src/js/auth.js"></script>
+<script src="src/js/hud.js"></script>
+<script src="src/js/world.js"></script>
+<script src="src/js/player.js"></script>
+<script src="src/js/vehicle.js"></script>
+<script src="src/js/npc.js"></script>
+<script src="src/js/bank.js"></script>
+<script src="src/js/travel.js"></script>
+<script src="src/js/build.js"></script>
+<script src="src/js/leaderboard.js"></script>
+<script src="src/js/game.js"></script>
