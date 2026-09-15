@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <cstdio>
 
-bool Game::init(const std::string& contentDir, const std::string& missionId) {
+bool Game::init(const std::string& contentDir, const std::string& missionId, Profile& profile) {
   if (!content_.loadAll(contentDir)) return false;
   const MissionDef* def = content_.mission(missionId);
   if (!def) {
@@ -13,18 +13,50 @@ bool Game::init(const std::string& contentDir, const std::string& missionId) {
     return false;
   }
   mission_ = *def;
+  profile_ = &profile;
+  rewardApplied_ = false;
 
-  std::string weaponId = mission_.weaponId.empty() ? "rifle" : mission_.weaponId;
-  const WeaponType* wt = content_.weapon(weaponId);
-  if (!wt) {
-    std::fprintf(stderr, "[Game] weapon '%s' not found, falling back to Weapon's built-in defaults\n",
-                 weaponId.c_str());
-  } else {
-    weapon_.configure(*wt);
-  }
+  // Reset per-mission run state — the Hub lets a player launch more than
+  // one mission per process, and without this a second init() on the same
+  // Game would keep the first mission's dead hostiles, boss index and
+  // Complete/Failed state around instead of starting clean.
+  hostiles_.clear();
+  waveTotal_ = 0;
+  bossPending_ = false;
+  bossIndex_ = -1;
+  missionState_ = MissionState::InProgress;
+  hitMarkerT = 0.0f;
+  damageFlashT = 0.0f;
 
   level_.build(mission_.arenaSize);
   HostileGeometry::ensure();
+
+  // Gear: looked up by the ids the profile has equipped, in the same
+  // content_ this mission itself came from, so a monthly content drop that
+  // adds a new weapon/armor/cosmetic file just works — nothing here is
+  // hardcoded to the three starter items.
+  const ArmorDef* armor = content_.armor(profile.equippedArmor);
+  player_.maxHp = 100.0f + (armor ? armor->hpBonus : 0.0f);
+  player_.damageReduction = armor ? armor->damageReduction : 0.0f;
+
+  // A mission can pin a specific weapon (see MissionDef::weaponId) to
+  // showcase a particular loadout regardless of what's equipped; otherwise
+  // it's whatever the profile has equipped (Profile::ensureStarterGear
+  // guarantees that's never empty). Either way it's the same content_
+  // lookup and the same full configure(), so a mission-pinned shotgun
+  // actually fires pellets instead of leaving a stale field behind from
+  // whatever was equipped before it.
+  std::string weaponId = mission_.weaponId.empty() ? profile.equippedWeapon : mission_.weaponId;
+  const WeaponDef* wdef = content_.weapon(weaponId);
+  if (!wdef) {
+    std::fprintf(stderr, "[Game] weapon '%s' not found, falling back to Weapon's built-in defaults\n",
+                 weaponId.c_str());
+  } else {
+    weapon_.configure(*wdef);
+  }
+
+  const CosmeticDef* cosmetic = content_.cosmetic(profile.equippedCosmetic);
+  hudAccent_ = cosmetic ? cosmetic->accent : glm::vec3(0.85f, 0.95f, 1.0f);
 
   player_.position = glm::vec3(0.0f, level_.floorY(), 0.0f);
   player_.hp = player_.maxHp;
@@ -68,29 +100,35 @@ bool Game::init(const std::string& contentDir, const std::string& missionId) {
   // renderer demo scene this replaces.
   sunDirection = glm::normalize(glm::vec3(-0.62f, -0.34f, -0.32f));
 
-  srand(99);
-  auto rnd = [](float lo, float hi) { return lo + (hi - lo) * (float)rand() / (float)RAND_MAX; };
-  std::vector<float> data;
-  data.reserve(moteCount_ * 5);
-  for (int i = 0; i < moteCount_; i++) {
-    data.push_back(rnd(-1.0f, 1.0f) * moteBox_ * 0.5f);
-    data.push_back(rnd(-1.0f, 1.0f) * moteBox_ * 0.5f);
-    data.push_back(rnd(-1.0f, 1.0f) * moteBox_ * 0.5f);
-    data.push_back(rnd(0.0f, 1.0f));
-    data.push_back(0.35f + std::pow(rnd(0.0f, 1.0f), 3.0f) * 1.9f);
+  // The dust motes don't depend on anything mission-specific (fixed box,
+  // fixed count, fixed seed), so they're built once and reused across
+  // however many missions the Hub launches in one process rather than
+  // leaking a VAO/VBO pair every relaunch.
+  if (moteVao_ == 0) {
+    srand(99);
+    auto rnd = [](float lo, float hi) { return lo + (hi - lo) * (float)rand() / (float)RAND_MAX; };
+    std::vector<float> data;
+    data.reserve(moteCount_ * 5);
+    for (int i = 0; i < moteCount_; i++) {
+      data.push_back(rnd(-1.0f, 1.0f) * moteBox_ * 0.5f);
+      data.push_back(rnd(-1.0f, 1.0f) * moteBox_ * 0.5f);
+      data.push_back(rnd(-1.0f, 1.0f) * moteBox_ * 0.5f);
+      data.push_back(rnd(0.0f, 1.0f));
+      data.push_back(0.35f + std::pow(rnd(0.0f, 1.0f), 3.0f) * 1.9f);
+    }
+    glGenVertexArrays(1, &moteVao_);
+    glGenBuffers(1, &moteVbo_);
+    glBindVertexArray(moteVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, moteVbo_);
+    glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
+    glBindVertexArray(0);
   }
-  glGenVertexArrays(1, &moteVao_);
-  glGenBuffers(1, &moteVbo_);
-  glBindVertexArray(moteVao_);
-  glBindBuffer(GL_ARRAY_BUFFER, moteVbo_);
-  glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
-  glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-  glEnableVertexAttribArray(1);
-  glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-  glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
-  glBindVertexArray(0);
 
   std::printf("[Game] mission '%s' loaded: %d hostile(s), boss=%s\n",
               mission_.name.c_str(), waveTotal_, bossPending_ ? mission_.bossId.c_str() : "none");
@@ -103,6 +141,8 @@ void Game::destroy() {
   HostileGeometry::destroyShared();
   if (moteVbo_) glDeleteBuffers(1, &moteVbo_);
   if (moteVao_) glDeleteVertexArrays(1, &moteVao_);
+  moteVbo_ = moteVao_ = 0;   // so a later init() (Hub -> another mission) rebuilds them
+  loaded_ = false;
 }
 
 void Game::spawnBossIfReady() {
@@ -138,7 +178,10 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       Hostile& h = hostiles_[shot.hostileIndex];
       bool killed = h.takeDamage(shot.damage);
       hitMarkerT = 0.14f;
-      (void)killed;   // xp/currency rewards belong to Phase 3's economy system
+      // Chits are paid out once per mission clear (see the reward-payout
+      // block below), not per kill — a per-kill bounty economy is a
+      // reasonable future addition but wasn't asked for.
+      (void)killed;
     }
   }
 
@@ -146,7 +189,8 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     if (!h.alive()) continue;
     bool didAttack = h.update(dt, player_.position, level_);
     if (didAttack) {
-      player_.hp = std::max(0.0f, player_.hp - h.type->damage);
+      float dmg = h.type->damage * (1.0f - player_.damageReduction);
+      player_.hp = std::max(0.0f, player_.hp - dmg);
       damageFlashT = 0.4f;
     }
   }
@@ -161,7 +205,13 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     bool wavesClear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                                   [](const Hostile& h) { return h.state == HostileState::Gone; });
     bool bossClear = bossIndex_ < 0 || hostiles_[bossIndex_].state == HostileState::Gone;
-    if (wavesClear && !bossPending_ && bossClear) missionState_ = MissionState::Complete;
+    if (wavesClear && !bossPending_ && bossClear) {
+      if (profile_ && !rewardApplied_) {
+        profile_->recordMissionComplete(mission_.id, mission_.rewardChits);
+        rewardApplied_ = true;
+      }
+      missionState_ = MissionState::Complete;
+    }
   }
 }
 

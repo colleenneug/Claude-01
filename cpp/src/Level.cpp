@@ -4,6 +4,17 @@
 #include <cstdlib>
 
 void Level::build(float arenaSize) {
+  // Safe to call more than once on the same Level — the Hub lets a player
+  // run several missions in one session, and each one rebuilds its arena
+  // from scratch. Without this, a second build() would leak the previous
+  // meshes' GL handles (destroy() frees them before new ones are uploaded)
+  // and keep appending to walls_/crates_/colliders_ forever instead of
+  // replacing them.
+  destroy();
+  walls_.clear();
+  crates_.clear();
+  colliders_.clear();
+
   half_ = arenaSize * 0.5f;
   floorTop_ = 0.0f;
 

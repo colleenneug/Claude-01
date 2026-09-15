@@ -28,6 +28,8 @@ add_executable(erebus_native
   src/Weapon.cpp
   src/Hud.cpp
   src/Content.cpp
+  src/Profile.cpp
+  src/Hub.cpp
   src/Game.cpp
   src/Renderer.cpp
 )

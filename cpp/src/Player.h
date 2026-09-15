@@ -18,6 +18,7 @@ public:
 
   float maxHp = 100.0f;
   float hp = 100.0f;
+  float damageReduction = 0.0f;   // 0..1 fraction shaved off incoming hits, from equipped armour
   bool grounded = true;
 
   // yawRadians comes from the camera's look direction: the player walks

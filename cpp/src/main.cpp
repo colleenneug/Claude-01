@@ -2,18 +2,18 @@
 //
 // A standalone C++/OpenGL implementation combining the cinematic PBR
 // renderer (see docs/NATIVE_RENDERER.md) with an actual mission loop: a
-// physical player, a hitscan weapon, hostiles with real AI, and missions
-// loaded from plain data files under content/ rather than compiled in —
-// so a new monthly mission or boss is a text file, not a code change.
-//
-// This is Phase 1 of that: one weapon, one arena shape, three enemy
-// archetypes, text-file missions. Gear, currencies, a hub, and a save
-// system are Phase 2/3 — see cpp/README.md's roadmap section.
+// physical player, a hitscan weapon, hostiles with real AI, missions
+// loaded from plain data files under content/ rather than compiled in (so
+// a new monthly mission or boss is a text file, not a code change), and a
+// persistent Profile — chits, owned/equipped gear, completed missions —
+// picked in a keyboard-driven Hub between missions and saved to disk.
 #include "Gl.h"
 #include "Camera.h"
 #include "Renderer.h"
 #include "Game.h"
 #include "Hud.h"
+#include "Hub.h"
+#include "Profile.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -28,6 +28,8 @@ void framebufferSizeCallback(GLFWwindow* window, int w, int h) {
 }
 
 }  // namespace
+
+enum class AppState { Hub, Mission };
 
 int main(int argc, char** argv) {
   std::string missionId = "patrol_dust_shelf";
@@ -71,18 +73,47 @@ int main(int argc, char** argv) {
   Renderer renderer;
   Game game;
   Hud hud;
+  Hub hub;
 
   glfwGetFramebufferSize(window, &width, &height);
   renderer.create(width, height);
   hud.create();
 
-  const char* contentDir = std::getenv("EREBUS_CONTENT_DIR");
-  if (!game.init(contentDir ? contentDir : "content", missionId)) {
-    std::fprintf(stderr, "Failed to load mission '%s' — check content/missions/%s.cfg exists\n",
-                 missionId.c_str(), missionId.c_str());
+  const char* contentDirEnv = std::getenv("EREBUS_CONTENT_DIR");
+  std::string contentDir = contentDirEnv ? contentDirEnv : "content";
+
+  const char* savePathEnv = std::getenv("EREBUS_SAVE_PATH");
+  std::string savePath = savePathEnv ? savePathEnv : "save.dat";
+  Profile profile = ProfileStore::load(savePath);
+
+  // The Hub needs its own Content (ids, costs, mission list) before any
+  // mission — and thus any Game — exists; Game loads its own copy again
+  // when a mission actually starts. Content is small text files scanned
+  // once, so loading it twice is cheap and keeps Hub and Game decoupled.
+  Content hubContent;
+  if (!hubContent.loadAll(contentDir)) {
+    std::fprintf(stderr, "Failed to load content directory '%s'\n", contentDir.c_str());
     return 1;
   }
-  camera.position = game.player().eyePosition();
+  hub.init(hubContent, profile);
+  hub.preselectMission(missionId);
+
+  // EREBUS_SKIP_HUB=1 boots straight into --mission with whatever's
+  // currently equipped, bypassing the Hub entirely — kept for every
+  // headless verification flow that predates the Hub and still expects to
+  // land in a mission on frame 0.
+  bool skipHub = std::getenv("EREBUS_SKIP_HUB") != nullptr;
+  AppState state = skipHub ? AppState::Mission : AppState::Hub;
+  bool gameEverStarted = false;
+  if (state == AppState::Mission) {
+    if (!game.init(contentDir, missionId, profile)) {
+      std::fprintf(stderr, "Failed to load mission '%s' — check content/missions/%s.cfg exists\n",
+                   missionId.c_str(), missionId.c_str());
+      return 1;
+    }
+    gameEverStarted = true;
+    camera.position = game.player().eyePosition();
+  }
 
   glfwSetWindowUserPointer(window, &renderer);
   glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
@@ -92,6 +123,7 @@ int main(int argc, char** argv) {
   double lastX = 0.0, lastY = 0.0;
   glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
   glfwGetCursorPos(window, &lastX, &lastY);
+  bool prevReturnKey = false;
 
   // ---------- headless / scripted-input verification ----------
   // No physical GPU or display was available while building this, so
@@ -109,6 +141,24 @@ int main(int argc, char** argv) {
   int maxFrames = 0;
   if (const char* mf = std::getenv("EREBUS_MAX_FRAMES")) maxFrames = std::atoi(mf);
   const char* logStatePath = std::getenv("EREBUS_LOG_STATE");
+
+  // EREBUS_HUB_SCRIPT="1,1,3,launch" drives the Hub deterministically for
+  // headless tests, the same idea as EREBUS_FORCE_FORWARD but for menu
+  // input rather than movement — one scripted action consumed per frame
+  // while state is Hub, then ignored once a mission starts.
+  std::vector<std::string> hubScript;
+  if (const char* hs = std::getenv("EREBUS_HUB_SCRIPT")) {
+    std::string s = hs;
+    size_t start = 0;
+    while (start <= s.size()) {
+      size_t comma = s.find(',', start);
+      std::string tok = s.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+      if (!tok.empty()) hubScript.push_back(tok);
+      if (comma == std::string::npos) break;
+      start = comma + 1;
+    }
+  }
+  size_t hubScriptPos = 0;
 
   double lastTime = glfwGetTime();
   int frame = 0;
@@ -138,73 +188,134 @@ int main(int argc, char** argv) {
     }
     lastX = mx; lastY = my;
 
-    if (debugAutoaim) {
-      // Verification aid: point the camera at the nearest live hostile so
-      // firing can be exercised without a real mouse. See Game::collect /
-      // Hostile for where headCentre() comes from.
-      glm::vec3 eye = camera.position;
-      float best = 1e9f;
-      glm::vec3 bestDir(0, 0, -1);
-      // Game doesn't expose hostiles directly (Renderer-facing interface
-      // only); this reaches in via the same draw-collection path so the
-      // aid never needs its own privileged access.
-      std::vector<DrawItem> probe;
-      game.collect(0.0f, probe);
-      for (auto& it : probe) {
-        if (it.material != MaterialType::Emissive) continue;
-        glm::vec3 p = glm::vec3(it.model[3]);
-        float d = glm::length(p - eye);
-        if (d < best) { best = d; bestDir = glm::normalize(p - eye); }
+    if (state == AppState::Hub) {
+      std::string scriptedStorage;
+      const char* scripted = nullptr;
+      if (hubScriptPos < hubScript.size()) {
+        scriptedStorage = hubScript[hubScriptPos++];
+        scripted = scriptedStorage.c_str();
       }
-      camera.yaw = glm::degrees(std::atan2(bestDir.z, bestDir.x));
-      camera.pitch = glm::degrees(std::asin(std::clamp(bestDir.y, -1.0f, 1.0f)));
-    }
+      bool launch = hub.update(window, scripted);
+      if (launch) {
+        if (game.init(contentDir, hub.selectedMission(), profile)) {
+          gameEverStarted = true;
+          camera.position = game.player().eyePosition();
+          state = AppState::Mission;
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+          mouseCaptured = true;
+          firstMouse = true;
+        }
+      }
 
-    bool aiming = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-    float targetAim = aiming ? 1.0f : 0.0f;
-    camera.aim += (targetAim - camera.aim) * std::min(1.0f, dt * 10.0f);
+      glClearColor(0.03f, 0.035f, 0.05f, 1.0f);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glfwGetFramebufferSize(window, &width, &height);
+      hud.drawHub(width, height, hubContent, hub, profile);
 
-    bool firePressed = forceFire || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    bool reloadHeld = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS || forceFire;
-    game.update(window, camera, dt, firePressed, reloadHeld, forceForward);
+      if (frame % 30 == 0) {
+        glfwSetWindowTitle(window, "Erebus Cradle | Hub — 1/2/3 gear, Tab mission, Enter/Space launch");
+      }
 
-    renderer.renderFrame(game, camera, (float)now, dt);
+      if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
+        FILE* f = std::fopen(logStatePath, "w");
+        if (f) {
+          std::fprintf(f, "{\"appState\":\"hub\",\"frame\":%d,\"chits\":%d,\"equippedWeapon\":\"%s\","
+                          "\"equippedArmor\":\"%s\",\"equippedCosmetic\":\"%s\",\"selectedMission\":\"%s\"}\n",
+                       frame + 1, profile.chits, profile.equippedWeapon.c_str(), profile.equippedArmor.c_str(),
+                       profile.equippedCosmetic.c_str(), hub.selectedMission().c_str());
+          std::fclose(f);
+        }
+      }
+    } else {
+      if (debugAutoaim) {
+        // Verification aid: point the camera at the nearest live hostile so
+        // firing can be exercised without a real mouse. See Game::collect /
+        // Hostile for where headCentre() comes from.
+        glm::vec3 eye = camera.position;
+        float best = 1e9f;
+        glm::vec3 bestDir(0, 0, -1);
+        // Game doesn't expose hostiles directly (Renderer-facing interface
+        // only); this reaches in via the same draw-collection path so the
+        // aid never needs its own privileged access.
+        std::vector<DrawItem> probe;
+        game.collect(0.0f, probe);
+        for (auto& it : probe) {
+          if (it.material != MaterialType::Emissive) continue;
+          glm::vec3 p = glm::vec3(it.model[3]);
+          float d = glm::length(p - eye);
+          if (d < best) { best = d; bestDir = glm::normalize(p - eye); }
+        }
+        camera.yaw = glm::degrees(std::atan2(bestDir.z, bestDir.x));
+        camera.pitch = glm::degrees(std::asin(std::clamp(bestDir.y, -1.0f, 1.0f)));
+      }
 
-    glfwGetFramebufferSize(window, &width, &height);
-    const Weapon& w = game.weapon();
-    float ammoFrac = w.magSize > 0 ? (float)w.ammoInMag / w.magSize : 0.0f;
-    float reloadFrac = w.reloading ? 1.0f - (w.reloadT / w.reloadTime) : 0.0f;
-    hud.draw(width, height, game.player().hp / game.player().maxHp, ammoFrac, w.ammoInMag, w.magSize,
-             w.reloading, reloadFrac, game.hitMarkerT, game.damageFlashT, game.waveProgress(),
-             game.bossAlive(), game.bossHpFraction(), game.missionState() == MissionState::Complete,
-             game.missionState() == MissionState::Failed);
+      bool aiming = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+      float targetAim = aiming ? 1.0f : 0.0f;
+      camera.aim += (targetAim - camera.aim) * std::min(1.0f, dt * 10.0f);
 
-    if (frame % 30 == 0) {
-      const char* stateStr = game.missionState() == MissionState::Complete ? "COMPLETE"
-                            : game.missionState() == MissionState::Failed ? "FAILED" : "active";
-      char title[224];
-      std::snprintf(title, sizeof(title),
-                     "Erebus Cradle | %s | %.1fms | hp %.0f | ammo %d/%d | wave %.0f%% | %s",
-                     game.missionName().c_str(), dt * 1000.0f, game.player().hp,
-                     w.ammoInMag, w.reserveAmmo, game.waveProgress() * 100.0f, stateStr);
-      glfwSetWindowTitle(window, title);
+      bool firePressed = forceFire || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+      bool reloadHeld = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS || forceFire;
+      game.update(window, camera, dt, firePressed, reloadHeld, forceForward);
+
+      renderer.renderFrame(game, camera, (float)now, dt);
+
+      glfwGetFramebufferSize(window, &width, &height);
+      const Weapon& w = game.weapon();
+      float ammoFrac = w.magSize > 0 ? (float)w.ammoInMag / w.magSize : 0.0f;
+      float reloadFrac = w.reloading ? 1.0f - (w.reloadT / w.reloadTime) : 0.0f;
+      hud.draw(width, height, game.player().hp / game.player().maxHp, ammoFrac, w.ammoInMag, w.magSize,
+               w.reloading, reloadFrac, game.hitMarkerT, game.damageFlashT, game.waveProgress(),
+               game.bossAlive(), game.bossHpFraction(), game.missionState() == MissionState::Complete,
+               game.missionState() == MissionState::Failed, game.hudAccent());
+
+      if (frame % 30 == 0) {
+        const char* stateStr = game.missionState() == MissionState::Complete ? "COMPLETE"
+                              : game.missionState() == MissionState::Failed ? "FAILED" : "active";
+        char title[224];
+        std::snprintf(title, sizeof(title),
+                       "Erebus Cradle | %s | %.1fms | hp %.0f | ammo %d/%d | wave %.0f%% | %s",
+                       game.missionName().c_str(), dt * 1000.0f, game.player().hp,
+                       w.ammoInMag, w.reserveAmmo, game.waveProgress() * 100.0f, stateStr);
+        glfwSetWindowTitle(window, title);
+      }
+
+      if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
+        FILE* f = std::fopen(logStatePath, "w");
+        if (f) {
+          std::fprintf(f,
+            "{\"appState\":\"mission\",\"frame\":%d,\"missionState\":\"%s\",\"playerHp\":%.2f,"
+            "\"playerPos\":[%.2f,%.2f,%.2f],\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,"
+            "\"bossAlive\":%s,\"chits\":%d}\n",
+            frame + 1,
+            game.missionState() == MissionState::Complete ? "complete"
+              : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
+            game.player().hp, game.player().position.x, game.player().position.y, game.player().position.z,
+            w.ammoInMag, w.reserveAmmo, game.waveProgress(), game.bossAlive() ? "true" : "false", profile.chits);
+          std::fclose(f);
+        }
+      }
+
+      // A mission that's ended (won or lost) waits here for the player to
+      // commit to going back rather than snapping to the Hub the instant
+      // the last hostile dies — same reason the old build left the
+      // complete/fail HUD tint on screen instead of quitting outright.
+      if (game.missionState() != MissionState::InProgress) {
+        bool wantReturn = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
+                           glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+        if (wantReturn && !prevReturnKey) {
+          ProfileStore::save(profile, savePath);
+          game.destroy();
+          hub.init(hubContent, profile);   // refresh: reward chits / new completion just landed
+          state = AppState::Hub;
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+          mouseCaptured = false;
+        }
+        prevReturnKey = wantReturn;
+      } else {
+        prevReturnKey = false;
+      }
     }
     frame++;
-
-    if (logStatePath && frame == maxFrames && maxFrames > 0) {
-      FILE* f = std::fopen(logStatePath, "w");
-      if (f) {
-        std::fprintf(f,
-          "{\"frame\":%d,\"missionState\":\"%s\",\"playerHp\":%.2f,\"playerPos\":[%.2f,%.2f,%.2f],"
-          "\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,\"bossAlive\":%s}\n",
-          frame,
-          game.missionState() == MissionState::Complete ? "complete"
-            : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
-          game.player().hp, game.player().position.x, game.player().position.y, game.player().position.z,
-          w.ammoInMag, w.reserveAmmo, game.waveProgress(), game.bossAlive() ? "true" : "false");
-        std::fclose(f);
-      }
-    }
 
     if (dumpPath && maxFrames > 0 && frame >= maxFrames) {
       glfwGetFramebufferSize(window, &width, &height);
@@ -226,7 +337,8 @@ int main(int argc, char** argv) {
     glfwSwapBuffers(window);
   }
 
-  game.destroy();
+  ProfileStore::save(profile, savePath);
+  if (gameEverStarted) game.destroy();
   hud.destroy();
   renderer.destroy();
   glfwDestroyWindow(window);

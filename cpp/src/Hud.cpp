@@ -1,4 +1,7 @@
 #include "Hud.h"
+#include "Content.h"
+#include "Hub.h"
+#include "Profile.h"
 #include <algorithm>
 
 void Hud::create() {
@@ -55,7 +58,8 @@ void Hud::end() {
 
 void Hud::draw(int screenW, int screenH, float hpFrac, float ammoFrac, int ammoInMag, int magSize,
                bool reloading, float reloadFrac, float hitMarkerT, float damageFlashT,
-               float waveFrac, bool bossAlive, float bossHpFrac, bool missionComplete, bool missionFailed) {
+               float waveFrac, bool bossAlive, float bossHpFrac, bool missionComplete, bool missionFailed,
+               glm::vec3 accent) {
   begin(screenW, screenH);
   float cx = screenW * 0.5f, cy = screenH * 0.5f;
 
@@ -63,7 +67,7 @@ void Hud::draw(int screenW, int screenH, float hpFrac, float ammoFrac, int ammoI
   // a moment after a confirmed hit.
   bool hit = hitMarkerT > 0.0f;
   glm::vec4 xcol = hit ? glm::vec4(1.0f, 0.85f, 0.3f, std::min(1.0f, hitMarkerT * 3.0f))
-                       : glm::vec4(0.85f, 0.95f, 1.0f, 0.85f);
+                       : glm::vec4(accent, 0.85f);
   float gap = 9.0f, len = hit ? 8.0f : 6.0f, thick = 2.0f;
   rect(cx - gap - len, cy - thick * 0.5f, len, thick, xcol);
   rect(cx + gap, cy - thick * 0.5f, len, thick, xcol);
@@ -74,7 +78,7 @@ void Hud::draw(int screenW, int screenH, float hpFrac, float ammoFrac, int ammoI
   float bx = 28, by = screenH - 54, bw = 260, bh = 18;
   rect(bx - 3, by - 3, bw + 6, bh + 6, glm::vec4(0, 0, 0, 0.45f));
   rect(bx, by, bw, bh, glm::vec4(0.12f, 0.03f, 0.03f, 0.9f));
-  glm::vec3 hpCol = hpFrac > 0.5f ? glm::vec3(0.55f, 0.85f, 0.45f)
+  glm::vec3 hpCol = hpFrac > 0.5f ? accent
                    : hpFrac > 0.25f ? glm::vec3(0.9f, 0.75f, 0.25f)
                                     : glm::vec3(0.9f, 0.25f, 0.2f);
   rect(bx, by, bw * std::clamp(hpFrac, 0.0f, 1.0f), bh, glm::vec4(hpCol, 0.95f));
@@ -88,7 +92,7 @@ void Hud::draw(int screenW, int screenH, float hpFrac, float ammoFrac, int ammoI
   for (int i = 0; i < shown; i++) {
     bool lit = i < litCount;
     rect(px0 + i * (pipW + pipGap), py0, pipW, 22,
-         lit ? glm::vec4(0.9f, 0.85f, 0.5f, 0.95f) : glm::vec4(0.2f, 0.2f, 0.22f, 0.6f));
+         lit ? glm::vec4(accent, 0.95f) : glm::vec4(0.2f, 0.2f, 0.22f, 0.6f));
   }
   if (reloading) {
     rect(px0, py0 + 26, totalW, 4, glm::vec4(0.1f, 0.1f, 0.1f, 0.6f));
@@ -116,6 +120,65 @@ void Hud::draw(int screenW, int screenH, float hpFrac, float ammoFrac, int ammoI
     rect(0, 0, (float)screenW, (float)screenH, glm::vec4(0.15f, 0.5f, 0.3f, 0.18f));
   } else if (missionFailed) {
     rect(0, 0, (float)screenW, (float)screenH, glm::vec4(0.5f, 0.1f, 0.1f, 0.22f));
+  }
+
+  end();
+}
+
+void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& hub, const Profile& profile) {
+  begin(screenW, screenH);
+
+  float x = 40.0f, y = 40.0f;
+  const float swatch = 34.0f, gap = 6.0f;
+
+  // Chits: one bar, length capped against a legible max — there's no text
+  // to just print the number, same honest limitation as the mission Hud.
+  rect(x, y, 220, 16, glm::vec4(0.08f, 0.08f, 0.1f, 0.85f));
+  rect(x, y, std::min(220.0f, 220.0f * profile.chits / 500.0f), 16, glm::vec4(0.95f, 0.85f, 0.35f, 0.95f));
+  y += 40.0f;
+
+  auto drawRow = [&](const std::vector<std::string>& ids, int selected, const std::string& equippedId,
+                      auto ownsFn, auto costFn) {
+    float rx = x;
+    for (int i = 0; i < (int)ids.size(); i++) {
+      const std::string& id = ids[i];
+      bool equippedHere = (id == equippedId);
+      bool owned = ownsFn(id);
+      glm::vec4 col = equippedHere         ? glm::vec4(0.4f, 0.9f, 0.55f, 0.95f)
+                    : owned                ? glm::vec4(0.4f, 0.65f, 0.95f, 0.9f)
+                    : profile.chits >= costFn(id) ? glm::vec4(0.4f, 0.4f, 0.45f, 0.75f)
+                                           : glm::vec4(0.55f, 0.2f, 0.2f, 0.65f);
+      if (i == selected) rect(rx - 3, y - 3, swatch + 6, swatch + 6, glm::vec4(1.0f, 1.0f, 1.0f, 0.85f));
+      rect(rx, y, swatch, swatch, col);
+      rx += swatch + gap;
+    }
+    y += swatch + 26.0f;
+  };
+
+  drawRow(hub.weaponIds(), hub.weaponIndex(), profile.equippedWeapon,
+          [&](const std::string& id) { return profile.ownsWeapon(id); },
+          [&](const std::string& id) { const WeaponDef* d = content.weapon(id); return d ? d->cost : 0; });
+  drawRow(hub.armorIds(), hub.armorIndex(), profile.equippedArmor,
+          [&](const std::string& id) { return profile.ownsArmor(id); },
+          [&](const std::string& id) { const ArmorDef* d = content.armor(id); return d ? d->cost : 0; });
+  drawRow(hub.cosmeticIds(), hub.cosmeticIndex(), profile.equippedCosmetic,
+          [&](const std::string& id) { return profile.ownsCosmetic(id); },
+          [&](const std::string& id) { const CosmeticDef* d = content.cosmetic(id); return d ? d->cost : 0; });
+
+  // Missions: wider swatches, green once cleared at least once (matches
+  // Profile::recordMissionComplete only paying out the first time — a
+  // repeat run is still free to launch, it just won't tint from grey to
+  // green a second time... it already is green).
+  y += 14.0f;
+  float rx = x;
+  const auto& missions = hub.missionIds();
+  for (int i = 0; i < (int)missions.size(); i++) {
+    bool completed = profile.hasCompleted(missions[i]);
+    glm::vec4 col = completed ? glm::vec4(0.4f, 0.75f, 0.5f, 0.9f) : glm::vec4(0.5f, 0.55f, 0.65f, 0.85f);
+    if (i == hub.missionIndex())
+      rect(rx - 3, y - 3, swatch * 2.0f + 6, swatch + 6, glm::vec4(1.0f, 1.0f, 1.0f, 0.85f));
+    rect(rx, y, swatch * 2.0f, swatch, col);
+    rx += swatch * 2.0f + gap;
   }
 
   end();

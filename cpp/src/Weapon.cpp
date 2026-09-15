@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 
-void Weapon::configure(const WeaponType& t) {
+void Weapon::configure(const WeaponDef& t) {
   magSize = t.magSize;
   ammoInMag = t.magSize;
   reserveAmmo = t.reserveAmmo;

@@ -38,9 +38,9 @@ public:
   float reloadT = 0.0f;
   bool reloading = false;
 
-  // Applies a WeaponType's stats and refills the magazine — called once
+  // Applies a WeaponDef's stats and refills the magazine — called once
   // when a mission's chosen weapon is resolved (see Game::init).
-  void configure(const WeaponType& t);
+  void configure(const WeaponDef& t);
 
   void update(float dt);
   void startReload();
