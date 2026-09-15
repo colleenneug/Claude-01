@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>City Life</title>
+<link rel="stylesheet" href="src/css/style.css">
+</head>
+<body>
+
+<!-- ===== Auth screen ===== -->
+<div id="auth-screen" class="screen">
+  <div class="auth-card">
+    <h1>CITY LIFE</h1>
+    <p class="tagline">Open-world city sim &mdash; pick a life, make your money.</p>
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-tab="login">Log In</button>
+      <button type="button" class="auth-tab" data-tab="signup">Sign Up</button>
+    </div>
+
+    <form id="login-form" class="auth-form">
+      <label>Username<input type="text" id="login-username" autocomplete="username" required></label>
+      <label>Password<input type="password" id="login-password" autocomplete="current-password" required></label>
+      <button type="submit" class="btn-primary">Log In</button>
+    </form>
+
+    <form id="signup-form" class="auth-form hidden">
+      <label>Username<input type="text" id="signup-username" autocomplete="username" required minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+"></label>
+      <label>Password<input type="password" id="signup-password" autocomplete="new-password" required minlength="6"></label>
+      <button type="submit" class="btn-primary">Create Account</button>
+    </form>
+
+    <p id="auth-error" class="auth-error hidden"></p>
+  </div>
+</div>
+
+<!-- ===== Role select screen ===== -->
+<div id="role-screen" class="screen hidden">
+  <div class="auth-card">
+    <h1>CHOOSE YOUR PATH</h1>
+    <div class="role-grid">
+      <button type="button" class="role-card" data-role="criminal">
+        <span class="role-icon">&#128081;</span>
+        <span class="role-name">Criminal</span>
+        <span class="role-desc">Fast cash, high risk. Best bank-robbery payouts.</span>
+      </button>
+      <button type="button" class="role-card" data-role="superhero">
+        <span class="role-icon">&#128171;</span>
+        <span class="role-name">Superhero</span>
+        <span class="role-desc">Steady income, powers that help you get around.</span>
+      </button>
+      <button type="button" class="role-card" data-role="villain">
+        <span class="role-icon">&#9760;&#65039;</span>
+        <span class="role-name">Super Villain</span>
+        <span class="role-desc">Menacing powers, solid income, no friends.</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Game canvas + HUD ===== -->
+<div id="game-screen" class="screen hidden">
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud-topleft" class="hud-panel">
+    <div id="hud-role" class="hud-row hud-role"><span class="dot"></span><span id="hud-role-name">Criminal</span></div>
+    <div class="hud-row hud-money"><span class="icon">$</span><span id="hud-money">0</span><span id="hud-income" class="hud-income"></span></div>
+    <div class="hud-row hud-weapon"><span class="icon">&#128299;</span><span>Pistol</span></div>
+    <div class="hud-row hud-health">
+      <span class="icon">&#10084;&#65039;</span>
+      <div class="health-bar"><div id="hud-health-fill" class="health-fill"></div></div>
+      <span id="hud-health-value">100</span>
+    </div>
+  </div>
+
+  <div id="hud-topright" class="hud-panel">
+    <div class="hud-row hud-online"><span class="icon">&#128101;</span><span id="hud-online">1</span> online</div>
+    <button type="button" class="menu-btn" data-panel="business">&#127974; Business</button>
+    <button type="button" class="menu-btn" data-panel="build">&#128296; Build</button>
+    <button type="button" id="btn-camera" class="menu-btn">&#128065; 1st Person</button>
+    <button type="button" class="menu-btn" data-panel="powers">&#9889; Powers</button>
+    <button type="button" class="menu-btn" data-panel="leaderboard">&#127942; Leaderboard</button>
+  </div>
+
+  <div id="prompt" class="prompt hidden"></div>
+  <div id="dialog-box" class="dialog-box hidden"></div>
+
+  <div id="panel-business" class="side-panel hidden">
+    <h2>Business</h2>
+    <div id="business-list"></div>
+    <button type="button" class="btn-close" data-close="business">Close</button>
+  </div>
+
+  <div id="panel-build" class="side-panel hidden">
+    <h2>Build</h2>
+    <p class="panel-hint">Click in the world to drop a block. Right-click a block you placed to remove it.</p>
+    <div class="build-swatches" id="build-swatches"></div>
+    <button type="button" class="btn-close" data-close="build">Close</button>
+  </div>
+
+  <div id="panel-powers" class="side-panel hidden">
+    <h2>Powers</h2>
+    <div id="powers-list"></div>
+    <button type="button" class="btn-close" data-close="powers">Close</button>
+  </div>
+
+  <div id="panel-leaderboard" class="side-panel hidden">
+    <h2>Leaderboard</h2>
+    <ol id="leaderboard-list"></ol>
+    <button type="button" class="btn-close" data-close="leaderboard">Close</button>
+  </div>
+
+  <div id="panel-travel" class="side-panel hidden">
+    <h2>Fast Travel</h2>
+    <div id="travel-list"></div>
+    <button type="button" class="btn-close" data-close="travel">Close</button>
+  </div>
+
+  <div id="bank-heist" class="side-panel hidden">
+    <h2>Safe Crack</h2>
+    <p class="panel-hint">Press <b>SPACE</b> when the marker is inside the green zone. 3 hits to crack it.</p>
+    <div class="safe-dial"><div id="safe-zone" class="safe-zone"></div><div id="safe-marker" class="safe-marker"></div></div>
+    <div id="safe-progress" class="safe-progress"></div>
+    <p id="bank-result" class="panel-hint"></p>
+  </div>
+
+  <div class="controls-bar">
+    <span><b>WASD</b> move</span>
+    <span><b>Space</b> jump</span>
+    <span><b>Space+W</b> on a wall to climb</span>
+    <span><b>Shift</b> sprint</span>
+    <span><b>F</b> buy property</span>
+    <span><b>E</b> talk / interact</span>
+    <span><b>V</b> drive</span>
+    <span><b>T</b> travel</span>
+  </div>
+</div>
+
+<script src="../vendor/three.min.js"></script>
+<script src="src/js/api.js"></script>
+<script src="src/js/auth.js"></script>
+<script src="src/js/hud.js"></script>
+<script src="src/js/world.js"></script>
+<script src="src/js/player.js"></script>
+<script src="src/js/vehicle.js"></script>
+<script src="src/js/npc.js"></script>
+<script src="src/js/economy.js"></script>
+<script src="src/js/bank.js"></script>
+<script src="src/js/travel.js"></script>
+<script src="src/js/build.js"></script>
+<script src="src/js/leaderboard.js"></script>
+<script src="src/js/game.js"></script>
+</body>
+</html>

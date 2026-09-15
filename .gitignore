@@ -1,2 +1,5 @@
 # C++ native renderer build output
 cpp/build/
+
+# City Life account database (runtime state, not source)
+citylife/data/db.json
