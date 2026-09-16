@@ -35,16 +35,32 @@ struct MissionDef {
   std::string bossId;       // empty = no boss
   float bossHpMultiplier = 1.0f;
   int rewardChits = 40;     // paid out once, on first completion — see Profile
+  // Pins a specific content/weapons/<id>.cfg for this mission, overriding
+  // whatever the profile has equipped — for a mission built to showcase a
+  // particular loadout (a piercing rifle, a shotgun). Empty (the common
+  // case) means "whatever the player equipped in the Hub" — see
+  // Game::init's weapon resolution.
+  std::string weaponId;
 };
 
-// content/weapons/<id>.cfg — equipping one (see Game::equipWeapon) sets
-// these directly onto the live Weapon instance.
+// content/weapons/<id>.cfg — both a combat archetype and a piece of shop
+// gear at once: equipping one (via the Hub, or a mission's pinned
+// weaponId) sets all of this onto the live Weapon instance. `pellets > 1`
+// fires that many hitscan rays per trigger pull, each randomised within
+// `spreadDegrees` (a shotgun); `pierce` fires a single ray that damages
+// every hostile it crosses before the wall instead of stopping at the
+// nearest one (an induction rifle). Both default off, so a plain weapon
+// entry is just a single-target hitscan.
 struct WeaponDef {
   std::string id, name;
   float damage = 22.0f, headshotMultiplier = 2.0f;
   float fireInterval = 0.11f, reloadTime = 1.6f;
   int magSize = 24;
+  int reserveAmmo = 96;
   int cost = 0;    // chits; 0 = starter gear, owned from a fresh profile
+  int pellets = 1;
+  float spreadDegrees = 0.0f;
+  bool pierce = false;
 };
 
 // content/armor/<id>.cfg — equipping one changes Player::maxHp and the

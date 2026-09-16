@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DUSKBORNE</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<!-- ---------- boot ---------- -->
+<div class="screen show" id="screen-boot">
+  <div class="kicker">THE HOLLOW ANSWERS</div>
+  <div class="title-lockup"><h1>DUSK<span>BORNE</span></h1></div>
+  <div class="boot-bar"></div>
+</div>
+
+<!-- ---------- title ---------- -->
+<div class="screen" id="screen-title">
+  <div class="kicker">A PVE CAMPAIGN OF THE HOLLOW</div>
+  <div class="title-lockup"><h1>DUSK<span>BORNE</span></h1>
+    <div class="title-sub">Six days ago the Unseen recognised what you always were.
+      The Lumen call it corruption. You call it honesty.</div>
+  </div>
+  <div class="menu-stack">
+    <button class="primary" id="btn-title-begin">Begin</button>
+    <button id="btn-title-continue" disabled>Continue</button>
+  </div>
+</div>
+
+<!-- ---------- character creation ---------- -->
+<div class="screen screen-scroll" id="screen-creation">
+  <div class="creation-wrap">
+    <div class="kicker">FIRST COMMUNION</div>
+
+    <div class="creation-step show" id="step-species">
+      <h2>Choose your people</h2>
+      <div class="card-row" id="species-cards"></div>
+      <div class="creation-actions">
+        <span></span>
+        <button class="primary" id="btn-species-next" disabled>Next</button>
+      </div>
+    </div>
+
+    <div class="creation-step" id="step-class">
+      <h2>Choose your calling</h2>
+      <div class="card-row" id="class-cards"></div>
+      <div class="creation-actions">
+        <button id="btn-class-back">Back</button>
+        <button class="primary" id="btn-class-next" disabled>Next</button>
+      </div>
+    </div>
+
+    <div class="creation-step" id="step-confirm">
+      <h2>Bound to the Hollow</h2>
+      <p id="confirm-summary" style="color:var(--text-dim); line-height:1.7; max-width:60ch;"></p>
+      <div class="creation-actions">
+        <button id="btn-confirm-back">Back</button>
+        <button class="primary" id="btn-confirm-go">Answer the Call</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- hub: the Hollow Anchorage ---------- -->
+<div class="screen screen-scroll" id="screen-hub">
+  <div class="hub-wrap">
+    <div class="hub-header">
+      <div>
+        <div class="kicker">THE HOLLOW ANCHORAGE</div>
+        <h2 id="hub-character-line" style="font-size:1.3rem;"></h2>
+      </div>
+      <div class="hub-power"><small>POWER</small><span id="hub-power-value">0</span></div>
+    </div>
+
+    <div class="hub-tabs">
+      <button class="hub-tab active" data-pane="pane-missions">Missions</button>
+      <button class="hub-tab" data-pane="pane-disciplines">Disciplines</button>
+      <button class="hub-tab" data-pane="pane-fleet">The Fleet</button>
+    </div>
+
+    <div class="hub-pane show" id="pane-missions">
+      <div class="mission-list" id="hub-mission-list"></div>
+    </div>
+
+    <div class="hub-pane" id="pane-disciplines">
+      <p style="color:var(--text-dim); font-size:0.85rem; max-width:60ch;">
+        Every calling begins bound to one discipline of the Hollow. The other two
+        are quests, not purchases — the Unseen doesn't sell what it can make you earn.
+      </p>
+      <div class="discipline-row" id="discipline-chips"></div>
+    </div>
+
+    <div class="hub-pane" id="pane-fleet">
+      <p style="color:var(--text-dim); font-size:0.85rem; max-width:60ch;">
+        Free roam across the Anchorage, the fireteam bay, and the wider Hollow
+        Reach are still being raised out of the dark. The Unseen says they are
+        coming. The Unseen says a lot of things.
+      </p>
+      <div class="mission-list">
+        <div class="mission-row locked"><div><div class="m-name">Free Roam — The Hollow Reach</div>
+          <div class="m-desc">Open-world patrol between questlines.</div></div><div class="m-status planned">Planned</div></div>
+        <div class="mission-row locked"><div><div class="m-name">Season of the Sunken Throne</div>
+          <div class="m-desc">A season pass of emotes, finishers and exclusive gear.</div></div><div class="m-status planned">Planned</div></div>
+        <div class="mission-row locked"><div><div class="m-name">Fireteam Link</div>
+          <div class="m-desc">Bring up to two others into a questline with you.</div></div><div class="m-status planned">Planned</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- briefing ---------- -->
+<div class="screen" id="screen-briefing">
+  <div class="brief-wrap">
+    <div class="kicker" id="brief-kicker">BRIEFING</div>
+    <h2 id="brief-title"></h2>
+    <div id="brief-lines"></div>
+    <div class="brief-actions">
+      <button id="btn-brief-back">Back to Anchorage</button>
+      <button class="primary" id="btn-brief-launch">Launch</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- engage gate ---------- -->
+<div class="screen" id="screen-engage">
+  <div class="engage-box">
+    <div class="ring">CLICK</div>
+    <div style="letter-spacing:0.14em; font-size:0.85rem; color:var(--text-dim);">ENGAGE POINTER</div>
+  </div>
+</div>
+
+<!-- ---------- mission HUD ---------- -->
+<div id="mission-hud">
+  <div id="hud-crosshair"></div>
+  <div id="hud-class-label"></div>
+  <div id="hud-objective"></div>
+  <div id="hud-killfeed"></div>
+
+  <div id="hud-boss">
+    <div id="hud-boss-name"></div>
+    <div class="hud-bar"><div class="fill" id="hud-boss-fill"></div></div>
+  </div>
+
+  <div id="hud-vitals-wrap">
+    <div class="hud-bar-label"><span>Vitals</span><span id="hud-vitals-text">100%</span></div>
+    <div class="hud-bar"><div id="hud-shield-fill"></div><div class="fill" id="hud-vitals-fill"></div></div>
+  </div>
+  <div id="hud-ability-wrap">
+    <div class="hud-bar-label"><span id="hud-ability-name">Ability</span><span id="hud-ability-icon">◆</span></div>
+    <div class="hud-bar"><div class="fill" id="hud-ability-fill" style="width:100%;"></div></div>
+  </div>
+  <div id="hud-ammo">24 / 96</div>
+  <div id="hud-damage-flash"></div>
+</div>
+
+<!-- ---------- pause ---------- -->
+<div class="screen" id="screen-pause">
+  <h2>Paused</h2>
+  <div class="menu-stack">
+    <button class="primary" id="btn-pause-resume">Resume</button>
+    <button id="btn-pause-abandon">Abandon Mission</button>
+  </div>
+</div>
+
+<!-- ---------- debrief ---------- -->
+<div class="screen" id="screen-debrief">
+  <div class="brief-wrap">
+    <div class="kicker" id="debrief-kicker">MISSION COMPLETE</div>
+    <h2 id="debrief-title"></h2>
+    <p id="debrief-line"></p>
+    <div class="debrief-stats" id="debrief-stats"></div>
+    <div id="debrief-gear"></div>
+    <div class="brief-actions">
+      <button class="primary" id="btn-debrief-continue">Return to the Anchorage</button>
+    </div>
+  </div>
+</div>
+
+<script src="../vendor/three.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/classes.js"></script>
+<script src="js/story.js"></script>
+<script src="js/level.js"></script>
+<script src="js/player.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

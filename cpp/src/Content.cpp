@@ -123,12 +123,15 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         if (k == "name") m.name = v;
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
+        else if (k == "weapon") m.weaponId = v;
       }
     }
   }
   return m;
 }
 
+// content/weapons/<id>.cfg reads as both a combat archetype and a shop
+// item — see the WeaponDef comment in Content.h for what each field does.
 WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
   WeaponDef w;
   w.id = id;
@@ -147,7 +150,11 @@ WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
       else if (k == "fire_interval") w.fireInterval = std::stof(v);
       else if (k == "reload_time") w.reloadTime = std::stof(v);
       else if (k == "mag_size") w.magSize = std::stoi(v);
+      else if (k == "reserve_ammo") w.reserveAmmo = std::stoi(v);
       else if (k == "cost") w.cost = std::stoi(v);
+      else if (k == "pellets") w.pellets = std::stoi(v);
+      else if (k == "spread_degrees") w.spreadDegrees = std::stof(v);
+      else if (k == "pierce") w.pierce = (v == "true" || v == "1");
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());

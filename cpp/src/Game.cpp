@@ -39,14 +39,20 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   player_.maxHp = 100.0f + (armor ? armor->hpBonus : 0.0f);
   player_.damageReduction = armor ? armor->damageReduction : 0.0f;
 
-  const WeaponDef* wdef = content_.weapon(profile.equippedWeapon);
-  if (wdef) {
-    weapon_.magSize = wdef->magSize;
-    weapon_.ammoInMag = wdef->magSize;
-    weapon_.damage = wdef->damage;
-    weapon_.headshotMultiplier = wdef->headshotMultiplier;
-    weapon_.fireInterval = wdef->fireInterval;
-    weapon_.reloadTime = wdef->reloadTime;
+  // A mission can pin a specific weapon (see MissionDef::weaponId) to
+  // showcase a particular loadout regardless of what's equipped; otherwise
+  // it's whatever the profile has equipped (Profile::ensureStarterGear
+  // guarantees that's never empty). Either way it's the same content_
+  // lookup and the same full configure(), so a mission-pinned shotgun
+  // actually fires pellets instead of leaving a stale field behind from
+  // whatever was equipped before it.
+  std::string weaponId = mission_.weaponId.empty() ? profile.equippedWeapon : mission_.weaponId;
+  const WeaponDef* wdef = content_.weapon(weaponId);
+  if (!wdef) {
+    std::fprintf(stderr, "[Game] weapon '%s' not found, falling back to Weapon's built-in defaults\n",
+                 weaponId.c_str());
+  } else {
+    weapon_.configure(*wdef);
   }
 
   const CosmeticDef* cosmetic = content_.cosmetic(profile.equippedCosmetic);
@@ -166,8 +172,9 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   if (reloadHeld) weapon_.startReload();
 
   if (firePressed && weapon_.canFire()) {
-    ShotResult shot = weapon_.fire(camera.position, camera.forward(), level_, hostiles_);
-    if (shot.hitHostile) {
+    auto shots = weapon_.fire(camera.position, camera.forward(), level_, hostiles_);
+    for (auto& shot : shots) {
+      if (!shot.hitHostile) continue;
       Hostile& h = hostiles_[shot.hostileIndex];
       bool killed = h.takeDamage(shot.damage);
       hitMarkerT = 0.14f;

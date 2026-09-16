@@ -2,23 +2,27 @@
 
 A standalone C++/OpenGL desktop build combining the cinematic, physically
 based renderer (see `../docs/NATIVE_RENDERER.md`) with an actual mission
-loop: a physical player with collision, a hitscan weapon, hostiles with real
-AI (idle → chase → attack → die), and missions loaded from **plain text
-files under `content/`, not compiled in** — adding next month's mission or
-boss is dropping a `.cfg` file into `content/missions/`, not a code change.
+loop: a physical player with collision, a roster of hitscan weapons,
+hostiles with real AI (idle → chase → attack → die), and missions loaded
+from **plain text files under `content/`, not compiled in** — adding next
+month's mission, enemy or weapon is dropping a `.cfg` file into
+`content/missions/`, `content/enemies/` or `content/weapons/`, not a code
+change.
 
-It now also has a persistent profile — chits (currency), owned and equipped
+It also has a persistent profile — chits (currency), owned and equipped
 gear, completed missions — picked in a keyboard-driven **Hub** between
 missions and saved to disk, so progress carries across runs.
 
-**Scope, honestly stated:** three weapons, three armour pieces, three
-cosmetics, three enemy archetypes, three missions. All of it is real,
-data-driven content under `content/`, not hardcoded — a monthly drop of new
-gear or a new mission is text files, not a code change (see *Content*
-below). What's still not here: co-op/netcode (see the note at the bottom of
-*Roadmap*) and packaging as an actual installable build. Everything that
-exists here is real, compiled, and was verified by actually running it and
-reading back live game state — not eyeballed.
+**Scope, honestly stated:** six weapons (three starter-tier shop items plus
+three combat archetypes with pellet spread or piercing — see *Content*
+below), three armour pieces, three cosmetics, six enemy archetypes across
+two factions, four missions. All of it is real, data-driven content under
+`content/`, not hardcoded — a monthly drop of new gear, a new enemy or a new
+mission is text files, not a code change. What's still not here: a proper
+level-building path beyond one walled arena shape, co-op/netcode (see the
+note at the bottom of *Roadmap*), and packaging as an actual installable
+build. Everything that exists here is real, compiled, and was verified by
+actually running it and reading back live game state — not eyeballed.
 
 No texture, model, or asset files ship with this project — every material
 shades procedurally from world position and normal (see
@@ -77,8 +81,9 @@ progress and mission state, refreshed twice a second.
 
 ## Content: how a monthly drop actually works
 
-Nothing about adding a mission touches C++. Two file types, both plain text
-(`key = value` lines, `#` comments, blank lines ignored):
+Nothing about adding a mission, an enemy, or a piece of gear touches C++.
+Five file types, all plain text (`key = value` lines, `#` comments, blank
+lines ignored):
 
 **`content/enemies/<id>.cfg`** — one archetype per file:
 
@@ -97,32 +102,33 @@ ranged = true
 xp = 40
 ```
 
-**`content/missions/<id>.cfg`** — an arena size, any number of `wave` lines,
-and an optional `boss` line (spawned once every regular wave is cleared,
-with a health multiplier on top of the boss's own `enemies/*.cfg` stats):
+**`content/weapons/<id>.cfg`** — one weapon per file, and both a combat
+archetype and a shop item at once: `cost` (chits; 0 = starter gear, owned
+from a fresh profile) is what the Hub charges to buy and equip it, and
+`pellets`/`spread_degrees`/`pierce` are what it actually does in a mission.
+`pellets > 1` fires that many hitscan rays per trigger pull, each randomised
+within `spread_degrees` (a shotgun — one pull, one shell, several pellets,
+which is also why a shotgun's magazine only drops by one per pull, not
+eight); `pierce` fires a single ray that damages every hostile it crosses
+before the wall instead of stopping at the nearest one (an induction bolt
+punching through). Both default off, so a plain weapon entry is a
+single-target hitscan with no special behaviour beyond its stats:
 
 ```
-name = The Dig Site: Colossus
-arena = 90
-
-wave scarab 4 30      # enemy id, count, spawn ring radius (metres)
-wave marauder 3 22
-boss colossus 2.2
+name = MAUL-12
+damage = 17
+pellets = 8
+spread_degrees = 4.0
+headshot_multiplier = 1.4
+mag_size = 6
+reserve_ammo = 30
+fire_interval = 0.8       # seconds between trigger pulls
+reload_time = 2.2
+cost = 150                 # chits
 ```
 
-**`content/weapons/<id>.cfg`**, **`content/armor/<id>.cfg`**,
-**`content/cosmetics/<id>.cfg`** — equippable gear, all the same format:
-
-```
-# content/weapons/marksman_carbine.cfg
-name = Marksman Carbine
-damage = 42
-headshot_multiplier = 2.6
-fire_interval = 0.32     # seconds between shots
-reload_time = 2.0
-mag_size = 12
-cost = 220                # chits; 0 = starter gear, owned from a fresh profile
-```
+**`content/armor/<id>.cfg`**, **`content/cosmetics/<id>.cfg`** — the other
+two equippable gear slots, same `key = value` format:
 
 ```
 # content/armor/scout_rig.cfg
@@ -139,10 +145,22 @@ accent = 1.0, 0.65, 0.3    # recolours the HUD: health-full, ammo pips, crosshai
 cost = 90
 ```
 
-A mission can also pay out currency on its first completion:
+**`content/missions/<id>.cfg`** — an arena size, an optional `weapon = <id>`
+that pins a specific weapon for this mission regardless of what's equipped
+(omit it and the profile's equipped weapon applies, same as any other
+mission), an optional `reward = <chits>` paid once on first completion
+(defaults to 40), any number of `wave` lines, and an optional `boss` line
+(spawned once every regular wave is cleared, with a health multiplier on
+top of the boss's own `enemies/*.cfg` stats):
 
 ```
-reward = 40    # chits, paid once — add this line to a mission.cfg
+name = The Dig Site: Colossus
+arena = 90
+weapon = whisper
+
+wave scarab 4 30      # enemy id, count, spawn ring radius (metres)
+wave marauder 3 22
+boss colossus 2.2
 ```
 
 Content is loaded once at startup from the `content/` directory next to the
@@ -168,8 +186,12 @@ see `Content::loadAll` in `src/Content.cpp`.
   taken (`Player::damageReduction`), applied in `Game::update`.
 - **Weapon** (`Weapon.h/.cpp`): hitscan against the level's colliders *and*
   every live hostile's head/body spheres — a crate genuinely blocks a shot
-  to whatever's behind it. Magazine, reserve ammo, reload timer — all of it
-  set from the equipped `WeaponDef` at mission start.
+  to whatever's behind it. Magazine, reserve ammo, reload timer, and two
+  content-driven variants on the base single-target case: pellet spread
+  (a shotgun) and piercing (an induction rifle bolt that damages every
+  hostile in line before the wall) — all of it set from the equipped
+  `WeaponDef` at mission start (the profile's choice, or a mission's pinned
+  `weapon = <id>`; see *Content* above).
 - **Hostiles** (`Hostile.h/.cpp`): a procedural armoured rig (shared
   geometry across every instance, regardless of size — see the file's
   header comment) with a state machine — idle until alerted, chase with
@@ -282,9 +304,11 @@ shaders/
 ## Roadmap
 
 - ~~**Phase 2** — more content: additional enemy archetypes and weapon
-  types.~~ Done for weapons/armour/cosmetics (three each, all data-driven —
-  see *Content*); a proper level-building path beyond one walled arena
-  shape is still open.
+  types.~~ Done: a data-driven weapon system with pellet spread and piercing
+  variants, three more weapons on top of the shop's original three, and
+  three more enemy archetypes (a second faction, on the ice-world roster
+  the browser build's orbital destinations already use — see *Content*). A
+  proper level-building path beyond one walled arena shape is still open.
 - ~~**Phase 3** — the systems that make it a persistent game: gear/loadouts,
   currencies, a save file, a hub to return to between missions.~~ Done —
   see *Profile* and *Hub* above.
