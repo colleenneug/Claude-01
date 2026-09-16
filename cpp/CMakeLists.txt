@@ -8,10 +8,21 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 find_package(OpenGL REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GLFW REQUIRED glfw3)
-pkg_check_modules(GLEW REQUIRED glew)
 find_package(glm QUIET)
+
+# Two different worlds for finding glfw3/glew: on Linux/macOS they're
+# typically installed as system packages that ship pkg-config .pc files
+# (apt/Homebrew), but on Windows via vcpkg they ship CMake config packages
+# instead and pkg-config usually isn't even installed — so branch on it
+# rather than pick one and break the other platform.
+if(WIN32)
+  find_package(glfw3 CONFIG REQUIRED)
+  find_package(GLEW REQUIRED)
+else()
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(GLFW REQUIRED glfw3)
+  pkg_check_modules(GLEW REQUIRED glew)
+endif()
 
 add_executable(erebus_native
   src/main.cpp
@@ -34,21 +45,31 @@ add_executable(erebus_native
   src/Renderer.cpp
 )
 
-target_include_directories(erebus_native PRIVATE
-  ${GLFW_INCLUDE_DIRS}
-  ${GLEW_INCLUDE_DIRS}
-)
-target_link_directories(erebus_native PRIVATE ${GLFW_LIBRARY_DIRS} ${GLEW_LIBRARY_DIRS})
-target_link_libraries(erebus_native PRIVATE
-  ${GLFW_LIBRARIES}
-  ${GLEW_LIBRARIES}
-  OpenGL::GL
-  m
-)
+if(WIN32)
+  # vcpkg's config packages give proper imported targets — no manual
+  # include/library path plumbing needed.
+  target_link_libraries(erebus_native PRIVATE glfw GLEW::GLEW OpenGL::GL)
+else()
+  target_include_directories(erebus_native PRIVATE
+    ${GLFW_INCLUDE_DIRS}
+    ${GLEW_INCLUDE_DIRS}
+  )
+  target_link_directories(erebus_native PRIVATE ${GLFW_LIBRARY_DIRS} ${GLEW_LIBRARY_DIRS})
+  target_link_libraries(erebus_native PRIVATE
+    ${GLFW_LIBRARIES}
+    ${GLEW_LIBRARIES}
+    OpenGL::GL
+    m
+  )
+endif()
 if(TARGET glm::glm)
   target_link_libraries(erebus_native PRIVATE glm::glm)
 endif()
-target_compile_options(erebus_native PRIVATE -Wall -Wextra -Wno-unused-parameter)
+# -Wall/-Wextra are GCC/Clang flags; MSVC doesn't understand them and would
+# just error out on an unrecognized option.
+if(NOT MSVC)
+  target_compile_options(erebus_native PRIVATE -Wall -Wextra -Wno-unused-parameter)
+endif()
 
 # Ship the shader source tree and the data-driven content (enemy/mission
 # .cfg files) next to the binary so the executable can find both at runtime
