@@ -69,6 +69,11 @@ endif()
 # just error out on an unrecognized option.
 if(NOT MSVC)
   target_compile_options(erebus_native PRIVATE -Wall -Wextra -Wno-unused-parameter)
+else()
+  # MSVC's <cmath> only defines M_PI (and friends) when this is set before
+  # it's included — glibc/Apple's <cmath> always define it, so this never
+  # came up building on Linux.
+  target_compile_definitions(erebus_native PRIVATE _USE_MATH_DEFINES)
 endif()
 
 # Ship the shader source tree and the data-driven content (enemy/mission
