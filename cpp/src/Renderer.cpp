@@ -1,5 +1,17 @@
 #include "Renderer.h"
 #include <algorithm>
+#include <cstdio>
+
+// Each tier gives up the least valuable thing left, in the same order the
+// browser build's TIERS table does. Pixel-ratio supersampling from that
+// table isn't ported — it would need an extra upscale-blit stage this
+// renderer doesn't have — so this trades shadow/bloom/DOF/mote cost only.
+const Renderer::QualityTier Renderer::kTiers[Renderer::kQualityTiers] = {
+    {"high", {2048, 1024, 1024}, 5, true, 1.00f},
+    {"medium", {1024, 1024, 512}, 4, true, 0.70f},
+    {"low", {1024, 512, 512}, 3, false, 0.45f},
+    {"minimal", {768, 512, 512}, 2, false, 0.20f},
+};
 
 void Renderer::create(int width, int height) {
   width_ = width; height_ = height;
@@ -13,7 +25,7 @@ void Renderer::create(int width, int height) {
   sceneHdr_.create(width_, height_, /*hdr=*/true, /*depthTexture=*/true);
   dofBuffer_.create(std::max(1, width_ / 2), std::max(1, height_ / 2), true, false);
 
-  csm_.create({2048, 2048, 1024});
+  applyQualityTier(0);
   bloom_.create(width_, height_);
   ibl_.build(128);
 
@@ -22,6 +34,42 @@ void Renderer::create(int width, int height) {
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
+}
+
+void Renderer::applyQualityTier(int i) {
+  tier_ = std::max(0, std::min(kQualityTiers - 1, i));
+  const QualityTier& q = kTiers[tier_];
+  csm_.destroy();
+  csm_.create({q.shadow[0], q.shadow[1], q.shadow[2]});
+  bloom_.activeLevels = q.bloomLevels;
+  dofAllowed_ = q.dofAllowed;
+  motesFraction_ = q.motesFraction;
+  std::fprintf(stderr, "[Renderer] quality tier -> %s (shadow %d/%d/%d, bloom x%d, dof=%d, motes=%.2f)\n",
+               q.name, q.shadow[0], q.shadow[1], q.shadow[2], q.bloomLevels, q.dofAllowed, q.motesFraction);
+}
+
+void Renderer::trackFrameTime(float dtSeconds) {
+  if (!autoQuality_) return;
+  float ms = dtSeconds * 1000.0f;
+  // A gap this long is a minimized window or a breakpoint, not a slow
+  // frame — don't let it single-handedly force a downgrade.
+  if (ms < 250.0f) emaMs_ += (ms - emaMs_) * 0.1f;
+
+  if (emaMs_ > 26.0f) { slowFrames_++; fastFrames_ = 0; }
+  else if (emaMs_ < 13.0f) { fastFrames_++; slowFrames_ = 0; }
+  else { slowFrames_ = 0; fastFrames_ = 0; }
+
+  if (slowFrames_ > 90 && tier_ < kQualityTiers - 1) {
+    slowFrames_ = 0;
+    downgrades_++;
+    applyQualityTier(tier_ + 1);
+  } else if (tier_ > 0 && fastFrames_ > 600 * (downgrades_ + 1)) {
+    // Climbing back is deliberately much harder than falling, scaled by how
+    // many times it has already fallen, so it can't sit oscillating
+    // between two tiers.
+    fastFrames_ = 0;
+    applyQualityTier(tier_ - 1);
+  }
 }
 
 void Renderer::resize(int width, int height) {
@@ -133,7 +181,8 @@ void Renderer::renderMotes(const Game& scene, const Camera& camera, float time) 
   motesShader_.set("uOpacity", 0.22f);
 
   glBindVertexArray(scene.moteVao());
-  glDrawArrays(GL_POINTS, 0, scene.moteCount());
+  int moteCount = std::max(0, (int)(scene.moteCount() * motesFraction_));
+  glDrawArrays(GL_POINTS, 0, moteCount);
 
   glDisable(GL_PROGRAM_POINT_SIZE);
   glDisable(GL_BLEND);
@@ -195,7 +244,12 @@ void Renderer::renderComposite(const Camera& camera, const Game& scene, GLuint b
   compositeShader_.set("uNear", 0.05f);
   compositeShader_.set("uFar", 500.0f);
 
-  compositeShader_.set("uAim", camera.aim);
+  // If this tier doesn't allow the DoF pass to run, dofBuffer_ holds stale
+  // (or never-rendered) contents — zeroing uAim here, rather than at the
+  // call site, keeps camera.aim itself real for anything else that reads
+  // it while skipping the one shader branch that would blend that stale
+  // buffer in.
+  compositeShader_.set("uAim", dofAllowed_ ? camera.aim : 0.0f);
   compositeShader_.set("uDofFocus", 16.0f);
   compositeShader_.set("uDofRange", 60.0f);
 
@@ -224,8 +278,28 @@ void Renderer::renderComposite(const Camera& camera, const Game& scene, GLuint b
 
 // --------------------------------------------------------------- top level
 
+void Renderer::debugPrintCenterPixel() const {
+  int cx = width_ / 2, cy = height_ / 2;
+
+  glBindFramebuffer(GL_FRAMEBUFFER, GL_NONE);
+  sceneHdr_.bind();
+  float hdr[4] = {0, 0, 0, 0};
+  glReadPixels(cx, cy, 1, 1, GL_RGBA, GL_FLOAT, hdr);
+
+  Framebuffer::bindScreen(width_, height_);
+  unsigned char screen[4] = {0, 0, 0, 0};
+  glReadPixels(cx, cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, screen);
+
+  std::fprintf(stderr,
+               "[debug-pixel] centre=(%d,%d) hdrScene(linear)=(%.4f,%.4f,%.4f) "
+               "finalScreen(0-255)=(%d,%d,%d)\n",
+               cx, cy, hdr[0], hdr[1], hdr[2], screen[0], screen[1], screen[2]);
+  glCheck("Renderer::debugPrintCenterPixel");
+}
+
 void Renderer::renderFrame(const Game& scene, const Camera& camera, float time, float dt) {
-  (void)dt;
+  trackFrameTime(dt);
+
   drawList_.clear();
   scene.collect(time, drawList_);
 
@@ -245,7 +319,7 @@ void Renderer::renderFrame(const Game& scene, const Camera& camera, float time, 
   // comment at the top of renderComposite.
   GLuint bloomTex = bloom_.render(sceneHdr_.colorTexture(), fsTriVao_);
 
-  if (camera.aim > 0.01f) renderDof();
+  if (dofAllowed_ && camera.aim > 0.01f) renderDof();
 
   renderComposite(camera, scene, bloomTex, time);
 }

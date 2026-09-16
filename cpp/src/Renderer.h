@@ -32,6 +32,46 @@ public:
 
   void renderFrame(const Game& scene, const Camera& camera, float time, float dt);
 
+  // Diagnostic only (gated behind EREBUS_DEBUG_PIXEL in main.cpp): reads
+  // back the screen-centre pixel from both the pre-tonemap linear HDR scene
+  // buffer and the final default-framebuffer image, and prints both. Lets
+  // a report of "the screen is just dark/black" on hardware we can't test
+  // on directly be told apart into "nothing is reaching the scene buffer"
+  // (a geometry/lighting bug) vs "the scene has real radiance but the
+  // composite pass is crushing it to black" (a tonemap/exposure bug) —
+  // rather than guessing from a description alone.
+  void debugPrintCenterPixel() const;
+
+  // ---------- adaptive quality (ported from the browser build's engine.js
+  // TIERS/trackFrame) ----------
+  // Cascaded shadows and a multi-pass composite aren't free; on hardware
+  // that can't afford the full pipeline, a plain frame arriving 60 times a
+  // second beats a beautiful one arriving 20 times a second. Watches a
+  // smoothed frame time and steps shadow-map resolution, bloom level count,
+  // whether depth-of-field is allowed to run at all, and dust-mote count
+  // down (and, much more reluctantly, back up) to fit. Falling is fast —
+  // stepping up requires staying fast for far longer, scaled by how many
+  // times it has already fallen — so it can't sit oscillating between two
+  // tiers. Off by default only if the caller explicitly disables it or
+  // forces a tier (see EREBUS_QUALITY_TIER/EREBUS_QUALITY_AUTO in main.cpp),
+  // which also doubles as a diagnostic: if a simpler pipeline renders
+  // correctly on hardware where the full one doesn't, that narrows down
+  // which pass is actually broken there.
+  struct QualityTier {
+    const char* name;
+    int shadow[3];
+    int bloomLevels;
+    bool dofAllowed;
+    float motesFraction;
+  };
+  static constexpr int kQualityTiers = 4;
+  static const QualityTier kTiers[kQualityTiers];
+
+  void setAutoQuality(bool on) { autoQuality_ = on; }
+  void setQualityTier(int i) { applyQualityTier(i); }
+  int qualityTier() const { return tier_; }
+  const char* qualityTierName() const { return kTiers[tier_].name; }
+
   int shadowDrawCalls = 0;  // filled in each frame, for the on-screen HUD
 
 private:
@@ -40,6 +80,16 @@ private:
   void renderMotes(const Game& scene, const Camera& camera, float time);
   void renderDof();
   void renderComposite(const Camera& camera, const Game& scene, GLuint bloomTex, float time);
+
+  void trackFrameTime(float dtSeconds);
+  void applyQualityTier(int i);
+
+  int tier_ = 0;
+  bool autoQuality_ = true;
+  bool dofAllowed_ = true;
+  float motesFraction_ = 1.0f;
+  float emaMs_ = 16.0f;
+  int slowFrames_ = 0, fastFrames_ = 0, downgrades_ = 0;
 
   int width_ = 0, height_ = 0;
 

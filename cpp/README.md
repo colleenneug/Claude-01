@@ -193,6 +193,24 @@ see `Content::loadAll` in `src/Content.cpp`.
   and names aren't drawn yet, in the Hub or in a mission. Everything shown
   is genuinely wired to live state.
 
+## Adaptive quality
+
+Ported from the browser build's `fps/engine.js` (`TIERS`/`trackFrame`):
+`Renderer` watches a smoothed frame time and steps down through four tiers —
+`high` → `medium` → `low` → `minimal` — trading away shadow-map resolution,
+bloom level count, whether depth-of-field is allowed to run at all, and dust
+mote count, in that order, the same as the browser build gives up the least
+valuable thing left first. Falling is fast (about 1.5s of sustained slow
+frames); climbing back is deliberately much harder, and gets harder each
+time it has already fallen, so it can't sit oscillating between two tiers.
+The current tier shows in the window title (`gfx:<name>`).
+
+Not ported: the browser build's tiers also scale a pixel-ratio
+supersampling factor, which would need an extra upscale-blit stage this
+renderer doesn't have — left out rather than half-implemented. See
+`EREBUS_QUALITY_TIER`/`EREBUS_QUALITY_AUTO` above to force a tier or turn
+auto-adjustment off.
+
 ## Verifying it without a display
 
 Beyond `EREBUS_DUMP_FRAME`/`EREBUS_MAX_FRAMES` (render `n` frames
@@ -223,6 +241,16 @@ a way to prove movement, combat and mission state actually work:
   still in the Hub (`"1"`/`"2"`/`"3"` cycle-equip-or-buy a category,
   `"mission"` cycles the mission, `"launch"` commits) — the same idea as
   `EREBUS_FORCE_FORWARD`, but for menu input.
+- `EREBUS_DEBUG_PIXEL=1` — every 60 frames, prints the screen-centre pixel
+  from both the pre-tonemap linear HDR scene buffer and the final image,
+  plus the health bar's pixel. Turns "the screen looks dark/black" into
+  actual numbers on hardware that can't be tested directly — see
+  `Renderer::debugPrintCenterPixel`'s comment for how to read the output.
+- `EREBUS_QUALITY_TIER=<0-3>` — forces high/medium/low/minimal and disables
+  auto-adjustment (see *Adaptive quality* below); `EREBUS_QUALITY_AUTO=0`
+  disables auto-adjustment without forcing a tier. Both double as a
+  diagnostic: if a simpler tier renders correctly where the default doesn't,
+  that narrows down which pass is actually broken on that hardware.
 
 ```
 Xvfb :99 -screen 0 1280x800x24 &

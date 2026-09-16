@@ -79,6 +79,19 @@ int main(int argc, char** argv) {
   renderer.create(width, height);
   hud.create();
 
+  // EREBUS_QUALITY_TIER=<0-3> forces high/medium/low/minimal and disables
+  // auto-adjustment; EREBUS_QUALITY_AUTO=0 disables auto-adjustment without
+  // forcing a tier (stays on whatever the forced/default tier is). Useful
+  // for reproducible testing, and as a diagnostic on hardware behaving
+  // unexpectedly: if a simpler tier renders correctly where "high" doesn't,
+  // that narrows down which pass is actually the problem there.
+  if (const char* qt = std::getenv("EREBUS_QUALITY_TIER")) {
+    renderer.setAutoQuality(false);
+    renderer.setQualityTier(std::atoi(qt));
+  } else if (const char* qa = std::getenv("EREBUS_QUALITY_AUTO")) {
+    if (std::atoi(qa) == 0) renderer.setAutoQuality(false);
+  }
+
   const char* contentDirEnv = std::getenv("EREBUS_CONTENT_DIR");
   std::string contentDir = contentDirEnv ? contentDirEnv : "content";
 
@@ -137,6 +150,11 @@ int main(int argc, char** argv) {
   bool forceForward = std::getenv("EREBUS_FORCE_FORWARD") != nullptr;
   bool forceFire = std::getenv("EREBUS_FORCE_FIRE") != nullptr;
   bool debugAutoaim = std::getenv("EREBUS_DEBUG_AUTOAIM") != nullptr;
+  // Prints the screen-centre pixel, before and after tone mapping, every
+  // 60 frames — see Renderer::debugPrintCenterPixel for why: it turns "the
+  // screen looks dark/black" from a description into a number, so hardware
+  // this project was never tested on doesn't have to be debugged by guessing.
+  bool debugPixel = std::getenv("EREBUS_DEBUG_PIXEL") != nullptr;
   const char* dumpPath = std::getenv("EREBUS_DUMP_FRAME");
   int maxFrames = 0;
   if (const char* mf = std::getenv("EREBUS_MAX_FRAMES")) maxFrames = std::atoi(mf);
@@ -258,6 +276,7 @@ int main(int argc, char** argv) {
       game.update(window, camera, dt, firePressed, reloadHeld, forceForward);
 
       renderer.renderFrame(game, camera, (float)now, dt);
+      if (debugPixel && frame % 60 == 0) renderer.debugPrintCenterPixel();
 
       glfwGetFramebufferSize(window, &width, &height);
       const Weapon& w = game.weapon();
@@ -268,14 +287,29 @@ int main(int argc, char** argv) {
                game.bossAlive(), game.bossHpFraction(), game.missionState() == MissionState::Complete,
                game.missionState() == MissionState::Failed, game.hudAccent());
 
+      if (debugPixel && frame % 60 == 0) {
+        // The health bar's fill always occupies this pixel while HP > 0 —
+        // if the HUD is drawing at all, this should read close to the
+        // health colour, not the 3D scene behind it.
+        // glReadPixels is bottom-left-origin, but Hud's bar coordinates are
+        // top-left-origin (by = screenH - 54) — the bar sits near the
+        // bottom of the screen either way, so this is just y=45 from the
+        // bottom, not height-45 from the bottom.
+        unsigned char hudPixel[4] = {0, 0, 0, 0};
+        glReadPixels(40, 45, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, hudPixel);
+        std::fprintf(stderr, "[debug-pixel] healthBarPixel(0-255)=(%d,%d,%d)\n",
+                     hudPixel[0], hudPixel[1], hudPixel[2]);
+      }
+
       if (frame % 30 == 0) {
         const char* stateStr = game.missionState() == MissionState::Complete ? "COMPLETE"
                               : game.missionState() == MissionState::Failed ? "FAILED" : "active";
         char title[224];
         std::snprintf(title, sizeof(title),
-                       "Erebus Cradle | %s | %.1fms | hp %.0f | ammo %d/%d | wave %.0f%% | %s",
+                       "Erebus Cradle | %s | %.1fms | hp %.0f | ammo %d/%d | wave %.0f%% | %s | gfx:%s",
                        game.missionName().c_str(), dt * 1000.0f, game.player().hp,
-                       w.ammoInMag, w.reserveAmmo, game.waveProgress() * 100.0f, stateStr);
+                       w.ammoInMag, w.reserveAmmo, game.waveProgress() * 100.0f, stateStr,
+                       renderer.qualityTierName());
         glfwSetWindowTitle(window, title);
       }
 
