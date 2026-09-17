@@ -13,7 +13,8 @@ A persistent profile — chits (currency), owned and equipped gear, completed
 missions — lives in one of three save slots and carries across runs.
 
 **Scope, honestly stated:** three weapons, three armour pieces, three
-cosmetics, three enemy archetypes, four missions, three destinations. All of it is real,
+cosmetics, three enemy archetypes, six missions, five destinations —
+including an ice world and a desert one. All of it is real,
 data-driven content under `content/`, not hardcoded — a monthly drop of new
 gear or a new mission is text files, not a code change (see *Content*
 below). What's still not here: co-op/netcode (see the note at the bottom of
@@ -134,11 +135,13 @@ boss colossus 2.2
 **`content/planets/<id>.cfg`** — somewhere to fly to:
 
 ```
-name = Erebus III - Dust Shelf
-position = 2600, 240, -1800   # where it sits in open space
-radius = 520
-colour = 0.72, 0.58, 0.40
-mission = patrol_dust_shelf   # what landing here drops you into
+name = Glacius - Frozen Shelf
+position = -2200, 620, 3400   # where it sits in open space
+radius = 480
+colour = 0.62, 0.78, 0.92     # the two colours continents mix between
+colour2 = 0.30, 0.46, 0.64
+cap = 0.55                    # how far the polar ice reaches, 0 = none
+mission = glacius_ice_fields  # what landing here drops you into
 # station = true              # the Cradle instead: docking opens the hub
 ```
 
@@ -207,13 +210,23 @@ see `Content::loadAll` in `src/Content.cpp`.
   (what every headless test uses); `EREBUS_SLOT=<1-3>` picks a slot.
 - **Space** (`Space.h/.cpp`): the ship, and the open space you fly it
   through. Worlds come from `content/planets/*.cfg` — a position, a radius,
-  a colour, and the mission you land into — so adding a destination is a
-  text file like everything else. Flight is deliberately arcade rather than
+  two surface colours, a polar cap size, and the mission you land into — so
+  adding a destination is a text file like everything else. Planets are
+  shaded from surface *direction* rather than world position (`shadePlanet`
+  in `pbr.frag`): the metre-scale noise every other material uses smears
+  into a few flat patches on a body five hundred units across, while
+  direction-space noise gives continents sized as a fraction of the globe
+  however big the globe is. Latitude drives the banding and the caps.
+  Flight is deliberately arcade rather than
   Newtonian: velocity is damped toward the thrust direction, so releasing
   the key coasts to a stop and the ship goes where it's pointed. True
   frictionless flight means every nudge is permanent, which is miserable to
   actually fly. Bodies are solid — you stop at the surface and slide along
-  it rather than passing through the middle of a planet.
+  it rather than passing through the middle of a planet, and the range
+  that offers you the landing prompt is derived from that standoff
+  distance (`engageRangeFor`) rather than picked separately — the two
+  numbers drifting apart is exactly how the Cradle became impossible to
+  dock at, with the ship held further out than the prompt could reach.
 - **Hub** ("THE CRADLE" — `Hub.h/.cpp`): the between-mission loadout and
   destination picker — see *Controls* above. Cycling an unowned item buys
   it if it's affordable; `Hud::drawHub` lists every weapon, armour piece,

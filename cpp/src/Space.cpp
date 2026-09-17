@@ -18,6 +18,8 @@ bool Space::init(const Content& content) {
     b.pos = d->position;
     b.radius = d->radius;
     b.tint = d->colour;
+    b.tint2 = d->colour2;
+    b.capExtent = d->capExtent;
     b.missionId = d->missionId;
     b.isStation = d->station;
     bodies_.push_back(b);
@@ -137,10 +139,7 @@ void Space::update(GLFWwindow* window, Camera& camera, float dt, bool boost,
     // while being miles away from a small station. A third of the radius
     // keeps the body reading as a sphere at any size, and stays inside
     // engageRangeFor() so the land prompt is up when you get there.
-    // The station is a spoked ring, not a sphere: its arms reach out to
-    // about 1.35 radii, so the sphere that keeps you clear of it is wider
-    // than the one that keeps you off a planet's surface.
-    float minDist = b.radius * (b.isStation ? 1.8f : 1.35f);
+    float minDist = b.radius * standoffFactor(b);
     if (dist < minDist && dist > 1e-3f) {
       glm::vec3 n = d / dist;
       position_ = b.pos + n * minDist;
@@ -209,9 +208,11 @@ void Space::collect(float time, std::vector<DrawItem>& out) const {
     }
 
     it.mesh = &planetMesh_;
-    it.material = MaterialType::Rock;
+    it.material = MaterialType::Planet;
     it.model = glm::scale(it.model, glm::vec3(b.radius));
     it.tint = b.tint;
+    it.tint2 = b.tint2;
+    it.capExtent = b.capExtent;
     it.metallic = 0.0f;
     it.roughness = 0.95f;
     // A planet is the one thing in this game bigger than a shadow cascade;

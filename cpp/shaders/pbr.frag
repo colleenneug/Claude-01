@@ -34,12 +34,16 @@ uniform sampler2DShadow uCascadeMap2;
 
 uniform samplerCube uIrradianceMap;
 uniform float uIblMaxMip;
+uniform float uIblIntensity;
 
-uniform int uMaterial;        // MaterialType: 0 armour, 1 terrain, 2 emissive, 3 rock
+uniform int uMaterial;        // MaterialType: 0 armour, 1 terrain, 2 emissive,
+                              //               3 rock, 4 planet
 uniform vec3 uTint;
 uniform float uMetallic;
 uniform float uRoughness;
 uniform float uWear;          // armour: how chipped the paint is, 0..~1.5
+uniform vec3 uTint2;          // planet: the colour continents mix toward
+uniform float uCapExtent;     // planet: how far the polar caps reach, 0 = none
 uniform vec3 uEmissive;
 uniform float uEmissiveIntensity;
 uniform float uAniso;         // 0 = isotropic reflections
@@ -80,6 +84,72 @@ float fbm(vec2 p) {
     sum += mix(0.5, valueNoise(pf), fade) * amps[i];
   }
   return sum;
+}
+
+// ---------------------------------------------------------------- planets
+// A planet is shaded from its surface *direction*, not its world position.
+// The world-position noise every other material uses is tuned for
+// metre-scale detail, and on a body five hundred units across it smears
+// into a few enormous flat patches. Direction-space noise gives features
+// sized in fractions of the globe regardless of how big the globe is.
+float hash31(vec3 p) {
+  p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+float valueNoise3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float n000 = hash31(i), n100 = hash31(i + vec3(1, 0, 0));
+  float n010 = hash31(i + vec3(0, 1, 0)), n110 = hash31(i + vec3(1, 1, 0));
+  float n001 = hash31(i + vec3(0, 0, 1)), n101 = hash31(i + vec3(1, 0, 1));
+  float n011 = hash31(i + vec3(0, 1, 1)), n111 = hash31(i + vec3(1, 1, 1));
+  return mix(mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+             mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y), f.z);
+}
+float fbm3(vec3 p) {
+  float sum = 0.0, amp = 0.5, freq = 1.0;
+  for (int i = 0; i < 5; i++) {
+    sum += valueNoise3(p * freq) * amp;
+    freq *= 2.07;
+    amp *= 0.5;
+  }
+  return sum;
+}
+
+// A whole world, shaded from the surface direction. Continents come from
+// direction-space fbm, so their size is a fraction of the globe rather than
+// a fixed number of metres; latitude gives the bands and the polar caps.
+// Nothing here is view-dependent, so it holds up from orbit and from the
+// standoff distance the ship parks at.
+vec3 shadePlanet(vec3 n, vec3 lowTint, vec3 highTint, float capExtent, out float roughOut) {
+  vec3 dir = normalize(n);
+
+  // Continents: two scales, the coarse one deciding land from sea and the
+  // fine one breaking up the coastline so it isn't a smooth blob.
+  float coarse = fbm3(dir * 2.3);
+  float fine = fbm3(dir * 7.5 + vec3(11.3));
+  float land = clamp(coarse * 0.78 + fine * 0.22, 0.0, 1.0);
+
+  // Banding by latitude, the way weather sorts itself on a real world.
+  float lat = dir.y;
+  float bands = 0.5 + 0.5 * sin(lat * 9.0 + fbm3(dir * 3.1) * 3.0);
+
+  vec3 albedo = mix(lowTint, highTint, smoothstep(0.38, 0.62, land));
+  albedo *= 0.88 + 0.24 * bands;
+
+  // Polar caps: driven by latitude, with the noise let in at the edge so
+  // the boundary is ragged rather than a drawn-on circle.
+  if (capExtent > 0.001) {
+    float capEdge = 1.0 - capExtent;
+    float cap = smoothstep(capEdge, capEdge + 0.22, abs(lat) - (fine - 0.5) * 0.18);
+    albedo = mix(albedo, vec3(0.92, 0.95, 1.0), clamp(cap, 0.0, 1.0));
+    roughOut = mix(0.92, 0.55, clamp(cap, 0.0, 1.0));   // ice is smoother
+    return albedo;
+  }
+
+  roughOut = 0.92;
+  return albedo;
 }
 
 // Triplanar projection weights: each of the three axis-aligned projections
@@ -329,6 +399,11 @@ void main() {
     vec3 bumpN; float roughOut;
     albedo = shadeTerrain(vWorldPos, N, uTint, vBlend, bumpN, roughOut);
     N = bumpN; roughness = roughOut; metallic = 0.0;
+  } else if (uMaterial == 4) {
+    float roughOut;
+    albedo = shadePlanet(N, uTint, uTint2, uCapExtent, roughOut);
+    roughness = roughOut;
+    metallic = 0.0;
   } else {  // Rock
     vec3 w = triplanarWeights(N);
     float h = triplanarHeight(vWorldPos, w, 0.6);
@@ -389,7 +464,7 @@ void main() {
   vec2 ab = envBRDFApprox(NoV, roughness);
   vec3 specularIbl = prefiltered * (F0 * ab.x + ab.y);
 
-  vec3 ambient = diffuseIbl + specularIbl;
+  vec3 ambient = (diffuseIbl + specularIbl) * uIblIntensity;
 
   fragColor = vec4(direct + ambient, 1.0);
 }

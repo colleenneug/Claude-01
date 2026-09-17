@@ -38,6 +38,13 @@ public:
   // units, where it collapses every star to one clamped pixel.
   virtual bool moteDistanceScaled() const { return true; }
 
+  // How strongly the image-based lighting probe contributes. The probe is
+  // a capture of a lit interior (see IBL::build), which is right for a
+  // mission and wrong in deep space: reflected off a planet it reads as
+  // giant coloured arcs sitting in the same place on screen no matter
+  // which world you're looking at. Out there the sun is the only light.
+  virtual float iblIntensity() const { return 1.0f; }
+
   // What the HDR buffer is cleared to before anything is drawn. A mission's
   // is a dim dust haze; space wants near-black so the stars read at all.
   virtual glm::vec3 clearColour() const { return glm::vec3(0.02f, 0.018f, 0.03f); }

@@ -27,6 +27,8 @@ public:
     glm::vec3 pos{0.0f};
     float radius = 200.0f;
     glm::vec3 tint{0.5f, 0.5f, 0.55f};
+    glm::vec3 tint2{0.35f, 0.33f, 0.30f};
+    float capExtent = 0.0f;
     std::string missionId;
     bool isStation = false;
   };
@@ -55,6 +57,8 @@ public:
   float moteSize() const override { return 1.3f; }       // fixed pixels, not metres
   float moteOpacity() const override { return 0.75f; }
   bool moteDistanceScaled() const override { return false; }
+  // Just enough fill to keep the night side from being pure black.
+  float iblIntensity() const override { return 0.10f; }
   glm::vec3 clearColour() const override { return glm::vec3(0.0016f, 0.0018f, 0.0035f); }
   float viewDistance() const override { return 60000.0f; }
   bool wantsShadows() const override { return false; }
@@ -75,9 +79,21 @@ public:
   // or dock (the station).
   int nearestBody() const { return nearest_; }
   float nearestDistance() const { return nearestDist_; }
-  // Range scales with the body: a 520-unit world and a 180-unit station
-  // can't share one absolute distance and both feel like "close enough".
-  float engageRangeFor(const Body& b) const { return b.radius * 0.5f; }
+  // How far out the ship is held from a body's centre, in radii. A planet
+  // is a sphere, so its own radius is the whole story; the station is a
+  // spoked ring whose arms reach past its nominal radius.
+  static float standoffFactor(const Body& b) { return b.isStation ? 1.8f : 1.35f; }
+
+  // Engage range is *derived* from the standoff rather than picked
+  // independently, because the two have to agree: if the range is ever
+  // tighter than the closest the ship can physically get, the prompt can
+  // never appear and the body becomes impossible to reach. That shipped —
+  // the station's wider standoff (1.8 radii, to clear its arms) put it
+  // permanently outside its own 0.5-radius docking range, so you could
+  // dock only from the spawn position and never again after flying away.
+  float engageRangeFor(const Body& b) const {
+    return (standoffFactor(b) - 1.0f) * b.radius + b.radius * 0.35f;
+  }
   bool inEngageRange() const {
     return nearest_ >= 0 && nearestDist_ <= engageRangeFor(bodies_[nearest_]);
   }

@@ -86,7 +86,11 @@ struct PlanetDef {
   std::string id, name;
   glm::vec3 position{0.0f};
   float radius = 200.0f;
+  // Two surface colours the continents mix between, and how far the polar
+  // caps reach (0 = none, ~0.45 = a properly iced world).
   glm::vec3 colour{0.55f, 0.5f, 0.45f};
+  glm::vec3 colour2{0.35f, 0.33f, 0.30f};
+  float capExtent = 0.0f;
   std::string missionId;
   bool station = false;
 };

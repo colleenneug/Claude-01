@@ -143,6 +143,7 @@ void Renderer::renderSceneToHdr(const SceneSource& scene, const Camera& camera) 
   glBindTexture(GL_TEXTURE_CUBE_MAP, ibl_.cubemap());
   pbrShader_.set("uIrradianceMap", 4);
   pbrShader_.set("uIblMaxMip", (float)ibl_.maxMipLevel());
+  pbrShader_.set("uIblIntensity", scene.iblIntensity());
 
   for (const auto& item : drawList_) {
     pbrShader_.set("uModel", item.model);
@@ -153,6 +154,8 @@ void Renderer::renderSceneToHdr(const SceneSource& scene, const Camera& camera) 
     pbrShader_.set("uMetallic", item.metallic);
     pbrShader_.set("uRoughness", item.roughness);
     pbrShader_.set("uWear", item.wear);
+    pbrShader_.set("uTint2", item.tint2);
+    pbrShader_.set("uCapExtent", item.capExtent);
     pbrShader_.set("uEmissive", item.emissive);
     pbrShader_.set("uEmissiveIntensity", item.emissiveIntensity);
     pbrShader_.set("uAniso", item.anisoStrength);

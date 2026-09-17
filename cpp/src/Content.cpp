@@ -267,6 +267,8 @@ PlanetDef parsePlanet(const std::string& id, const fs::path& path) {
       else if (k == "position") p.position = parseVec3(v, p.position);
       else if (k == "radius") p.radius = std::stof(v);
       else if (k == "colour" || k == "color") p.colour = parseVec3(v, p.colour);
+      else if (k == "colour2" || k == "color2") p.colour2 = parseVec3(v, p.colour2);
+      else if (k == "cap") p.capExtent = std::stof(v);
       else if (k == "mission") p.missionId = v;
       else if (k == "station") p.station = (v == "true" || v == "1");
     } catch (...) {
