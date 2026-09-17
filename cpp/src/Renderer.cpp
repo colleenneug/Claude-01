@@ -90,7 +90,7 @@ void Renderer::destroy() {
 
 // ------------------------------------------------------------- shadow pass
 
-void Renderer::renderShadowCascades(const Game&, const Camera&) {
+void Renderer::renderShadowCascades(const SceneSource&, const Camera&) {
   depthShader_.use();
   glEnable(GL_POLYGON_OFFSET_FILL);
   glPolygonOffset(2.5f, 4.0f);
@@ -111,22 +111,23 @@ void Renderer::renderShadowCascades(const Game&, const Camera&) {
 
 // -------------------------------------------------------------- scene pass
 
-void Renderer::renderSceneToHdr(const Game& scene, const Camera& camera) {
+void Renderer::renderSceneToHdr(const SceneSource& scene, const Camera& camera) {
   sceneHdr_.bind();
-  glClearColor(0.02f, 0.018f, 0.03f, 1.0f);
+  glm::vec3 clear = scene.clearColour();
+  glClearColor(clear.r, clear.g, clear.b, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   glm::mat4 view = camera.view();
-  glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, 500.0f);
+  glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
 
   pbrShader_.use();
   pbrShader_.set("uView", view);
   pbrShader_.set("uProj", proj);
   pbrShader_.set("uCamPos", camera.position);
 
-  pbrShader_.set("uSunDir", scene.sunDirection);
-  pbrShader_.set("uSunColour", scene.sunColour);
-  pbrShader_.set("uSunIntensity", scene.sunIntensityLux);
+  pbrShader_.set("uSunDir", scene.sunDirection());
+  pbrShader_.set("uSunColour", scene.sunColour());
+  pbrShader_.set("uSunIntensity", scene.sunIntensity());
 
   for (int i = 0; i < CascadedShadowMap::CASCADES; i++) {
     std::string p = "uCascade[" + std::to_string(i) + "].";
@@ -162,7 +163,7 @@ void Renderer::renderSceneToHdr(const Game& scene, const Camera& camera) {
 
 // ------------------------------------------------------------------ motes
 
-void Renderer::renderMotes(const Game& scene, const Camera& camera, float time) {
+void Renderer::renderMotes(const SceneSource& scene, const Camera& camera, float time) {
   sceneHdr_.bind();  // still bound from the scene pass, but explicit is cheap
   glDepthMask(GL_FALSE);
   glEnable(GL_BLEND);
@@ -171,14 +172,15 @@ void Renderer::renderMotes(const Game& scene, const Camera& camera, float time) 
 
   motesShader_.use();
   motesShader_.set("uView", camera.view());
-  motesShader_.set("uProj", glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, 500.0f));
+  motesShader_.set("uProj", glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_));
   motesShader_.set("uCamPos", camera.position);
   motesShader_.set("uBox", scene.moteBoxSize());
   motesShader_.set("uTime", time);
-  motesShader_.set("uSize", 26.0f);
-  motesShader_.set("uSunDir", scene.sunDirection);
-  motesShader_.set("uColour", glm::vec3(0.75f, 0.85f, 0.95f));
-  motesShader_.set("uOpacity", 0.22f);
+  motesShader_.set("uSize", scene.moteSize());
+  motesShader_.set("uDistanceScaled", scene.moteDistanceScaled() ? 1.0f : 0.0f);
+  motesShader_.set("uSunDir", scene.sunDirection());
+  motesShader_.set("uColour", scene.moteColour());
+  motesShader_.set("uOpacity", scene.moteOpacity());
 
   glBindVertexArray(scene.moteVao());
   int moteCount = std::max(0, (int)(scene.moteCount() * motesFraction_));
@@ -202,7 +204,7 @@ void Renderer::renderDof() {
   dofShader_.set("tDepth", 1);
   dofShader_.set("uTexel", glm::vec2(1.0f / dofBuffer_.width(), 1.0f / dofBuffer_.height()));
   dofShader_.set("uNear", 0.05f);
-  dofShader_.set("uFar", 500.0f);
+  dofShader_.set("uFar", farPlane_);
   dofShader_.set("uFocus", 16.0f);
   dofShader_.set("uRange", 60.0f);
   dofShader_.set("uMaxRadius", 4.0f);
@@ -215,7 +217,7 @@ void Renderer::renderDof() {
 
 // -------------------------------------------------------------- composite
 
-void Renderer::renderComposite(const Camera& camera, const Game& scene, GLuint bloomTex, float time) {
+void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, GLuint bloomTex, float time) {
   // bloomTex was produced by a separate chain of shader programs (Bloom
   // owns its own bright/downsample/upsample passes); the composite shader
   // is bound here, after all of that has finished, so every uniform set
@@ -238,11 +240,11 @@ void Renderer::renderComposite(const Camera& camera, const Game& scene, GLuint b
   compositeShader_.set("tDof", 3);
 
   glm::mat4 view = camera.view();
-  glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, 500.0f);
+  glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
   compositeShader_.set("uInvViewProj", glm::inverse(proj * view));
   compositeShader_.set("uCamPos", camera.position);
   compositeShader_.set("uNear", 0.05f);
-  compositeShader_.set("uFar", 500.0f);
+  compositeShader_.set("uFar", farPlane_);
 
   // If this tier doesn't allow the DoF pass to run, dofBuffer_ holds stale
   // (or never-rendered) contents — zeroing uAim here, rather than at the
@@ -254,15 +256,17 @@ void Renderer::renderComposite(const Camera& camera, const Game& scene, GLuint b
   compositeShader_.set("uDofRange", 60.0f);
 
   // Aerial-perspective fog, not a corridor haze: thin per metre, adding up
-  // to a visible fade over the scene's ~40m scale.
-  compositeShader_.set("uFogDensity", 0.018f);
-  compositeShader_.set("uFogFalloff", 0.05f);
-  compositeShader_.set("uFogBase", -1.0f);
-  compositeShader_.set("uFogColour", glm::vec3(0.42f, 0.30f, 0.34f));
-  compositeShader_.set("uInscatter", 0.9f);
+  // to a visible fade over a mission's ~40m scale. Scene-supplied, because
+  // the same numbers that read as depth in an arena saturate into pink soup
+  // across the thousands of units open space spans.
+  compositeShader_.set("uFogDensity", scene.fogDensity());
+  compositeShader_.set("uFogFalloff", scene.fogFalloff());
+  compositeShader_.set("uFogBase", scene.fogBase());
+  compositeShader_.set("uFogColour", scene.fogColour());
+  compositeShader_.set("uInscatter", scene.fogInscatter());
 
-  compositeShader_.set("uSunDir", scene.sunDirection);
-  compositeShader_.set("uSunColour", scene.sunColour);
+  compositeShader_.set("uSunDir", scene.sunDirection());
+  compositeShader_.set("uSunColour", scene.sunColour());
   compositeShader_.set("uExposure", 1.15f);
   compositeShader_.set("uGrain", 0.03f);
   compositeShader_.set("uVignette", 0.65f);
@@ -297,17 +301,27 @@ void Renderer::debugPrintCenterPixel() const {
   glCheck("Renderer::debugPrintCenterPixel");
 }
 
-void Renderer::renderFrame(const Game& scene, const Camera& camera, float time, float dt) {
+void Renderer::renderFrame(const SceneSource& scene, const Camera& camera, float time, float dt) {
   trackFrameTime(dt);
+  farPlane_ = scene.viewDistance();
 
   drawList_.clear();
   scene.collect(time, drawList_);
 
-  glm::vec3 fwd = camera.forward();
-  csm_.update(camera.position, fwd, glm::vec3(0, 1, 0), camera.fov(),
-              (float)width_ / height_, 0.05f, scene.sunDirection);
-
-  renderShadowCascades(scene, camera);
+  // Open space is a handful of convex bodies thousands of units apart with
+  // nothing to receive their shadows; fitting three cascades around that
+  // spends the whole shadow budget on emptiness and self-shadows the
+  // planets into darkness. The scene says whether the pass is worth it.
+  if (scene.wantsShadows()) {
+    glm::vec3 fwd = camera.forward();
+    csm_.update(camera.position, fwd, glm::vec3(0, 1, 0), camera.fov(),
+                (float)width_ / height_, 0.05f, scene.sunDirection());
+    renderShadowCascades(scene, camera);
+  } else {
+    // Still clear them, or the previous scene's depth lingers and paints
+    // mission shadows across space.
+    for (int i = 0; i < CascadedShadowMap::CASCADES; i++) csm_.beginCascade(i);
+  }
 
   Framebuffer::bindScreen(width_, height_);  // restore viewport after the depth passes
   glViewport(0, 0, width_, height_);

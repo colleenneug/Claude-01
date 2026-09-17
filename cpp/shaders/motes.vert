@@ -14,6 +14,8 @@ uniform vec3 uCamPos;
 uniform float uBox;
 uniform float uTime;
 uniform float uSize;
+// 1 = point size falls off with distance (dust); 0 = fixed size (stars).
+uniform float uDistanceScaled;
 uniform vec3 uSunDir;   // direction the light travels, world space
 
 out float vAlpha;
@@ -36,7 +38,8 @@ void main() {
   // Clamped hard: unclamped, a mote drifting within a few centimetres of the
   // lens would draw hundreds of pixels across, and thousands of those
   // blended additively is enough overdraw on its own to halve the frame rate.
-  gl_PointSize = clamp((uSize * aScale) / dist, 1.0, 24.0);
+  float scaled = (uSize * aScale) / dist;
+  gl_PointSize = clamp(mix(uSize * aScale, scaled, uDistanceScaled), 1.0, 24.0);
 
   float edge = length(rel) / (uBox * 0.5);
   vAlpha = smoothstep(0.25, 1.2, dist) * (1.0 - smoothstep(0.72, 1.0, edge));

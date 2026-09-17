@@ -282,6 +282,57 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   end();
 }
 
+void Hud::drawSpace(int screenW, int screenH, const SpaceState& s) {
+  begin(screenW, screenH);
+
+  const glm::vec4 dim(0.58f, 0.66f, 0.76f, 0.9f);
+  const glm::vec4 accent(s.accent, 0.95f);
+  const glm::vec4 live(0.45f, 0.95f, 0.6f, 0.98f);
+  float cx = screenW * 0.5f, cy = screenH * 0.5f;
+  char buf[96];
+
+  // Flight reticle: a ring of ticks rather than the weapon crosshair, so
+  // the two modes never look like the same thing.
+  glm::vec4 ring(s.accent, 0.5f);
+  for (int i = 0; i < 4; i++) {
+    float a = i * 1.5708f;
+    float dx = std::cos(a) * 22.0f, dy = std::sin(a) * 22.0f;
+    rect(cx + dx - 1.5f, cy + dy - 1.5f, 3.0f, 3.0f, ring);
+  }
+  rect(cx - 1.0f, cy - 1.0f, 2.0f, 2.0f, accent);
+
+  // Throttle readout, bottom-left.
+  float bx = 40, by = screenH - 76, bw = 220, bh = 12;
+  text(bx, by - 18, "THRUST", 1.8f, dim);
+  rect(bx, by, bw, bh, glm::vec4(0.10f, 0.12f, 0.15f, 0.8f));
+  float frac = s.maxSpeed > 0.0f ? std::clamp(s.speed / s.maxSpeed, 0.0f, 1.0f) : 0.0f;
+  rect(bx, by, bw * frac, bh, accent);
+  std::snprintf(buf, sizeof(buf), "%d U/S", (int)std::lround(s.speed));
+  text(bx + bw + 12, by - 2, buf, 2.0f, accent);
+
+  // Nearest destination, top-centre.
+  if (!s.nearestName.empty()) {
+    textCentered(cx, 40, s.nearestName, 2.6f, accent);
+    std::snprintf(buf, sizeof(buf), "%d UNITS", (int)std::lround(s.nearestDistance));
+    textCentered(cx, 74, buf, 2.0f, dim);
+    if (s.missionCleared) textCentered(cx, 100, "CLEARED", 1.8f, live);
+  }
+
+  // Engage prompt.
+  if (s.inRange) {
+    const char* verb = s.isStation ? "PRESS E TO DOCK AT THE CRADLE" : "PRESS E TO LAND";
+    float w = textWidth(verb, 2.6f);
+    rect(cx - w * 0.5f - 18, cy + 92, w + 36, 44, glm::vec4(0, 0, 0, 0.5f));
+    textCentered(cx, cy + 104, verb, 2.6f, live);
+  }
+
+  textCentered(cx, screenH - 42.0f,
+               "W S THRUST   A D STRAFE   SPACE / CTRL UP DOWN   SHIFT BOOST   MOUSE STEER",
+               1.8f, dim);
+
+  end();
+}
+
 void Hud::drawSlotSelect(int screenW, int screenH, const SlotSummary slots[3], int selected,
                          int deletePending) {
   begin(screenW, screenH);

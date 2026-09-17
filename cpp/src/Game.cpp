@@ -105,7 +105,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // Twenty degrees: low enough for long dramatic shadows, high enough that
   // upward-facing surfaces still catch real light. Same reasoning as the
   // renderer demo scene this replaces.
-  sunDirection = glm::normalize(glm::vec3(-0.62f, -0.34f, -0.32f));
+  sunDirection_ = glm::normalize(glm::vec3(-0.62f, -0.34f, -0.32f));
 
   // The dust motes don't depend on anything mission-specific (fixed box,
   // fixed count, fixed seed), so they're built once and reused across

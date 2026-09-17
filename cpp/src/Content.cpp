@@ -1,4 +1,5 @@
 #include "Content.h"
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -250,6 +251,32 @@ CosmeticDef parseCosmetic(const std::string& id, const fs::path& path) {
   return c;
 }
 
+PlanetDef parsePlanet(const std::string& id, const fs::path& path) {
+  PlanetDef p;
+  p.id = id;
+  p.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") p.name = v;
+      else if (k == "position") p.position = parseVec3(v, p.position);
+      else if (k == "radius") p.radius = std::stof(v);
+      else if (k == "colour" || k == "color") p.colour = parseVec3(v, p.colour);
+      else if (k == "mission") p.missionId = v;
+      else if (k == "station") p.station = (v == "true" || v == "1");
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return p;
+}
+
 }  // namespace
 
 bool Content::loadAll(const std::string& dir) {
@@ -304,10 +331,19 @@ bool Content::loadAll(const std::string& dir) {
     }
   }
 
+  fs::path planetDir = root / "planets";
+  if (fs::exists(planetDir)) {
+    for (auto& entry : fs::directory_iterator(planetDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      planets_[id] = parsePlanet(id, entry.path());
+    }
+  }
+
   std::printf("[Content] loaded %zu enemy type(s), %zu mission(s), %zu weapon(s), "
-              "%zu armor piece(s), %zu cosmetic(s) from %s\n",
+              "%zu armor piece(s), %zu cosmetic(s), %zu planet(s) from %s\n",
               enemies_.size(), missions_.size(), weapons_.size(), armor_.size(),
-              cosmetics_.size(), dir.c_str());
+              cosmetics_.size(), planets_.size(), dir.c_str());
   return true;
 }
 
@@ -334,6 +370,19 @@ const ArmorDef* Content::armor(const std::string& id) const {
 const CosmeticDef* Content::cosmetic(const std::string& id) const {
   auto it = cosmetics_.find(id);
   return it == cosmetics_.end() ? nullptr : &it->second;
+}
+
+const PlanetDef* Content::planet(const std::string& id) const {
+  auto it = planets_.find(id);
+  return it == planets_.end() ? nullptr : &it->second;
+}
+
+std::vector<std::string> Content::planetIds() const {
+  std::vector<std::string> out;
+  out.reserve(planets_.size());
+  for (auto& kv : planets_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
+  return out;
 }
 
 std::vector<std::string> Content::missionIds() const {

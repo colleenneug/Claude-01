@@ -13,6 +13,7 @@
 #include "Game.h"
 #include "Hud.h"
 #include "Hub.h"
+#include "Space.h"
 #include "Profile.h"
 #include <algorithm>
 #include <cstdio>
@@ -29,7 +30,7 @@ void framebufferSizeCallback(GLFWwindow* window, int w, int h) {
 
 }  // namespace
 
-enum class AppState { SlotSelect, Hub, Mission };
+enum class AppState { SlotSelect, Space, Hub, Mission };
 
 int main(int argc, char** argv) {
   std::string missionId = "patrol_dust_shelf";
@@ -74,6 +75,7 @@ int main(int argc, char** argv) {
   Game game;
   Hud hud;
   Hub hub;
+  Space space;
 
   glfwGetFramebufferSize(window, &width, &height);
   renderer.create(width, height);
@@ -132,14 +134,22 @@ int main(int argc, char** argv) {
   hub.init(hubContent, profile);
   hub.preselectMission(missionId);
 
+  bool spaceReady = space.init(hubContent);
+
   // EREBUS_SKIP_HUB=1 boots straight into --mission with whatever's
   // currently equipped, bypassing the Hub entirely — kept for every
   // headless verification flow that predates the Hub and still expects to
-  // land in a mission on frame 0.
+  // land in a mission on frame 0. EREBUS_SKIP_SPACE=1 goes to the hub menu
+  // instead of open space, for the hub-script tests that predate flight.
   bool skipHub = std::getenv("EREBUS_SKIP_HUB") != nullptr;
+  bool skipSpace = std::getenv("EREBUS_SKIP_SPACE") != nullptr || !spaceReady;
+  AppState afterSlot = skipSpace ? AppState::Hub : AppState::Space;
   AppState state = skipHub      ? AppState::Mission
-                   : slotChosen ? AppState::Hub
+                   : slotChosen ? afterSlot
                                 : AppState::SlotSelect;
+  // Which body the ship is parked at, so a finished mission returns you to
+  // the world you launched from rather than to the origin.
+  std::string lastBodyId;
   bool gameEverStarted = false;
   if (state == AppState::Mission) {
     if (!game.init(contentDir, missionId, profile)) {
@@ -178,6 +188,12 @@ int main(int argc, char** argv) {
   // screen looks dark/black" from a description into a number, so hardware
   // this project was never tested on doesn't have to be debugged by guessing.
   bool debugPixel = std::getenv("EREBUS_DEBUG_PIXEL") != nullptr;
+  // Flight aids, the space-mode counterparts of EREBUS_DEBUG_AUTOAIM:
+  // EREBUS_SPACE_AUTOPILOT=<planet id> steers the ship at that body every
+  // frame, and EREBUS_FORCE_ENGAGE=1 presses E the moment it's in range, so
+  // a headless run can prove the whole fly-there-and-land path end to end.
+  const char* spaceAutopilot = std::getenv("EREBUS_SPACE_AUTOPILOT");
+  bool forceEngage = std::getenv("EREBUS_FORCE_ENGAGE") != nullptr;
   const char* dumpPath = std::getenv("EREBUS_DUMP_FRAME");
   int maxFrames = 0;
   if (const char* mf = std::getenv("EREBUS_MAX_FRAMES")) maxFrames = std::atoi(mf);
@@ -219,6 +235,7 @@ int main(int argc, char** argv) {
   Hud::SlotSummary slotSummaries[3];
   bool p1 = false, p2 = false, p3 = false, pUp = false, pDown = false;
   bool pEnter = false, pSpace = false, pDel = false, pY = false, pN = false;
+  bool prevEngageKey = false, prevUndockKey = false;
 
   double lastTime = glfwGetTime();
   int frame = 0;
@@ -280,7 +297,13 @@ int main(int argc, char** argv) {
           profile = ProfileStore::load(savePath);
           hub.init(hubContent, profile);
           hub.preselectMission(missionId);
-          state = AppState::Hub;
+          state = afterSlot;
+          if (state == AppState::Space) {
+            space.placeNear("");   // start docked off the Cradle
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
+          }
         }
       }
 
@@ -309,6 +332,94 @@ int main(int argc, char** argv) {
       if (frame % 30 == 0) {
         glfwSetWindowTitle(window, "Erebus Cradle | Select a record");
       }
+    } else if (state == AppState::Space) {
+      // Headless flight aids, same idea as EREBUS_DEBUG_AUTOAIM for combat:
+      // with no mouse there is no way to steer, so a run can't otherwise
+      // prove that flying to a world and landing on it works at all.
+      if (spaceAutopilot) {
+        for (const Space::Body& b : space.bodies()) {
+          if (b.id != spaceAutopilot) continue;
+          glm::vec3 d = b.pos - space.shipPosition();
+          if (glm::length(d) > 1e-3f) {
+            d = glm::normalize(d);
+            camera.yaw = glm::degrees(std::atan2(d.z, d.x));
+            camera.pitch = glm::degrees(std::asin(std::clamp(d.y, -1.0f, 1.0f)));
+          }
+          break;
+        }
+      }
+
+      bool boost = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+      space.update(window, camera, dt, boost, forceForward);
+
+      // E engages whatever you're close to: a world drops you into its
+      // mission, the Cradle opens the hub.
+      // The scripted press waits for the autopilot's own target: the ship
+      // starts parked inside the Cradle's dock range, so "engage whatever
+      // is nearest" would dock again on frame one and never fly anywhere.
+      const Space::Body* engageable = space.engageTarget();
+      bool scriptedEngage = forceEngage && engageable &&
+                            (!spaceAutopilot || engageable->id == spaceAutopilot);
+      bool eDown = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS || scriptedEngage;
+      bool ePressed = eDown && !prevEngageKey;
+      prevEngageKey = eDown;
+
+      if (ePressed && engageable) {
+        const Space::Body* target = engageable;
+        if (target->isStation) {
+          state = AppState::Hub;
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+          mouseCaptured = false;
+        } else if (!target->missionId.empty()) {
+          if (game.init(contentDir, target->missionId, profile)) {
+            gameEverStarted = true;
+            lastBodyId = target->id;
+            camera.position = game.player().eyePosition();
+            state = AppState::Mission;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
+          }
+        }
+      }
+
+      renderer.renderFrame(space, camera, (float)now, dt);
+
+      glfwGetFramebufferSize(window, &width, &height);
+      Hud::SpaceState ss;
+      if (const Space::Body* near = space.nearestBody() >= 0
+                                        ? &space.bodies()[space.nearestBody()]
+                                        : nullptr) {
+        ss.nearestName = near->name;
+        ss.isStation = near->isStation;
+        ss.missionCleared = !near->missionId.empty() && profile.hasCompleted(near->missionId);
+      }
+      ss.nearestDistance = space.nearestDistance();
+      ss.inRange = space.inEngageRange();
+      ss.speed = space.speed();
+      ss.maxSpeed = space.maxSpeed();
+      if (const CosmeticDef* cd = hubContent.cosmetic(profile.equippedCosmetic)) ss.accent = cd->accent;
+      hud.drawSpace(width, height, ss);
+
+      if (frame % 30 == 0) {
+        char title[224];
+        std::snprintf(title, sizeof(title), "Erebus Cradle | Open space | %.0f u/s | %s",
+                      space.speed(), ss.nearestName.c_str());
+        glfwSetWindowTitle(window, title);
+      }
+
+      if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
+        FILE* f = std::fopen(logStatePath, "w");
+        if (f) {
+          glm::vec3 p = space.shipPosition();
+          std::fprintf(f,
+                       "{\"appState\":\"space\",\"frame\":%d,\"shipPos\":[%.1f,%.1f,%.1f],"
+                       "\"speed\":%.1f,\"nearest\":\"%s\",\"nearestDistance\":%.1f,\"inRange\":%s}\n",
+                       frame + 1, p.x, p.y, p.z, space.speed(), ss.nearestName.c_str(),
+                       ss.nearestDistance, ss.inRange ? "true" : "false");
+          std::fclose(f);
+        }
+      }
     } else if (state == AppState::Hub) {
       std::string scriptedStorage;
       const char* scripted = nullptr;
@@ -326,6 +437,21 @@ int main(int argc, char** argv) {
           mouseCaptured = true;
           firstMouse = true;
         }
+      }
+
+      // Undock: back out to the ship without launching anything. Saves
+      // first, since the hub is where gear gets bought.
+      if (!skipSpace) {
+        bool undockDown = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS;
+        if (undockDown && !prevUndockKey) {
+          ProfileStore::save(profile, savePath);
+          space.placeNear("");
+          state = AppState::Space;
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+          mouseCaptured = true;
+          firstMouse = true;
+        }
+        prevUndockKey = undockDown;
       }
 
       glClearColor(0.03f, 0.035f, 0.05f, 1.0f);
@@ -461,15 +587,30 @@ int main(int argc, char** argv) {
       // the last hostile dies — same reason the old build left the
       // complete/fail HUD tint on screen instead of quitting outright.
       if (game.missionState() != MissionState::InProgress) {
-        bool wantReturn = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
-                           glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+        // forceEngage is the scripted "press the contextual action key", so
+        // it covers this confirm too — otherwise a headless run can prove
+        // you can fly out and land but never that you get back to the ship.
+        bool wantReturn = forceEngage ||
+                          glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
+                          glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         if (wantReturn && !prevReturnKey) {
           ProfileStore::save(profile, savePath);
           game.destroy();
           hub.init(hubContent, profile);   // refresh: reward chits / new completion just landed
-          state = AppState::Hub;
-          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-          mouseCaptured = false;
+          if (skipSpace) {
+            state = AppState::Hub;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mouseCaptured = false;
+          } else {
+            // Back to the ship, parked at the world you dropped from, so
+            // leaving a mission puts you where you were rather than at the
+            // origin with no idea which way you came.
+            space.placeNear(lastBodyId);
+            state = AppState::Space;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
+          }
         }
         prevReturnKey = wantReturn;
       } else {

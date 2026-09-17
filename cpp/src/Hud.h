@@ -94,6 +94,19 @@ public:
   void drawSlotSelect(int screenW, int screenH, const SlotSummary slots[3], int selected,
                       int deletePending);
 
+  // The flight HUD: speed, what's nearest and how far, and the prompt when
+  // you're close enough to land or dock.
+  struct SpaceState {
+    std::string nearestName;
+    float nearestDistance = 0.0f;
+    bool inRange = false;
+    bool isStation = false;      // changes LAND to DOCK
+    bool missionCleared = false; // nearest world already completed once
+    float speed = 0.0f, maxSpeed = 1.0f;
+    glm::vec3 accent{0.85f, 0.95f, 1.0f};
+  };
+  void drawSpace(int screenW, int screenH, const SpaceState& s);
+
 private:
   void flushText();
 

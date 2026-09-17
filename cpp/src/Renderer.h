@@ -5,7 +5,7 @@
 #include "CascadedShadowMap.h"
 #include "Bloom.h"
 #include "IBL.h"
-#include "Game.h"
+#include "Scene.h"
 #include "Camera.h"
 #include <vector>
 
@@ -30,7 +30,7 @@ public:
   void resize(int width, int height);
   void destroy();
 
-  void renderFrame(const Game& scene, const Camera& camera, float time, float dt);
+  void renderFrame(const SceneSource& scene, const Camera& camera, float time, float dt);
 
   // Diagnostic only (gated behind EREBUS_DEBUG_PIXEL in main.cpp): reads
   // back the screen-centre pixel from both the pre-tonemap linear HDR scene
@@ -75,11 +75,11 @@ public:
   int shadowDrawCalls = 0;  // filled in each frame, for the on-screen HUD
 
 private:
-  void renderShadowCascades(const Game& scene, const Camera& camera);
-  void renderSceneToHdr(const Game& scene, const Camera& camera);
-  void renderMotes(const Game& scene, const Camera& camera, float time);
+  void renderShadowCascades(const SceneSource& scene, const Camera& camera);
+  void renderSceneToHdr(const SceneSource& scene, const Camera& camera);
+  void renderMotes(const SceneSource& scene, const Camera& camera, float time);
   void renderDof();
-  void renderComposite(const Camera& camera, const Game& scene, GLuint bloomTex, float time);
+  void renderComposite(const Camera& camera, const SceneSource& scene, GLuint bloomTex, float time);
 
   void trackFrameTime(float dtSeconds);
   void applyQualityTier(int i);
@@ -92,6 +92,11 @@ private:
   int slowFrames_ = 0, fastFrames_ = 0, downgrades_ = 0;
 
   int width_ = 0, height_ = 0;
+  // Refreshed each frame from SceneSource::viewDistance(). A mission arena
+  // is tens of metres and open space is tens of thousands: one shared far
+  // plane would either clip the planets out of existence or spend all the
+  // depth precision (and every shadow cascade) on empty air.
+  float farPlane_ = 500.0f;
 
   Shader depthShader_, pbrShader_, motesShader_, dofShader_, compositeShader_;
   Framebuffer sceneHdr_;   // full-res HDR + depth texture

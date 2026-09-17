@@ -7,12 +7,13 @@ AI (idle → chase → attack → die), and missions loaded from **plain text
 files under `content/`, not compiled in** — adding next month's mission or
 boss is dropping a `.cfg` file into `content/missions/`, not a code change.
 
-It now also has a persistent profile — chits (currency), owned and equipped
-gear, completed missions — picked in a keyboard-driven **Hub** between
-missions and saved to disk, so progress carries across runs.
+Between missions you fly a ship through **open space**: pick a save slot,
+launch from the Cradle, fly to a world and land on it to start its mission.
+A persistent profile — chits (currency), owned and equipped gear, completed
+missions — lives in one of three save slots and carries across runs.
 
 **Scope, honestly stated:** three weapons, three armour pieces, three
-cosmetics, three enemy archetypes, three missions. All of it is real,
+cosmetics, three enemy archetypes, four missions, three destinations. All of it is real,
 data-driven content under `content/`, not hardcoded — a monthly drop of new
 gear or a new mission is text files, not a code change (see *Content*
 below). What's still not here: co-op/netcode (see the note at the bottom of
@@ -59,7 +60,18 @@ file (`save1.dat` … `save3.dat`) next to the executable.
 | Enter or Space | Load that slot and continue to the hub |
 | D, then Y | Delete the selected slot (Y confirms, N cancels — a stray key press shouldn't wipe a record) |
 
-Then the **Hub**:
+Then you're in **open space**, in your ship:
+
+| Input | Action |
+|---|---|
+| Mouse | Steer (the ship goes where it's pointed) |
+| W / S | Thrust forward / reverse |
+| A / D | Strafe |
+| Space / Left Ctrl | Rise / drop |
+| Left Shift | Boost |
+| E | Land on the world you're near, or dock at the Cradle |
+
+Docking at the Cradle opens the **Hub** (Q undocks back to the ship):
 
 | Input | Action |
 |---|---|
@@ -117,6 +129,17 @@ arena = 90
 wave scarab 4 30      # enemy id, count, spawn ring radius (metres)
 wave marauder 3 22
 boss colossus 2.2
+```
+
+**`content/planets/<id>.cfg`** — somewhere to fly to:
+
+```
+name = Erebus III - Dust Shelf
+position = 2600, 240, -1800   # where it sits in open space
+radius = 520
+colour = 0.72, 0.58, 0.40
+mission = patrol_dust_shelf   # what landing here drops you into
+# station = true              # the Cradle instead: docking opens the hub
 ```
 
 **`content/weapons/<id>.cfg`**, **`content/armor/<id>.cfg`**,
@@ -182,6 +205,15 @@ see `Content::loadAll` in `src/Content.cpp`.
   can't tell you — it hands back a playable profile either way.
   `EREBUS_SAVE_PATH` points at one explicit file and skips slot selection
   (what every headless test uses); `EREBUS_SLOT=<1-3>` picks a slot.
+- **Space** (`Space.h/.cpp`): the ship, and the open space you fly it
+  through. Worlds come from `content/planets/*.cfg` — a position, a radius,
+  a colour, and the mission you land into — so adding a destination is a
+  text file like everything else. Flight is deliberately arcade rather than
+  Newtonian: velocity is damped toward the thrust direction, so releasing
+  the key coasts to a stop and the ship goes where it's pointed. True
+  frictionless flight means every nudge is permanent, which is miserable to
+  actually fly. Bodies are solid — you stop at the surface and slide along
+  it rather than passing through the middle of a planet.
 - **Hub** ("THE CRADLE" — `Hub.h/.cpp`): the between-mission loadout and
   destination picker — see *Controls* above. Cycling an unowned item buys
   it if it's affordable; `Hud::drawHub` lists every weapon, armour piece,
@@ -279,6 +311,16 @@ a way to prove movement, combat and mission state actually work:
 - `EREBUS_SAVE_PATH=<path>` — profile save file location (default
   `save.dat`); point it at a scratch path so a test run never touches a
   real player's progress.
+- `EREBUS_SPACE_AUTOPILOT=<planet id>` — steers the ship at that body every
+  frame, the flight-mode counterpart of `EREBUS_DEBUG_AUTOAIM`. With
+  `EREBUS_FORCE_FORWARD=1` holding the throttle, a headless run can fly the
+  full distance to a world.
+- `EREBUS_FORCE_ENGAGE=1` — presses the contextual action key: E once the
+  autopilot's target is in range, and the confirm at the end of a mission.
+  Together with the autopilot this exercises space → land → fight → back to
+  the ship end to end without a keyboard.
+- `EREBUS_SKIP_SPACE=1` — go straight to the hub menu instead of open
+  space, for the hub-script tests that predate flight.
 - `EREBUS_FIXED_DT=0.0166` — advance the simulation by exactly this much
   per frame instead of by real elapsed time. **Use this for any gameplay
   test that asserts an outcome.** Without it a run's result depends on how
@@ -329,8 +371,9 @@ content/
   weapons/*.cfg           equippable weapons
   armor/*.cfg             equippable armour
   cosmetics/*.cfg         HUD accent skins
+  planets/*.cfg           destinations in open space
 src/
-  main.cpp                window, input, Hub/Mission state machine, headless verification hooks
+  main.cpp                window, input, SlotSelect/Space/Hub/Mission state machine, headless hooks
   Gl.h                    GLEW/GLFW/GLM include point + glCheck()
   Shader.{h,cpp}          program compile/link, cached uniform locations
   Camera.{h,cpp}          view: look direction, FOV, the aim blend
@@ -341,9 +384,11 @@ src/
   Bloom.{h,cpp}           5-level downsample/tent-upsample bloom
   IBL.{h,cpp}             room capture -> prefiltered cubemap
   Renderer.{h,cpp}        orchestrates one frame, shadow pass through composite
-  Content.{h,cpp}         loads enemies/missions/weapons/armor/cosmetics from content/
+  Content.{h,cpp}         loads enemies/missions/weapons/armor/cosmetics/planets from content/
   Profile.{h,cpp}         persistent save: chits, owned/equipped gear, completed missions
   Hub.{h,cpp}             between-mission loadout/mission picker
+  Space.{h,cpp}           the ship, open space, planets and docking
+  Scene.h                 what Renderer needs from a world (Game and Space both supply it)
   Font.h                  hand-authored 5x7 bitmap font, as bit patterns
   Level.{h,cpp}           arena geometry + AABB colliders
   Player.{h,cpp}          physical controller: gravity, jump, collision, armour damage reduction

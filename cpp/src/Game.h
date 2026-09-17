@@ -7,6 +7,7 @@
 #include "Hostile.h"
 #include "Camera.h"
 #include "Profile.h"
+#include "Scene.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -32,7 +33,7 @@ struct Pickup {
 // Renderer was built against (collect(), sun*, mote*), so Renderer doesn't
 // need to know or care that "the world" is now a live mission rather than
 // the static demo scene it was first verified against.
-class Game {
+class Game : public SceneSource {
 public:
   // Loads content/, finds `missionId` in it, builds the level and spawns
   // its waves. Returns false (and logs why) if the mission or any enemy
@@ -51,15 +52,14 @@ public:
   void update(GLFWwindow* window, Camera& camera, float dt, bool firePressed, bool reloadHeld,
               bool forceForward = false);
 
-  void collect(float time, std::vector<DrawItem>& out) const;
-
-  // ---------- world state Renderer expects ----------
-  glm::vec3 sunDirection{0.0f};
-  glm::vec3 sunColour{1.0f, 0.94f, 0.82f};
-  float sunIntensityLux = 4.0f;
-  GLuint moteVao() const { return moteVao_; }
-  float moteBoxSize() const { return moteBox_; }
-  int moteCount() const { return moteCount_; }
+  // ---------- SceneSource ----------
+  void collect(float time, std::vector<DrawItem>& out) const override;
+  glm::vec3 sunDirection() const override { return sunDirection_; }
+  glm::vec3 sunColour() const override { return sunColour_; }
+  float sunIntensity() const override { return sunIntensityLux_; }
+  GLuint moteVao() const override { return moteVao_; }
+  float moteBoxSize() const override { return moteBox_; }
+  int moteCount() const override { return moteCount_; }
 
   // ---------- state main.cpp/Hud read ----------
   const Player& player() const { return player_; }
@@ -126,6 +126,10 @@ private:
   int killCount_ = 0;          // drives the deterministic drop pattern
   std::string pickupNote_;
   float pickupNoteT_ = 0.0f;
+
+  glm::vec3 sunDirection_{0.0f};
+  glm::vec3 sunColour_{1.0f, 0.94f, 0.82f};
+  float sunIntensityLux_ = 4.0f;
 
   GLuint moteVao_ = 0, moteVbo_ = 0;
   int moteCount_ = 2400;

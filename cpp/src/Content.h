@@ -79,6 +79,18 @@ struct CosmeticDef {
   int cost = 0;
 };
 
+// content/planets/<id>.cfg — somewhere to fly to in open space. A planet
+// with a `mission` drops you into that mission when you land; the one
+// marked `station = true` is the Cradle, and opens the hub instead.
+struct PlanetDef {
+  std::string id, name;
+  glm::vec3 position{0.0f};
+  float radius = 200.0f;
+  glm::vec3 colour{0.55f, 0.5f, 0.45f};
+  std::string missionId;
+  bool station = false;
+};
+
 class Content {
 public:
   // Scans <dir>/{enemies,missions,weapons,armor,cosmetics}/*.cfg. Returns
@@ -93,7 +105,9 @@ public:
   const WeaponDef* weapon(const std::string& id) const;
   const ArmorDef* armor(const std::string& id) const;
   const CosmeticDef* cosmetic(const std::string& id) const;
+  const PlanetDef* planet(const std::string& id) const;
 
+  std::vector<std::string> planetIds() const;
   std::vector<std::string> missionIds() const;
   std::vector<std::string> weaponIds() const;
   std::vector<std::string> armorIds() const;
@@ -105,4 +119,5 @@ private:
   std::unordered_map<std::string, WeaponDef> weapons_;
   std::unordered_map<std::string, ArmorDef> armor_;
   std::unordered_map<std::string, CosmeticDef> cosmetics_;
+  std::unordered_map<std::string, PlanetDef> planets_;
 };
