@@ -89,11 +89,40 @@ build it opens in place, and the install steps for the desktop build beside it. 
 it from a checkout, or publish it anywhere — it resolves the game as `game.html` next
 to itself and falls back to `index.html`, so both work.
 
-Its **LAUNCH NATIVE** button talks to `node server/server.js` on `localhost` (the port
-field defaults to 8080), which is why the two endpoints answer cross-origin requests.
-What guards them is the socket, not the origin: every state-changing path is loopback
-only, so a request can only ever start a process on the machine it came from, and the
-one process it can start is this project's own binary.
+Its desktop-build panel is one button with four states, driven by whatever
+`node server/server.js` reports about the machine it is running on (the port field
+follows the port the page was served from, and falls back to 8080):
+
+| State | The button says | What it does |
+|---|---|---|
+| No host answering | WAITING FOR A LOCAL HOST | Nothing — the commands to fix that are one click away under *DO IT BY HAND* |
+| Not compiled | INSTALL THE GAME | Runs `tools/install-native.sh`, streaming its output into the page |
+| Compiled | OPEN THE GAME | Spawns the binary |
+| Source newer than the binary | MUST BE UPDATED | Asks first: update it, or open it anyway |
+
+That last state is a plain mtime comparison — the newest file under `cpp/src`,
+`cpp/shaders`, `cpp/content` or `cpp/CMakeLists.txt` against the binary's own — so a
+changed mission `.cfg` counts as much as changed C++, since both are copied next to
+the binary at build time. An update is an incremental rebuild, usually a second or
+two.
+
+Four endpoints back all of it, and they answer cross-origin requests because the
+launcher can be published somewhere other than the host it asks. What guards them is
+the socket, not the origin: every state-changing path is loopback only, so a request
+can only ever start something on the machine it came from, the one process it can
+start is this project's own binary, and the install runs the same script a person
+runs by hand — nothing from the wire reaches a command line.
+
+| | |
+|---|---|
+| `GET /api/native` | built, running, stale, installing, display |
+| `POST /api/native/install` | run the install script (build only, never the game) |
+| `GET /api/native/install/log?since=` | the install's output as it happens |
+| `POST /api/native/launch` | spawn the binary |
+
+Installing needs the four build dependencies. Where they are missing and installing
+them would need a password the page cannot supply, the script stops with the one
+`sudo` line to paste rather than hanging on a prompt nobody will see.
 
 One command does the whole native install from a fresh checkout:
 

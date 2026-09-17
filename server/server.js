@@ -71,6 +71,7 @@ const MISSION_DIR = path.join(ROOT, 'cpp', 'content', 'missions');
 const BUILD_CMD = 'cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build -j';
 
 let native = null;                  // the one live child, or null
+let install = null;                 // the one live install, or the last one
 
 const loopback = (req) => {
   const a = req.socket.remoteAddress || '';
@@ -83,12 +84,67 @@ const loopback = (req) => {
 const headless = () =>
   process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
 
+/* Is the compiled binary older than the code it was built from? That is
+   the whole of "this needs updating": the sources that actually go into
+   the build, newest mtime, against the binary's own. Cheap enough to
+   answer on every poll, cached for a couple of seconds because the page
+   polls while an install runs. Content and shaders count — they are
+   copied next to the binary at build time, so a changed mission or
+   shader is just as stale as changed C++. */
+
+const SOURCE_DIRS = ['src', 'shaders', 'content'];
+let staleCache = { at: 0, value: null };
+
+function newestSource() {
+  let newest = 0;
+  let file = null;
+  const visit = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { visit(full); continue; }
+      let st;
+      try { st = fs.statSync(full); } catch (e) { continue; }
+      if (st.mtimeMs > newest) { newest = st.mtimeMs; file = full; }
+    }
+  };
+  for (const d of SOURCE_DIRS) visit(path.join(ROOT, 'cpp', d));
+  try {
+    const st = fs.statSync(path.join(ROOT, 'cpp', 'CMakeLists.txt'));
+    if (st.mtimeMs > newest) { newest = st.mtimeMs; file = path.join(ROOT, 'cpp', 'CMakeLists.txt'); }
+  } catch (e) { /* no CMakeLists: nothing to compare against */ }
+  return { newest, file };
+}
+
+function staleness() {
+  if (Date.now() - staleCache.at < 2000) return staleCache.value;
+  let value = { stale: false, staleFile: null, builtAt: null };
+  try {
+    const bin = fs.statSync(NATIVE_BIN);
+    const src = newestSource();
+    value = {
+      stale: src.newest > bin.mtimeMs,
+      staleFile: src.newest > bin.mtimeMs ? path.relative(ROOT, src.file) : null,
+      builtAt: new Date(bin.mtimeMs).toISOString()
+    };
+  } catch (e) { /* not built yet: not stale, just absent */ }
+  staleCache = { at: Date.now(), value };
+  return value;
+}
+
 function nativeStatus() {
+  const age = staleness();
   return {
     built: fs.existsSync(NATIVE_BIN),
     running: !!native,
     pid: native ? native.pid : null,
     display: !headless(),
+    installing: !!(install && install.running),
+    installExit: install && !install.running ? install.code : null,
+    stale: age.stale,
+    staleFile: age.staleFile,
+    builtAt: age.builtAt,
     binary: path.relative(ROOT, NATIVE_BIN),
     buildCmd: BUILD_CMD
   };
@@ -180,6 +236,97 @@ function launchNative(req, res, body) {
   sendJson(res, 200, { ok: true, pid: child.pid, status: nativeStatus() });
 }
 
+/* ---------------- installing it ---------------- */
+/*
+   The launcher's one button installs the desktop build and then opens
+   it, so the install has to be something a page can start and watch:
+   this runs tools/install-native.sh (build only, never the game) and
+   keeps its output in a ring buffer the page polls.
+
+   Nothing from the request reaches the command line — there is no
+   argument to pass. The script is the same one a person runs by hand,
+   which is deliberate: one install path, not a second one that only
+   exists in here and drifts.
+*/
+
+const INSTALL_SCRIPT = path.join(ROOT, 'tools', 'install-native.sh');
+const LOG_CAP = 400;                // lines kept for the page to catch up on
+
+function pushLine(line) {
+  install.total++;
+  install.lines.push(line);
+  if (install.lines.length > LOG_CAP) install.lines.shift();
+}
+
+function collect(stream) {
+  let buf = '';
+  stream.setEncoding('utf8');
+  stream.on('data', (chunk) => {
+    buf += chunk;
+    const parts = buf.split('\n');
+    buf = parts.pop();
+    for (const line of parts) pushLine(line.replace(/\u001b\[[0-9;]*m/g, ''));
+  });
+  stream.on('end', () => { if (buf.trim()) pushLine(buf.replace(/\u001b\[[0-9;]*m/g, '')); });
+}
+
+function startInstall(req, res) {
+  if (!loopback(req)) {
+    return sendJson(res, 403, { ok: false, reason: 'REMOTE',
+      detail: 'Only the machine running this server can install the desktop build.' });
+  }
+  if (install && install.running) {
+    return sendJson(res, 409, { ok: false, reason: 'INSTALLING',
+      detail: 'An install is already running.', status: nativeStatus() });
+  }
+  if (!fs.existsSync(INSTALL_SCRIPT)) {
+    return sendJson(res, 404, { ok: false, reason: 'NO_SCRIPT',
+      detail: 'tools/install-native.sh is missing from this checkout.' });
+  }
+
+  const child = spawn('bash', [INSTALL_SCRIPT, '--no-run'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  install = { running: true, code: null, lines: [], total: 0, pid: child.pid, startedAt: Date.now() };
+  log('install started (pid ' + child.pid + ')');
+
+  collect(child.stdout);
+  collect(child.stderr);
+
+  child.on('error', (err) => {
+    pushLine('install failed to start: ' + err.message);
+    install.running = false;
+    install.code = -1;
+  });
+  child.on('close', (code) => {
+    install.running = false;
+    install.code = code;
+    staleCache = { at: 0, value: null };          // the binary just moved
+    // Exit 3 is the script's own "the packages need a password" signal;
+    // the page turns that into the one command to paste, not an error.
+    pushLine(code === 0 ? 'INSTALL COMPLETE' : (code === 3 ? 'DEPENDENCIES NEED A PASSWORD' : 'INSTALL FAILED (exit ' + code + ')'));
+    log('install finished (exit ' + code + ')');
+  });
+
+  sendJson(res, 200, { ok: true, pid: child.pid, status: nativeStatus() });
+}
+
+/* Whatever the page hasn't seen yet, plus where the install got to. */
+function installLog(req, res, query) {
+  if (!install) {
+    return sendJson(res, 200, { running: false, code: null, total: 0, from: 0, lines: [], status: nativeStatus() });
+  }
+  const since = Math.max(0, Number(query.get('since')) || 0);
+  const first = install.total - install.lines.length;     // absolute index of lines[0]
+  const start = Math.max(0, since - first);
+  sendJson(res, 200, {
+    running: install.running,
+    code: install.code,
+    total: install.total,
+    from: first + start,
+    lines: install.lines.slice(start),
+    status: nativeStatus()
+  });
+}
+
 /* ---------------- routing ---------------- */
 
 function api(req, res) {
@@ -198,6 +345,13 @@ function api(req, res) {
 
   if (route === '/api/native' && req.method === 'GET') {
     return sendJson(res, 200, nativeStatus());
+  }
+  if (route === '/api/native/install' && req.method === 'POST') {
+    req.resume();                                  // nothing in the body to read
+    return startInstall(req, res);
+  }
+  if (route === '/api/native/install/log' && req.method === 'GET') {
+    return installLog(req, res, new URLSearchParams(req.url.split('?')[1] || ''));
   }
   if (route === '/api/native/launch' && req.method === 'POST') {
     let raw = '';
