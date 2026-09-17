@@ -80,6 +80,20 @@ public:
   // selection in each row, which is not necessarily the equipped item.
   void drawHub(int screenW, int screenH, const Content& content, const Hub& hub, const Profile& profile);
 
+  // One slot's line on the save-select screen: either a summary of the
+  // profile in it, or EMPTY.
+  struct SlotSummary {
+    bool used = false;
+    int chits = 0;
+    int missionsCleared = 0;
+    std::string weaponName;
+  };
+
+  // The save-select screen shown before the hub: three slots, the selected
+  // one carrying a caret, with a confirm prompt when a delete is pending.
+  void drawSlotSelect(int screenW, int screenH, const SlotSummary slots[3], int selected,
+                      int deletePending);
+
 private:
   void flushText();
 

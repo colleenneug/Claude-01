@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 
 namespace {
 
@@ -96,6 +97,17 @@ Profile ProfileStore::load(const std::string& path) {
 
   p.ensureStarterGear();
   return p;
+}
+
+bool ProfileStore::exists(const std::string& path) {
+  std::error_code ec;   // the throwing overload would turn a permissions
+                        // hiccup into a crash on the slot select screen
+  return std::filesystem::exists(path, ec) && !ec;
+}
+
+bool ProfileStore::erase(const std::string& path) {
+  std::error_code ec;
+  return std::filesystem::remove(path, ec) && !ec;
 }
 
 bool ProfileStore::save(const Profile& p, const std::string& path) {

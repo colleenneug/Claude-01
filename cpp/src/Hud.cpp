@@ -282,6 +282,61 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   end();
 }
 
+void Hud::drawSlotSelect(int screenW, int screenH, const SlotSummary slots[3], int selected,
+                         int deletePending) {
+  begin(screenW, screenH);
+
+  const glm::vec4 dim(0.58f, 0.64f, 0.72f, 0.9f);
+  const glm::vec4 bright(0.90f, 0.95f, 1.0f, 0.98f);
+  const glm::vec4 gold(0.95f, 0.85f, 0.35f, 0.98f);
+  const glm::vec4 live(0.45f, 0.95f, 0.6f, 0.98f);
+  const glm::vec4 warn(0.98f, 0.45f, 0.4f, 0.98f);
+
+  float cx = screenW * 0.5f;
+  char buf[96];
+
+  textCentered(cx, 92, "EREBUS CRADLE", 6.0f, bright);
+  textCentered(cx, 150, "SELECT AN OPERATIVE RECORD", 2.0f, dim);
+
+  float x = std::max(60.0f, cx - 320.0f);
+  float w = std::min(640.0f, screenW - 120.0f);
+  float y = 212.0f;
+  const float rowH = 96.0f;
+
+  for (int i = 0; i < 3; i++) {
+    const SlotSummary& s = slots[i];
+    bool sel = (i == selected);
+
+    rect(x, y, w, rowH - 14, sel ? glm::vec4(0.16f, 0.22f, 0.30f, 0.85f)
+                                 : glm::vec4(0.10f, 0.12f, 0.15f, 0.7f));
+    rect(x, y, 4, rowH - 14, sel ? bright : glm::vec4(0.3f, 0.35f, 0.4f, 0.8f));
+    if (sel) text(x - 26, y + 26, ">", 2.6f, bright);
+
+    std::snprintf(buf, sizeof(buf), "SLOT %d", i + 1);
+    text(x + 22, y + 14, buf, 2.4f, sel ? bright : dim);
+
+    if (!s.used) {
+      text(x + 22, y + 46, "EMPTY - START A NEW RECORD", 2.0f, dim);
+    } else {
+      std::snprintf(buf, sizeof(buf), "%d CHITS", s.chits);
+      text(x + 22, y + 46, buf, 2.0f, gold);
+      std::snprintf(buf, sizeof(buf), "%d CLEARED", s.missionsCleared);
+      text(x + 200, y + 46, buf, 2.0f, live);
+      if (!s.weaponName.empty()) text(x + 380, y + 46, s.weaponName, 2.0f, dim);
+    }
+    y += rowH;
+  }
+
+  if (deletePending >= 0) {
+    std::snprintf(buf, sizeof(buf), "DELETE SLOT %d? Y TO CONFIRM, N TO CANCEL", deletePending + 1);
+    textCentered(cx, screenH - 108.0f, buf, 2.4f, warn);
+  } else {
+    textCentered(cx, screenH - 108.0f, "1 2 3 SELECT   ENTER CONTINUE   D DELETE", 2.0f, dim);
+  }
+
+  end();
+}
+
 void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& hub, const Profile& profile) {
   begin(screenW, screenH);
 

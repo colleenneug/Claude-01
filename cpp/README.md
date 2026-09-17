@@ -50,7 +50,16 @@ extension.
 
 ## Controls
 
-The game opens in the **Hub**, not straight into a mission:
+The game opens on the **save slot screen**: three records, each its own
+file (`save1.dat` … `save3.dat`) next to the executable.
+
+| Input | Action |
+|---|---|
+| 1 / 2 / 3, or Up / Down | Pick a slot |
+| Enter or Space | Load that slot and continue to the hub |
+| D, then Y | Delete the selected slot (Y confirms, N cancels — a stray key press shouldn't wipe a record) |
+
+Then the **Hub**:
 
 | Input | Action |
 |---|---|
@@ -164,10 +173,15 @@ see `Content::loadAll` in `src/Content.cpp`.
 ## What's actually simulated
 
 - **Profile** (`Profile.h/.cpp`): chits, owned/equipped weapon, armour and
-  cosmetic, completed-mission list. Saved as a plain `key = value` file
-  (`ProfileStore::save`/`load`, default path `save.dat`, `EREBUS_SAVE_PATH`
-  overrides it); a first run with no save file gets a fresh profile with
-  starter gear already granted, never a "no save" error state.
+  cosmetic, completed-mission list. Saved as a plain `key = value` file; a
+  first run with no save file gets a fresh profile with starter gear
+  already granted, never a "no save" error state. Three **save slots**
+  (`save1.dat` … `save3.dat`) are picked on the startup screen, which shows
+  each record's chits, missions cleared and equipped weapon, or EMPTY.
+  `ProfileStore::exists` backs that distinction, since `load()` deliberately
+  can't tell you — it hands back a playable profile either way.
+  `EREBUS_SAVE_PATH` points at one explicit file and skips slot selection
+  (what every headless test uses); `EREBUS_SLOT=<1-3>` picks a slot.
 - **Hub** ("THE CRADLE" — `Hub.h/.cpp`): the between-mission loadout and
   destination picker — see *Controls* above. Cycling an unowned item buys
   it if it's affordable; `Hud::drawHub` lists every weapon, armour piece,

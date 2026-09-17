@@ -29,7 +29,7 @@ void framebufferSizeCallback(GLFWwindow* window, int w, int h) {
 
 }  // namespace
 
-enum class AppState { Hub, Mission };
+enum class AppState { SlotSelect, Hub, Mission };
 
 int main(int argc, char** argv) {
   std::string missionId = "patrol_dust_shelf";
@@ -95,8 +95,29 @@ int main(int argc, char** argv) {
   const char* contentDirEnv = std::getenv("EREBUS_CONTENT_DIR");
   std::string contentDir = contentDirEnv ? contentDirEnv : "content";
 
+  // Save slots. Three records, each its own file next to the executable;
+  // the slot select screen runs before the hub and picks which one this
+  // session is playing. EREBUS_SAVE_PATH still points at one explicit file
+  // and skips slot selection entirely, which is what every headless test
+  // uses so none of them have to drive a menu; EREBUS_SLOT=<1-3> picks a
+  // slot headlessly instead.
   const char* savePathEnv = std::getenv("EREBUS_SAVE_PATH");
-  std::string savePath = savePathEnv ? savePathEnv : "save.dat";
+  const char* slotEnv = std::getenv("EREBUS_SLOT");
+  std::string slotPaths[3] = {"save1.dat", "save2.dat", "save3.dat"};
+  int slotIndex = 0;
+  bool slotChosen = false;
+
+  std::string savePath;
+  if (savePathEnv) {
+    savePath = savePathEnv;
+    slotChosen = true;
+  } else if (slotEnv) {
+    slotIndex = std::clamp(std::atoi(slotEnv) - 1, 0, 2);
+    savePath = slotPaths[slotIndex];
+    slotChosen = true;
+  } else {
+    savePath = slotPaths[0];
+  }
   Profile profile = ProfileStore::load(savePath);
 
   // The Hub needs its own Content (ids, costs, mission list) before any
@@ -116,7 +137,9 @@ int main(int argc, char** argv) {
   // headless verification flow that predates the Hub and still expects to
   // land in a mission on frame 0.
   bool skipHub = std::getenv("EREBUS_SKIP_HUB") != nullptr;
-  AppState state = skipHub ? AppState::Mission : AppState::Hub;
+  AppState state = skipHub      ? AppState::Mission
+                   : slotChosen ? AppState::Hub
+                                : AppState::SlotSelect;
   bool gameEverStarted = false;
   if (state == AppState::Mission) {
     if (!game.init(contentDir, missionId, profile)) {
@@ -188,6 +211,15 @@ int main(int argc, char** argv) {
   float fixedDt = 0.0f;
   if (const char* fd = std::getenv("EREBUS_FIXED_DT")) fixedDt = (float)std::atof(fd);
 
+  // Slot select screen state: which slot the caret is on, whether a delete
+  // is awaiting confirmation, the per-slot summaries shown on each row, and
+  // the key-edge flags that keep a held key from firing every frame.
+  int deletePending = -1;
+  bool slotsDirty = true;
+  Hud::SlotSummary slotSummaries[3];
+  bool p1 = false, p2 = false, p3 = false, pUp = false, pDown = false;
+  bool pEnter = false, pSpace = false, pDel = false, pY = false, pN = false;
+
   double lastTime = glfwGetTime();
   int frame = 0;
 
@@ -218,7 +250,66 @@ int main(int argc, char** argv) {
     }
     lastX = mx; lastY = my;
 
-    if (state == AppState::Hub) {
+    if (state == AppState::SlotSelect) {
+      auto edge = [&](int key, bool& prev) {
+        bool down = glfwGetKey(window, key) == GLFW_PRESS;
+        bool fired = down && !prev;
+        prev = down;
+        return fired;
+      };
+
+      if (deletePending >= 0) {
+        // A destructive action gets its own confirm step — one stray key
+        // press should never wipe a record someone has been playing.
+        if (edge(GLFW_KEY_Y, pY)) {
+          ProfileStore::erase(slotPaths[deletePending]);
+          deletePending = -1;
+          slotsDirty = true;
+        } else if (edge(GLFW_KEY_N, pN) || edge(GLFW_KEY_ESCAPE, pDel)) {
+          deletePending = -1;
+        }
+      } else {
+        if (edge(GLFW_KEY_1, p1)) slotIndex = 0;
+        if (edge(GLFW_KEY_2, p2)) slotIndex = 1;
+        if (edge(GLFW_KEY_3, p3)) slotIndex = 2;
+        if (edge(GLFW_KEY_UP, pUp)) slotIndex = (slotIndex + 2) % 3;
+        if (edge(GLFW_KEY_DOWN, pDown)) slotIndex = (slotIndex + 1) % 3;
+        if (edge(GLFW_KEY_D, pDel)) deletePending = slotIndex;
+        if (edge(GLFW_KEY_ENTER, pEnter) || edge(GLFW_KEY_SPACE, pSpace)) {
+          savePath = slotPaths[slotIndex];
+          profile = ProfileStore::load(savePath);
+          hub.init(hubContent, profile);
+          hub.preselectMission(missionId);
+          state = AppState::Hub;
+        }
+      }
+
+      if (slotsDirty) {
+        for (int i = 0; i < 3; i++) {
+          Hud::SlotSummary& sum = slotSummaries[i];
+          sum.used = ProfileStore::exists(slotPaths[i]);
+          if (sum.used) {
+            Profile p = ProfileStore::load(slotPaths[i]);
+            sum.chits = p.chits;
+            sum.missionsCleared = (int)p.completedMissions.size();
+            const WeaponDef* wd = hubContent.weapon(p.equippedWeapon);
+            sum.weaponName = wd ? wd->name : p.equippedWeapon;
+          } else {
+            sum = Hud::SlotSummary{};
+          }
+        }
+        slotsDirty = false;
+      }
+
+      glClearColor(0.03f, 0.035f, 0.05f, 1.0f);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glfwGetFramebufferSize(window, &width, &height);
+      hud.drawSlotSelect(width, height, slotSummaries, slotIndex, deletePending);
+
+      if (frame % 30 == 0) {
+        glfwSetWindowTitle(window, "Erebus Cradle | Select a record");
+      }
+    } else if (state == AppState::Hub) {
       std::string scriptedStorage;
       const char* scripted = nullptr;
       if (hubScriptPos < hubScript.size()) {

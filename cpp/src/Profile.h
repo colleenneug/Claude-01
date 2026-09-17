@@ -51,4 +51,12 @@ public:
   // there is no "no save file" error state a player should ever see.
   static Profile load(const std::string& path);
   static bool save(const Profile& p, const std::string& path);
+
+  // Whether a save file is actually there. load() deliberately can't tell
+  // you this — it hands back a playable profile either way — but the slot
+  // select screen has to show "EMPTY" rather than a fabricated one.
+  static bool exists(const std::string& path);
+
+  // Deletes a slot's file. Returns false if there was nothing to delete.
+  static bool erase(const std::string& path);
 };
