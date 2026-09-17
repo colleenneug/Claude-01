@@ -178,12 +178,24 @@ int main(int argc, char** argv) {
   }
   size_t hubScriptPos = 0;
 
+  // EREBUS_FIXED_DT=<seconds> advances the simulation by exactly that much
+  // per frame instead of by real elapsed time. Without it, a headless
+  // gameplay test's outcome depends on how fast the host happens to be
+  // running: a loaded machine produces a larger clamped dt, so the same
+  // frame budget covers several times as much game time, and a knife-edge
+  // fight flips between won and lost run to run. Fixing dt makes those
+  // tests reproducible and comparable.
+  float fixedDt = 0.0f;
+  if (const char* fd = std::getenv("EREBUS_FIXED_DT")) fixedDt = (float)std::atof(fd);
+
   double lastTime = glfwGetTime();
   int frame = 0;
 
   while (!glfwWindowShouldClose(window)) {
     double now = glfwGetTime();
-    float dt = std::min(0.05, now - lastTime > 0 ? now - lastTime : 0.0);
+    float dt = fixedDt > 0.0f
+                   ? fixedDt
+                   : (float)std::min(0.05, now - lastTime > 0 ? now - lastTime : 0.0);
     lastTime = now;
 
     glfwPollEvents();
@@ -272,7 +284,13 @@ int main(int argc, char** argv) {
       camera.aim += (targetAim - camera.aim) * std::min(1.0f, dt * 10.0f);
 
       bool firePressed = forceFire || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-      bool reloadHeld = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS || forceFire;
+      // forceFire used to hold the reload key too, which kept the weapon
+      // permanently mid-reload and let it fire only a handful of rounds over
+      // a whole run — fine for the one-hostile fixture it was written
+      // against, useless for measuring whether a real wave is survivable.
+      // Reload only when the magazine is actually empty.
+      bool reloadHeld = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS ||
+                        (forceFire && game.weapon().ammoInMag == 0);
       game.update(window, camera, dt, firePressed, reloadHeld, forceForward);
 
       renderer.renderFrame(game, camera, (float)now, dt);
@@ -280,12 +298,30 @@ int main(int argc, char** argv) {
 
       glfwGetFramebufferSize(window, &width, &height);
       const Weapon& w = game.weapon();
-      float ammoFrac = w.magSize > 0 ? (float)w.ammoInMag / w.magSize : 0.0f;
-      float reloadFrac = w.reloading ? 1.0f - (w.reloadT / w.reloadTime) : 0.0f;
-      hud.draw(width, height, game.player().hp / game.player().maxHp, ammoFrac, w.ammoInMag, w.magSize,
-               w.reloading, reloadFrac, game.hitMarkerT, game.damageFlashT, game.waveProgress(),
-               game.bossAlive(), game.bossHpFraction(), game.missionState() == MissionState::Complete,
-               game.missionState() == MissionState::Failed, game.hudAccent());
+      Hud::State hs;
+      hs.hp = game.player().hp;
+      hs.maxHp = game.player().maxHp;
+      hs.ammoInMag = w.ammoInMag;
+      hs.magSize = w.magSize;
+      hs.reserveAmmo = w.reserveAmmo;
+      hs.reloading = w.reloading;
+      hs.reloadFrac = w.reloading ? 1.0f - (w.reloadT / w.reloadTime) : 0.0f;
+      hs.hitMarkerT = game.hitMarkerT;
+      hs.damageFlashT = game.damageFlashT;
+      hs.missionName = game.missionName();
+      hs.waveFrac = game.waveProgress();
+      hs.bossAlive = game.bossAlive();
+      hs.bossHpFrac = game.bossHpFraction();
+      hs.bossName = game.bossName();
+      hs.missionComplete = game.missionState() == MissionState::Complete;
+      hs.missionFailed = game.missionState() == MissionState::Failed;
+      hs.commsSpeaker = game.commsSpeaker();
+      hs.commsLine = game.commsLine();
+      hs.commsAlpha = game.commsAlpha();
+      hs.pickupNote = game.pickupNote();
+      hs.pickupAlpha = game.pickupNoteAlpha();
+      hs.accent = game.hudAccent();
+      hud.draw(width, height, hs);
 
       if (debugPixel && frame % 60 == 0) {
         // The health bar's fill always occupies this pixel while HP > 0 —

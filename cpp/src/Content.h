@@ -28,6 +28,18 @@ struct EnemyType {
 
 struct WaveSpawn { std::string enemyId; int count = 1; float radius = 20.0f; };
 
+// When a comms beat fires. The browser build stages its story the same way
+// (see src/js/fps/game.js): each objective fires its own beats as you reach
+// it, rather than stopping the game for a dialogue screen.
+enum class CommsTrigger { Deploy, HalfCleared, WavesCleared, BossSpawn, Complete, Failed };
+
+struct CommsBeat {
+  CommsTrigger trigger = CommsTrigger::Deploy;
+  std::string speaker;   // who's on the channel
+  std::string line;      // what they say
+  float delay = 0.0f;    // seconds after the trigger before it goes out
+};
+
 struct MissionDef {
   std::string id, name;
   float arenaSize = 80.0f;
@@ -35,6 +47,7 @@ struct MissionDef {
   std::string bossId;       // empty = no boss
   float bossHpMultiplier = 1.0f;
   int rewardChits = 40;     // paid out once, on first completion — see Profile
+  std::vector<CommsBeat> comms;
 };
 
 // content/weapons/<id>.cfg — equipping one (see Game::equipWeapon) sets
@@ -44,7 +57,8 @@ struct WeaponDef {
   float damage = 22.0f, headshotMultiplier = 2.0f;
   float fireInterval = 0.11f, reloadTime = 1.6f;
   int magSize = 24;
-  int cost = 0;    // chits; 0 = starter gear, owned from a fresh profile
+  int reserveAmmo = 96;   // rounds carried beyond the loaded magazine
+  int cost = 0;           // chits; 0 = starter gear, owned from a fresh profile
 };
 
 // content/armor/<id>.cfg — equipping one changes Player::maxHp and the

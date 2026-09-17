@@ -1,39 +1,76 @@
 #pragma once
 #include "Gl.h"
 #include "Shader.h"
+#include <string>
+#include <vector>
 
 class Content;
 class Hub;
 struct Profile;
 
-// A minimal ortho 2D overlay: solid-colour rectangles only, no text
-// rendering. This project has no offline way to fetch a font-rendering
-// library, so v1's HUD communicates entirely through bars, pips and colour
-// rather than numbers or mission names — a deliberate, documented scope
-// cut (see docs/NATIVE_RENDERER.md), not an oversight. Everything it draws
-// is genuinely wired to live game state (actual HP, actual ammo, actual
-// wave progress), which is the part that mattered for this pass.
+// An ortho 2D overlay: solid-colour rectangles plus text drawn from the
+// hand-authored 5x7 bitmap font in Font.h (this project has no offline way
+// to fetch a font-rendering library, so glyphs are bit patterns expanded
+// into quads rather than a rasterized atlas). Everything it draws is wired
+// to live game state — actual HP, actual ammo, actual mission names.
 class Hud {
 public:
   void create();
   void destroy();
 
   // Call once per frame after the 3D composite, before swapping buffers.
+  // begin() resets the text batch; end() flushes it in a single draw call.
   void begin(int screenW, int screenH);
   void rect(float x, float y, float w, float h, glm::vec4 colour);
   void end();
 
-  // The actual HUD, assembled from rect(): health bar, ammo pips,
-  // reload sweep, a crosshair that opens under recoil, a hit marker flash,
-  // a wave-progress bar, and a boss health bar when one is alive.
-  // `accent` is the equipped cosmetic's colour (Game::hudAccent) — it tints
-  // the crosshair, the ammo pips, and the health bar's "full" tier; the
-  // health bar's low/critical tiers stay fixed amber/red regardless of
-  // cosmetic, since that's a warning colour, not a fashion choice.
-  void draw(int screenW, int screenH, float hpFrac, float ammoFrac, int ammoInMag, int magSize,
-            bool reloading, float reloadFrac, float hitMarkerT, float damageFlashT,
-            float waveFrac, bool bossAlive, float bossHpFrac, bool missionComplete, bool missionFailed,
-            glm::vec3 accent = glm::vec3(0.85f, 0.95f, 1.0f));
+  // Queues `s` at (x, y) — pixels, origin top-left, y being the glyph's
+  // top edge — in the batch flushed by end(). `scale` is the size of one
+  // font pixel, so a glyph is 5*scale wide and 7*scale tall. Case
+  // insensitive; unsupported characters render as blank space.
+  void text(float x, float y, const std::string& s, float scale, glm::vec4 colour);
+  // Same, horizontally centred on `cx`.
+  void textCentered(float cx, float y, const std::string& s, float scale, glm::vec4 colour);
+  // Advance width of `s`, for laying out around a string.
+  static float textWidth(const std::string& s, float scale);
+
+  // Everything the mission HUD reads, in one struct rather than twenty
+  // positional arguments — it grew past the point where a call site was
+  // readable once names, counts and comms lines joined the bars.
+  struct State {
+    float hp = 100.0f, maxHp = 100.0f;
+    int ammoInMag = 0, magSize = 0, reserveAmmo = 0;
+    bool reloading = false;
+    float reloadFrac = 0.0f;
+    float hitMarkerT = 0.0f, damageFlashT = 0.0f;
+
+    std::string missionName;
+    float waveFrac = 0.0f;
+    bool bossAlive = false;
+    float bossHpFrac = 0.0f;
+    std::string bossName;
+    bool missionComplete = false, missionFailed = false;
+
+    // One line of staged comms traffic — how the browser build carries its
+    // story (see src/js/fps/hud.js) — faded in and out by `commsAlpha`.
+    std::string commsSpeaker, commsLine;
+    float commsAlpha = 0.0f;
+
+    // "+24 AMMO" style note just under the crosshair after a pickup.
+    std::string pickupNote;
+    float pickupAlpha = 0.0f;
+
+    // The equipped cosmetic's colour (Game::hudAccent): tints the
+    // crosshair, ammo pips and the health bar's "full" tier. The health
+    // bar's low/critical tiers stay fixed amber/red regardless — that's a
+    // warning colour, not a fashion choice.
+    glm::vec3 accent{0.85f, 0.95f, 1.0f};
+  };
+
+  // The mission HUD: health bar and readout, ammo pips and counts, reload
+  // sweep, a crosshair with a hit-marker flash, wave progress, a boss bar
+  // when one is alive, comms lines, and the end-of-mission banner.
+  void draw(int screenW, int screenH, const State& s);
 
   // The hub screen: a chits bar, then one row of swatches per gear
   // category (green = equipped, blue = owned, dim grey = affordable but
@@ -44,7 +81,25 @@ public:
   void drawHub(int screenW, int screenH, const Content& content, const Hub& hub, const Profile& profile);
 
 private:
+  void flushText();
+
   Shader shader_;
   GLuint vao_ = 0, vbo_ = 0;
   int screenW_ = 1, screenH_ = 1;
+
+  // Text batch: every lit font pixel from every text() call this frame,
+  // expanded on the CPU into two triangles (6 vertices x 6 floats: 2 for
+  // position in pixels, 4 for colour) and uploaded once. One draw call for
+  // the whole frame's text keeps a wall of glyphs from turning into
+  // thousands of tiny draws on weak integrated hardware.
+  //
+  // Known tradeoff: full quads per lit pixel is the simple encoding, and a
+  // text-heavy screen like the hub comes to a megabyte or so of vertex data
+  // per frame. That's cheap next to the 3D pass and the hub has no 3D pass
+  // at all, so it hasn't been worth optimizing; instancing one quad with a
+  // per-instance position/colour would cut it about sixfold if it ever is.
+  Shader textShader_;
+  GLuint textVao_ = 0, textVbo_ = 0;
+  size_t textVboCapacity_ = 0;
+  std::vector<float> textVerts_;
 };

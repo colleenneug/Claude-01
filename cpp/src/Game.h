@@ -7,10 +7,25 @@
 #include "Hostile.h"
 #include "Camera.h"
 #include "Profile.h"
+#include <algorithm>
 #include <string>
 #include <vector>
 
 enum class MissionState { InProgress, Complete, Failed };
+
+// Dropped by a killed hostile and collected by walking over it — the
+// browser build's pickups.js in miniature. Without these a mission is
+// winnable only if your shooting is efficient enough to clear every wave
+// *and* a 900-HP boss out of one magazine and a fixed reserve, which the
+// dig site measurably is not.
+enum class PickupKind { Ammo, Health };
+
+struct Pickup {
+  glm::vec3 pos{0.0f};
+  PickupKind kind = PickupKind::Ammo;
+  float bob = 0.0f;
+  bool taken = false;
+};
 
 // Owns everything the C++ game actually simulates — content, the level, the
 // player, the weapon, every hostile — and satisfies the same interface
@@ -58,8 +73,27 @@ public:
   float damageFlashT = 0.0f;
   glm::vec3 hudAccent() const { return hudAccent_; }
 
+  // ---------- story ----------
+  // The comms line currently on the channel, if any, and how strongly to
+  // show it (fades in, holds, fades out). Beats are declared per mission in
+  // content/missions/*.cfg and fire off mission progress — see
+  // CommsTrigger in Content.h.
+  const std::string& commsSpeaker() const { return commsSpeaker_; }
+  const std::string& commsLine() const { return commsLine_; }
+  float commsAlpha() const;
+  const std::string& bossName() const { return bossName_; }
+
+  // Short-lived "+24 AMMO" style note, shown near the crosshair after a
+  // pickup. Empty when nothing was collected recently.
+  const std::string& pickupNote() const { return pickupNote_; }
+  float pickupNoteAlpha() const { return std::max(0.0f, std::min(1.0f, pickupNoteT_ * 1.4f)); }
+
 private:
   void spawnBossIfReady();
+  void fireComms(CommsTrigger trigger);
+  void updateComms(float dt);
+  void dropPickup(const glm::vec3& at, int killIndex);
+  void updatePickups(float dt);
 
   Content content_;
   Level level_;
@@ -75,6 +109,23 @@ private:
   Profile* profile_ = nullptr;
   bool rewardApplied_ = false;
   glm::vec3 hudAccent_{0.85f, 0.95f, 1.0f};
+
+  // Comms: beats waiting on their delay, the one currently on the channel,
+  // and which triggers have already fired (a beat never repeats within a
+  // mission run).
+  struct PendingBeat { const CommsBeat* beat; float at; };
+  std::vector<PendingBeat> commsQueue_;
+  std::string commsSpeaker_, commsLine_;
+  float commsT_ = 0.0f;        // seconds the current line has been up
+  float commsHold_ = 0.0f;     // how long it stays up before fading
+  float missionT_ = 0.0f;      // seconds since the mission started
+  bool triggerFired_[6] = {};  // one per CommsTrigger
+  std::string bossName_;
+
+  std::vector<Pickup> pickups_;
+  int killCount_ = 0;          // drives the deterministic drop pattern
+  std::string pickupNote_;
+  float pickupNoteT_ = 0.0f;
 
   GLuint moteVao_ = 0, moteVbo_ = 0;
   int moteCount_ = 2400;

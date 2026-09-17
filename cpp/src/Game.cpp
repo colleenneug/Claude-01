@@ -27,6 +27,18 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   missionState_ = MissionState::InProgress;
   hitMarkerT = 0.0f;
   damageFlashT = 0.0f;
+  commsQueue_.clear();
+  commsSpeaker_.clear();
+  commsLine_.clear();
+  commsT_ = 0.0f;
+  commsHold_ = 0.0f;
+  missionT_ = 0.0f;
+  for (bool& fired : triggerFired_) fired = false;
+  bossName_.clear();
+  pickups_.clear();
+  killCount_ = 0;
+  pickupNote_.clear();
+  pickupNoteT_ = 0.0f;
 
   level_.build(mission_.arenaSize);
   HostileGeometry::ensure();
@@ -43,6 +55,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   if (wdef) {
     weapon_.magSize = wdef->magSize;
     weapon_.ammoInMag = wdef->magSize;
+    weapon_.reserveAmmo = wdef->reserveAmmo;
     weapon_.damage = wdef->damage;
     weapon_.headshotMultiplier = wdef->headshotMultiplier;
     weapon_.fireInterval = wdef->fireInterval;
@@ -124,10 +137,112 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
     glBindVertexArray(0);
   }
 
-  std::printf("[Game] mission '%s' loaded: %d hostile(s), boss=%s\n",
-              mission_.name.c_str(), waveTotal_, bossPending_ ? mission_.bossId.c_str() : "none");
+  if (const EnemyType* bt = content_.enemy(mission_.bossId)) bossName_ = bt->name;
+
+  std::printf("[Game] mission '%s' loaded: %d hostile(s), boss=%s, %zu comms beat(s)\n",
+              mission_.name.c_str(), waveTotal_, bossPending_ ? mission_.bossId.c_str() : "none",
+              mission_.comms.size());
   loaded_ = true;
+  fireComms(CommsTrigger::Deploy);
   return true;
+}
+
+// ------------------------------------------------------------------ comms
+
+void Game::fireComms(CommsTrigger trigger) {
+  int idx = (int)trigger;
+  if (idx < 0 || idx >= 6 || triggerFired_[idx]) return;
+  triggerFired_[idx] = true;
+  for (const CommsBeat& beat : mission_.comms) {
+    if (beat.trigger != trigger) continue;
+    commsQueue_.push_back({&beat, missionT_ + beat.delay});
+  }
+}
+
+void Game::updateComms(float dt) {
+  commsT_ += dt;
+
+  // A line that's had its time on screen clears, so the next queued beat
+  // isn't stuck waiting behind it forever.
+  if (!commsLine_.empty() && commsT_ > commsHold_ + 0.6f) {
+    commsLine_.clear();
+    commsSpeaker_.clear();
+  }
+
+  if (!commsLine_.empty()) return;   // one voice on the channel at a time
+
+  for (size_t i = 0; i < commsQueue_.size(); i++) {
+    if (commsQueue_[i].at > missionT_) continue;
+    const CommsBeat* beat = commsQueue_[i].beat;
+    commsSpeaker_ = beat->speaker;
+    commsLine_ = beat->line;
+    commsT_ = 0.0f;
+    // Long lines stay up longer — roughly reading speed, with a floor so a
+    // two-word callout doesn't blink past.
+    commsHold_ = std::max(2.4f, 0.055f * (float)beat->line.size());
+    commsQueue_.erase(commsQueue_.begin() + (long)i);
+    return;
+  }
+}
+
+// ---------------------------------------------------------------- pickups
+
+void Game::dropPickup(const glm::vec3& at, int killIndex) {
+  // A fixed rotation rather than a random roll: every third kill drops
+  // health, the rest drop ammo, so a run can't be starved by bad luck and a
+  // mission's total resupply is a known quantity when tuning it.
+  Pickup p;
+  p.pos = at;
+  p.pos.y = level_.floorY() + 0.55f;
+  p.kind = (killIndex % 3 == 2) ? PickupKind::Health : PickupKind::Ammo;
+  pickups_.push_back(p);
+}
+
+void Game::updatePickups(float dt) {
+  pickupNoteT_ = std::max(0.0f, pickupNoteT_ - dt);
+  if (pickupNoteT_ <= 0.0f) pickupNote_.clear();
+
+  const float reach = 1.8f;
+  for (Pickup& p : pickups_) {
+    if (p.taken) continue;
+    p.bob += dt * 2.2f;
+
+    glm::vec3 d = p.pos - (player_.position + glm::vec3(0.0f, 0.9f, 0.0f));
+    if (glm::length(d) > reach) continue;
+
+    // A pickup that would add nothing (full reserve, full health) is left on
+    // the ground for later rather than silently consumed, so the gain is
+    // worked out before anything is applied.
+    char note[48];
+    if (p.kind == PickupKind::Ammo) {
+      int gain = std::min(weapon_.reserveAmmo + weapon_.magSize, weapon_.magSize * 8) -
+                 weapon_.reserveAmmo;
+      if (gain <= 0) continue;
+      weapon_.reserveAmmo += gain;
+      std::snprintf(note, sizeof(note), "+%d AMMO", gain);
+    } else {
+      float gain = std::min(player_.maxHp, player_.hp + 25.0f) - player_.hp;
+      if (gain <= 0.5f) continue;
+      player_.hp += gain;
+      std::snprintf(note, sizeof(note), "+%d INTEGRITY", (int)std::lround(gain));
+    }
+
+    p.taken = true;
+    pickupNote_ = note;
+    pickupNoteT_ = 1.6f;
+  }
+
+  pickups_.erase(std::remove_if(pickups_.begin(), pickups_.end(),
+                                [](const Pickup& p) { return p.taken; }),
+                 pickups_.end());
+}
+
+float Game::commsAlpha() const {
+  if (commsLine_.empty()) return 0.0f;
+  const float fade = 0.35f;
+  if (commsT_ < fade) return commsT_ / fade;                       // in
+  if (commsT_ < commsHold_) return 1.0f;                           // hold
+  return std::max(0.0f, 1.0f - (commsT_ - commsHold_) / 0.6f);     // out
 }
 
 void Game::destroy() {
@@ -152,11 +267,22 @@ void Game::spawnBossIfReady() {
   bossIndex_ = (int)hostiles_.size();
   hostiles_.push_back(boss);
   bossPending_ = false;
+  fireComms(CommsTrigger::BossSpawn);
 }
 
 void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed, bool reloadHeld,
                    bool forceForward) {
-  if (!loaded_ || missionState_ != MissionState::InProgress) return;
+  if (!loaded_) return;
+  // Advanced here, once per frame, rather than inside updateComms: both the
+  // comms schedule and the post-drop grace period below read it.
+  missionT_ += dt;
+  if (missionState_ != MissionState::InProgress) {
+    // The mission is over, but its closing comms beat still has to play
+    // out — the HUD sits on the end-of-mission banner until the player
+    // chooses to head back, so there's time for it.
+    updateComms(dt);
+    return;
+  }
 
   bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
   player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, forceForward);
@@ -173,15 +299,25 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       hitMarkerT = 0.14f;
       // Chits are paid out once per mission clear (see the reward-payout
       // block below), not per kill — a per-kill bounty economy is a
-      // reasonable future addition but wasn't asked for.
-      (void)killed;
+      // reasonable future addition but wasn't asked for. A kill does drop
+      // resupply, without which a long mission is unwinnable on the fixed
+      // starting ammo (see dropPickup).
+      if (killed) dropPickup(h.pos, killCount_++);
     }
   }
+
+  // Hostiles close in from the first frame, but nothing lands a hit for
+  // the first few seconds after the drop: you arrive facing an arbitrary
+  // direction, with no idea where the squad is, and taking fire before the
+  // opening comms beat has even finished reads as dying for no reason
+  // rather than as a fight. They still advance and wind up during it.
+  const float kDeployGrace = 3.0f;
+  bool graced = missionT_ < kDeployGrace;
 
   for (auto& h : hostiles_) {
     if (!h.alive()) continue;
     bool didAttack = h.update(dt, player_.position, level_);
-    if (didAttack) {
+    if (didAttack && !graced) {
       float dmg = h.type->damage * (1.0f - player_.damageReduction);
       player_.hp = std::max(0.0f, player_.hp - dmg);
       damageFlashT = 0.4f;
@@ -192,20 +328,29 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   hitMarkerT = std::max(0.0f, hitMarkerT - dt * 2.5f);
   damageFlashT = std::max(0.0f, damageFlashT - dt * 1.6f);
 
+  updatePickups(dt);
+
+  if (waveProgress() >= 0.5f) fireComms(CommsTrigger::HalfCleared);
+
   if (!player_.alive()) {
     missionState_ = MissionState::Failed;
+    fireComms(CommsTrigger::Failed);
   } else {
     bool wavesClear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                                   [](const Hostile& h) { return h.state == HostileState::Gone; });
     bool bossClear = bossIndex_ < 0 || hostiles_[bossIndex_].state == HostileState::Gone;
+    if (wavesClear) fireComms(CommsTrigger::WavesCleared);
     if (wavesClear && !bossPending_ && bossClear) {
       if (profile_ && !rewardApplied_) {
         profile_->recordMissionComplete(mission_.id, mission_.rewardChits);
         rewardApplied_ = true;
       }
       missionState_ = MissionState::Complete;
+      fireComms(CommsTrigger::Complete);
     }
   }
+
+  updateComms(dt);
 }
 
 float Game::waveProgress() const {
@@ -229,4 +374,24 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
   (void)time;   // hostiles animate off their own accumulated bob, not wall time
   level_.collect(out);
   for (auto& h : hostiles_) h.collect(out);
+
+  // Pickups: a small emissive box, bobbing and slowly spinning so it reads
+  // as an item rather than scenery, on the shared unit box every hostile
+  // part also uses.
+  for (const Pickup& p : pickups_) {
+    if (p.taken) continue;
+    bool ammo = p.kind == PickupKind::Ammo;
+    DrawItem it;
+    it.mesh = &HostileGeometry::unitBox();
+    it.material = MaterialType::Emissive;
+    glm::vec3 at = p.pos + glm::vec3(0.0f, std::sin(p.bob) * 0.12f, 0.0f);
+    it.model = glm::translate(glm::mat4(1.0f), at);
+    it.model = glm::rotate(it.model, p.bob * 0.8f, glm::vec3(0.2f, 1.0f, 0.1f));
+    it.model = glm::scale(it.model, glm::vec3(0.34f, 0.34f, 0.34f));
+    it.tint = ammo ? glm::vec3(0.95f, 0.8f, 0.35f) : glm::vec3(0.4f, 0.95f, 0.55f);
+    it.emissive = it.tint;
+    it.emissiveIntensity = 3.2f;
+    it.castShadow = false;
+    out.push_back(it);
+  }
 }

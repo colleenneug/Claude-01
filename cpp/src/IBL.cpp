@@ -47,6 +47,15 @@ void IBL::build(int faceSize) {
   glm::vec3 dirs[6] = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
   glm::vec3 ups[6]  = {{0,-1,0},{0,-1,0},{0,0,1},{0,0,-1},{0,-1,0},{0,-1,0}};
 
+  // Capturing the cube faces needs a faceSize viewport, but leaving it set
+  // afterwards silently breaks any later pass that assumes a full-window
+  // one. That is not hypothetical: it shipped, and the Hub screen — which
+  // only clears and draws the HUD, without the per-frame viewport reset
+  // renderFrame() does — drew its entire UI into a 128x128 box in the
+  // corner of the window, reading as "a dark screen with no UI at all".
+  GLint prevViewport[4] = {0, 0, 0, 0};
+  glGetIntegerv(GL_VIEWPORT, prevViewport);
+
   glViewport(0, 0, faceSize, faceSize);
   glDisable(GL_CULL_FACE);  // the camera sits inside these panels
   captureShader_.use();
@@ -74,6 +83,7 @@ void IBL::build(int faceSize) {
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glEnable(GL_CULL_FACE);
+  glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
   glCheck("IBL::build");
 }
 

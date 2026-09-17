@@ -222,3 +222,28 @@ and a keyboard-driven Hub between missions — see `cpp/README.md`. None of
 it touches `Renderer`; `Game::hudAccent()` is the one new signal that
 reaches the HUD rather than the 3D pass, since a cosmetic only recolours
 2D overlay rectangles.
+
+## The viewport bug, and why nothing caught it for so long
+
+`IBL::build()` sets a 128x128 viewport to capture the environment cube's
+faces, and used to leave it set. Every 3D frame reset the viewport on its
+way through `renderFrame()`, so the mission view was always correct and
+this looked like nothing. Then a Hub screen arrived that only clears and
+draws the 2D HUD — no 3D pass, no viewport reset — and inherited a 128x128
+viewport on a 1280x800 window. The entire hub UI rendered into a small box
+in the bottom-left corner, on an otherwise black screen (`glClear` isn't
+bounded by the viewport, so the *clear* still covered the window).
+
+It reached a player before it was caught, and what came back was "it's
+just a dark screen, no UI at all" — which was exactly, literally true. The
+lesson worth recording is not "restore the viewport" but that **a pass
+that leaves global GL state changed is a bug even while every existing
+caller happens to paper over it.** The fix is both halves: `IBL::build()`
+now saves and restores the viewport, and `Hud::begin()` sets the viewport
+it needs rather than trusting whatever ran before it, so neither a new
+pass nor a reordering can resurrect this.
+
+Also worth recording: the headless capture harness could have caught it
+years earlier than a human did. Once a hub screenshot was actually dumped
+and looked at, the bug was obvious in one frame. Dumping a frame is cheap;
+assuming a pass is fine because a different pass looks fine is not.

@@ -139,11 +139,22 @@ accent = 1.0, 0.65, 0.3    # recolours the HUD: health-full, ammo pips, crosshai
 cost = 90
 ```
 
-A mission can also pay out currency on its first completion:
+A mission can also pay out currency on its first completion, and carry its
+own story as staged comms beats:
 
 ```
 reward = 40    # chits, paid once — add this line to a mission.cfg
+
+# comms <trigger> <delay-seconds> <speaker> | <line>
+# triggers: deploy, half, cleared, boss, complete, failed
+comms deploy 0.6 CRADLE CONTROL | DROP CONFIRMED. YOU'RE ON THE DUST SHELF.
+comms half   0.4 CRADLE CONTROL | HALF THE NEST IS DOWN.
+comms boss   0.3 VANGUARD ECHO  | HEAD SHOTS. DON'T STAND STILL.
 ```
+
+The pipe separates the speaker from the line, so neither needs quoting and
+the line can contain spaces and punctuation freely. Beats fire off real
+mission progress, never a timer alone, and each trigger fires once per run.
 
 Content is loaded once at startup from the `content/` directory next to the
 executable (`EREBUS_CONTENT_DIR` overrides the path). A bad or missing
@@ -157,11 +168,11 @@ see `Content::loadAll` in `src/Content.cpp`.
   (`ProfileStore::save`/`load`, default path `save.dat`, `EREBUS_SAVE_PATH`
   overrides it); a first run with no save file gets a fresh profile with
   starter gear already granted, never a "no save" error state.
-- **Hub** (`Hub.h/.cpp`): the between-mission loadout/mission picker — see
-  *Controls* above. Cycling an unowned item buys it if it's affordable;
-  Hud's `drawHub` renders it back as swatches (green = equipped, blue =
-  owned, dim grey/red = affordable/not), the same bar-and-colour language
-  the mission HUD speaks, since this project has no text rendering.
+- **Hub** ("THE CRADLE" — `Hub.h/.cpp`): the between-mission loadout and
+  destination picker — see *Controls* above. Cycling an unowned item buys
+  it if it's affordable; `Hud::drawHub` lists every weapon, armour piece,
+  shader and destination by name with its price and status (equipped /
+  owned / affordable / out of reach), the selected row carrying a caret.
 - **Player** (`Player.h/.cpp`): gravity, jump, sprint, substepped collision
   against the level so a fast move can't tunnel through a thin wall in one
   frame. Equipped armour raises `maxHp` and shaves a fraction off every hit
@@ -186,12 +197,29 @@ see `Content::loadAll` in `src/Content.cpp`.
   loss (player HP 0) conditions, and on a first win pays the mission's
   `reward` chits into the profile via `Profile::recordMissionComplete` (a
   repeat clear doesn't pay out again).
-- **HUD** (`Hud.h/.cpp`): health bar, ammo pips + reload sweep, a crosshair
-  with a hit-marker flash, a wave-progress bar, a boss health bar — tinted
-  by the equipped cosmetic's accent colour. No text rendering — this
-  project has no offline way to fetch a font-rendering library, so numbers
-  and names aren't drawn yet, in the Hub or in a mission. Everything shown
-  is genuinely wired to live state.
+- **Pickups** (`Game.h/.cpp`): a killed hostile drops resupply — ammo, or
+  health every third kill — collected by walking over it. Not decoration:
+  the dig site was measurably unwinnable without it, since clearing seven
+  hostiles *and* a 900-HP boss doesn't fit inside the fixed starting
+  reserve. The drop pattern is a fixed rotation rather than a random roll,
+  so a run can't be starved by luck and a mission's total resupply is a
+  known quantity when tuning it.
+- **HUD** (`Hud.h/.cpp`): health bar and readout, ammo pips with real
+  counts, reload sweep, a crosshair with a hit-marker flash, wave progress,
+  a named boss bar, comms lines, pickup notes, and the end-of-mission
+  banner — tinted by the equipped cosmetic's accent colour. Text comes from
+  a hand-authored 5x7 bitmap font (`Font.h`): glyphs are bit patterns
+  expanded into quads, because there's no offline way to fetch a
+  font-rendering library — the same "draw it from primitives" approach as
+  the procedural materials. Every glyph in a frame rides in one buffer and
+  one draw call, so a screen full of text doesn't become thousands of tiny
+  draws on weak integrated hardware.
+- **Story** (`Content.h`, `Game.h/.cpp`): staged comms traffic, the same way
+  the browser build carries its story rather than stopping for a dialogue
+  screen. Each mission declares its own beats in its `.cfg` and they fire
+  off real mission progress — deploy, half-cleared, waves cleared, boss
+  spawn, complete, failed — with per-beat delays, one voice on the channel
+  at a time, and a hold time scaled to the line's length.
 
 ## Adaptive quality
 
@@ -222,7 +250,11 @@ a way to prove movement, combat and mission state actually work:
 - `EREBUS_FORCE_FORWARD=1` — holds W the whole run (`Player::update`'s
   `forceForward` parameter), so wall collision can be verified without a
   real keyboard.
-- `EREBUS_FORCE_FIRE=1` — holds the trigger (and auto-reloads when empty).
+- `EREBUS_FORCE_FIRE=1` — holds the trigger, reloading only when the
+  magazine is actually empty. (It used to hold the reload key too, which
+  kept the weapon permanently mid-reload and let a whole run fire about six
+  rounds — fine for the one-hostile fixture it was written against, and
+  quietly useless for measuring whether a real wave is survivable.)
 - `EREBUS_DEBUG_AUTOAIM=1` — snaps the camera onto the nearest hostile
   every frame. A verification aid only, **never enabled by default** —
   it exists so firing can be exercised without simulating real mouse input.
@@ -233,6 +265,14 @@ a way to prove movement, combat and mission state actually work:
 - `EREBUS_SAVE_PATH=<path>` — profile save file location (default
   `save.dat`); point it at a scratch path so a test run never touches a
   real player's progress.
+- `EREBUS_FIXED_DT=0.0166` — advance the simulation by exactly this much
+  per frame instead of by real elapsed time. **Use this for any gameplay
+  test that asserts an outcome.** Without it a run's result depends on how
+  fast the host happens to be: a loaded machine yields a larger clamped dt,
+  so the same frame budget covers several times as much game time, and a
+  close fight flips between won and lost between identical runs. This was
+  not hypothetical — it was discovered by a regression suite that passed
+  and then failed with no gameplay change in between.
 - `EREBUS_SKIP_HUB=1` — boot straight into `--mission` with whatever's
   currently equipped, bypassing the Hub — every verification flow that
   predates the Hub still lands in a mission on frame 0.
@@ -290,6 +330,7 @@ src/
   Content.{h,cpp}         loads enemies/missions/weapons/armor/cosmetics from content/
   Profile.{h,cpp}         persistent save: chits, owned/equipped gear, completed missions
   Hub.{h,cpp}             between-mission loadout/mission picker
+  Font.h                  hand-authored 5x7 bitmap font, as bit patterns
   Level.{h,cpp}           arena geometry + AABB colliders
   Player.{h,cpp}          physical controller: gravity, jump, collision, armour damage reduction
   Weapon.{h,cpp}          hitscan vs level + hostiles
@@ -305,6 +346,7 @@ shaders/
   bright / downsample / upsample .frag   the bloom chain
   dof.frag, composite.frag
   hud.vert / hud.frag     2D HUD rectangles
+  hud_text.vert / .frag   batched HUD text (one draw call per frame)
 ```
 
 ## Roadmap
@@ -324,6 +366,19 @@ weren't asked for: a per-kill bounty economy (chits currently pay out once
 per mission clear, not per kill — see the comment in `Game::update`), and
 armour/weapon rarity tiers or stat rolls beyond the fixed stats a `.cfg`
 file declares.
+
+### Still only in the browser build
+
+The browser build (`src/js/fps/`) is a much larger game than this one, and
+it's worth naming what has *not* been carried across rather than leaving
+the gap implicit. Ported so far: the renderer, the mission loop, gear and
+currency, the hub, adaptive quality, and the comms-traffic story format.
+Not ported: the campaign structure and its destination/planet system
+(`campaign.js`, `planets.js`), the walkable station hub (`station.js` — the
+Cradle here is a menu, not a place you walk around), bounties, loot chests,
+crew, the dossier/codex, gear rarity and rolls (`gear.js`), the ability
+loadout the Vanguard HUD is built around (`d2hud.js` shows grenade / melee
+/ super meters; this game has no abilities to meter), and networking.
 
 Not roadmapped, and worth saying plainly rather than leaving implicit:
 **co-op/netcode** is not planned for this native build in the near term —

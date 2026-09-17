@@ -34,7 +34,14 @@ void Hostile::spawn(const EnemyType* t, glm::vec3 at, bool boss, float hpMult) {
   maxHp = t->hp * hpMult;
   hp = maxHp;
   state = HostileState::Idle;
-  cooldown = 0.0f;
+  // Not zero: a zero cooldown means the first frame a hostile acquires you
+  // is also the frame it lands a hit, so a squad that spawns already inside
+  // its own firing range chips a fifth of your health off before you have
+  // even turned around — and in unison, since they all start at the same
+  // value. Staggering the first shot per-instance (deterministically, off
+  // the spawn point, like avoidSide below) buys a moment to react and
+  // spreads the incoming fire out into something readable.
+  cooldown = t->attackRate * (0.75f + std::fmod(std::abs(at.x * 3.71f + at.z * 9.17f), 1.0f) * 0.9f);
   deathT = 0.0f;
   bob = 0.0f;
   hitFlash = 0.0f;
@@ -64,7 +71,13 @@ bool Hostile::update(float dt, const glm::vec3& playerPos, const Level& level) {
   float dist = glm::length(toPlayer);
   glm::vec3 dir = dist > 1e-4f ? toPlayer / dist : glm::vec3(0, 0, 1);
 
-  const float alertRadius = 26.0f;
+  // Comfortably wider than any mission's spawn ring, so a wave advances on
+  // you from the drop instead of standing around until you wander within
+  // exactly its radius. It was 26m, which happened to equal a spawn ring
+  // and left that whole wave permanently Idle — a mission you could stand
+  // still in forever, and one that could never be completed without
+  // hunting every straggler down. Arena waves should come to you.
+  const float alertRadius = 40.0f;
   bool attackReady = cooldown <= 0.0f;
 
   switch (state) {

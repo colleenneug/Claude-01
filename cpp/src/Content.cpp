@@ -100,6 +100,52 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
     auto tokens = splitWs(line);
     if (tokens.empty()) continue;
 
+    // comms <trigger> <delay> <speaker> | <line>
+    // e.g.  comms deploy 0.5 VANGUARD | DROP CONFIRMED. THE SHELF IS YOURS.
+    // The pipe keeps the speaker's name from having to be quoted, and lets
+    // the line itself contain spaces and punctuation without escaping.
+    if (tokens[0] == "comms") {
+      size_t bar = line.find('|');
+      if (bar == std::string::npos || tokens.size() < 4) {
+        std::fprintf(stderr, "[Content] %s: malformed comms line '%s', skipped\n",
+                     path.string().c_str(), line.c_str());
+        continue;
+      }
+      CommsBeat beat;
+      const std::string& trig = tokens[1];
+      if (trig == "deploy") beat.trigger = CommsTrigger::Deploy;
+      else if (trig == "half") beat.trigger = CommsTrigger::HalfCleared;
+      else if (trig == "cleared") beat.trigger = CommsTrigger::WavesCleared;
+      else if (trig == "boss") beat.trigger = CommsTrigger::BossSpawn;
+      else if (trig == "complete") beat.trigger = CommsTrigger::Complete;
+      else if (trig == "failed") beat.trigger = CommsTrigger::Failed;
+      else {
+        std::fprintf(stderr, "[Content] %s: unknown comms trigger '%s', skipped\n",
+                     path.string().c_str(), trig.c_str());
+        continue;
+      }
+      try { beat.delay = std::stof(tokens[2]); } catch (...) { beat.delay = 0.0f; }
+
+      // Everything between the delay and the pipe is the speaker. Walk past
+      // the first three tokens by position rather than searching for the
+      // delay's text, which would find the wrong occurrence if the speaker
+      // or the line happened to contain the same digits.
+      size_t pos = 0;
+      for (int skipped = 0; skipped < 3 && pos < line.size(); skipped++) {
+        while (pos < line.size() && std::isspace((unsigned char)line[pos])) pos++;
+        while (pos < line.size() && !std::isspace((unsigned char)line[pos])) pos++;
+      }
+      beat.speaker = bar > pos ? trim(line.substr(pos, bar - pos)) : "";
+      beat.line = trim(line.substr(bar + 1));
+      if (beat.line.empty()) {
+        std::fprintf(stderr, "[Content] %s: comms line with no text, skipped\n",
+                     path.string().c_str());
+        continue;
+      }
+      m.comms.push_back(beat);
+      continue;
+    }
+
     if (tokens[0] == "wave" && tokens.size() >= 3) {
       WaveSpawn w;
       w.enemyId = tokens[1];
@@ -147,6 +193,7 @@ WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
       else if (k == "fire_interval") w.fireInterval = std::stof(v);
       else if (k == "reload_time") w.reloadTime = std::stof(v);
       else if (k == "mag_size") w.magSize = std::stoi(v);
+      else if (k == "reserve") w.reserveAmmo = std::stoi(v);
       else if (k == "cost") w.cost = std::stoi(v);
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
