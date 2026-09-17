@@ -49,6 +49,11 @@ cmake --build build -j
 A mission id is a `.cfg` filename under `content/missions/`, without the
 extension.
 
+Once it is built, the browser build's title screen can launch it for you: run
+`node server/server.js` from the repository root, open `http://localhost:8080`,
+and click the **LAUNCH GAME** plate. It spawns exactly the command above (see
+*The desktop build, from the title screen* in `../README.md`).
+
 ## Controls
 
 The game opens on the **save slot screen**: three records, each its own

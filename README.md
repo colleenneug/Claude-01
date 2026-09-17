@@ -48,6 +48,40 @@ the cursor runs out of screen before you finish a turn, so holding it near the l
 right edge keeps rotating; the arrow keys turn too, in either mode. A full 360° is always
 reachable.
 
+## The desktop build, from the title screen
+
+There are two Erebus Cradles: the browser game in `src/`, and the native C++/OpenGL
+build in `cpp/` (its own README covers what it is). The title screen carries a
+**LAUNCH GAME** plate that opens the native one.
+
+A page can't start a process, so the plate asks the project's own server to do it —
+which means the desktop build launches from the browser only when the page is being
+served by `server/server.js`, on the same machine:
+
+```
+cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build -j
+node server/server.js          # then open http://localhost:8080 and click LAUNCH GAME
+```
+
+The status line under the plate says which of the three states you are in before
+you click — native build ready, not compiled yet, or no host to ask (`file://`, or
+the single-file build). In the last two cases the plate hands over the exact
+commands to run instead of doing nothing.
+
+Two endpoints back it, both loopback-only, since a machine serving this on a LAN
+should not hand every client on it a process:
+
+| | |
+|---|---|
+| `GET /api/native` | is it built, is it running, is there a display |
+| `POST /api/native/launch` | spawn `cpp/build/erebus_native` (one at a time) |
+
+The only thing a request can choose is a `mission`, and that is matched against the
+`.cfg` files actually present under `cpp/content/missions/` rather than passed
+through — the request picks which mission, never what to run. The game is spawned
+detached, so it outlives the server; quitting it puts the plate back to READY on its
+own.
+
 ## Co-op
 
 The game ships with its own server. It serves the game *and* runs the multiplayer relay
@@ -334,6 +368,10 @@ src/js/fps/boss.js        the Conductor: shield phases and the phrase puzzle
 src/js/fps/game.js        mission loop, objectives, player condition
 src/js/ui.js              menus and the handoff into a mission
 src/js/main.js            entry point
+src/css/launch.css        the native LAUNCH GAME plate on the title screen
+src/js/launch.js          asks the local host to start the C++ desktop build
+server/server.js          static host, co-op relay, native launch endpoints
+cpp/                      the native C++/OpenGL build (see cpp/README.md)
 tools/bundle.py           inlines the above into one self-contained page
 dist/erebus-cradle.html   the generated single-file build
 ```

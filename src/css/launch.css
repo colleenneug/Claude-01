@@ -1,0 +1,231 @@
+/* ============================================================
+   EREBUS CRADLE — native launch bar.
+
+   The wide console plate on the title screen that opens the C++
+   desktop build (cpp/): mission art on the left, wordmark in the
+   middle, a play reactor on the right. One <button>; everything
+   inside it is decoration and is marked aria-hidden.
+
+   Drawn entirely from gradients and one inline SVG — the same
+   "nothing to download" rule the rest of the project follows, so
+   the plate survives into dist/erebus-cradle.html intact.
+   ============================================================ */
+
+.launch-bar{
+  position:relative;
+  display:grid;
+  grid-template-columns: minmax(110px, 25%) 1fr auto;
+  align-items:center;
+  gap: clamp(10px, 2.6vw, 28px);
+  align-items:stretch;
+  width:100%;
+  margin:26px 0 6px;
+  padding:16px clamp(14px, 2.4vw, 22px);
+  text-align:left;
+  font-family:var(--font-ui);
+  background:
+    radial-gradient(120% 160% at 50% -20%, rgba(94,234,255,.16), transparent 62%),
+    linear-gradient(180deg, rgba(11,26,45,.94), rgba(4,9,18,.97));
+  border:1px solid rgba(94,234,255,.55);
+  /* the chamfered top-left / bottom-right corners of the plate */
+  clip-path: polygon(24px 0, 100% 0, 100% calc(100% - 24px), calc(100% - 24px) 100%, 0 100%, 0 24px);
+  box-shadow:
+    0 0 26px rgba(94,234,255,.20),
+    inset 0 0 44px rgba(20,74,116,.40);
+  transition: border-color .2s, box-shadow .2s, transform .14s, background .2s;
+}
+
+/* inner hairline, a frame inside the frame */
+.launch-bar::before{
+  content:''; position:absolute; inset:6px;
+  border:1px solid rgba(94,234,255,.20);
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  pointer-events:none;
+}
+
+/* a light that sweeps the plate on hover, left to right, once */
+.launch-bar::after{
+  content:''; position:absolute; inset:0; opacity:0;
+  background:linear-gradient(105deg, transparent 38%, rgba(190,240,255,.16) 50%, transparent 62%);
+  pointer-events:none;
+}
+
+.launch-bar:hover:not(:disabled),
+.launch-bar:focus-visible{
+  transform:translateY(-2px);
+  border-color:rgba(160,240,255,.95);
+  box-shadow:
+    0 0 44px rgba(94,234,255,.38),
+    inset 0 0 52px rgba(28,102,150,.50);
+  outline:none;
+}
+.launch-bar:hover:not(:disabled)::after{ animation: lbSweep .9s ease-out; }
+@keyframes lbSweep{ from{ opacity:.9; transform:translateX(-28%); } to{ opacity:0; transform:translateX(28%); } }
+
+.launch-bar:active:not(:disabled){ transform:translateY(0); }
+.launch-bar:disabled{ opacity:.7; }
+
+/* ---------- left: the mission art inset ---------- */
+
+.lb-art{
+  position:relative; display:block; overflow:hidden;
+  align-self:stretch; min-height: clamp(78px, 13vw, 132px);
+  border:1px solid rgba(94,234,255,.40);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  box-shadow: inset 0 0 22px rgba(0,0,0,.65);
+  filter:saturate(1.05);
+  transition: filter .2s, border-color .2s;
+}
+.lb-art svg{ display:block; width:100%; height:100%; }
+/* scanline tint, so the inset reads as a screen rather than a photo */
+.lb-art::after{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px),
+    linear-gradient(180deg, rgba(94,234,255,.10), transparent 55%);
+}
+.launch-bar:hover:not(:disabled) .lb-art{ filter:saturate(1.25) brightness(1.12); border-color:rgba(160,240,255,.8); }
+
+/* ---------- middle: the wordmark ---------- */
+
+.lb-body{ display:flex; flex-direction:column; align-items:center; justify-content:center;
+  align-self:center; gap:4px; min-width:0; }
+
+.lb-crest{
+  display:block; width:16px; height:22px; margin-bottom:-4px;
+  background:linear-gradient(180deg, #eafcff, #5eeaff 45%, rgba(94,234,255,0));
+  clip-path: polygon(50% 0, 100% 34%, 50% 100%, 0 34%);
+  filter: drop-shadow(0 0 7px rgba(94,234,255,.95));
+}
+
+.lb-word{
+  font-size: clamp(24px, 5vw, 46px);
+  font-weight:700; letter-spacing:.07em; line-height:1;
+  background:linear-gradient(180deg, #ffffff 8%, #cfeeff 42%, #6fb6d8 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  -webkit-text-fill-color:transparent;
+  text-shadow: 0 0 22px rgba(94,234,255,.35);
+  white-space:nowrap;
+}
+
+.lb-sub{
+  display:flex; align-items:center; gap:10px;
+  font-size: clamp(10px, 1.7vw, 16px);
+  letter-spacing:.46em; color:#a9dcef; text-indent:.46em; white-space:nowrap;
+}
+.lb-sub::before, .lb-sub::after{
+  content:''; width:clamp(10px, 3vw, 30px); height:1px;
+  background:linear-gradient(90deg, transparent, rgba(94,234,255,.7));
+}
+.lb-sub::after{ background:linear-gradient(90deg, rgba(94,234,255,.7), transparent); }
+
+.lb-cta{
+  margin-top:8px; padding-top:8px;
+  border-top:1px solid rgba(94,234,255,.22);
+  width:min(100%, 320px); text-align:center;
+  font-size: clamp(10px, 1.5vw, 13px); font-weight:600;
+  letter-spacing:.34em; text-indent:.34em; color:#dff4ff; white-space:nowrap;
+}
+
+.lb-status{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em;
+  color:var(--ink-dim); text-align:center; min-height:12px;
+}
+.lb-status.ok{ color:var(--lime); }
+.lb-status.warn{ color:var(--amber); }
+.lb-status.bad{ color:var(--blood); }
+
+/* ---------- right: the reactor and its housing ---------- */
+
+/* the machined bracket the play reactor is seated in */
+.lb-rig{
+  position:relative; display:grid; place-items:center; align-self:stretch;
+  padding: clamp(8px, 1.4vw, 14px) clamp(12px, 2.2vw, 24px);
+  background:
+    linear-gradient(150deg, rgba(150,190,220,.26), rgba(10,24,40,.75) 42%, rgba(120,170,205,.20));
+  border:1px solid rgba(94,234,255,.38);
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  box-shadow: inset 0 0 20px rgba(0,0,0,.55);
+  transition: border-color .2s, background .2s;
+}
+.launch-bar:hover:not(:disabled) .lb-rig,
+.launch-bar:focus-visible .lb-rig{ border-color:rgba(160,240,255,.75); }
+
+/* the little segmented gauge on the bracket */
+.lb-ticks{ position:absolute; left:8px; bottom:7px; display:flex; gap:3px; }
+.lb-ticks i{ width:3px; height:8px; background:rgba(94,234,255,.55); }
+.lb-ticks i:nth-child(1){ height:5px; }
+.lb-ticks i:nth-child(4){ height:11px; background:rgba(190,245,255,.9); }
+
+/* ---------- the play reactor ---------- */
+
+.lb-play{
+  position:relative; display:grid; place-items:center;
+  width: clamp(54px, 11vw, 98px); aspect-ratio:1; border-radius:50%;
+  background: radial-gradient(circle at 50% 32%, #7fd8ff 0%, #1f8ff0 42%, #0a3c7a 78%, #062647 100%);
+  box-shadow:
+    0 0 0 3px rgba(4,12,24,.9),
+    0 0 0 5px rgba(94,234,255,.55),
+    0 0 26px rgba(60,170,255,.55),
+    inset 0 0 18px rgba(230,250,255,.35);
+  transition: transform .18s, box-shadow .2s;
+}
+/* the outer dashed ring that turns, and a second static tick ring */
+.lb-play::before{
+  content:''; position:absolute; inset:-14px; border-radius:50%;
+  border:2px dashed rgba(94,234,255,.55);
+  animation: lbSpin 14s linear infinite;
+}
+.lb-play::after{
+  content:''; position:absolute; inset:-22px; border-radius:50%;
+  border:1px solid rgba(94,234,255,.22);
+}
+.lb-play-tri{
+  width:0; height:0; margin-left:14%;
+  border-left: clamp(16px, 3.4vw, 30px) solid #ffffff;
+  border-top: clamp(10px, 2.1vw, 19px) solid transparent;
+  border-bottom: clamp(10px, 2.1vw, 19px) solid transparent;
+  filter: drop-shadow(0 0 8px rgba(190,240,255,.8));
+}
+.launch-bar:hover:not(:disabled) .lb-play,
+.launch-bar:focus-visible .lb-play{
+  transform:scale(1.06);
+  box-shadow:
+    0 0 0 3px rgba(4,12,24,.9),
+    0 0 0 6px rgba(160,240,255,.9),
+    0 0 40px rgba(94,200,255,.8),
+    inset 0 0 22px rgba(240,253,255,.5);
+}
+.launch-bar:hover:not(:disabled) .lb-play::before{ animation-duration:4s; border-color:rgba(190,245,255,.85); }
+
+@keyframes lbSpin{ to{ transform:rotate(360deg); } }
+
+/* launching: the reactor pulses until the process is up */
+.launch-bar.is-busy .lb-play{ animation: lbPulse 1s ease-in-out infinite; }
+@keyframes lbPulse{ 50%{ transform:scale(1.1); filter:brightness(1.3); } }
+
+/* ---------- narrow screens: drop the art, keep the plate ---------- */
+
+@media (max-width: 560px){
+  .launch-bar{ grid-template-columns: 1fr auto; padding:14px; }
+  .lb-art{ display:none; }
+  .lb-play::after, .lb-ticks{ display:none; }
+  .lb-rig{ padding:8px 12px; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .lb-play::before{ animation:none; }
+  .launch-bar.is-busy .lb-play{ animation:none; }
+  .launch-bar:hover:not(:disabled)::after{ animation:none; }
+}
+
+/* ---------- the manual-launch dialog ---------- */
+
+.lb-hint{ display:block; margin-bottom:14px; }
+.lb-cmd{
+  display:block; margin:8px 0; padding:9px 11px;
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.02em;
+  color:var(--cyan); background:rgba(94,234,255,.06);
+  border:1px solid var(--line); border-left:2px solid var(--line-hot);
+  word-break:break-all; white-space:pre-wrap;
+}

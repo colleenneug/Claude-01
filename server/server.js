@@ -16,6 +16,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const ws = require('./ws');
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
@@ -50,7 +51,148 @@ function serve(req, res) {
   });
 }
 
-const server = http.createServer(serve);
+/* ---------------- native build launcher ---------------- */
+/*
+   The browser build's title screen carries a LAUNCH GAME plate for the
+   C++ desktop build in cpp/. A page can't start a process, so it asks
+   here and this spawns cpp/build/erebus_native.
+
+   Deliberately narrow: no argument comes off the wire except a mission
+   id, and that is matched against the .cfg files actually present under
+   cpp/content/missions rather than passed through — the request can
+   pick which mission, never what to run. Loopback only, since a machine
+   serving this on a LAN shouldn't hand every client on it a process.
+*/
+
+const NATIVE_DIR = path.join(ROOT, 'cpp', 'build');
+const NATIVE_BIN = path.join(NATIVE_DIR, process.platform === 'win32' ? 'erebus_native.exe' : 'erebus_native');
+const MISSION_DIR = path.join(ROOT, 'cpp', 'content', 'missions');
+
+const BUILD_CMD = 'cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build -j';
+
+let native = null;                  // the one live child, or null
+
+const loopback = (req) => {
+  const a = req.socket.remoteAddress || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+};
+
+/* A display is needed to open a window; without one the process starts
+   and dies immediately, which reads as "the button did nothing". Say so
+   instead. macOS and Windows always have one. */
+const headless = () =>
+  process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
+
+function nativeStatus() {
+  return {
+    built: fs.existsSync(NATIVE_BIN),
+    running: !!native,
+    pid: native ? native.pid : null,
+    display: !headless(),
+    binary: path.relative(ROOT, NATIVE_BIN),
+    buildCmd: BUILD_CMD
+  };
+}
+
+function sendJson(res, code, body) {
+  const data = JSON.stringify(body);
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(data);
+}
+
+/* A mission id is only ever a filename we already have on disk. */
+function missionArgs(id) {
+  if (!id) return [];
+  if (!/^[a-z0-9_-]{1,40}$/.test(String(id))) return null;
+  if (!fs.existsSync(path.join(MISSION_DIR, id + '.cfg'))) return null;
+  return ['--mission', String(id)];
+}
+
+function launchNative(req, res, body) {
+  if (!loopback(req)) {
+    return sendJson(res, 403, { ok: false, reason: 'REMOTE',
+      detail: 'Only the machine running this server can launch the desktop build.' });
+  }
+  if (native) {
+    return sendJson(res, 409, { ok: false, reason: 'RUNNING', pid: native.pid,
+      detail: 'The native build is already running (pid ' + native.pid + ').', status: nativeStatus() });
+  }
+  if (!fs.existsSync(NATIVE_BIN)) {
+    return sendJson(res, 404, { ok: false, reason: 'NOT_BUILT',
+      detail: 'The native build has not been compiled yet. Build it once, then this button launches it.',
+      buildCmd: BUILD_CMD, status: nativeStatus() });
+  }
+  if (headless()) {
+    return sendJson(res, 409, { ok: false, reason: 'NO_DISPLAY',
+      detail: 'This host has no display attached, so the game window has nowhere to open. Run it from a desktop session.',
+      status: nativeStatus() });
+  }
+
+  const args = missionArgs(body && body.mission);
+  if (args === null) {
+    return sendJson(res, 400, { ok: false, reason: 'BAD_MISSION',
+      detail: 'No such mission under cpp/content/missions.', status: nativeStatus() });
+  }
+
+  let child;
+  try {
+    // cwd is the build directory because CMake copies content/ and
+    // shaders/ next to the binary, and the game resolves both relative
+    // to where it is run from.
+    child = spawn(NATIVE_BIN, args, { cwd: NATIVE_DIR, detached: true, stdio: 'ignore' });
+  } catch (err) {
+    return sendJson(res, 500, { ok: false, reason: 'SPAWN_FAILED', detail: err.message, status: nativeStatus() });
+  }
+
+  // Unref'd so quitting the server doesn't take the game down with it;
+  // exit still reports back here while the server is up, which is what
+  // lets the page's status line fall back to READY on its own.
+  child.unref();
+  native = child;
+  log('native build launched (pid ' + child.pid + ')' + (args.length ? ' mission ' + args[1] : ''));
+
+  child.on('error', (err) => {
+    log('native build failed to start: ' + err.message);
+    if (native === child) native = null;
+  });
+  child.on('exit', (code, signal) => {
+    log('native build exited (' + (signal || code) + ')');
+    if (native === child) native = null;
+  });
+
+  sendJson(res, 200, { ok: true, pid: child.pid, status: nativeStatus() });
+}
+
+/* ---------------- routing ---------------- */
+
+function api(req, res) {
+  const route = req.url.split('?')[0];
+
+  if (route === '/api/native' && req.method === 'GET') {
+    return sendJson(res, 200, nativeStatus());
+  }
+  if (route === '/api/native/launch' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > 1024) { raw = ''; req.destroy(); }   // nothing legitimate is this big
+    });
+    req.on('end', () => {
+      let body = {};
+      try { body = raw ? JSON.parse(raw) : {}; } catch (e) { body = {}; }
+      launchNative(req, res, body);
+    });
+    return;
+  }
+  sendJson(res, 404, { ok: false, reason: 'NO_ROUTE' });
+}
+
+function handle(req, res) {
+  if (req.url.split('?')[0].startsWith('/api/')) return api(req, res);
+  serve(req, res);
+}
+
+const server = http.createServer(handle);
 
 /* ---------------- rooms ---------------- */
 
@@ -228,6 +370,7 @@ server.listen(PORT, () => {
   log(`Erebus Cradle server on http://localhost:${PORT}`);
   log(`  game:  http://localhost:${PORT}/`);
   log(`  co-op: ws://localhost:${PORT}/ws`);
+  log(`  native: ${nativeStatus().built ? 'built — the title screen\'s LAUNCH GAME plate can start it' : 'not built — ' + BUILD_CMD}`);
 });
 
 module.exports = { server, rooms };

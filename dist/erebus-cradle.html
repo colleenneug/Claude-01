@@ -1353,6 +1353,240 @@ body.in-mission #vignette{ opacity:.55; }
   box-shadow:0 0 10px rgba(243,160,28,.6); transition:width .3s;
 }
 
+
+/* ==== src/css/launch.css ==== */
+/* ============================================================
+   EREBUS CRADLE — native launch bar.
+
+   The wide console plate on the title screen that opens the C++
+   desktop build (cpp/): mission art on the left, wordmark in the
+   middle, a play reactor on the right. One <button>; everything
+   inside it is decoration and is marked aria-hidden.
+
+   Drawn entirely from gradients and one inline SVG — the same
+   "nothing to download" rule the rest of the project follows, so
+   the plate survives into dist/erebus-cradle.html intact.
+   ============================================================ */
+
+.launch-bar{
+  position:relative;
+  display:grid;
+  grid-template-columns: minmax(110px, 25%) 1fr auto;
+  align-items:center;
+  gap: clamp(10px, 2.6vw, 28px);
+  align-items:stretch;
+  width:100%;
+  margin:26px 0 6px;
+  padding:16px clamp(14px, 2.4vw, 22px);
+  text-align:left;
+  font-family:var(--font-ui);
+  background:
+    radial-gradient(120% 160% at 50% -20%, rgba(94,234,255,.16), transparent 62%),
+    linear-gradient(180deg, rgba(11,26,45,.94), rgba(4,9,18,.97));
+  border:1px solid rgba(94,234,255,.55);
+  /* the chamfered top-left / bottom-right corners of the plate */
+  clip-path: polygon(24px 0, 100% 0, 100% calc(100% - 24px), calc(100% - 24px) 100%, 0 100%, 0 24px);
+  box-shadow:
+    0 0 26px rgba(94,234,255,.20),
+    inset 0 0 44px rgba(20,74,116,.40);
+  transition: border-color .2s, box-shadow .2s, transform .14s, background .2s;
+}
+
+/* inner hairline, a frame inside the frame */
+.launch-bar::before{
+  content:''; position:absolute; inset:6px;
+  border:1px solid rgba(94,234,255,.20);
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  pointer-events:none;
+}
+
+/* a light that sweeps the plate on hover, left to right, once */
+.launch-bar::after{
+  content:''; position:absolute; inset:0; opacity:0;
+  background:linear-gradient(105deg, transparent 38%, rgba(190,240,255,.16) 50%, transparent 62%);
+  pointer-events:none;
+}
+
+.launch-bar:hover:not(:disabled),
+.launch-bar:focus-visible{
+  transform:translateY(-2px);
+  border-color:rgba(160,240,255,.95);
+  box-shadow:
+    0 0 44px rgba(94,234,255,.38),
+    inset 0 0 52px rgba(28,102,150,.50);
+  outline:none;
+}
+.launch-bar:hover:not(:disabled)::after{ animation: lbSweep .9s ease-out; }
+@keyframes lbSweep{ from{ opacity:.9; transform:translateX(-28%); } to{ opacity:0; transform:translateX(28%); } }
+
+.launch-bar:active:not(:disabled){ transform:translateY(0); }
+.launch-bar:disabled{ opacity:.7; }
+
+/* ---------- left: the mission art inset ---------- */
+
+.lb-art{
+  position:relative; display:block; overflow:hidden;
+  align-self:stretch; min-height: clamp(78px, 13vw, 132px);
+  border:1px solid rgba(94,234,255,.40);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  box-shadow: inset 0 0 22px rgba(0,0,0,.65);
+  filter:saturate(1.05);
+  transition: filter .2s, border-color .2s;
+}
+.lb-art svg{ display:block; width:100%; height:100%; }
+/* scanline tint, so the inset reads as a screen rather than a photo */
+.lb-art::after{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px),
+    linear-gradient(180deg, rgba(94,234,255,.10), transparent 55%);
+}
+.launch-bar:hover:not(:disabled) .lb-art{ filter:saturate(1.25) brightness(1.12); border-color:rgba(160,240,255,.8); }
+
+/* ---------- middle: the wordmark ---------- */
+
+.lb-body{ display:flex; flex-direction:column; align-items:center; justify-content:center;
+  align-self:center; gap:4px; min-width:0; }
+
+.lb-crest{
+  display:block; width:16px; height:22px; margin-bottom:-4px;
+  background:linear-gradient(180deg, #eafcff, #5eeaff 45%, rgba(94,234,255,0));
+  clip-path: polygon(50% 0, 100% 34%, 50% 100%, 0 34%);
+  filter: drop-shadow(0 0 7px rgba(94,234,255,.95));
+}
+
+.lb-word{
+  font-size: clamp(24px, 5vw, 46px);
+  font-weight:700; letter-spacing:.07em; line-height:1;
+  background:linear-gradient(180deg, #ffffff 8%, #cfeeff 42%, #6fb6d8 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  -webkit-text-fill-color:transparent;
+  text-shadow: 0 0 22px rgba(94,234,255,.35);
+  white-space:nowrap;
+}
+
+.lb-sub{
+  display:flex; align-items:center; gap:10px;
+  font-size: clamp(10px, 1.7vw, 16px);
+  letter-spacing:.46em; color:#a9dcef; text-indent:.46em; white-space:nowrap;
+}
+.lb-sub::before, .lb-sub::after{
+  content:''; width:clamp(10px, 3vw, 30px); height:1px;
+  background:linear-gradient(90deg, transparent, rgba(94,234,255,.7));
+}
+.lb-sub::after{ background:linear-gradient(90deg, rgba(94,234,255,.7), transparent); }
+
+.lb-cta{
+  margin-top:8px; padding-top:8px;
+  border-top:1px solid rgba(94,234,255,.22);
+  width:min(100%, 320px); text-align:center;
+  font-size: clamp(10px, 1.5vw, 13px); font-weight:600;
+  letter-spacing:.34em; text-indent:.34em; color:#dff4ff; white-space:nowrap;
+}
+
+.lb-status{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em;
+  color:var(--ink-dim); text-align:center; min-height:12px;
+}
+.lb-status.ok{ color:var(--lime); }
+.lb-status.warn{ color:var(--amber); }
+.lb-status.bad{ color:var(--blood); }
+
+/* ---------- right: the reactor and its housing ---------- */
+
+/* the machined bracket the play reactor is seated in */
+.lb-rig{
+  position:relative; display:grid; place-items:center; align-self:stretch;
+  padding: clamp(8px, 1.4vw, 14px) clamp(12px, 2.2vw, 24px);
+  background:
+    linear-gradient(150deg, rgba(150,190,220,.26), rgba(10,24,40,.75) 42%, rgba(120,170,205,.20));
+  border:1px solid rgba(94,234,255,.38);
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  box-shadow: inset 0 0 20px rgba(0,0,0,.55);
+  transition: border-color .2s, background .2s;
+}
+.launch-bar:hover:not(:disabled) .lb-rig,
+.launch-bar:focus-visible .lb-rig{ border-color:rgba(160,240,255,.75); }
+
+/* the little segmented gauge on the bracket */
+.lb-ticks{ position:absolute; left:8px; bottom:7px; display:flex; gap:3px; }
+.lb-ticks i{ width:3px; height:8px; background:rgba(94,234,255,.55); }
+.lb-ticks i:nth-child(1){ height:5px; }
+.lb-ticks i:nth-child(4){ height:11px; background:rgba(190,245,255,.9); }
+
+/* ---------- the play reactor ---------- */
+
+.lb-play{
+  position:relative; display:grid; place-items:center;
+  width: clamp(54px, 11vw, 98px); aspect-ratio:1; border-radius:50%;
+  background: radial-gradient(circle at 50% 32%, #7fd8ff 0%, #1f8ff0 42%, #0a3c7a 78%, #062647 100%);
+  box-shadow:
+    0 0 0 3px rgba(4,12,24,.9),
+    0 0 0 5px rgba(94,234,255,.55),
+    0 0 26px rgba(60,170,255,.55),
+    inset 0 0 18px rgba(230,250,255,.35);
+  transition: transform .18s, box-shadow .2s;
+}
+/* the outer dashed ring that turns, and a second static tick ring */
+.lb-play::before{
+  content:''; position:absolute; inset:-14px; border-radius:50%;
+  border:2px dashed rgba(94,234,255,.55);
+  animation: lbSpin 14s linear infinite;
+}
+.lb-play::after{
+  content:''; position:absolute; inset:-22px; border-radius:50%;
+  border:1px solid rgba(94,234,255,.22);
+}
+.lb-play-tri{
+  width:0; height:0; margin-left:14%;
+  border-left: clamp(16px, 3.4vw, 30px) solid #ffffff;
+  border-top: clamp(10px, 2.1vw, 19px) solid transparent;
+  border-bottom: clamp(10px, 2.1vw, 19px) solid transparent;
+  filter: drop-shadow(0 0 8px rgba(190,240,255,.8));
+}
+.launch-bar:hover:not(:disabled) .lb-play,
+.launch-bar:focus-visible .lb-play{
+  transform:scale(1.06);
+  box-shadow:
+    0 0 0 3px rgba(4,12,24,.9),
+    0 0 0 6px rgba(160,240,255,.9),
+    0 0 40px rgba(94,200,255,.8),
+    inset 0 0 22px rgba(240,253,255,.5);
+}
+.launch-bar:hover:not(:disabled) .lb-play::before{ animation-duration:4s; border-color:rgba(190,245,255,.85); }
+
+@keyframes lbSpin{ to{ transform:rotate(360deg); } }
+
+/* launching: the reactor pulses until the process is up */
+.launch-bar.is-busy .lb-play{ animation: lbPulse 1s ease-in-out infinite; }
+@keyframes lbPulse{ 50%{ transform:scale(1.1); filter:brightness(1.3); } }
+
+/* ---------- narrow screens: drop the art, keep the plate ---------- */
+
+@media (max-width: 560px){
+  .launch-bar{ grid-template-columns: 1fr auto; padding:14px; }
+  .lb-art{ display:none; }
+  .lb-play::after, .lb-ticks{ display:none; }
+  .lb-rig{ padding:8px 12px; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .lb-play::before{ animation:none; }
+  .launch-bar.is-busy .lb-play{ animation:none; }
+  .launch-bar:hover:not(:disabled)::after{ animation:none; }
+}
+
+/* ---------- the manual-launch dialog ---------- */
+
+.lb-hint{ display:block; margin-bottom:14px; }
+.lb-cmd{
+  display:block; margin:8px 0; padding:9px 11px;
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.02em;
+  color:var(--cyan); background:rgba(94,234,255,.06);
+  border:1px solid var(--line); border-left:2px solid var(--line-hot);
+  word-break:break-all; white-space:pre-wrap;
+}
+
 </style>
 
 
@@ -1401,6 +1635,93 @@ body.in-mission #vignette{ opacity:.55; }
         <button class="btn btn-major" data-go="slots">ACCESS CREW REGISTRY</button>
         <button class="btn" data-go="codex">FIELD CODEX</button>
       </div>
+      <!-- Opens the native C++ desktop build (cpp/) through the local server;
+           with no server to ask, it shows the build/run commands instead. -->
+      <button class="launch-bar" id="btn-launch-native" data-hover="LAUNCH"
+              title="Open Erebus Cradle in the native C++ desktop build">
+        <span class="lb-art" aria-hidden="true">
+          <svg viewBox="0 0 200 150" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <linearGradient id="lb-sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#071324"/>
+                <stop offset=".5" stop-color="#14405c"/>
+                <stop offset="1" stop-color="#0b2740"/>
+              </linearGradient>
+              <linearGradient id="lb-beam" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#e8fbff" stop-opacity="0"/>
+                <stop offset=".42" stop-color="#cdf3ff" stop-opacity=".62"/>
+                <stop offset="1" stop-color="#5eeaff" stop-opacity=".05"/>
+              </linearGradient>
+              <radialGradient id="lb-halo">
+                <stop offset="0" stop-color="#bff0ff" stop-opacity=".8"/>
+                <stop offset="1" stop-color="#bff0ff" stop-opacity="0"/>
+              </radialGradient>
+              <linearGradient id="lb-water" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#9fd8ef" stop-opacity=".55"/>
+                <stop offset="1" stop-color="#0d2a42" stop-opacity=".9"/>
+              </linearGradient>
+            </defs>
+
+            <rect width="200" height="150" fill="url(#lb-sky)"/>
+
+            <!-- the world overhead, and its ring seen edge-on -->
+            <circle cx="150" cy="26" r="30" fill="#31607f" opacity=".55"/>
+            <circle cx="143" cy="20" r="26" fill="#0c2135" opacity=".45"/>
+            <ellipse cx="150" cy="26" rx="46" ry="7" fill="none" stroke="#9fd8ef" stroke-opacity=".35" stroke-width="1.4"/>
+
+            <g fill="#dff4ff" opacity=".75">
+              <circle cx="24" cy="18" r=".8"/><circle cx="58" cy="9" r=".6"/><circle cx="82" cy="28" r=".7"/>
+              <circle cx="14" cy="46" r=".5"/><circle cx="104" cy="14" r=".6"/><circle cx="186" cy="62" r=".6"/>
+            </g>
+
+            <!-- the Cradle: a ring hull holding a column of light over the valley -->
+            <rect x="93" y="0" width="14" height="150" fill="url(#lb-beam)"/>
+            <ellipse cx="100" cy="66" rx="30" ry="10" fill="url(#lb-halo)" opacity=".7"/>
+            <g fill="#0a1a2b" stroke="#7fd8ff" stroke-opacity=".7" stroke-width="1">
+              <ellipse cx="100" cy="58" rx="42" ry="8"/>
+              <path d="M64 60 L78 74 L86 60 Z"/>
+              <path d="M136 60 L122 74 L114 60 Z"/>
+            </g>
+            <ellipse cx="100" cy="58" rx="12" ry="3" fill="#bff0ff" opacity=".9"/>
+
+            <!-- ridgelines, near to far -->
+            <path d="M0 96 L34 74 L58 90 L82 78 L112 96 L146 80 L200 100 L200 150 L0 150 Z" fill="#12314a" opacity=".85"/>
+            <path d="M0 112 L40 96 L74 110 L118 98 L160 112 L200 104 L200 150 L0 150 Z" fill="#0b2237"/>
+
+            <!-- the flooded valley floor -->
+            <rect x="0" y="118" width="200" height="32" fill="url(#lb-water)"/>
+            <g stroke="#cdf3ff" stroke-opacity=".5" stroke-width="1">
+              <line x1="86" y1="124" x2="114" y2="124"/>
+              <line x1="90" y1="132" x2="110" y2="132"/>
+              <line x1="82" y1="140" x2="118" y2="140"/>
+            </g>
+
+            <!-- the operative on the outcrop, watching it -->
+            <path d="M0 122 L14 104 L34 108 L44 126 L0 150 Z" fill="#04090f"/>
+            <g fill="#04090f">
+              <circle cx="22" cy="92" r="3.1"/>
+              <path d="M18.6 96 L25.4 96 L28 112 L16 112 Z"/>
+              <path d="M16 112 L20 112 L20 122 L17 122 Z"/>
+              <path d="M24 112 L28 112 L27 122 L24 122 Z"/>
+            </g>
+            <path d="M22 95 L31 100 L28 114 L26 113 Z" fill="#0a1725"/>
+          </svg>
+        </span>
+
+        <span class="lb-body">
+          <span class="lb-crest" aria-hidden="true"></span>
+          <span class="lb-word">EREBUS</span>
+          <span class="lb-sub">CRADLE</span>
+          <span class="lb-cta">LAUNCH GAME</span>
+          <span class="lb-status" id="launch-status" aria-live="polite">NATIVE BUILD &mdash; CHECKING</span>
+        </span>
+
+        <span class="lb-rig" aria-hidden="true">
+          <span class="lb-play"><span class="lb-play-tri"></span></span>
+          <span class="lb-ticks"><i></i><i></i><i></i><i></i></span>
+        </span>
+      </button>
+
       <div class="title-foot">CURSOR-DRIVEN INTERFACE &middot; POINT &middot; HOVER &middot; COMMIT</div>
     </div>
   </section>
@@ -12900,6 +13221,179 @@ void main(){
 })(window.SF);
 
 
+/* ==== src/js/launch.js ==== */
+/* ============================================================
+   Native launch bar — the title-screen plate that opens the C++
+   desktop build in cpp/.
+
+   A page can't start a process, so the button asks the local host
+   (server/server.js) to spawn cpp/build/erebus_native for it. Three
+   things can be true when it's clicked, and each has to say so
+   plainly rather than silently doing nothing:
+
+     served + built      -> spawn it
+     served + not built  -> offer the build command
+     no server at all    -> the bundled artifact or a file:// open;
+                            offer both commands
+
+   The status line under LAUNCH GAME reports which of those is the
+   case before the click, so the state is visible, not discovered.
+   ============================================================ */
+(function (SF) {
+  'use strict';
+  const { $, toast, confirmDialog } = SF.util;
+
+  const BUILD_CMD = 'cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build -j';
+  const RUN_CMD   = './cpp/build/erebus_native';
+  const SERVE_CMD = 'node server/server.js';
+
+  let status = null;      // last /api/native payload, or null when unreachable
+  let busy = false;
+
+  const bar = () => $('#btn-launch-native');
+
+  function setStatus(text, kind) {
+    const node = $('#launch-status');
+    if (!node) return;
+    node.textContent = text;
+    node.className = 'lb-status' + (kind ? ' ' + kind : '');
+  }
+
+  /* Ask the host what it can do. A failure here is ordinary — the page
+     is just as likely to be opened as a file or as the bundled artifact
+     as it is to be served — so it downgrades the button rather than
+     logging an error. */
+  async function probe() {
+    try {
+      const res = await fetch('api/native', { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      status = await res.json();
+    } catch (e) {
+      status = null;
+    }
+    render();
+    return status;
+  }
+
+  function render() {
+    if (busy) return;
+    if (!status)            return setStatus('HOST OFFLINE — MANUAL LAUNCH', 'warn');
+    if (status.running)     return setStatus('NATIVE BUILD RUNNING — PID ' + status.pid, 'ok');
+    if (!status.built)      return setStatus('NATIVE BUILD NOT COMPILED', 'warn');
+    return setStatus('NATIVE BUILD READY — C++ / OPENGL', 'ok');
+  }
+
+  /* The fallback: hand over the exact commands instead of a dead button.
+     CONFIRM copies them, since the one thing wanted here is a paste into
+     a terminal. */
+  async function manual(headline, cmds) {
+    const body = '<span class="lb-hint">' + headline + '</span>' +
+      cmds.map((c) => '<code class="lb-cmd">' + c + '</code>').join('');
+    const copy = await confirmDialog('NATIVE BUILD', body, 'COPY COMMANDS');
+    if (!copy) return;
+    try {
+      await navigator.clipboard.writeText(cmds.join('\n'));
+      toast('COMMANDS COPIED', 'good');
+    } catch (e) {
+      toast('CLIPBOARD BLOCKED — COPY BY HAND', 'warn');
+    }
+  }
+
+  async function launch() {
+    if (busy) return;
+    const el = bar();
+
+    // The status is only as fresh as the last probe; re-check, since the
+    // build may have finished (or the game may have been closed) since.
+    busy = true;
+    el.classList.add('is-busy');
+    setStatus('CONTACTING HOST', '');
+    await probe();
+    busy = false;
+    el.classList.remove('is-busy');
+
+    if (!status) {
+      SF.audio.sfx.deny();
+      render();
+      return manual('This page isn’t being served by the project host, so it can’t start a process. Run the desktop build directly:',
+                    [BUILD_CMD, RUN_CMD]);
+    }
+    if (!status.built) {
+      SF.audio.sfx.deny();
+      render();
+      return manual('The native build hasn’t been compiled yet. Build it once, then this button launches it:',
+                    [BUILD_CMD]);
+    }
+    if (status.running) {
+      SF.audio.sfx.deny();
+      toast('NATIVE BUILD ALREADY RUNNING — PID ' + status.pid, 'warn');
+      return;
+    }
+
+    busy = true;
+    el.classList.add('is-busy');
+    el.disabled = true;
+    setStatus('LAUNCHING', '');
+    SF.audio.sfx.confirm();
+
+    let payload = null;
+    try {
+      const res = await fetch('api/native/launch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}'
+      });
+      payload = await res.json();
+    } catch (e) {
+      payload = { ok: false, reason: 'UNREACHABLE', detail: 'The host stopped answering.' };
+    }
+
+    busy = false;
+    el.classList.remove('is-busy');
+    el.disabled = false;
+
+    if (payload && payload.ok) {
+      status = payload.status || status;
+      setStatus('NATIVE BUILD RUNNING — PID ' + payload.pid, 'ok');
+      toast('NATIVE BUILD LAUNCHED — CHECK YOUR DESKTOP', 'good');
+      // The window opens on another surface entirely; poll until it exits
+      // so the plate goes back to READY on its own.
+      watch();
+      return;
+    }
+
+    SF.audio.sfx.deny();
+    render();
+    const detail = (payload && payload.detail) || 'The host refused the launch.';
+    if (payload && payload.reason === 'NO_DISPLAY') {
+      return manual(detail, [RUN_CMD]);
+    }
+    if (payload && payload.reason === 'NOT_BUILT') {
+      return manual(detail, [BUILD_CMD]);
+    }
+    toast('LAUNCH FAILED — ' + detail.toUpperCase(), 'bad');
+  }
+
+  let watcher = 0;
+  function watch() {
+    clearInterval(watcher);
+    watcher = setInterval(async () => {
+      await probe();
+      if (!status || !status.running) clearInterval(watcher);
+    }, 4000);
+  }
+
+  function init() {
+    const el = bar();
+    if (!el) return;
+    el.addEventListener('click', launch);
+    probe();
+  }
+
+  SF.launch = { init, probe, launch, SERVE_CMD };
+})(window.SF);
+
+
 /* ==== src/js/ui.js ==== */
 /* ============================================================
    Menus: boot, title, crew registry (three slots), enlistment,
@@ -14010,6 +14504,7 @@ void main(){
     SF.cursor.init();
     SF.fx.initStars();
     SF.ui.bind();
+    SF.launch.init();
 
     // Browsers gate audio until the first gesture; unlock on any of them.
     const unlock = () => SF.audio.unlock();

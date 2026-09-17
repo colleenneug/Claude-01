@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="src/css/base.css" />
 <link rel="stylesheet" href="src/css/screens.css" />
 <link rel="stylesheet" href="src/css/fps.css" />
+<link rel="stylesheet" href="src/css/launch.css" />
 </head>
 <body class="booting">
 
@@ -58,6 +59,93 @@
         <button class="btn btn-major" data-go="slots">ACCESS CREW REGISTRY</button>
         <button class="btn" data-go="codex">FIELD CODEX</button>
       </div>
+      <!-- Opens the native C++ desktop build (cpp/) through the local server;
+           with no server to ask, it shows the build/run commands instead. -->
+      <button class="launch-bar" id="btn-launch-native" data-hover="LAUNCH"
+              title="Open Erebus Cradle in the native C++ desktop build">
+        <span class="lb-art" aria-hidden="true">
+          <svg viewBox="0 0 200 150" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <linearGradient id="lb-sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#071324"/>
+                <stop offset=".5" stop-color="#14405c"/>
+                <stop offset="1" stop-color="#0b2740"/>
+              </linearGradient>
+              <linearGradient id="lb-beam" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#e8fbff" stop-opacity="0"/>
+                <stop offset=".42" stop-color="#cdf3ff" stop-opacity=".62"/>
+                <stop offset="1" stop-color="#5eeaff" stop-opacity=".05"/>
+              </linearGradient>
+              <radialGradient id="lb-halo">
+                <stop offset="0" stop-color="#bff0ff" stop-opacity=".8"/>
+                <stop offset="1" stop-color="#bff0ff" stop-opacity="0"/>
+              </radialGradient>
+              <linearGradient id="lb-water" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#9fd8ef" stop-opacity=".55"/>
+                <stop offset="1" stop-color="#0d2a42" stop-opacity=".9"/>
+              </linearGradient>
+            </defs>
+
+            <rect width="200" height="150" fill="url(#lb-sky)"/>
+
+            <!-- the world overhead, and its ring seen edge-on -->
+            <circle cx="150" cy="26" r="30" fill="#31607f" opacity=".55"/>
+            <circle cx="143" cy="20" r="26" fill="#0c2135" opacity=".45"/>
+            <ellipse cx="150" cy="26" rx="46" ry="7" fill="none" stroke="#9fd8ef" stroke-opacity=".35" stroke-width="1.4"/>
+
+            <g fill="#dff4ff" opacity=".75">
+              <circle cx="24" cy="18" r=".8"/><circle cx="58" cy="9" r=".6"/><circle cx="82" cy="28" r=".7"/>
+              <circle cx="14" cy="46" r=".5"/><circle cx="104" cy="14" r=".6"/><circle cx="186" cy="62" r=".6"/>
+            </g>
+
+            <!-- the Cradle: a ring hull holding a column of light over the valley -->
+            <rect x="93" y="0" width="14" height="150" fill="url(#lb-beam)"/>
+            <ellipse cx="100" cy="66" rx="30" ry="10" fill="url(#lb-halo)" opacity=".7"/>
+            <g fill="#0a1a2b" stroke="#7fd8ff" stroke-opacity=".7" stroke-width="1">
+              <ellipse cx="100" cy="58" rx="42" ry="8"/>
+              <path d="M64 60 L78 74 L86 60 Z"/>
+              <path d="M136 60 L122 74 L114 60 Z"/>
+            </g>
+            <ellipse cx="100" cy="58" rx="12" ry="3" fill="#bff0ff" opacity=".9"/>
+
+            <!-- ridgelines, near to far -->
+            <path d="M0 96 L34 74 L58 90 L82 78 L112 96 L146 80 L200 100 L200 150 L0 150 Z" fill="#12314a" opacity=".85"/>
+            <path d="M0 112 L40 96 L74 110 L118 98 L160 112 L200 104 L200 150 L0 150 Z" fill="#0b2237"/>
+
+            <!-- the flooded valley floor -->
+            <rect x="0" y="118" width="200" height="32" fill="url(#lb-water)"/>
+            <g stroke="#cdf3ff" stroke-opacity=".5" stroke-width="1">
+              <line x1="86" y1="124" x2="114" y2="124"/>
+              <line x1="90" y1="132" x2="110" y2="132"/>
+              <line x1="82" y1="140" x2="118" y2="140"/>
+            </g>
+
+            <!-- the operative on the outcrop, watching it -->
+            <path d="M0 122 L14 104 L34 108 L44 126 L0 150 Z" fill="#04090f"/>
+            <g fill="#04090f">
+              <circle cx="22" cy="92" r="3.1"/>
+              <path d="M18.6 96 L25.4 96 L28 112 L16 112 Z"/>
+              <path d="M16 112 L20 112 L20 122 L17 122 Z"/>
+              <path d="M24 112 L28 112 L27 122 L24 122 Z"/>
+            </g>
+            <path d="M22 95 L31 100 L28 114 L26 113 Z" fill="#0a1725"/>
+          </svg>
+        </span>
+
+        <span class="lb-body">
+          <span class="lb-crest" aria-hidden="true"></span>
+          <span class="lb-word">EREBUS</span>
+          <span class="lb-sub">CRADLE</span>
+          <span class="lb-cta">LAUNCH GAME</span>
+          <span class="lb-status" id="launch-status" aria-live="polite">NATIVE BUILD &mdash; CHECKING</span>
+        </span>
+
+        <span class="lb-rig" aria-hidden="true">
+          <span class="lb-play"><span class="lb-play-tri"></span></span>
+          <span class="lb-ticks"><i></i><i></i><i></i><i></i></span>
+        </span>
+      </button>
+
       <div class="title-foot">CURSOR-DRIVEN INTERFACE &middot; POINT &middot; HOVER &middot; COMMIT</div>
     </div>
   </section>
@@ -442,6 +530,7 @@
 <script src="src/js/fps/hud.js"></script>
 <script src="src/js/fps/boss.js"></script>
 <script src="src/js/fps/game.js"></script>
+<script src="src/js/launch.js"></script>
 <script src="src/js/ui.js"></script>
 <script src="src/js/main.js"></script>
 </body>
