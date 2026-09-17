@@ -82,6 +82,36 @@ through — the request picks which mission, never what to run. The game is spaw
 detached, so it outlives the server; quitting it puts the plate back to READY on its
 own.
 
+### The launcher page
+
+`launcher.html` is the whole thing as one page: the LAUNCH GAME plate, the browser
+build it opens in place, and the install steps for the desktop build beside it. Open
+it from a checkout, or publish it anywhere — it resolves the game as `game.html` next
+to itself and falls back to `index.html`, so both work.
+
+Its **LAUNCH NATIVE** button talks to `node server/server.js` on `localhost` (the port
+field defaults to 8080), which is why the two endpoints answer cross-origin requests.
+What guards them is the socket, not the origin: every state-changing path is loopback
+only, so a request can only ever start a process on the machine it came from, and the
+one process it can start is this project's own binary.
+
+One command does the whole native install from a fresh checkout:
+
+```
+bash tools/install-native.sh           # deps, build, play
+bash tools/install-native.sh --serve   # deps, build, then serve the browser build
+```
+
+### Keyboard focus in an embedded frame
+
+A page inside an iframe — a preview pane, the launcher, an embed — receives no key
+events at all until that frame has focus, which makes `PRESS ANY KEY TO SKIP` look
+broken while the mouse still works. The game asks for focus on load and takes it back
+on every pointer contact, and if it still doesn't have it a moment later it says
+`CLICK ANYWHERE TO GIVE THIS WINDOW THE KEYBOARD` rather than leaving a dead keyboard
+unexplained. The launcher goes further and forwards any key press that lands on it
+into the game frame.
+
 ## Co-op
 
 The game ships with its own server. It serves the game *and* runs the multiplayer relay
@@ -370,6 +400,8 @@ src/js/ui.js              menus and the handoff into a mission
 src/js/main.js            entry point
 src/css/launch.css        the native LAUNCH GAME plate on the title screen
 src/js/launch.js          asks the local host to start the C++ desktop build
+launcher.html             standalone launcher page (plate, embedded game, install steps)
+tools/install-native.sh   one-command native install: dependencies, build, run
 server/server.js          static host, co-op relay, native launch endpoints
 cpp/                      the native C++/OpenGL build (see cpp/README.md)
 tools/bundle.py           inlines the above into one self-contained page

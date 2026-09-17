@@ -751,6 +751,20 @@ body.in-mission #screen-boot{ display:none !important; }
 .squad-empty{ font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:rgba(108,139,160,.7); }
 @media (max-width: 900px){ .coop-body{ grid-template-columns:1fr; } }
 
+/* Shown only while the game is in a frame that doesn't hold keyboard
+   focus (see main.js): the keys genuinely do nothing until it's clicked,
+   so say so instead of letting it read as a broken build. */
+.focus-nag{
+  display:none; margin-top:14px; padding:9px 14px;
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.16em;
+  color:var(--amber); border:1px solid rgba(255,180,84,.45);
+  background:rgba(255,180,84,.08);
+  animation: nagPulse 1.8s ease-in-out infinite;
+}
+body.needs-focus .focus-nag{ display:inline-block; }
+@keyframes nagPulse{ 50%{ border-color:rgba(255,180,84,.95); } }
+@media (prefers-reduced-motion: reduce){ .focus-nag{ animation:none; } }
+
 
 /* ==== src/css/fps.css ==== */
 /* ============================================================
@@ -1616,7 +1630,8 @@ body.in-mission #vignette{ opacity:.55; }
   <section class="screen active" id="screen-boot">
     <div class="boot-wrap">
       <pre id="boot-log"></pre>
-      <div class="boot-skip">PRESS ANY KEY TO SKIP</div>
+      <div class="boot-skip">PRESS ANY KEY &mdash; OR CLICK &mdash; TO SKIP</div>
+      <div class="focus-nag">CLICK ANYWHERE TO GIVE THIS WINDOW THE KEYBOARD</div>
     </div>
   </section>
 
@@ -14514,6 +14529,26 @@ void main(){
     // Skipping the POST sequence is the first thing the cursor can do.
     document.addEventListener('pointerdown', () => SF.ui.skipBoot());
     document.addEventListener('keydown', () => SF.ui.skipBoot());
+
+    // Keyboard focus. A page embedded in a frame - a preview pane, the
+    // launcher, anything that iframes the game - gets no key events at
+    // all until that frame is focused, which is why "PRESS ANY KEY" can
+    // look like it does nothing while the mouse still works. Ask for
+    // focus on load and take it back on every pointer contact, and tell
+    // the player to click if we still don't have it a moment later,
+    // rather than leaving a dead keyboard unexplained.
+    const grab = () => { try { window.focus(); } catch (e) {} };
+    grab();
+    document.addEventListener('pointerdown', grab);
+    window.addEventListener('focus', () => document.body.classList.remove('needs-focus'));
+    window.addEventListener('blur', () => {
+      if (window.self !== window.top) document.body.classList.add('needs-focus');
+    });
+    if (window.self !== window.top) {
+      setTimeout(() => {
+        if (!document.hasFocus()) document.body.classList.add('needs-focus');
+      }, 700);
+    }
 
     SF.ui.runBoot();
   }

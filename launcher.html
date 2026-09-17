@@ -1,0 +1,697 @@
+<title>Erebus Cradle Launcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   EREBUS CRADLE — launcher.
+
+   One screen: the plate that opens the game, and the two ways to
+   play it. Committed to a single dark look on purpose — it is a
+   ship console, and a light version of it would be a different
+   object — so every colour is painted explicitly and nothing is
+   left to the host's theme.
+   ============================================================ */
+
+:root{
+  --void:      #05080f;
+  --void-2:    #081120;
+  --plate:     #0a1524;
+  --line:      rgba(94,234,255,.22);
+  --line-hot:  rgba(94,234,255,.75);
+  --cyan:      #5eeaff;
+  --ice:       #e6f7ff;
+  --ink:       #b9d6e6;
+  --ink-dim:   #6c8ba0;
+  --amber:     #ffb454;
+  --lime:      #7dff9b;
+  --blood:     #ff4d5e;
+  --ui:   'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Share Tech Mono', ui-monospace, 'Courier New', monospace;
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ height:100%; }
+
+body{
+  margin:0;
+  font-family:var(--ui);
+  color:var(--ink);
+  background:
+    radial-gradient(1200px 700px at 50% -12%, #0e2438 0%, transparent 62%),
+    radial-gradient(900px 620px at 88% 112%, #131a34 0%, transparent 58%),
+    var(--void);
+  -webkit-font-smoothing:antialiased;
+}
+
+#stars{ position:fixed; inset:0; z-index:0; display:block; }
+
+/* the horizon grid, the one piece of ambience worth the pixels */
+.floor{
+  position:fixed; left:0; right:0; bottom:0; height:40vh; z-index:0; pointer-events:none;
+  background-image:
+    linear-gradient(rgba(94,234,255,.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94,234,255,.14) 1px, transparent 1px);
+  background-size:100% 40px, 40px 100%;
+  transform:perspective(340px) rotateX(72deg);
+  transform-origin:bottom center;
+  mask-image:linear-gradient(to top, rgba(0,0,0,.8), transparent 76%);
+  -webkit-mask-image:linear-gradient(to top, rgba(0,0,0,.8), transparent 76%);
+  opacity:.45;
+  animation:floorDrift 14s linear infinite;
+}
+@keyframes floorDrift{ from{ background-position:0 0, 0 0; } to{ background-position:0 40px, 0 0; } }
+
+.wrap{
+  position:relative; z-index:1;
+  width:100%; max-width:1020px; margin:0 auto;
+  padding-inline:16px; padding-block: clamp(26px, 6vh, 64px) 40px;
+  display:flex; flex-direction:column; gap:26px;
+}
+
+.eyebrow{
+  margin:0; text-align:center;
+  font-family:var(--mono); font-size:11px; letter-spacing:.42em;
+  color:var(--ink-dim); text-indent:.42em;
+}
+
+/* ============ the plate ============ */
+
+.launch-bar{
+  position:relative;
+  display:grid; grid-template-columns:minmax(110px, 25%) 1fr auto;
+  align-items:stretch; gap:clamp(10px, 2.6vw, 28px);
+  width:100%; padding:16px clamp(14px, 2.4vw, 22px);
+  font-family:var(--ui); color:inherit; text-align:left; cursor:pointer;
+  background:
+    radial-gradient(120% 160% at 50% -20%, rgba(94,234,255,.16), transparent 62%),
+    linear-gradient(180deg, rgba(11,26,45,.94), rgba(4,9,18,.97));
+  border:1px solid rgba(94,234,255,.55);
+  clip-path:polygon(24px 0, 100% 0, 100% calc(100% - 24px), calc(100% - 24px) 100%, 0 100%, 0 24px);
+  box-shadow:0 0 26px rgba(94,234,255,.20), inset 0 0 44px rgba(20,74,116,.40);
+  transition:border-color .2s, box-shadow .2s, transform .14s;
+}
+.launch-bar::before{
+  content:''; position:absolute; inset:6px; pointer-events:none;
+  border:1px solid rgba(94,234,255,.20);
+  clip-path:polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+}
+.launch-bar::after{
+  content:''; position:absolute; inset:0; opacity:0; pointer-events:none;
+  background:linear-gradient(105deg, transparent 38%, rgba(190,240,255,.16) 50%, transparent 62%);
+}
+.launch-bar:hover, .launch-bar:focus-visible{
+  transform:translateY(-2px); outline:none;
+  border-color:rgba(160,240,255,.95);
+  box-shadow:0 0 44px rgba(94,234,255,.38), inset 0 0 52px rgba(28,102,150,.50);
+}
+.launch-bar:hover::after{ animation:lbSweep .9s ease-out; }
+@keyframes lbSweep{ from{ opacity:.9; transform:translateX(-28%); } to{ opacity:0; transform:translateX(28%); } }
+.launch-bar:active{ transform:translateY(0); }
+
+.lb-art{
+  position:relative; display:block; overflow:hidden; align-self:stretch;
+  min-height:clamp(78px, 13vw, 132px);
+  border:1px solid rgba(94,234,255,.40);
+  clip-path:polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  box-shadow:inset 0 0 22px rgba(0,0,0,.65);
+  transition:filter .2s, border-color .2s;
+}
+.lb-art svg{ display:block; width:100%; height:100%; }
+.lb-art::after{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px),
+    linear-gradient(180deg, rgba(94,234,255,.10), transparent 55%);
+}
+.launch-bar:hover .lb-art{ filter:saturate(1.25) brightness(1.12); border-color:rgba(160,240,255,.8); }
+
+.lb-body{ display:flex; flex-direction:column; align-items:center; justify-content:center;
+  align-self:center; gap:4px; min-width:0; }
+
+.lb-crest{
+  display:block; width:16px; height:22px; margin-bottom:-4px;
+  background:linear-gradient(180deg, #eafcff, #5eeaff 45%, rgba(94,234,255,0));
+  clip-path:polygon(50% 0, 100% 34%, 50% 100%, 0 34%);
+  filter:drop-shadow(0 0 7px rgba(94,234,255,.95));
+}
+.lb-word{
+  font-size:clamp(24px, 5vw, 46px); font-weight:700; letter-spacing:.07em; line-height:1;
+  background:linear-gradient(180deg, #ffffff 8%, #cfeeff 42%, #6fb6d8 100%);
+  -webkit-background-clip:text; background-clip:text;
+  color:transparent; -webkit-text-fill-color:transparent;
+  text-shadow:0 0 22px rgba(94,234,255,.35); white-space:nowrap;
+}
+.lb-sub{
+  display:flex; align-items:center; gap:10px;
+  font-size:clamp(10px, 1.7vw, 16px); letter-spacing:.46em; text-indent:.46em;
+  color:#a9dcef; white-space:nowrap;
+}
+.lb-sub::before, .lb-sub::after{
+  content:''; width:clamp(10px, 3vw, 30px); height:1px;
+  background:linear-gradient(90deg, transparent, rgba(94,234,255,.7));
+}
+.lb-sub::after{ background:linear-gradient(90deg, rgba(94,234,255,.7), transparent); }
+.lb-cta{
+  margin-top:8px; padding-top:8px; width:min(100%, 320px); text-align:center;
+  border-top:1px solid rgba(94,234,255,.22);
+  font-size:clamp(10px, 1.5vw, 13px); font-weight:600;
+  letter-spacing:.34em; text-indent:.34em; color:#dff4ff; white-space:nowrap;
+}
+.lb-status{
+  font-family:var(--mono); font-size:10px; letter-spacing:.14em;
+  color:var(--ink-dim); text-align:center; min-height:12px;
+}
+
+.lb-rig{
+  position:relative; display:grid; place-items:center; align-self:stretch;
+  padding:clamp(8px, 1.4vw, 14px) clamp(12px, 2.2vw, 24px);
+  background:linear-gradient(150deg, rgba(150,190,220,.26), rgba(10,24,40,.75) 42%, rgba(120,170,205,.20));
+  border:1px solid rgba(94,234,255,.38);
+  clip-path:polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  box-shadow:inset 0 0 20px rgba(0,0,0,.55);
+  transition:border-color .2s;
+}
+.launch-bar:hover .lb-rig, .launch-bar:focus-visible .lb-rig{ border-color:rgba(160,240,255,.75); }
+.lb-ticks{ position:absolute; left:8px; bottom:7px; display:flex; gap:3px; }
+.lb-ticks i{ width:3px; height:8px; background:rgba(94,234,255,.55); }
+.lb-ticks i:nth-child(1){ height:5px; }
+.lb-ticks i:nth-child(4){ height:11px; background:rgba(190,245,255,.9); }
+
+.lb-play{
+  position:relative; display:grid; place-items:center;
+  width:clamp(54px, 11vw, 98px); aspect-ratio:1; border-radius:50%;
+  background:radial-gradient(circle at 50% 32%, #7fd8ff 0%, #1f8ff0 42%, #0a3c7a 78%, #062647 100%);
+  box-shadow:0 0 0 3px rgba(4,12,24,.9), 0 0 0 5px rgba(94,234,255,.55),
+             0 0 26px rgba(60,170,255,.55), inset 0 0 18px rgba(230,250,255,.35);
+  transition:transform .18s, box-shadow .2s;
+}
+.lb-play::before{
+  content:''; position:absolute; inset:-14px; border-radius:50%;
+  border:2px dashed rgba(94,234,255,.55);
+  animation:lbSpin 14s linear infinite;
+}
+.lb-play::after{
+  content:''; position:absolute; inset:-22px; border-radius:50%;
+  border:1px solid rgba(94,234,255,.22);
+}
+.lb-play-tri{
+  width:0; height:0; margin-left:14%;
+  border-left:clamp(16px, 3.4vw, 30px) solid #ffffff;
+  border-top:clamp(10px, 2.1vw, 19px) solid transparent;
+  border-bottom:clamp(10px, 2.1vw, 19px) solid transparent;
+  filter:drop-shadow(0 0 8px rgba(190,240,255,.8));
+}
+.launch-bar:hover .lb-play, .launch-bar:focus-visible .lb-play{
+  transform:scale(1.06);
+  box-shadow:0 0 0 3px rgba(4,12,24,.9), 0 0 0 6px rgba(160,240,255,.9),
+             0 0 40px rgba(94,200,255,.8), inset 0 0 22px rgba(240,253,255,.5);
+}
+.launch-bar:hover .lb-play::before{ animation-duration:4s; border-color:rgba(190,245,255,.85); }
+@keyframes lbSpin{ to{ transform:rotate(360deg); } }
+.launch-bar.is-busy .lb-play{ animation:lbPulse 1s ease-in-out infinite; }
+@keyframes lbPulse{ 50%{ transform:scale(1.1); filter:brightness(1.3); } }
+
+.keyline{
+  margin:0; text-align:center; font-size:13px; color:var(--ink-dim); letter-spacing:.06em;
+}
+kbd{
+  font-family:var(--mono); font-size:12px; color:var(--cyan);
+  border:1px solid var(--line); border-bottom-width:2px;
+  padding:2px 7px; background:rgba(94,234,255,.06);
+}
+
+/* ============ the two builds ============ */
+
+.rails{ display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:18px; }
+
+.rail{
+  position:relative; padding:20px 20px 22px;
+  background:linear-gradient(180deg, rgba(10,21,36,.82), rgba(5,10,20,.9));
+  border:1px solid var(--line);
+  clip-path:polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+}
+.rail h2{
+  margin:0 0 4px; font-size:15px; font-weight:700; letter-spacing:.2em; color:var(--ice);
+  text-wrap:balance;
+}
+.rail .tag{
+  display:block; margin-bottom:16px;
+  font-family:var(--mono); font-size:11px; letter-spacing:.2em; color:var(--ink-dim);
+}
+.rail p{ margin:0 0 14px; font-size:14px; line-height:1.65; color:var(--ink); }
+
+.facts{ margin:0 0 4px; padding:0; list-style:none; display:grid; gap:7px; }
+.facts li{
+  display:grid; grid-template-columns:auto 1fr; gap:10px; align-items:baseline;
+  font-size:13px; color:var(--ink);
+}
+.facts b{
+  font-family:var(--mono); font-size:11px; font-weight:400; letter-spacing:.14em;
+  color:var(--cyan); white-space:nowrap;
+}
+
+/* controls, the detail that only this game has */
+.keys{ width:100%; border-collapse:collapse; margin-top:6px; font-size:13px; }
+.keys td{ padding:5px 0; border-top:1px solid rgba(94,234,255,.10); color:var(--ink); }
+.keys td:first-child{
+  width:42%; font-family:var(--mono); font-size:11px; letter-spacing:.1em; color:var(--cyan);
+}
+
+/* command blocks */
+.cmd{
+  display:flex; align-items:flex-start; gap:10px; margin:8px 0;
+  padding:9px 11px; background:rgba(94,234,255,.05);
+  border:1px solid var(--line); border-left:2px solid var(--line-hot);
+}
+.cmd code{
+  flex:1; font-family:var(--mono); font-size:12px; line-height:1.5; color:var(--cyan);
+  word-break:break-all; white-space:pre-wrap;
+}
+.step{
+  display:block; margin-top:14px;
+  font-family:var(--mono); font-size:10px; letter-spacing:.2em; color:var(--ink-dim);
+}
+
+.btn{
+  font-family:var(--ui); font-weight:600; font-size:12px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--cyan); background:linear-gradient(180deg, rgba(94,234,255,.10), rgba(94,234,255,.02));
+  border:1px solid var(--line); padding:9px 16px; cursor:pointer;
+  clip-path:polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition:color .16s, background .16s, border-color .16s;
+}
+.btn:hover:not(:disabled), .btn:focus-visible{
+  color:#eafcff; border-color:var(--line-hot);
+  background:linear-gradient(180deg, rgba(94,234,255,.24), rgba(94,234,255,.06)); outline:none;
+}
+.btn:disabled{ color:var(--ink-dim); border-color:rgba(108,139,160,.28); cursor:default; opacity:.6; }
+.btn-sm{ font-size:10px; padding:5px 10px; letter-spacing:.12em; }
+.btn-major{
+  color:var(--amber); border-color:rgba(255,180,84,.45);
+  background:linear-gradient(180deg, rgba(255,180,84,.14), rgba(255,180,84,.02));
+}
+.btn-major:hover:not(:disabled), .btn-major:focus-visible{
+  color:#fff3e0; border-color:rgba(255,180,84,.95);
+  background:linear-gradient(180deg, rgba(255,180,84,.3), rgba(255,180,84,.06));
+}
+
+.host{
+  display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+  margin-top:16px; padding-top:14px; border-top:1px solid rgba(94,234,255,.14);
+}
+.chip{
+  display:inline-flex; align-items:center; gap:7px;
+  font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--ink-dim);
+}
+.chip::before{
+  content:''; width:7px; height:7px; border-radius:50%;
+  background:var(--ink-dim); box-shadow:0 0 8px currentColor;
+}
+.chip.ok{ color:var(--lime); } .chip.ok::before{ background:var(--lime); }
+.chip.warn{ color:var(--amber); } .chip.warn::before{ background:var(--amber); }
+.chip.bad{ color:var(--blood); } .chip.bad::before{ background:var(--blood); }
+.port{
+  width:74px; font-family:var(--mono); font-size:12px; color:var(--cyan);
+  background:rgba(94,234,255,.05); border:1px solid var(--line); padding:6px 8px;
+}
+.port:focus{ outline:none; border-color:var(--line-hot); }
+label.port-l{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--ink-dim); }
+
+.foot{
+  margin:0; text-align:center; font-family:var(--mono); font-size:10px;
+  letter-spacing:.24em; color:var(--ink-dim);
+}
+
+/* ============ the game, once it is running ============ */
+
+#stage{ position:fixed; inset:0; z-index:50; display:flex; flex-direction:column; background:#02040a; }
+/* display:flex would otherwise beat the skeleton's [hidden] rule and
+   leave the empty stage sitting over the launcher. */
+#stage[hidden]{ display:none; }
+#stage iframe{ flex:1; width:100%; border:0; display:block; }
+.stage-bar{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:8px 14px; padding-bottom:calc(8px + env(safe-area-inset-bottom, 0px));
+  background:#060d18; border-top:1px solid var(--line);
+  font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--ink-dim);
+}
+.stage-bar .grow{ flex:1; min-width:120px; }
+.stage-nag{ color:var(--amber); }
+
+@media (max-width: 560px){
+  .launch-bar{ grid-template-columns:1fr auto; padding:14px; }
+  .lb-art{ display:none; }
+  .lb-play::after, .lb-ticks{ display:none; }
+  .lb-rig{ padding:8px 12px; }
+}
+@media (prefers-reduced-motion: reduce){
+  .lb-play::before, .launch-bar.is-busy .lb-play, .floor{ animation:none; }
+  .launch-bar:hover::after{ animation:none; }
+}
+</style>
+
+<canvas id="stars" aria-hidden="true"></canvas>
+<div class="floor" aria-hidden="true"></div>
+
+<div class="wrap">
+  <p class="eyebrow">ARK RECOVERY DIVISION // CLEARANCE OMEGA</p>
+
+  <button class="launch-bar" id="launch" aria-describedby="lb-status">
+    <span class="lb-art" aria-hidden="true">
+      <svg viewBox="0 0 200 150" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#071324"/>
+            <stop offset=".5" stop-color="#14405c"/>
+            <stop offset="1" stop-color="#0b2740"/>
+          </linearGradient>
+          <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#e8fbff" stop-opacity="0"/>
+            <stop offset=".42" stop-color="#cdf3ff" stop-opacity=".62"/>
+            <stop offset="1" stop-color="#5eeaff" stop-opacity=".05"/>
+          </linearGradient>
+          <radialGradient id="halo">
+            <stop offset="0" stop-color="#bff0ff" stop-opacity=".8"/>
+            <stop offset="1" stop-color="#bff0ff" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#9fd8ef" stop-opacity=".55"/>
+            <stop offset="1" stop-color="#0d2a42" stop-opacity=".9"/>
+          </linearGradient>
+        </defs>
+        <rect width="200" height="150" fill="url(#sky)"/>
+        <circle cx="150" cy="26" r="30" fill="#31607f" opacity=".55"/>
+        <circle cx="143" cy="20" r="26" fill="#0c2135" opacity=".45"/>
+        <ellipse cx="150" cy="26" rx="46" ry="7" fill="none" stroke="#9fd8ef" stroke-opacity=".35" stroke-width="1.4"/>
+        <g fill="#dff4ff" opacity=".75">
+          <circle cx="24" cy="18" r=".8"/><circle cx="58" cy="9" r=".6"/><circle cx="82" cy="28" r=".7"/>
+          <circle cx="14" cy="46" r=".5"/><circle cx="104" cy="14" r=".6"/><circle cx="186" cy="62" r=".6"/>
+        </g>
+        <rect x="93" y="0" width="14" height="150" fill="url(#beam)"/>
+        <ellipse cx="100" cy="66" rx="30" ry="10" fill="url(#halo)" opacity=".7"/>
+        <g fill="#0a1a2b" stroke="#7fd8ff" stroke-opacity=".7" stroke-width="1">
+          <ellipse cx="100" cy="58" rx="42" ry="8"/>
+          <path d="M64 60 L78 74 L86 60 Z"/>
+          <path d="M136 60 L122 74 L114 60 Z"/>
+        </g>
+        <ellipse cx="100" cy="58" rx="12" ry="3" fill="#bff0ff" opacity=".9"/>
+        <path d="M0 96 L34 74 L58 90 L82 78 L112 96 L146 80 L200 100 L200 150 L0 150 Z" fill="#12314a" opacity=".85"/>
+        <path d="M0 112 L40 96 L74 110 L118 98 L160 112 L200 104 L200 150 L0 150 Z" fill="#0b2237"/>
+        <rect x="0" y="118" width="200" height="32" fill="url(#water)"/>
+        <g stroke="#cdf3ff" stroke-opacity=".5" stroke-width="1">
+          <line x1="86" y1="124" x2="114" y2="124"/>
+          <line x1="90" y1="132" x2="110" y2="132"/>
+          <line x1="82" y1="140" x2="118" y2="140"/>
+        </g>
+        <path d="M0 122 L14 104 L34 108 L44 126 L0 150 Z" fill="#04090f"/>
+        <g fill="#04090f">
+          <circle cx="22" cy="92" r="3.1"/>
+          <path d="M18.6 96 L25.4 96 L28 112 L16 112 Z"/>
+          <path d="M16 112 L20 112 L20 122 L17 122 Z"/>
+          <path d="M24 112 L28 112 L27 122 L24 122 Z"/>
+        </g>
+        <path d="M22 95 L31 100 L28 114 L26 113 Z" fill="#0a1725"/>
+      </svg>
+    </span>
+
+    <span class="lb-body">
+      <span class="lb-crest" aria-hidden="true"></span>
+      <span class="lb-word">EREBUS</span>
+      <span class="lb-sub">CRADLE</span>
+      <span class="lb-cta">LAUNCH GAME</span>
+      <span class="lb-status" id="lb-status">WEBGL BUILD &mdash; OPENS IN THIS PAGE</span>
+    </span>
+
+    <span class="lb-rig" aria-hidden="true">
+      <span class="lb-play"><span class="lb-play-tri"></span></span>
+      <span class="lb-ticks"><i></i><i></i><i></i><i></i></span>
+    </span>
+  </button>
+
+  <p class="keyline">Click the plate, or press <kbd>Enter</kbd>. Once the game is up, click it once so the keyboard reaches it &mdash; a page inside a frame gets no key presses until it is clicked.</p>
+
+  <div class="rails">
+    <article class="rail">
+      <h2>PLAY IT HERE</h2>
+      <span class="tag">WEBGL2 &middot; NOTHING TO INSTALL</span>
+      <p>The full browser build runs inside this page: sixteen missions aboard the ark,
+        three doctrines, the Conductor at the end of them.</p>
+      <ul class="facts">
+        <li><b>ENGINE</b><span>three.js r147, hand-rolled post chain, adaptive quality</span></li>
+        <li><b>ASSETS</b><span>none &mdash; every surface is generated at load time</span></li>
+        <li><b>NEEDS</b><span>WebGL2 and a real GPU</span></li>
+        <li><b>CO-OP</b><span>up to four, when served from the project host</span></li>
+      </ul>
+      <table class="keys">
+        <tr><td>W A S D</td><td>Move</td></tr>
+        <tr><td>Mouse</td><td>Look &mdash; left fires, right aims</td></tr>
+        <tr><td>Shift / Ctrl / Space</td><td>Sprint, crouch, jump</td></tr>
+        <tr><td>R</td><td>Reload</td></tr>
+        <tr><td>Q / E</td><td>Field ability</td></tr>
+        <tr><td>Esc</td><td>Pause, or release the pointer</td></tr>
+      </table>
+    </article>
+
+    <article class="rail">
+      <h2>INSTALL THE DESKTOP BUILD</h2>
+      <span class="tag">C++17 &middot; OPENGL 4.1 &middot; NATIVE</span>
+      <p>The same game compiled: physically based shading, cascaded shadows, bloom and
+        depth of field, flown ship to planet to mission. Three commands, then this page
+        can launch it for you.</p>
+
+      <span class="step">01 &mdash; GET IT AND BUILD IT</span>
+      <div class="cmd"><code id="c1">git clone https://github.com/colleenneug/Claude-01.git erebus &amp;&amp; cd erebus
+bash tools/install-native.sh</code><button class="btn btn-sm" data-copy="c1">COPY</button></div>
+
+      <span class="step">02 &mdash; OR BUILD IT BY HAND</span>
+      <div class="cmd"><code id="c2">cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build cpp/build -j</code><button class="btn btn-sm" data-copy="c2">COPY</button></div>
+
+      <span class="step">03 &mdash; LET THIS PAGE LAUNCH IT</span>
+      <div class="cmd"><code id="c3">node server/server.js</code><button class="btn btn-sm" data-copy="c3">COPY</button></div>
+
+      <div class="host">
+        <span class="chip" id="host-chip">LOOKING FOR A LOCAL HOST</span>
+        <span class="grow"></span>
+        <label class="port-l" for="port">PORT</label>
+        <input class="port" id="port" value="8080" inputmode="numeric" autocomplete="off" />
+        <button class="btn btn-sm" id="recheck">RECHECK</button>
+        <button class="btn btn-major" id="launch-native" disabled>LAUNCH NATIVE</button>
+      </div>
+    </article>
+  </div>
+
+  <p class="foot">EREBUS CRADLE // SIGNAL LOST &middot; TWO BUILDS, ONE GAME</p>
+</div>
+
+<div id="stage" hidden>
+  <iframe id="frame" title="Erebus Cradle" allow="pointer-lock; fullscreen; autoplay; gamepad"></iframe>
+  <div class="stage-bar">
+    <span class="grow" id="stage-note">Click the game once to give it the keyboard. Esc releases the pointer.</span>
+    <button class="btn btn-sm" id="reload-game">RESTART</button>
+    <button class="btn btn-sm" id="close-game">BACK TO LAUNCHER</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- starfield ---------- */
+  var cv = document.getElementById('stars');
+  var ctx = cv.getContext('2d');
+  var stars = [];
+  function sizeStars() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.floor(innerWidth * dpr);
+    cv.height = Math.floor(innerHeight * dpr);
+    cv.style.width = innerWidth + 'px';
+    cv.style.height = innerHeight + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    stars = [];
+    var n = Math.round((innerWidth * innerHeight) / 9000);
+    for (var i = 0; i < n; i++) {
+      stars.push({
+        x: Math.random() * innerWidth, y: Math.random() * innerHeight,
+        r: Math.random() * 1.2 + .25, a: Math.random() * .6 + .2,
+        t: Math.random() * 6.28, s: Math.random() * .9 + .25
+      });
+    }
+  }
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function drawStars(now) {
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      var a = still ? s.a : s.a * (0.65 + 0.35 * Math.sin(s.t + now / 900 * s.s));
+      ctx.globalAlpha = a;
+      ctx.fillStyle = i % 11 === 0 ? '#9fe8ff' : '#dff4ff';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, 6.283);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (!still) requestAnimationFrame(drawStars);
+  }
+  sizeStars();
+  requestAnimationFrame(drawStars);
+  addEventListener('resize', function () { sizeStars(); if (still) drawStars(0); });
+
+  /* ---------- the game, opened in this page ----------
+
+     The browser build ships beside this page as game.html. Opened from a
+     checkout instead, that file isn't there and index.html is the game,
+     so resolve it once rather than hard-coding either. */
+  var stage = document.getElementById('stage');
+  var frame = document.getElementById('frame');
+  var note = document.getElementById('stage-note');
+  var plate = document.getElementById('launch');
+  var gameSrc = null;
+
+  function resolveGame() {
+    if (gameSrc) return Promise.resolve(gameSrc);
+    return fetch('game.html', { method: 'HEAD' })
+      .then(function (r) { gameSrc = r.ok ? 'game.html' : 'index.html'; return gameSrc; })
+      .catch(function () { gameSrc = 'index.html'; return gameSrc; });
+  }
+
+  /* A page in a frame receives no key events until the frame has focus,
+     which is what makes a keyboard look dead in a preview pane. Take the
+     focus on open and on every click, and forward anything that still
+     lands out here into the game rather than dropping it. */
+  function focusGame() {
+    try { frame.contentWindow.focus(); } catch (e) {}
+    try { frame.focus(); } catch (e) {}
+  }
+
+  function openGame() {
+    plate.classList.add('is-busy');
+    resolveGame().then(function (src) {
+      if (frame.getAttribute('src') !== src) frame.setAttribute('src', src);
+      stage.hidden = false;
+      plate.classList.remove('is-busy');
+      setTimeout(focusGame, 60);
+      setTimeout(focusGame, 400);
+    });
+  }
+
+  function closeGame() {
+    stage.hidden = true;
+    plate.focus();
+  }
+
+  plate.addEventListener('click', openGame);
+  document.getElementById('close-game').addEventListener('click', closeGame);
+  document.getElementById('reload-game').addEventListener('click', function () {
+    frame.setAttribute('src', frame.getAttribute('src'));
+    setTimeout(focusGame, 80);
+  });
+  stage.addEventListener('pointerdown', focusGame);
+
+  addEventListener('keydown', function (e) {
+    if (stage.hidden) {
+      if ((e.key === 'Enter' || e.key === ' ') && document.activeElement === document.body) {
+        e.preventDefault();
+        openGame();
+      }
+      return;
+    }
+    // The game is up but the key came to the launcher, so the frame lost
+    // focus. Hand the key on, and take the focus back for the next one.
+    try {
+      var doc = frame.contentDocument;
+      if (doc) {
+        doc.dispatchEvent(new KeyboardEvent('keydown', {
+          key: e.key, code: e.code, keyCode: e.keyCode, which: e.keyCode, bubbles: true
+        }));
+        note.textContent = 'Keyboard handed to the game. Click it once to keep it there.';
+        note.classList.add('stage-nag');
+      }
+    } catch (err) {}
+    focusGame();
+  });
+
+  /* ---------- the native build ---------- */
+
+  var chip = document.getElementById('host-chip');
+  var portIn = document.getElementById('port');
+  var nativeBtn = document.getElementById('launch-native');
+
+  function setChip(text, kind) {
+    chip.textContent = text;
+    chip.className = 'chip' + (kind ? ' ' + kind : '');
+  }
+
+  function host() {
+    var port = (portIn.value || '8080').replace(/[^0-9]/g, '') || '8080';
+    return 'http://localhost:' + port;
+  }
+
+  function probe() {
+    setChip('LOOKING FOR A LOCAL HOST', '');
+    nativeBtn.disabled = true;
+    return fetch(host() + '/api/native', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        if (s.running) {
+          setChip('NATIVE BUILD RUNNING \u2014 PID ' + s.pid, 'ok');
+        } else if (!s.built) {
+          setChip('HOST UP \u2014 NATIVE BUILD NOT COMPILED YET', 'warn');
+        } else if (!s.display) {
+          setChip('HOST UP \u2014 NO DISPLAY ON THAT MACHINE', 'warn');
+        } else {
+          setChip('NATIVE BUILD READY TO LAUNCH', 'ok');
+          nativeBtn.disabled = false;
+        }
+        return s;
+      })
+      .catch(function () {
+        setChip('NO LOCAL HOST \u2014 RUN STEP 03 ON YOUR MACHINE', '');
+        return null;
+      });
+  }
+
+  nativeBtn.addEventListener('click', function () {
+    nativeBtn.disabled = true;
+    setChip('LAUNCHING THE DESKTOP BUILD', '');
+    fetch(host() + '/api/native/launch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },   // a simple request, so no preflight
+      body: '{}'
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.ok) {
+          setChip('NATIVE BUILD RUNNING \u2014 PID ' + d.pid + ' \u2014 CHECK YOUR DESKTOP', 'ok');
+        } else {
+          setChip((d && d.reason ? d.reason.replace(/_/g, ' ') : 'LAUNCH REFUSED'), 'bad');
+          nativeBtn.disabled = false;
+        }
+      })
+      .catch(function () {
+        setChip('THE HOST STOPPED ANSWERING', 'bad');
+        nativeBtn.disabled = false;
+      });
+  });
+
+  document.getElementById('recheck').addEventListener('click', probe);
+  portIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') probe(); });
+  probe();
+
+  /* ---------- copy buttons ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var text = document.getElementById(btn.dataset.copy).textContent;
+      var done = function (ok) {
+        btn.textContent = ok ? 'COPIED' : 'SELECT IT';
+        setTimeout(function () { btn.textContent = 'COPY'; }, 1600);
+      };
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+      } else {
+        done(false);
+      }
+    });
+  });
+})();
+</script>

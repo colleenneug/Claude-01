@@ -94,6 +94,23 @@ function nativeStatus() {
   };
 }
 
+/* The launcher page can also be a published artifact on another origin,
+   so these two endpoints answer cross-origin requests. What guards them
+   is not the origin but the socket: every state-changing path checks
+   loopback() first, so a request only ever starts a process on the
+   machine it came from, and the one process it can start is this
+   project's own game binary. Chrome also asks permission before a public
+   page may reach a private address at all, which is the private-network
+   header below. */
+function cors(req, res) {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+}
+
 function sendJson(res, code, body) {
   const data = JSON.stringify(body);
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -167,6 +184,17 @@ function launchNative(req, res, body) {
 
 function api(req, res) {
   const route = req.url.split('?')[0];
+  cors(req, res);
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '600'
+    });
+    res.end();
+    return;
+  }
 
   if (route === '/api/native' && req.method === 'GET') {
     return sendJson(res, 200, nativeStatus());
