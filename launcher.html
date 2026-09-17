@@ -314,6 +314,12 @@ kbd{
 .console i{ color:var(--blood); font-style:normal; }
 
 #manual{ margin-top:12px; }
+#bootstrap{ margin-top:6px; }
+.tiny{ margin:8px 0 0; font-size:12px; line-height:1.6; color:var(--ink-dim); }
+code.inline{
+  font-family:var(--mono); font-size:11px; color:var(--cyan);
+  background:rgba(94,234,255,.07); border:1px solid var(--line); padding:1px 5px;
+}
 
 .host{
   display:flex; flex-wrap:wrap; align-items:center; gap:10px;
@@ -493,31 +499,38 @@ label.port-l{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; col
       <h2>THE DESKTOP BUILD</h2>
       <span class="tag">C++17 &middot; OPENGL 4.1 &middot; NATIVE</span>
       <p>The same game compiled: physically based shading, cascaded shadows, bloom and
-        depth of field, flown ship to planet to mission. One button installs it, and
-        opens it every time after that.</p>
+        depth of field, flown ship to planet to mission. One button does the whole
+        thing &mdash; finds your machine, installs it if it isn&rsquo;t there, updates it if it
+        has fallen behind, opens it when it&rsquo;s ready.</p>
 
-      <button class="btn btn-major btn-wide" id="native-action" disabled>CHECKING</button>
-      <span class="chip" id="host-chip">LOOKING FOR A LOCAL HOST</span>
+      <button class="btn btn-major btn-wide" id="native-action">PLAY THE DESKTOP BUILD</button>
+      <span class="chip" id="host-chip">READY WHEN YOU ARE</span>
+
+      <!-- the one thing a web page genuinely cannot do for you -->
+      <div id="bootstrap" hidden>
+        <span class="step" id="boot-step">01 &mdash; PASTE THIS ONCE, IN A TERMINAL</span>
+        <div class="cmd"><code id="boot-cmd">git clone https://github.com/colleenneug/Claude-01.git erebus &amp;&amp; cd erebus &amp;&amp; bash tools/install-native.sh --serve</code><button class="btn btn-sm" data-copy="boot-cmd">COPY</button></div>
+        <p class="tiny" id="boot-note">Already have the project? <code class="inline">bash tools/install-native.sh --serve</code> from inside it does the same. It installs what&rsquo;s missing, builds the game, starts the host and opens this page from it &mdash; then the button above takes over.</p>
+      </div>
 
       <pre class="console" id="install-log" hidden aria-live="polite"></pre>
 
       <div class="host">
-        <label class="port-l" for="port">HOST PORT</label>
-        <input class="port" id="port" value="8080" inputmode="numeric" autocomplete="off" />
-        <button class="btn btn-sm" id="recheck">RECHECK</button>
+        <button class="btn btn-sm" id="toggle-manual" aria-expanded="false">DETAILS</button>
         <span class="grow"></span>
-        <button class="btn btn-sm" id="toggle-manual" aria-expanded="false">DO IT BY HAND</button>
+        <label class="port-l" for="port">PORT</label>
+        <input class="port" id="port" value="" placeholder="auto" inputmode="numeric" autocomplete="off" />
+        <button class="btn btn-sm" id="recheck">RESCAN</button>
       </div>
 
       <div id="manual" hidden>
-        <span class="step">01 &mdash; GET THE PROJECT ONTO YOUR MACHINE</span>
-        <div class="cmd"><code id="c1">git clone https://github.com/colleenneug/Claude-01.git erebus &amp;&amp; cd erebus</code><button class="btn btn-sm" data-copy="c1">COPY</button></div>
-
-        <span class="step">02 &mdash; START THE HOST, SO THIS PAGE CAN DO THE REST</span>
-        <div class="cmd"><code id="c2">node server/server.js</code><button class="btn btn-sm" data-copy="c2">COPY</button></div>
-
-        <span class="step">03 &mdash; OR BUILD AND PLAY WITHOUT THIS PAGE AT ALL</span>
-        <div class="cmd"><code id="c3">bash tools/install-native.sh</code><button class="btn btn-sm" data-copy="c3">COPY</button></div>
+        <p class="tiny">The button drives <code class="inline">node server/server.js</code> on your own
+          machine &mdash; nothing here can reach a machine that isn&rsquo;t running it, which is why the
+          paste above exists. Ports 8080, 8081, 8000, 3000 and 9000 are scanned automatically.</p>
+        <span class="step">BUILD IT YOURSELF</span>
+        <div class="cmd"><code id="c2">cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build cpp/build -j</code><button class="btn btn-sm" data-copy="c2">COPY</button></div>
+        <span class="step">RUN IT YOURSELF</span>
+        <div class="cmd"><code id="c3">./cpp/build/erebus_native</code><button class="btn btn-sm" data-copy="c3">COPY</button></div>
       </div>
     </article>
   </div>
@@ -663,20 +676,18 @@ label.port-l{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; col
     focusGame();
   });
 
-  /* ---------- the native build: install it, then open it ----------
+  /* ---------- the desktop build: one button, whole chain ----------
 
-     One button, four states. It asks the local host what it has, and
-     the label is whatever the next useful action is:
+     Press it once and it does every step there is: find the host on
+     this machine, install the game if it is not there, update it if it
+     has fallen behind the source, then open it. Nothing to press twice.
 
-       no host          nothing it can do, and it says which command fixes that
-       not installed    INSTALL THE GAME  -> runs tools/install-native.sh here
-       installed        OPEN THE GAME     -> spawns the binary
-       out of date      OPEN THE GAME, but asks first: the sources have
-                        changed since the build, so it must be updated
-
-     The install is the project's own script, streamed back line by line,
-     because a build that takes minutes with no output is indistinguishable
-     from one that has hung. */
+     The one step a web page genuinely cannot do is start the host in
+     the first place — no page may run a process on your machine, and no
+     amount of code changes that. So that step collapses to a single
+     line, copied to the clipboard the moment it is needed, and the page
+     keeps watching: paste it, and the chain picks itself back up and
+     carries on to the game without another press. */
 
   var chip = document.getElementById('host-chip');
   var portIn = document.getElementById('port');
@@ -684,56 +695,82 @@ label.port-l{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; col
   var logBox = document.getElementById('install-log');
   var manual = document.getElementById('manual');
   var manualBtn = document.getElementById('toggle-manual');
+  var boot = document.getElementById('bootstrap');
+  var bootNote = document.getElementById('boot-note');
   var ask = document.getElementById('ask');
   var askTitle = document.getElementById('ask-title');
   var askText = document.getElementById('ask-text');
-  var state = null;                 // the last status payload, or null when offline
+
+  var PORTS = [8080, 8081, 8000, 3000, 9000];
+  var base = null;                  // the host we found, e.g. http://localhost:8080
+  var state = null;                 // its last status payload
   var logSince = 0;
-  var polling = 0;
+  var chaining = false;             // a press is working its way through
+  var timers = { log: 0, watch: 0, hunt: 0 };
 
   function setChip(text, kind) {
     chip.textContent = text;
     chip.className = 'chip' + (kind ? ' ' + kind : '');
   }
-
   function setAction(label, enabled, working) {
     action.textContent = label;
     action.disabled = !enabled;
     action.classList.toggle('working', !!working);
   }
-
-  function host() {
-    var port = (portIn.value || '8080').replace(/[^0-9]/g, '') || '8080';
-    return 'http://localhost:' + port;
-  }
-
-  /* Served by the project host itself — on whatever port it was started
-     with — then that is the host to talk to, not the default. Published
-     somewhere else, 8080 stands. */
-  if (/^https?:$/.test(location.protocol) && location.port && location.port !== '443') {
-    portIn.value = location.port;
-  }
-
   function when(iso) {
     if (!iso) return '';
     try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
   }
 
-  /* One place decides what the button says, so the states can't drift. */
-  function render() {
+  /* ---------- finding the host ---------- */
+
+  function ping(url) {
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 1400);
+    return fetch(url + '/api/native', { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (s) { clearTimeout(timer); return { url: url, status: s }; })
+      .catch(function () { clearTimeout(timer); return null; });
+  }
+
+  /* Whatever port it is on, find it: the one typed in the field, the one
+     this page was served from, then the usual suspects, all at once. */
+  function findHost() {
+    var typed = (portIn.value || '').replace(/[^0-9]/g, '');
+    var ports = [];
+    if (typed) ports.push(Number(typed));
+    if (location.port && ports.indexOf(Number(location.port)) < 0) ports.push(Number(location.port));
+    PORTS.forEach(function (p) { if (ports.indexOf(p) < 0) ports.push(p); });
+
+    return Promise.all(ports.map(function (p) { return ping('http://localhost:' + p); }))
+      .then(function (hits) {
+        for (var i = 0; i < hits.length; i++) {
+          if (hits[i]) {
+            base = hits[i].url;
+            state = hits[i].status;
+            if (!portIn.value) portIn.value = base.split(':').pop();
+            return state;
+          }
+        }
+        base = null; state = null;
+        return null;
+      });
+  }
+
+  function refresh() {
+    if (!base) return findHost();
+    return fetch(base + '/api/native', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (s) { state = s; return s; })
+      .catch(function () { base = null; state = null; return null; });
+  }
+
+  /* ---------- what the panel says when nothing is happening ---------- */
+
+  function idle() {
     if (!state) {
-      setChip('NO LOCAL HOST \u2014 START IT WITH THE COMMAND UNDER "DO IT BY HAND"', '');
-      setAction('WAITING FOR A LOCAL HOST', false, false);
-      return;
-    }
-    if (state.installing) {
-      setChip('INSTALLING \u2014 THIS TAKES A FEW MINUTES', 'warn');
-      setAction('INSTALLING', false, true);
-      return;
-    }
-    if (!state.built) {
-      setChip('NOT INSTALLED ON THIS MACHINE', 'warn');
-      setAction('INSTALL THE GAME', true, false);
+      setChip('NO HOST ON THIS MACHINE YET', '');
+      setAction('PLAY THE DESKTOP BUILD', true, false);
       return;
     }
     if (state.running) {
@@ -741,28 +778,21 @@ label.port-l{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; col
       setAction('RUNNING', false, false);
       return;
     }
+    if (!state.built) {
+      setChip('NOT INSTALLED \u2014 THE BUTTON INSTALLS IT', 'warn');
+      setAction('PLAY THE DESKTOP BUILD', true, false);
+      return;
+    }
     if (state.stale) {
       setChip('MUST BE UPDATED \u2014 ' + state.staleFile + ' IS NEWER THAN THE BUILD', 'warn');
-      setAction('OPEN THE GAME', true, false);
+      setAction('PLAY THE DESKTOP BUILD', true, false);
       return;
     }
-    if (!state.display) {
-      setChip('INSTALLED, BUT THAT MACHINE HAS NO DISPLAY', 'warn');
-      setAction('OPEN THE GAME', true, false);
-      return;
-    }
-    setChip('INSTALLED ' + (state.builtAt ? '\u2014 BUILT ' + when(state.builtAt) : '') , 'ok');
-    setAction('OPEN THE GAME', true, false);
+    setChip('INSTALLED' + (state.builtAt ? ' \u2014 BUILT ' + when(state.builtAt) : ''), 'ok');
+    setAction('PLAY THE DESKTOP BUILD', true, false);
   }
 
-  function probe() {
-    return fetch(host() + '/api/native', { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (s) { state = s; render(); return s; })
-      .catch(function () { state = null; render(); return null; });
-  }
-
-  /* ---------- the yes/no prompt ---------- */
+  /* ---------- the prompt ---------- */
 
   var askResolve = null;
   function confirmAsk(title, text, yes, no) {
@@ -777,145 +807,186 @@ label.port-l{ font-family:var(--mono); font-size:10px; letter-spacing:.16em; col
   function closeAsk(value) {
     ask.hidden = true;
     if (askResolve) { askResolve(value); askResolve = null; }
-    action.focus();
   }
   document.getElementById('ask-yes').addEventListener('click', function () { closeAsk(true); });
   document.getElementById('ask-no').addEventListener('click', function () { closeAsk(false); });
   ask.addEventListener('click', function (e) { if (e.target === ask) closeAsk(false); });
+  addEventListener('keydown', function (e) { if (!ask.hidden && e.key === 'Escape') closeAsk(false); });
 
-  /* ---------- installing ---------- */
+  /* ---------- the steps, each one resolving when it is done ---------- */
 
-  function showLog(reset) {
-    if (reset) { logBox.textContent = ''; logSince = 0; }
-    logBox.hidden = false;
-  }
-
-  function pollLog() {
-    clearTimeout(polling);
-    fetch(host() + '/api/native/install/log?since=' + logSince, { cache: 'no-store' })
+  function install(headline) {
+    logBox.textContent = ''; logSince = 0; logBox.hidden = false;
+    setChip(headline, 'warn');
+    setAction('WORKING', false, true);
+    return fetch(base + '/api/native/install', { method: 'POST' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.lines && d.lines.length) {
-          logSince = d.from + d.lines.length;
-          logBox.textContent += d.lines.join('\n') + '\n';
-          logBox.scrollTop = logBox.scrollHeight;
-        }
-        state = d.status || state;
-        if (d.running) {
-          render();
-          polling = setTimeout(pollLog, 900);
-          return;
-        }
-        // finished, one way or another
-        probe().then(function () {
-          if (d.code === 0) {
-            setChip('INSTALLED \u2014 PRESS THE BUTTON AGAIN TO PLAY', 'ok');
-          } else if (d.code === 3) {
-            setChip('NEEDS A PASSWORD \u2014 RUN THE SUDO LINE ABOVE, THEN TRY AGAIN', 'bad');
-            manual.hidden = false;
-            manualBtn.setAttribute('aria-expanded', 'true');
-          } else {
-            setChip('INSTALL FAILED \u2014 THE OUTPUT ABOVE SAYS WHY', 'bad');
-          }
-        });
-      })
-      .catch(function () {
-        setChip('LOST THE HOST DURING THE INSTALL', 'bad');
-        state = null;
-        render();
+        if (!d.ok && d.reason !== 'INSTALLING') throw new Error(d.detail || 'refused');
+        return followInstall();
       });
   }
 
-  function install(reason) {
-    showLog(true);
-    setAction('INSTALLING', false, true);
-    setChip(reason || 'STARTING THE INSTALL', 'warn');
-    fetch(host() + '/api/native/install', { method: 'POST' })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (!d.ok && d.reason !== 'INSTALLING') {
-          setChip((d.detail || 'The host refused the install.').toUpperCase(), 'bad');
-          probe();
-          return;
-        }
-        pollLog();
-      })
-      .catch(function () { setChip('THE HOST STOPPED ANSWERING', 'bad'); probe(); });
+  /* Stream the build's own output — minutes of silence is
+     indistinguishable from a hang — and settle when it ends. */
+  function followInstall() {
+    return new Promise(function (resolve, reject) {
+      (function tick() {
+        clearTimeout(timers.log);
+        fetch(base + '/api/native/install/log?since=' + logSince, { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.lines && d.lines.length) {
+              logSince = d.from + d.lines.length;
+              logBox.textContent += d.lines.join('\n') + '\n';
+              logBox.scrollTop = logBox.scrollHeight;
+            }
+            state = d.status || state;
+            if (d.running) { timers.log = setTimeout(tick, 900); return; }
+            if (d.code === 0) resolve();
+            else if (d.code === 3) reject(new Error('PASSWORD'));
+            else reject(new Error('BUILD'));
+          })
+          .catch(function () { reject(new Error('HOST')); });
+      })();
+    });
   }
 
-  /* ---------- opening it ---------- */
-
   function open() {
-    setAction('OPENING', false, true);
-    setChip('LAUNCHING THE DESKTOP BUILD', 'warn');
-    fetch(host() + '/api/native/launch', {
+    setChip('OPENING THE GAME', 'warn');
+    setAction('WORKING', false, true);
+    return fetch(base + '/api/native/launch', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },   // a simple request, so no preflight
       body: '{}'
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d && d.ok) {
-          state = d.status || state;
-          setChip('RUNNING \u2014 PID ' + d.pid + ' \u2014 CHECK YOUR DESKTOP', 'ok');
-          setAction('RUNNING', false, false);
-          watchNative();
-        } else {
-          setChip((d && d.detail ? d.detail : 'The host refused the launch.').toUpperCase(), 'bad');
-          probe();
-        }
-      })
-      .catch(function () { setChip('THE HOST STOPPED ANSWERING', 'bad'); probe(); });
+        if (!d || !d.ok) throw new Error((d && d.detail) || 'The host refused the launch.');
+        state = d.status || state;
+        setChip('RUNNING \u2014 PID ' + d.pid + ' \u2014 CHECK YOUR DESKTOP', 'ok');
+        setAction('RUNNING', false, false);
+        watchNative();
+      });
   }
 
-  /* The game runs on a desktop this page can't see, so poll until it
-     quits and the button goes back to OPEN on its own. */
-  var nativeWatch = 0;
+  /* It runs on a desktop this page can't see, so poll until it quits. */
   function watchNative() {
-    clearInterval(nativeWatch);
-    nativeWatch = setInterval(function () {
-      probe().then(function (s) { if (!s || !s.running) clearInterval(nativeWatch); });
+    clearInterval(timers.watch);
+    timers.watch = setInterval(function () {
+      refresh().then(function (s) {
+        if (!s || !s.running) { clearInterval(timers.watch); if (!chaining) idle(); }
+      });
     }, 4000);
   }
 
-  /* ---------- the one button ---------- */
+  /* ---------- waiting for a host, without making you press again ---------- */
 
-  action.addEventListener('click', function () {
-    if (!state) return;
-    if (!state.built) { install('INSTALLING FOR THE FIRST TIME'); return; }
-
-    if (state.stale) {
-      confirmAsk(
-        'MUST BE UPDATED',
-        'This build is older than the game\u2019s source \u2014 ' + state.staleFile +
-        ' changed after it was compiled' + (state.builtAt ? ' on ' + when(state.builtAt) : '') +
-        '. Update it now? It rebuilds only what changed, then you press the button again to play.',
-        'UPDATE IT', 'OPEN IT ANYWAY'
-      ).then(function (yes) {
-        if (yes) install('UPDATING THE BUILD');
-        else open();
-      });
-      return;
+  function showBootstrap() {
+    boot.hidden = false;
+    var cmd = document.getElementById('boot-cmd').textContent;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(cmd).then(function () {
+        bootNote.innerHTML = '<b style="color:var(--lime)">Copied to your clipboard.</b> ' +
+          'Paste it in a terminal \u2014 it installs what is missing, builds the game, starts the host ' +
+          'and opens this page from it. Leave this tab open: the moment the host answers, ' +
+          'the button carries on by itself.';
+      }, function () {});
     }
-    open();
-  });
+  }
+
+  /* Poll for the host while the paste is happening, then resume. */
+  function waitForHost() {
+    setAction('WAITING FOR YOUR MACHINE', false, true);
+    setChip('PASTE THE LINE BELOW \u2014 I TAKE OVER FROM THERE', 'warn');
+    showBootstrap();
+    clearInterval(timers.hunt);
+    return new Promise(function (resolve) {
+      timers.hunt = setInterval(function () {
+        findHost().then(function (s) {
+          if (!s) return;
+          clearInterval(timers.hunt);
+          boot.hidden = true;
+          resolve(s);
+        });
+      }, 2500);
+    });
+  }
+
+  /* ---------- the button ---------- */
+
+  function play() {
+    if (chaining) return;
+    chaining = true;
+
+    setAction('LOOKING FOR YOUR MACHINE', false, true);
+    setChip('SCANNING FOR A LOCAL HOST', '');
+
+    findHost()
+      .then(function (s) { return s || waitForHost(); })
+      .then(function () {
+        if (state.running) return;                       // already up: nothing to do
+        if (!state.built) return install('INSTALLING \u2014 THIS TAKES A FEW MINUTES').then(refresh);
+        if (!state.stale) return;
+        return confirmAsk(
+          'MUST BE UPDATED',
+          'This build is older than the game\u2019s source \u2014 ' + state.staleFile +
+          ' changed after it was compiled' + (state.builtAt ? ' on ' + when(state.builtAt) : '') +
+          '. Update it first? It rebuilds only what changed, then opens the game.',
+          'UPDATE AND PLAY', 'PLAY THE OLD BUILD'
+        ).then(function (yes) {
+          if (yes) return install('UPDATING \u2014 REBUILDING WHAT CHANGED').then(refresh);
+        });
+      })
+      .then(function () {
+        if (state && state.running) {
+          setChip('ALREADY RUNNING \u2014 PID ' + state.pid + ' \u2014 CHECK YOUR DESKTOP', 'ok');
+          setAction('RUNNING', false, false);
+          watchNative();
+          return;
+        }
+        return open();
+      })
+      .catch(function (err) {
+        var why = err && err.message;
+        if (why === 'PASSWORD') {
+          setChip('THE PACKAGES NEED A PASSWORD \u2014 THE LINE TO RUN IS IN THE OUTPUT ABOVE', 'bad');
+        } else if (why === 'BUILD') {
+          setChip('THE BUILD FAILED \u2014 THE OUTPUT ABOVE SAYS WHY', 'bad');
+        } else if (why === 'HOST') {
+          setChip('LOST THE HOST PART-WAY THROUGH', 'bad');
+          base = null; state = null;
+        } else {
+          setChip(String(why || 'SOMETHING WENT WRONG').toUpperCase(), 'bad');
+        }
+        setAction('TRY AGAIN', true, false);
+      })
+      .then(function () { chaining = false; });
+  }
+
+  action.addEventListener('click', play);
 
   document.getElementById('recheck').addEventListener('click', function () {
-    setChip('LOOKING FOR A LOCAL HOST', '');
-    probe();
+    if (chaining) return;
+    setChip('SCANNING', '');
+    findHost().then(idle);
   });
-  portIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') probe(); });
+  portIn.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { base = null; findHost().then(idle); }
+  });
 
   manualBtn.addEventListener('click', function () {
     manual.hidden = !manual.hidden;
     manualBtn.setAttribute('aria-expanded', String(!manual.hidden));
-    manualBtn.textContent = manual.hidden ? 'DO IT BY HAND' : 'HIDE THE COMMANDS';
+    manualBtn.textContent = manual.hidden ? 'DETAILS' : 'HIDE DETAILS';
   });
 
-  probe().then(function (s) {
-    // An install already running when the page opens (a reload mid-build)
-    // should pick the log back up rather than look idle.
-    if (s && s.installing) { showLog(true); pollLog(); }
+  /* On load: find the host quietly, and pick a running install back up. */
+  findHost().then(function (s) {
+    idle();
+    if (s && s.installing) { logBox.hidden = false; chaining = true; followInstall()
+      .then(function () { chaining = false; return refresh().then(idle); })
+      .catch(function () { chaining = false; idle(); }); }
   });
 
   /* ---------- copy buttons ---------- */

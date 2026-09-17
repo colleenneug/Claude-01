@@ -89,29 +89,41 @@ build it opens in place, and the install steps for the desktop build beside it. 
 it from a checkout, or publish it anywhere — it resolves the game as `game.html` next
 to itself and falls back to `index.html`, so both work.
 
-Its desktop-build panel is one button with four states, driven by whatever
-`node server/server.js` reports about the machine it is running on (the port field
-follows the port the page was served from, and falls back to 8080):
+Its desktop-build panel is one button, and one press runs every step there is:
 
-| State | The button says | What it does |
-|---|---|---|
-| No host answering | WAITING FOR A LOCAL HOST | Nothing — the commands to fix that are one click away under *DO IT BY HAND* |
-| Not compiled | INSTALL THE GAME | Runs `tools/install-native.sh`, streaming its output into the page |
-| Compiled | OPEN THE GAME | Spawns the binary |
-| Source newer than the binary | MUST BE UPDATED | Asks first: update it, or open it anyway |
+1. **Find the host.** Ports 8080, 8081, 8000, 3000 and 9000 are scanned at once, along
+   with the port the page was served from, so there is nothing to configure.
+2. **Install it** if `cpp/build/erebus_native` isn't there — `tools/install-native.sh`,
+   with the build's own output streamed into the page, because minutes of silence and a
+   hang look identical.
+3. **Update it** if the sources are newer than the binary. That one asks first and names
+   the file that changed: update and play, or play the old build.
+4. **Open it.**
 
-That last state is a plain mtime comparison — the newest file under `cpp/src`,
+No step needs a second press. The one thing a page genuinely cannot do is start the host
+in the first place — no page may run a process on your machine — so that step collapses
+to a single line, copied to the clipboard the moment it's needed:
+
+```
+git clone https://github.com/colleenneug/Claude-01.git erebus && cd erebus && bash tools/install-native.sh --serve
+```
+
+That installs what's missing, builds the game, starts the host and opens the launcher
+from it. Leave the original tab open and it picks itself back up: the page keeps
+scanning while you paste, and the moment the host answers it carries on through install
+and launch on its own. `node server/server.js --open` does the same opening on its own.
+
+"Out of date" is a plain mtime comparison — the newest file under `cpp/src`,
 `cpp/shaders`, `cpp/content` or `cpp/CMakeLists.txt` against the binary's own — so a
-changed mission `.cfg` counts as much as changed C++, since both are copied next to
-the binary at build time. An update is an incremental rebuild, usually a second or
-two.
+changed mission `.cfg` counts as much as changed C++, since both are copied next to the
+binary at build time. An update is an incremental rebuild, usually a second or two.
 
 Four endpoints back all of it, and they answer cross-origin requests because the
-launcher can be published somewhere other than the host it asks. What guards them is
-the socket, not the origin: every state-changing path is loopback only, so a request
-can only ever start something on the machine it came from, the one process it can
-start is this project's own binary, and the install runs the same script a person
-runs by hand — nothing from the wire reaches a command line.
+launcher can be published somewhere other than the host it asks. What guards them is the
+socket, not the origin: every state-changing path is loopback only, so a request can
+only ever start something on the machine it came from, the one process it can start is
+this project's own binary, and the install runs the same script a person runs by hand —
+nothing from the wire reaches a command line.
 
 | | |
 |---|---|

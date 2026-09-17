@@ -548,11 +548,32 @@ setInterval(() => {
   }
 }, 10000);
 
+/* Started by the one-line bootstrap, there is nobody watching the
+   terminal for a URL to click, so open the launcher itself. Every
+   platform has its own opener and none of them take a shell string. */
+function openBrowser(url) {
+  const cmd = process.platform === 'darwin' ? 'open'
+            : process.platform === 'win32' ? 'cmd'
+            : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  try {
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    child.on('error', () => log('could not open a browser; visit the URL above'));
+    child.unref();
+  } catch (e) {
+    log('could not open a browser; visit the URL above');
+  }
+}
+
 server.listen(PORT, () => {
   log(`Erebus Cradle server on http://localhost:${PORT}`);
   log(`  game:  http://localhost:${PORT}/`);
   log(`  co-op: ws://localhost:${PORT}/ws`);
-  log(`  native: ${nativeStatus().built ? 'built — the title screen\'s LAUNCH GAME plate can start it' : 'not built — ' + BUILD_CMD}`);
+  log(`  launcher: http://localhost:${PORT}/launcher.html`);
+  log(`  native: ${nativeStatus().built ? 'built — the launcher can start it' : 'not built — the launcher can install it'}`);
+  if (process.argv.includes('--open') || process.env.EREBUS_OPEN) {
+    openBrowser(`http://localhost:${PORT}/launcher.html`);
+  }
 });
 
 module.exports = { server, rooms };

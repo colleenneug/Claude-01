@@ -8,19 +8,20 @@
 #    bash tools/install-native.sh              # build, then play
 #    bash tools/install-native.sh --no-run     # build only
 #    bash tools/install-native.sh --serve      # build, then serve the
-#                                              # browser build so its
-#                                              # LAUNCH GAME plate works
+#                                              # launcher and open it -
+#                                              # the one-line bootstrap
 # ============================================================
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-run=1; serve=0
+run=1; serve=0; noopen=0
 for arg in "$@"; do
   case "$arg" in
     --no-run) run=0 ;;
     --serve)  serve=1; run=0 ;;
+    --no-open) noopen=1 ;;
     -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -99,8 +100,9 @@ echo "built: cpp/build/erebus_native"
 # ---------- run ----------
 if [ "$serve" = 1 ]; then
   if ! have node; then echo "node is not installed; run cpp/build/erebus_native directly" >&2; exit 1; fi
-  say "serving on http://localhost:8080 — open it and click LAUNCH GAME"
-  exec node server/server.js
+  say "serving on http://localhost:8080 — the launcher opens in your browser"
+  if [ "$noopen" = 1 ]; then exec node server/server.js; fi
+  exec node server/server.js --open
 fi
 
 if [ "$run" = 1 ]; then
