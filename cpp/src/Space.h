@@ -64,6 +64,8 @@ public:
   float iblIntensity() const override { return 0.0f; }
   glm::vec3 ambientFill() const override { return glm::vec3(0.012f, 0.014f, 0.022f); }
   glm::vec3 clearColour() const override { return glm::vec3(0.0016f, 0.0018f, 0.0035f); }
+  // No sky out here: the background is the starfield, already drawn.
+  float skyIntensity() const override { return 0.0f; }
   float viewDistance() const override { return 60000.0f; }
   bool wantsShadows() const override { return false; }
   // Vacuum: no haze, no inscatter, and genuinely zero rather than a trace.

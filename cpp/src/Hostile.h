@@ -13,12 +13,23 @@
 // technique Level.cpp uses for walls and crates. That means arbitrarily
 // many hostiles of arbitrarily different sizes cost one shared geometry
 // set, not one set per instance.
+// Every hostile is assembled out of these four unit primitives, scaled and
+// placed per part. A rig is a few dozen parts, so per-type meshes would mean
+// a few dozen vertex buffers per archetype for shapes a scale matrix already
+// gives us; sharing four means a marauder and a colossus cost the same
+// upload, and the parts batch together in the draw list.
+//
+// The taper is the one shape a scale cannot fake: a limb that is thicker at
+// the shoulder than the elbow reads as a limb, and a straight tube reads as
+// a pipe. One taper ratio serves every limb on every archetype.
 class HostileGeometry {
 public:
   static void ensure();     // builds the shared meshes on first use
   static void destroyShared();
   static const Mesh& unitBox();
   static const Mesh& unitSphere();
+  static const Mesh& unitCylinder();   // straight, unit diameter and height
+  static const Mesh& unitTaper();      // 0.72 at the top, 1.0 at the bottom
 };
 
 enum class HostileState { Idle, Chase, Attack, Dying, Gone };
@@ -63,4 +74,14 @@ struct Hostile {
   glm::vec3 bodyCentre() const { return pos + glm::vec3(0, type->height * 0.55f, 0); }
 
   void collect(std::vector<DrawItem>& out) const;
+
+private:
+  // Two bodies, because a thing with legs and a thing that hovers share
+  // nothing but their materials. Both are ported from the browser build's
+  // rigs in src/js/fps/hostiles.js.
+  void collectWalker(std::vector<DrawItem>& out, const DrawItem& base,
+                     const glm::mat4& root, float h, float r, float swing,
+                     float stride) const;
+  void collectFlyer(std::vector<DrawItem>& out, const DrawItem& base,
+                    const glm::mat4& root, float h, float r, float speedFrac) const;
 };

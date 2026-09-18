@@ -40,7 +40,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   pickupNote_.clear();
   pickupNoteT_ = 0.0f;
 
-  level_.build(mission_.arenaSize);
+  level_.build(mission_.arenaSize, mission_.floorColour);
   HostileGeometry::ensure();
 
   // Gear: looked up by the ids the profile has equipped, in the same
@@ -185,6 +185,40 @@ void Game::updateComms(float dt) {
   }
 }
 
+// ---------------------------------------------------------- field ability
+
+bool Game::useAbility() {
+  if (!loaded_ || missionState_ != MissionState::InProgress) return false;
+  if (abilityCool_ > 0.0f) return false;
+  abilityCool_ = kAbilityCooldown;
+
+  // Dash along the look direction, flattened: a phase step is a reposition,
+  // not a jump, and letting it follow the pitch would fire you into the sky
+  // or the floor depending on where you happened to be aiming.
+  glm::vec3 flat(lookDir_.x, 0.0f, lookDir_.z);
+  if (glm::length(flat) < 1e-4f) flat = glm::vec3(0.0f, 0.0f, -1.0f);
+  flat = glm::normalize(flat);
+
+  // Step there in pieces, resolving collision at each one, so the dash stops
+  // against a crate rather than through it — the whole point of it is to get
+  // behind cover, which does not work if it can also get you inside cover.
+  const int steps = 8;
+  glm::vec3 probe = player_.position;
+  for (int i = 0; i < steps; i++) {
+    glm::vec3 next = probe + flat * (kPhaseDistance / (float)steps);
+    level_.resolve(next, player_.radius, player_.height);
+    // Resolution pushed it back roughly where it started: something solid is
+    // there, so this is as far as the step goes.
+    if (glm::length(glm::vec2(next.x - probe.x, next.z - probe.z)) < 0.02f) break;
+    probe = next;
+  }
+  player_.position = probe;
+
+  pickupNote_ = "PHASE STEP";
+  pickupNoteT_ = 1.2f;
+  return true;
+}
+
 // ---------------------------------------------------------------- pickups
 
 void Game::dropPickup(const glm::vec3& at, int killIndex) {
@@ -283,6 +317,11 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     updateComms(dt);
     return;
   }
+
+  abilityCool_ = std::max(0.0f, abilityCool_ - dt);
+  // Kept for useAbility(), which is called from main.cpp's key handling and
+  // has no camera of its own to ask.
+  lookDir_ = camera.forward();
 
   bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
   player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, forceForward);

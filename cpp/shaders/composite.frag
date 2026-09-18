@@ -32,6 +32,14 @@ uniform float uInscatter;
 uniform vec3 uSunDir;
 uniform vec3 uSunColour;
 
+// The sky. Until this existed the background was simply the clear colour,
+// which the fog below then blended to fully — so every outdoor frame had a
+// flat wash of fog colour above the horizon and no sun in it anywhere, and
+// the light in the scene came from a direction the picture never showed.
+uniform vec3 uSkyZenith;
+uniform vec3 uSkyHorizon;
+uniform float uSkyIntensity;   // 0 keeps the clear colour, for open space
+
 uniform float uExposure;
 uniform float uTime;
 uniform float uGrain;
@@ -82,6 +90,26 @@ vec3 linearToSRGB(vec3 c) {
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
+// Zenith to horizon, with the haze concentrated in a band at the horizon
+// itself, plus the sun: a small hot disc inside a wide halo, and a broad
+// glow along the horizon on the sun's side. The powers are the whole model —
+// 900 is about a quarter of a degree across, which is roughly the real sun,
+// and 8 is the halo you actually see around it through dust.
+vec3 skyColour(vec3 dir) {
+  float up = clamp(dir.y, -1.0, 1.0);
+  float band = pow(clamp(1.0 - abs(up), 0.0, 1.0), 3.0);
+  vec3 col = mix(uSkyZenith, uSkyHorizon, band);
+  // Below the horizon line it falls off into ground haze rather than
+  // mirroring the sky back at you.
+  col *= mix(1.0, 0.42, clamp(-up * 4.0, 0.0, 1.0));
+
+  float towards = max(dot(dir, -uSunDir), 0.0);
+  col += uSunColour * pow(towards, 900.0) * 16.0;
+  col += uSunColour * pow(towards, 8.0) * 0.30;
+  col += uSunColour * pow(towards, 2.0) * 0.07 * band;
+  return col;
+}
+
 void main() {
   vec2 uv = vUv;
   vec2 fromCentre = uv - 0.5;
@@ -122,7 +150,16 @@ void main() {
 
   float towardsSun = max(dot(worldDir, -uSunDir), 0.0);
   vec3 fogColour = uFogColour + uSunColour * uInscatter * pow(towardsSun, 8.0);
-  col = mix(col, fogColour, clamp(fogAmount, 0.0, 1.0));
+
+  // Nothing was drawn here, so this is sky. It carries its own horizon haze,
+  // so the fog integral — which would run to the far plane and swamp it —
+  // does not apply.
+  bool isSky = depth01 >= 0.99999;
+  if (isSky && uSkyIntensity > 0.001) {
+    col = skyColour(worldDir) * uSkyIntensity;
+  } else {
+    col = mix(col, fogColour, clamp(fogAmount, 0.0, 1.0));
+  }
 
   // Bloom, added while still linear HDR.
   col += texture(tBloom, uv).rgb * uBloom;

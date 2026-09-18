@@ -18,7 +18,10 @@ struct Collider {
 // data physics resolves against.
 class Level {
 public:
-  void build(float arenaSize);
+  // floorTint is the mission's own ground colour (MissionDef::floorColour):
+  // a sand shelf and the floor of a dead ark are not the same place, and a
+  // single hardcoded dust brown made every sector look like the first one.
+  void build(float arenaSize, glm::vec3 floorTint = glm::vec3(0.31f, 0.26f, 0.21f));
   void destroy();
 
   void collect(std::vector<DrawItem>& out) const;
@@ -39,11 +42,37 @@ public:
 
   const std::vector<Collider>& colliders() const { return colliders_; }
 
+  // Is something solid at this point, and if so which way does its nearest
+  // face point? Used by movement that has to know about a wall it is not
+  // standing on. The normal is the outward one of whichever face the point
+  // is closest to, which for the axis-aligned boxes this level is made of is
+  // exact rather than approximate.
+  bool wallAt(const glm::vec3& point, glm::vec3& normalOut) const;
+
+  // Is the straight line from `from` to `to` clear of cover? Sampled rather
+  // than solved, which is all the callers need: it answers "can this shot
+  // get there", not "exactly where does it stop" — Weapon::fire owns that.
+  bool lineOfSight(const glm::vec3& from, const glm::vec3& to) const;
+
 private:
-  Mesh floorMesh_, wallMesh_, crateMesh_;
-  std::vector<glm::mat4> walls_, crates_;
+  // Cover comes in three shapes because they do three different jobs: a
+  // block you can vault or hide behind, a barricade you crouch behind and
+  // shoot over, and a pillar that takes a sightline away entirely. An arena
+  // of nothing but waist-high crates plays the same at eighty metres as at
+  // two hundred — every fight is still everyone shooting everyone.
+  enum class CoverKind { Block, Barricade, Pillar };
+
+  struct Prop {
+    glm::mat4 model{1.0f};
+    CoverKind kind = CoverKind::Block;
+  };
+
+  Mesh floorMesh_, boxMesh_;
+  std::vector<glm::mat4> walls_;
+  std::vector<Prop> props_;
   std::vector<Collider> colliders_;
   float half_ = 40.0f;
   float floorTop_ = 0.0f;
   float wallHeight_ = 6.0f;
+  glm::vec3 floorTint_{0.31f, 0.26f, 0.21f};
 };

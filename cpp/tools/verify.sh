@@ -13,13 +13,17 @@ PASS=0; FAIL=0
 
 run() {  # run <state-file> <env assignments...> [-- <binary args>]
   local log="$1"; shift
+  # A save file per check. Sharing one made the checks order-dependent: a
+  # later run inherited whatever chits and gear the earlier ones had spent,
+  # so the same assertion passed or failed depending on what ran before it.
+  local save="$OUT/save-$(basename "$log" .json).txt"
   local env_args=() bin_args=()
   while [ $# -gt 0 ]; do
     if [ "$1" = "--" ]; then shift; bin_args=("$@"); break; fi
     env_args+=("$1"); shift
   done
   xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 \
-    EREBUS_SAVE_PATH="$OUT/save.txt" EREBUS_LOG_STATE="$log" "${env_args[@]}" \
+    EREBUS_SAVE_PATH="$save" EREBUS_LOG_STATE="$log" "${env_args[@]}" \
     "$BIN" "${bin_args[@]}" >/dev/null 2>&1
 }
 
@@ -60,6 +64,21 @@ run "$OUT/patrol.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 \
     EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=5200 -- --mission patrol_dust_shelf
 check "patrol mission completes" "$OUT/patrol.json" \
       "s['appState'] == 'mission' and s['missionState'] == 'complete'"
+
+# The campaign's first sector plays end to end, pays its reward once, and
+# runs its comms thread.
+run "$OUT/breach.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=3000 -- --mission breach
+check "campaign sector 1 completes" "$OUT/breach.json" \
+      "s['missionState'] == 'complete' and s['chits'] > 140"
+
+# The route opens one sector at a time. From a fresh profile every campaign
+# mission but the first is locked, so cycling the hub's list has to step over
+# all of them and land on side content — never on sector 2.
+run "$OUT/lock.json" EREBUS_SLOT=1 EREBUS_SKIP_SPACE=1 EREBUS_HUB_SCRIPT=mission \
+    EREBUS_MAX_FRAMES=40
+check "route stays locked ahead of your progress" "$OUT/lock.json" \
+      "s['appState'] == 'hub' and s['selectedMission'] != 'spine'"
 
 # Space renders without blowing up at either end of the quality ladder. The
 # proof is that the run got where it was flying: the tier switches shadow

@@ -33,9 +33,18 @@ void framebufferSizeCallback(GLFWwindow* window, int w, int h) {
 enum class AppState { SlotSelect, Space, Hub, Mission };
 
 int main(int argc, char** argv) {
+  // --mission <id> both names the mission EREBUS_SKIP_HUB boots straight
+  // into and preselects it in the hub. The fallback is only for the
+  // skip-hub case: with no argument the hub opens on the furthest sector of
+  // the campaign you have actually reached (Hub::init), which is where you
+  // left off, and preselecting a side patrol over that would be wrong.
   std::string missionId = "patrol_dust_shelf";
+  bool missionIdGiven = false;
   for (int i = 1; i < argc; i++) {
-    if (std::strcmp(argv[i], "--mission") == 0 && i + 1 < argc) missionId = argv[++i];
+    if (std::strcmp(argv[i], "--mission") == 0 && i + 1 < argc) {
+      missionId = argv[++i];
+      missionIdGiven = true;
+    }
   }
 
   if (!glfwInit()) {
@@ -132,7 +141,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   hub.init(hubContent, profile);
-  hub.preselectMission(missionId);
+  if (missionIdGiven) hub.preselectMission(missionId);
 
   bool spaceReady = space.init(hubContent);
 
@@ -235,7 +244,7 @@ int main(int argc, char** argv) {
   Hud::SlotSummary slotSummaries[3];
   bool p1 = false, p2 = false, p3 = false, pUp = false, pDown = false;
   bool pEnter = false, pSpace = false, pDel = false, pY = false, pN = false;
-  bool prevEngageKey = false, prevUndockKey = false;
+  bool prevEngageKey = false, prevUndockKey = false, prevAbilityKey = false;
 
   double lastTime = glfwGetTime();
   int frame = 0;
@@ -296,7 +305,7 @@ int main(int argc, char** argv) {
           savePath = slotPaths[slotIndex];
           profile = ProfileStore::load(savePath);
           hub.init(hubContent, profile);
-          hub.preselectMission(missionId);
+          if (missionIdGiven) hub.preselectMission(missionId);
           state = afterSlot;
           if (state == AppState::Space) {
             space.placeNear("");   // start docked off the Cradle
@@ -475,23 +484,26 @@ int main(int argc, char** argv) {
       }
     } else {
       if (debugAutoaim) {
-        // Verification aid: point the camera at the nearest live hostile so
-        // firing can be exercised without a real mouse. See Game::collect /
-        // Hostile for where headCentre() comes from.
+        // Verification aid: point the camera at a live hostile so firing can
+        // be exercised without a real mouse. Prefers the nearest one it can
+        // actually see: now that arenas carry pillars and barricades, aiming
+        // at the nearest hostile regardless of what is in front of it means a
+        // whole run can be spent shooting a wall — which reads as the mission
+        // being unwinnable when it is only the aid being blind.
         glm::vec3 eye = camera.position;
-        float best = 1e9f;
-        glm::vec3 bestDir(0, 0, -1);
-        // Game doesn't expose hostiles directly (Renderer-facing interface
-        // only); this reaches in via the same draw-collection path so the
-        // aid never needs its own privileged access.
-        std::vector<DrawItem> probe;
-        game.collect(0.0f, probe);
-        for (auto& it : probe) {
-          if (it.material != MaterialType::Emissive) continue;
-          glm::vec3 p = glm::vec3(it.model[3]);
-          float d = glm::length(p - eye);
-          if (d < best) { best = d; bestDir = glm::normalize(p - eye); }
+        float bestVisible = 1e9f, bestAny = 1e9f;
+        glm::vec3 dirVisible(0, 0, -1), dirAny(0, 0, -1);
+        for (const Hostile& h : game.hostiles()) {
+          if (!h.blocksShots()) continue;
+          glm::vec3 target = h.headCentre();
+          float d = glm::length(target - eye);
+          if (d < bestAny) { bestAny = d; dirAny = glm::normalize(target - eye); }
+          if (d < bestVisible && game.level().lineOfSight(eye, target)) {
+            bestVisible = d;
+            dirVisible = glm::normalize(target - eye);
+          }
         }
+        glm::vec3 bestDir = bestVisible < 1e8f ? dirVisible : dirAny;
         camera.yaw = glm::degrees(std::atan2(bestDir.z, bestDir.x));
         camera.pitch = glm::degrees(std::asin(std::clamp(bestDir.y, -1.0f, 1.0f)));
       }
@@ -510,6 +522,13 @@ int main(int argc, char** argv) {
                         (forceFire && game.weapon().ammoInMag == 0);
       game.update(window, camera, dt, firePressed, reloadHeld, forceForward);
 
+      // The field ability is on Q or E, the same two keys the browser build
+      // accepts (src/js/fps/game.js). On the press, not the hold.
+      bool abilityDown = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS ||
+                         glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
+      if (abilityDown && !prevAbilityKey) game.useAbility();
+      prevAbilityKey = abilityDown;
+
       renderer.renderFrame(game, camera, (float)now, dt);
       if (debugPixel && frame % 60 == 0) renderer.debugPrintCenterPixel();
 
@@ -517,6 +536,10 @@ int main(int argc, char** argv) {
       const Weapon& w = game.weapon();
       Hud::State hs;
       hs.hp = game.player().hp;
+      hs.abilityReady = game.abilityReady();
+      hs.abilityFrac = game.abilityCooldownMax() > 0.0f
+                     ? 1.0f - game.abilityCooldown() / game.abilityCooldownMax()
+                     : 1.0f;
       hs.maxHp = game.player().maxHp;
       hs.ammoInMag = w.ammoInMag;
       hs.magSize = w.magSize;

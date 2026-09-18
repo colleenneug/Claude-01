@@ -80,6 +80,8 @@ EnemyType parseEnemy(const std::string& id, const fs::path& path) {
       else if (k == "colour" || k == "color") e.colour = parseVec3(v, e.colour);
       else if (k == "glow") e.glow = parseVec3(v, e.glow);
       else if (k == "ranged") e.ranged = (v == "true" || v == "1");
+      else if (k == "flying") e.flying = (v == "true" || v == "1");
+      else if (k == "elite") e.elite = (v == "true" || v == "1");
       else if (k == "xp") e.xp = std::stof(v);
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
@@ -168,6 +170,17 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
       std::string k, v;
       if (keyValue(line, k, v)) {
         if (k == "name") m.name = v;
+        else if (k == "objective") m.objective = v;
+        else if (k == "brief") m.brief = v;
+        else if (k == "zone") m.zone = v;
+        else if (k == "campaign") { try { m.campaignIndex = std::stoi(v); } catch (...) {} }
+        else if (k == "sky_zenith") m.skyZenith = parseVec3(v, m.skyZenith);
+        else if (k == "floor_colour" || k == "floor_color") m.floorColour = parseVec3(v, m.floorColour);
+        else if (k == "sky_horizon") m.skyHorizon = parseVec3(v, m.skyHorizon);
+        else if (k == "fog_colour" || k == "fog_color") m.fogColour = parseVec3(v, m.fogColour);
+        else if (k == "sun_colour" || k == "sun_color") m.sunColour = parseVec3(v, m.sunColour);
+        else if (k == "fog_density") { try { m.fogDensity = std::stof(v); } catch (...) {} }
+        else if (k == "sun_intensity") { try { m.sunIntensity = std::stof(v); } catch (...) {} }
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
       }
@@ -391,6 +404,23 @@ std::vector<std::string> Content::missionIds() const {
   std::vector<std::string> out;
   out.reserve(missions_.size());
   for (auto& kv : missions_) out.push_back(kv.first);
+  // The map is unordered, so without this the hub's mission list reorders
+  // itself between runs on nothing but hash iteration order.
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+std::vector<std::string> Content::campaignIds() const {
+  std::vector<const MissionDef*> route;
+  for (auto& kv : missions_) {
+    if (kv.second.campaignIndex > 0) route.push_back(&kv.second);
+  }
+  std::sort(route.begin(), route.end(), [](const MissionDef* a, const MissionDef* b) {
+    return a->campaignIndex < b->campaignIndex;
+  });
+  std::vector<std::string> out;
+  out.reserve(route.size());
+  for (const MissionDef* m : route) out.push_back(m->id);
   return out;
 }
 

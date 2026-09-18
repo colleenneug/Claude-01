@@ -15,11 +15,29 @@ void Hub::init(const Content& content, Profile& profile) {
   weaponIds_ = content.weaponIds();
   armorIds_ = content.armorIds();
   cosmeticIds_ = content.cosmeticIds();
-  missionIds_ = content.missionIds();
   std::sort(weaponIds_.begin(), weaponIds_.end());
   std::sort(armorIds_.begin(), armorIds_.end());
   std::sort(cosmeticIds_.begin(), cosmeticIds_.end());
-  std::sort(missionIds_.begin(), missionIds_.end());
+
+  // The campaign first, in story order, then everything else alphabetically.
+  // Sorting the whole list by id instead would scatter the route through the
+  // side content and leave WARD SIX sitting above HARD DOCK.
+  missionIds_ = content.campaignIds();
+  campaignCount_ = (int)missionIds_.size();
+  std::vector<std::string> side;
+  for (const std::string& id : content.missionIds()) {
+    const MissionDef* m = content.mission(id);
+    if (!m || m->campaignIndex <= 0) side.push_back(id);
+  }
+  std::sort(side.begin(), side.end());
+  missionIds_.insert(missionIds_.end(), side.begin(), side.end());
+
+  // Open on the furthest sector actually reachable rather than on mission one
+  // again every time you dock.
+  for (int i = 0; i < campaignCount_; i++) {
+    if (missionLocked(i)) break;
+    missionIndex_ = i;
+  }
 
   // Open the hub on whatever's actually equipped/last-played rather than
   // always the alphabetically-first item.
@@ -30,7 +48,10 @@ void Hub::init(const Content& content, Profile& profile) {
 
 void Hub::preselectMission(const std::string& id) {
   auto it = std::find(missionIds_.begin(), missionIds_.end(), id);
-  if (it != missionIds_.end()) missionIndex_ = (int)(it - missionIds_.begin());
+  if (it == missionIds_.end()) return;
+  int index = (int)(it - missionIds_.begin());
+  if (missionLocked(index)) return;   // --mission does not skip the route
+  missionIndex_ = index;
 }
 
 void Hub::cycleWeapon() {
@@ -83,9 +104,21 @@ void Hub::cycleCosmetic() {
   }
 }
 
+bool Hub::missionLocked(int index) const {
+  if (!content_ || !profile_) return false;
+  if (index <= 0 || index >= campaignCount_) return false;   // side content, or the first sector
+  return !profile_->hasCompleted(missionIds_[index - 1]);
+}
+
 void Hub::cycleMission() {
   if (missionIds_.empty()) return;
-  missionIndex_ = (missionIndex_ + 1) % (int)missionIds_.size();
+  // Step over locked sectors rather than stopping on them: a list you can
+  // land on but not launch from is a list that looks broken.
+  const int n = (int)missionIds_.size();
+  for (int step = 1; step <= n; step++) {
+    int next = (missionIndex_ + step) % n;
+    if (!missionLocked(next)) { missionIndex_ = next; return; }
+  }
 }
 
 bool Hub::update(GLFWwindow* window, const char* scriptedKey) {

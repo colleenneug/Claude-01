@@ -271,7 +271,15 @@ void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, G
 
   compositeShader_.set("uSunDir", scene.sunDirection());
   compositeShader_.set("uSunColour", scene.sunColour());
-  compositeShader_.set("uExposure", 1.15f);
+  compositeShader_.set("uSkyZenith", scene.skyZenith());
+  compositeShader_.set("uSkyHorizon", scene.skyHorizon());
+  compositeShader_.set("uSkyIntensity", scene.skyIntensity());
+  // 1.15 with the ACES curve on top of it put the dusty floor of a mission
+  // arena around 0.85 in the final image, which left nothing above it for a
+  // highlight and nothing below it for a shadow: the whole frame read as
+  // one flat wash. Lower exposure puts the ground back in the mid tones and
+  // gives the sun somewhere to go.
+  compositeShader_.set("uExposure", 0.82f);
   compositeShader_.set("uGrain", 0.03f);
   compositeShader_.set("uVignette", 0.65f);
   compositeShader_.set("uAberration", 1.0f);

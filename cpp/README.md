@@ -12,15 +12,30 @@ launch from the Cradle, fly to a world and land on it to start its mission.
 A persistent profile — chits (currency), owned and equipped gear, completed
 missions — lives in one of three save slots and carries across runs.
 
+The story is the browser build's story. The Cradle is the ark *Erebus
+Cradle*, and docking at it opens the **sixteen-mission campaign** the
+browser build runs (`../src/js/fps/campaign.js`): one route from the docking
+collar to Deck Zero, against the husk drones, choir thralls and warden
+frames, ending on the Conductor. Same objectives, same briefings, same
+CRADLE/DIVISION/VOSS comms thread, transcribed into `content/missions/`. It
+opens one sector at a time — a sector is locked until the one before it is
+cleared — and each zone has its own grade, so the route looks like it is
+going somewhere: the promenade is a sunset that has been holding since year
+six, the reactor runs hot and orange, Deck Zero is nearly black. The
+planets stay alongside it as side destinations you can fly to at any time.
+
 **Scope, honestly stated:** three weapons, three armour pieces, three
-cosmetics, three enemy archetypes, six missions, five destinations —
-including an ice world and a desert one. All of it is real,
-data-driven content under `content/`, not hardcoded — a monthly drop of new
-gear or a new mission is text files, not a code change (see *Content*
-below). What's still not here: co-op/netcode (see the note at the bottom of
-*Roadmap*) and packaging as an actual installable build. Everything that
-exists here is real, compiled, and was verified by actually running it and
-reading back live game state — not eyeballed.
+cosmetics, seven enemy archetypes, twenty-two missions (the sixteen-sector
+campaign plus six side contracts), five destinations — including an ice
+world and a desert one. All of it is real, data-driven content under
+`content/`, not hardcoded — a monthly drop of new gear or a new mission is
+text files, not a code change (see *Content* below). What's still not here:
+co-op/netcode (see the note at the bottom of *Roadmap*), the browser
+build's class abilities beyond the phase step, its gear rolls, bounties,
+chests, crew and dossier screens, and packaging as an actual installable
+build. Everything that exists here is real, compiled, and was verified by
+actually running it and reading back live game state — not eyeballed
+(`tools/verify.sh`).
 
 No texture, model, or asset files ship with this project — every material
 shades procedurally from world position and normal (see
@@ -85,14 +100,26 @@ In a mission:
 | Input | Action |
 |---|---|
 | Mouse | Look |
-| WASD | Move (physical: gravity, collision against the level) |
+| WASD, or the arrow keys | Move (physical: gravity, collision against the level) |
 | Left Shift | Sprint |
-| Space | Jump |
+| Left Ctrl or C | Crouch — and, held at speed, **slide** |
+| Space | Jump. Out of a slide it keeps the speed you built, which is the point of sliding |
+| Space, against a wall in mid-air | Kick off a **wall run** (hold a wall beside you at speed and you run along it) |
 | Left click | Fire (hitscan) |
 | R | Reload |
+| Q or E | Phase step — a short dash along your look direction, on a nine-second cooldown |
 | Right mouse, held | Aim — narrows the FOV and brings depth of field in on the background |
 | Escape | Release the mouse; left click re-captures it |
 | Enter or Space, once the mission has ended | Return to the Hub (saves your profile) |
+
+Those are the browser build's bindings and the browser build's numbers —
+walk 4.6, sprint 9.4, crouch 2.3, and the whole slide table
+(`../src/js/fps/player.js`). They are not independent: the slide's entry
+threshold is a fraction of the walk speed and its floor and ceiling are set
+against the sprint speed, so moving one without the others changes whether
+sliding is worth doing at all. The one thing not carried across is the
+browser's per-class abilities — this build has no classes yet, so it takes
+the phase step, which is the one that needs nothing but a look direction.
 
 The window title shows frame time, mission name, player HP, ammo, wave
 progress and mission state, refreshed twice a second.
@@ -116,21 +143,67 @@ height = 1.95
 colour = 0.42, 0.46, 0.52
 glow = 1.0, 0.71, 0.33    # visor / reactor emissive tint
 ranged = true
+flying = false           # true swaps the legs for a hovering body (see below)
+elite = true             # wider build, heavier plating, shoulder-mounted cannon
 xp = 40
 ```
+
+`flying` and `elite` pick the *body*, not just a stat. Each archetype is
+assembled from a few dozen primitives on a joint hierarchy, ported from the
+browser build's rigs (`../src/js/fps/hostiles.js`): a walker has a jointed
+spine, plates sloping off the shoulders into a collar, a head sunk into it
+rather than parked on top, overlapping ribs down the front, a back pack that
+vents, and either a forearm cannon or — if it is an elite — a shoulder mount.
+A flyer has none of that: a core inside a split cowl, a ring of segments that
+turns around it, one big optic, three fins, a thruster, and two manipulator
+arms hanging below to give it a sense of scale. Four shared unit primitives
+(box, sphere, cylinder, taper) are scaled per part, so a one-metre drone and
+a three-metre elite cost the same upload.
+
+The head sits at 93% of the archetype's `height` and the torso at 55%,
+because that is where the hit spheres are (`Hostile::headCentre`). The
+silhouette is built around those two points rather than the other way round
+— a rig whose head is not where the head hitbox is means headshots land on
+air.
 
 **`content/missions/<id>.cfg`** — an arena size, any number of `wave` lines,
 and an optional `boss` line (spawned once every regular wave is cleared,
 with a health multiplier on top of the boss's own `enemies/*.cfg` stats):
 
 ```
-name = The Dig Site: Colossus
-arena = 90
+name = THE FALSE SKY
+campaign = 6                    # place in the route; omit for side content
+zone = promenade                # sectors sharing a zone share a look
+objective = Cross the habitat ring.
+brief = Forty metres of open promenade under a sunset that has been holding since year six.
+arena = 132
 
-wave scarab 4 30      # enemy id, count, spawn ring radius (metres)
-wave marauder 3 22
-boss colossus 2.2
+# The grade. Every one of these is optional and falls back to the dusty
+# default, so a mission file can be three lines or the whole palette.
+floor_colour = 0.26, 0.22, 0.18
+sky_zenith = 0.075, 0.060, 0.105
+sky_horizon = 0.62, 0.30, 0.20
+fog_colour = 0.48, 0.26, 0.24
+fog_density = 0.012
+sun_colour = 1.00, 0.68, 0.42
+sun_intensity = 3.2
+reward = 105
+
+wave thrall 7 24      # enemy id, count, spawn ring radius (metres)
+wave warden 1 30
+boss conductor 1.0    # optional; spawns once every regular wave is cleared,
+                      # with a health multiplier on its enemies/*.cfg stats
+
+# Story, staged as comms traffic:
+#   comms <trigger> <delay> <speaker> | <line>
+# triggers: deploy, half, cleared, boss, complete, failed
+comms deploy 0.5 VOSS | That is the plaza. My flat was on the third tier.
 ```
+
+A spawn ring is not decoration: a warden has 26 metres of reach
+(`content/enemies/warden.cfg`), so it spawns at 30 — outside its own range,
+inside its alert radius — and has to close rather than open fire from the
+ring it spawned on.
 
 **`content/planets/<id>.cfg`** — somewhere to fly to:
 
@@ -232,10 +305,16 @@ see `Content::loadAll` in `src/Content.cpp`.
   it if it's affordable; `Hud::drawHub` lists every weapon, armour piece,
   shader and destination by name with its price and status (equipped /
   owned / affordable / out of reach), the selected row carrying a caret.
-- **Player** (`Player.h/.cpp`): gravity, jump, sprint, substepped collision
-  against the level so a fast move can't tunnel through a thin wall in one
-  frame. Equipped armour raises `maxHp` and shaves a fraction off every hit
-  taken (`Player::damageReduction`), applied in `Game::update`.
+- **Player** (`Player.h/.cpp`): gravity, jump, sprint, crouch, slide, wall
+  run, and substepped collision against the level so a fast move can't
+  tunnel through a thin wall in one frame. Equipped armour raises `maxHp`
+  and shaves a fraction off every hit taken (`Player::damageReduction`),
+  applied in `Game::update`. The slide is the one move the rest is built
+  around: crouch *at speed* takes whatever speed you arrived with, multiplies
+  it, then bleeds it off — and jumping out keeps it. The wall run turns
+  gravity down rather than off, so it is always a descent: it buys distance,
+  not flight, and you cannot re-attach to the same face until you have
+  touched something else.
 - **Weapon** (`Weapon.h/.cpp`): hitscan against the level's colliders *and*
   every live hostile's head/body spheres — a crate genuinely blocks a shot
   to whatever's behind it. Magazine, reserve ammo, reload timer — all of it
@@ -247,10 +326,22 @@ see `Content::loadAll` in `src/Content.cpp`.
   perfectly against an obstacle centred on the straight line to the
   player; see the comment on `Hostile::stuckT`), attack at range or in
   melee, death.
-- **Level** (`Level.h/.cpp`): a walled arena with scattered crate cover,
-  built fresh per mission from its `arena` size; every mission-defined
-  spawn point is resolved against the level once at spawn so a hostile can
-  never start out wedged inside a crate.
+- **Level** (`Level.h/.cpp`): a walled arena built fresh per mission from its
+  `arena` size — from 102 metres at the docking collar to 192 on Deck Zero.
+  Cover comes in three shapes, because they do three different jobs: a block
+  you hide behind, a barricade you crouch behind and shoot over, and a pillar
+  that takes a sightline away entirely. An arena of nothing but waist-high
+  crates plays the same at eighty metres as at two hundred — every fight is
+  still everyone shooting everyone. The count follows the *area*, not the
+  side length: doubling the arena quadruples the ground to cross, and cover
+  spread linearly over that leaves a parade ground with a few boxes round the
+  edge. Barricades are placed on one axis or the other rather than at an
+  arbitrary angle, because the collider is an AABB and a rotated four-metre
+  box would have one several metres wider than the thing you can see.
+  Overlapping cover is rejected outright: two overlapping AABBs make
+  `resolve` fight itself and push whatever is between them out along two axes
+  at once. Every mission-defined spawn point is resolved against the level
+  once at spawn so a hostile can never start out wedged inside cover.
 - **Missions** (`Game.h/.cpp`): spawns every wave immediately, holds the
   boss back until the waves are clear, tracks win (all hostiles Gone) and
   loss (player HP 0) conditions, and on a first win pays the mission's
@@ -300,6 +391,19 @@ auto-adjustment off.
 
 ## Verifying it without a display
 
+`tools/verify.sh` is the whole suite in one command: it runs the real binary
+under Xvfb with a fixed timestep, reads back the state each run logs, and
+asserts on it — landing on both new worlds, the Cradle's dock prompt
+reachable after leaving it, the campaign's first sector playing end to end
+and paying out, the route staying locked ahead of your progress, the patrol
+contract still completing, and space surviving both ends of the quality
+ladder. Run it before pushing anything.
+
+The landing checks need a frame budget that stops just past the landing. Run
+them longer and the mission itself ends — the scripted pilot flies but does
+not shoot back — and drops you out to space again, which is
+indistinguishable from never having landed.
+
 Beyond `EREBUS_DUMP_FRAME`/`EREBUS_MAX_FRAMES` (render `n` frames
 off-screen and dump the last as a PPM — see `docs/NATIVE_RENDERER.md` for
 why that mattered for the renderer), the gameplay loop has its own headless
@@ -314,9 +418,16 @@ a way to prove movement, combat and mission state actually work:
   kept the weapon permanently mid-reload and let a whole run fire about six
   rounds — fine for the one-hostile fixture it was written against, and
   quietly useless for measuring whether a real wave is survivable.)
-- `EREBUS_DEBUG_AUTOAIM=1` — snaps the camera onto the nearest hostile
-  every frame. A verification aid only, **never enabled by default** —
-  it exists so firing can be exercised without simulating real mouse input.
+- `EREBUS_DEBUG_AUTOAIM=1` — snaps the camera onto the nearest hostile it
+  can actually see, every frame. A verification aid only, **never enabled by
+  default** — it exists so firing can be exercised without simulating real
+  mouse input. The line-of-sight part is not a refinement: once arenas
+  carried pillars and barricades, aiming at the nearest hostile regardless of
+  what stood in front of it meant a whole run could be spent shooting a wall,
+  and the starter patrol started reporting itself as unwinnable when the only
+  thing broken was the aid. It also used to find its target by scanning the
+  draw list for the nearest emissive item, which stopped meaning "a hostile"
+  the moment rigs grew lit vents and kills started dropping glowing pickups.
 - `EREBUS_LOG_STATE=<path.json>` — at `EREBUS_MAX_FRAMES`, writes one JSON
   line of live state: mission progress/HP/ammo/chits if in a mission,
   or chits/equipped gear/selected mission if still in the Hub

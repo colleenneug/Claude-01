@@ -27,6 +27,13 @@ public:
 
   const std::string& selectedMission() const { return missionIds_[missionIndex_]; }
 
+  // The route down the ark runs in story order and opens one sector at a
+  // time: a campaign mission is locked until the one before it is cleared.
+  // Side content (a planet's patrol) is never locked, so the first entries
+  // of missionIds() are the route and the rest are free to fly at any time.
+  bool missionLocked(int index) const;
+  int campaignCount() const { return campaignCount_; }
+
   const std::vector<std::string>& weaponIds() const { return weaponIds_; }
   const std::vector<std::string>& armorIds() const { return armorIds_; }
   const std::vector<std::string>& cosmeticIds() const { return cosmeticIds_; }
@@ -51,6 +58,7 @@ private:
   Profile* profile_ = nullptr;
 
   std::vector<std::string> weaponIds_, armorIds_, cosmeticIds_, missionIds_;
+  int campaignCount_ = 0;   // how many leading entries of missionIds_ are the route
   int weaponIndex_ = 0, armorIndex_ = 0, cosmeticIndex_ = 0, missionIndex_ = 0;
 
   bool prev1_ = false, prev2_ = false, prev3_ = false, prevTab_ = false,

@@ -55,14 +55,38 @@ public:
   // ---------- SceneSource ----------
   void collect(float time, std::vector<DrawItem>& out) const override;
   glm::vec3 sunDirection() const override { return sunDirection_; }
-  glm::vec3 sunColour() const override { return sunColour_; }
-  float sunIntensity() const override { return sunIntensityLux_; }
+  glm::vec3 sunColour() const override { return mission_.sunColour; }
+  float sunIntensity() const override { return mission_.sunIntensity; }
+  // The place's own grade, straight off the mission file. See MissionDef.
+  glm::vec3 skyZenith() const override { return mission_.skyZenith; }
+  glm::vec3 skyHorizon() const override { return mission_.skyHorizon; }
+  glm::vec3 fogColour() const override { return mission_.fogColour; }
+  float fogDensity() const override { return mission_.fogDensity; }
+  glm::vec3 clearColour() const override { return mission_.fogColour * 0.10f; }
+  // The light probe is a capture of a lit station interior (see IBL::build).
+  // At full strength it is the dominant ambient in every mission, which means
+  // every sector is lit by the same room no matter what its own sky says. So
+  // it contributes a fraction, and the rest of the fill comes from the
+  // mission's own sky — which is the physical story anyway: what fills a
+  // shadow outdoors is the sky above it.
+  float iblIntensity() const override { return 0.35f; }
+  glm::vec3 ambientFill() const override {
+    return mission_.skyHorizon * 0.070f + mission_.skyZenith * 0.055f;
+  }
   GLuint moteVao() const override { return moteVao_; }
   float moteBoxSize() const override { return moteBox_; }
   int moteCount() const override { return moteCount_; }
 
   // ---------- state main.cpp/Hud read ----------
   const Player& player() const { return player_; }
+  // Read-only, for the headless aiming aid (EREBUS_DEBUG_AUTOAIM in
+  // main.cpp), which needs to know where the hostiles are and what is
+  // between it and them. It used to infer that from the draw list by
+  // finding the nearest emissive item, which stopped meaning "a hostile"
+  // the moment rigs grew lit vents and kills started dropping glowing
+  // pickups — the aid would happily lock onto an ammo box on the floor.
+  const std::vector<Hostile>& hostiles() const { return hostiles_; }
+  const Level& level() const { return level_; }
   const Weapon& weapon() const { return weapon_; }
   MissionState missionState() const { return missionState_; }
   const std::string& missionName() const { return mission_.name; }
@@ -88,7 +112,22 @@ public:
   const std::string& pickupNote() const { return pickupNote_; }
   float pickupNoteAlpha() const { return std::max(0.0f, std::min(1.0f, pickupNoteT_ * 1.4f)); }
 
+  // ---------- the field ability ----------
+  // Phase step, on Q or E: a short dash along your look direction, on a
+  // cooldown. The browser build gives each class a different ability
+  // (src/js/fps/weapons.js); this build has no classes yet, so it carries
+  // the one that is purely a movement tool and needs nothing else — and it
+  // is the one that changes how a Warden's 26 metres of reach plays, which
+  // is what the ability is for.
+  bool useAbility();
+  float abilityCooldown() const { return abilityCool_; }
+  float abilityCooldownMax() const { return kAbilityCooldown; }
+  bool abilityReady() const { return abilityCool_ <= 0.0f; }
+
 private:
+  static constexpr float kAbilityCooldown = 9.0f;
+  static constexpr float kPhaseDistance = 6.5f;
+
   void spawnBossIfReady();
   void fireComms(CommsTrigger trigger);
   void updateComms(float dt);
@@ -126,10 +165,10 @@ private:
   int killCount_ = 0;          // drives the deterministic drop pattern
   std::string pickupNote_;
   float pickupNoteT_ = 0.0f;
+  float abilityCool_ = 0.0f;
+  glm::vec3 lookDir_{0.0f, 0.0f, -1.0f};   // last frame's aim, for the dash direction
 
   glm::vec3 sunDirection_{0.0f};
-  glm::vec3 sunColour_{1.0f, 0.94f, 0.82f};
-  float sunIntensityLux_ = 4.0f;
 
   GLuint moteVao_ = 0, moteVbo_ = 0;
   int moteCount_ = 2400;

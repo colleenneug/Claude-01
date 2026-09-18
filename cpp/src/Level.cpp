@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 
-void Level::build(float arenaSize) {
+void Level::build(float arenaSize, glm::vec3 floorTint) {
   // Safe to call more than once on the same Level — the Hub lets a player
   // run several missions in one session, and each one rebuilds its arena
   // from scratch. Without this, a second build() would leak the previous
@@ -12,15 +12,20 @@ void Level::build(float arenaSize) {
   // replacing them.
   destroy();
   walls_.clear();
-  crates_.clear();
+  props_.clear();
   colliders_.clear();
 
   half_ = arenaSize * 0.5f;
   floorTop_ = 0.0f;
+  floorTint_ = floorTint;
 
-  floorMesh_ = Mesh::terrainPlane(arenaSize, 96, 0.06f);
-  wallMesh_ = Mesh::box(1.0f, 1.0f, 1.0f);   // scaled per-instance
-  crateMesh_ = Mesh::box(1.1f, 1.1f, 1.1f);
+  // The floor's tessellation follows the arena rather than being fixed at 96
+  // segments: the terrain material blends two stone layers off a per-vertex
+  // weight, so a constant segment count over a two-hundred-metre arena
+  // stretches every patch into a smear.
+  int segs = std::clamp((int)(arenaSize * 1.2f), 96, 220);
+  floorMesh_ = Mesh::terrainPlane(arenaSize, segs, 0.06f);
+  boxMesh_ = Mesh::box(1.0f, 1.0f, 1.0f);   // scaled per instance, for walls and cover
 
   // Perimeter walls: four boxes, thick enough that fast movement can't
   // tunnel through them in one substep at this project's frame budget.
@@ -39,55 +44,160 @@ void Level::build(float arenaSize) {
     colliders_.push_back({w.centre - w.half, w.centre + w.half});
   }
 
-  // Scattered cover, kept clear of the centre so a mission's spawn rings
-  // (see spawnPoint()) don't start half-embedded in a crate.
+  // Cover, scattered over the floor and kept clear of the middle so a
+  // mission's spawn rings (see spawnPoint()) don't start half-embedded in it.
+  // The count follows the *area*, not the side length: doubling the arena
+  // quadruples the ground to cross, and cover spread linearly over that
+  // leaves a parade ground with a few boxes around the edge.
   srand(7);
   auto rnd = [](float lo, float hi) { return lo + (hi - lo) * (float)rand() / (float)RAND_MAX; };
-  int count = std::max(4, (int)(arenaSize * 0.25f));
-  for (int i = 0; i < count; i++) {
-    float x = rnd(-half_ + 4.0f, half_ - 4.0f);
-    float z = rnd(-half_ + 4.0f, half_ - 4.0f);
-    if (std::hypot(x, z) < 6.0f) continue;
-    float s = rnd(0.8f, 1.6f);
-    glm::vec3 centre(x, s * 0.55f, z);
-    glm::vec3 halfExt(s * 0.55f, s * 0.55f, s * 0.55f);
-    glm::mat4 m = glm::translate(glm::mat4(1.0f), centre);
-    m = glm::rotate(m, rnd(0.0f, 6.28f), glm::vec3(0, 1, 0));
-    m = glm::scale(m, glm::vec3(s));
-    crates_.push_back(m);
+  const float clearRadius = std::max(7.0f, arenaSize * 0.075f);
+  const int attempts = std::clamp((int)(arenaSize * arenaSize / 190.0f), 12, 260);
+
+  for (int i = 0; i < attempts; i++) {
+    float x = rnd(-half_ + 5.0f, half_ - 5.0f);
+    float z = rnd(-half_ + 5.0f, half_ - 5.0f);
+    if (std::hypot(x, z) < clearRadius) continue;
+
+    // Roughly half blocks, a third barricades, the rest pillars. Pillars are
+    // the rarest because they are the ones that remove a sightline: enough to
+    // break the arena up, not so many that it becomes a forest you cannot
+    // fight a ranged enemy across.
+    float roll = rnd(0.0f, 1.0f);
+    CoverKind kind = roll < 0.48f ? CoverKind::Block
+                   : roll < 0.80f ? CoverKind::Barricade
+                                  : CoverKind::Pillar;
+
+    glm::vec3 halfExt;
+    switch (kind) {
+      case CoverKind::Block:
+        // Chest-high and up: something to break line of sight while standing,
+        // which the old 1.1-metre crates never did.
+        halfExt = glm::vec3(rnd(0.7f, 1.5f), rnd(0.85f, 1.7f), rnd(0.7f, 1.5f));
+        break;
+      case CoverKind::Barricade:
+        // Long, low, and axis-aligned one way or the other. Rotating it to an
+        // arbitrary angle would leave its collider — an AABB — describing a
+        // box several metres wider than the thing you can see, so the
+        // orientation is a quarter turn or nothing.
+        halfExt = glm::vec3(rnd(2.2f, 4.6f), rnd(0.6f, 0.95f), rnd(0.4f, 0.7f));
+        if (rnd(0.0f, 1.0f) < 0.5f) std::swap(halfExt.x, halfExt.z);
+        break;
+      case CoverKind::Pillar:
+        halfExt = glm::vec3(rnd(0.6f, 1.1f), rnd(1.8f, 3.4f), rnd(0.6f, 1.1f));
+        break;
+    }
+
+    glm::vec3 centre(x, halfExt.y, z);
+
+    // Don't stack cover on cover: overlapping AABBs make resolve() fight
+    // itself, pushing whatever is between them out along two axes at once.
+    bool clash = false;
+    for (const Collider& c : colliders_) {
+      if (centre.x + halfExt.x < c.min.x - 0.6f || centre.x - halfExt.x > c.max.x + 0.6f) continue;
+      if (centre.z + halfExt.z < c.min.z - 0.6f || centre.z - halfExt.z > c.max.z + 0.6f) continue;
+      clash = true;
+      break;
+    }
+    if (clash) continue;
+
+    Prop prop;
+    prop.kind = kind;
+    prop.model = glm::scale(glm::translate(glm::mat4(1.0f), centre), halfExt * 2.0f);
+    props_.push_back(prop);
     colliders_.push_back({centre - halfExt, centre + halfExt});
   }
 }
 
 void Level::destroy() {
   floorMesh_.destroy();
-  wallMesh_.destroy();
-  crateMesh_.destroy();
+  boxMesh_.destroy();
 }
 
 void Level::collect(std::vector<DrawItem>& out) const {
   DrawItem floor;
   floor.mesh = &floorMesh_;
   floor.material = MaterialType::Terrain;
-  floor.tint = glm::vec3(0.40f, 0.33f, 0.27f);
+  floor.tint = floorTint_;
   floor.metallic = 0.0f;
   floor.roughness = 0.92f;
   out.push_back(floor);
 
   DrawItem wallBase;
-  wallBase.mesh = &wallMesh_;
+  wallBase.mesh = &boxMesh_;
   wallBase.material = MaterialType::Armour;
   wallBase.tint = glm::vec3(0.46f, 0.49f, 0.54f);
-  wallBase.metallic = 0.85f;
-  wallBase.roughness = 0.30f;
+  // Not polished metal: at 0.85 a wall is a mirror, and the only thing there
+  // is to reflect is the light probe — a capture of a lit interior — so the
+  // perimeter of a dark deck came out with orange and blue cube faces
+  // painted across it. Plate and concrete, which is what it is.
+  wallBase.metallic = 0.22f;
+  wallBase.roughness = 0.46f;
   wallBase.wear = 0.7f;
   wallBase.anisoStrength = 0.35f;
   for (auto& m : walls_) { DrawItem it = wallBase; it.model = m; out.push_back(it); }
 
-  DrawItem crateBase = wallBase;
-  crateBase.tint = glm::vec3(0.62f, 0.66f, 0.71f);
-  crateBase.wear = 1.1f;
-  for (auto& m : crates_) { DrawItem it = crateBase; it.model = m; out.push_back(it); }
+  // The three kinds of cover are tinted apart. It is not decoration: you have
+  // to be able to tell at a glance whether the thing ahead of you is chest
+  // high or takes the sightline away, and at sixty metres the silhouette
+  // alone does not say.
+  for (const Prop& p : props_) {
+    DrawItem it = wallBase;
+    it.model = p.model;
+    switch (p.kind) {
+      case CoverKind::Block:
+        it.tint = glm::vec3(0.60f, 0.63f, 0.68f);
+        it.wear = 1.1f;
+        break;
+      case CoverKind::Barricade:
+        it.tint = glm::vec3(0.52f, 0.47f, 0.40f);
+        it.wear = 1.4f;
+        it.roughness = 0.58f;
+        break;
+      case CoverKind::Pillar:
+        it.tint = glm::vec3(0.38f, 0.41f, 0.47f);
+        it.wear = 0.6f;
+        it.roughness = 0.40f;
+        break;
+    }
+    out.push_back(it);
+  }
+}
+
+bool Level::wallAt(const glm::vec3& point, glm::vec3& normalOut) const {
+  for (const Collider& c : colliders_) {
+    if (point.x < c.min.x || point.x > c.max.x) continue;
+    if (point.y < c.min.y || point.y > c.max.y) continue;
+    if (point.z < c.min.z || point.z > c.max.z) continue;
+
+    // Inside this box: the nearest face wins, and its outward normal is the
+    // axis it lies on.
+    float dxMin = point.x - c.min.x, dxMax = c.max.x - point.x;
+    float dzMin = point.z - c.min.z, dzMax = c.max.z - point.z;
+    float best = dxMin;
+    normalOut = glm::vec3(-1, 0, 0);
+    if (dxMax < best) { best = dxMax; normalOut = glm::vec3(1, 0, 0); }
+    if (dzMin < best) { best = dzMin; normalOut = glm::vec3(0, 0, -1); }
+    if (dzMax < best) { normalOut = glm::vec3(0, 0, 1); }
+    return true;
+  }
+  return false;
+}
+
+bool Level::lineOfSight(const glm::vec3& from, const glm::vec3& to) const {
+  glm::vec3 delta = to - from;
+  float dist = glm::length(delta);
+  if (dist < 1e-4f) return true;
+  // One sample every 40cm: finer than the thinnest cover this level builds
+  // (a barricade is 0.8m through), so nothing thick enough to stop a shot
+  // can slip between two samples.
+  int steps = std::max(2, (int)(dist / 0.4f));
+  glm::vec3 normal;
+  for (int i = 1; i < steps; i++) {
+    glm::vec3 p = from + delta * ((float)i / (float)steps);
+    if (wallAt(p, normal)) return false;
+  }
+  return true;
 }
 
 bool Level::resolve(glm::vec3& pos, float radius, float height) const {

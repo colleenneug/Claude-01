@@ -56,6 +56,15 @@ public:
   // is a dim dust haze; space wants near-black so the stars read at all.
   virtual glm::vec3 clearColour() const { return glm::vec3(0.02f, 0.018f, 0.03f); }
 
+  // The sky, painted over whatever the background pixels ended up as (see
+  // skyColour in shaders/composite.frag): a zenith-to-horizon gradient with
+  // the sun in it. Intensity 0 turns it off and leaves the clear colour,
+  // which is what open space wants — out there the background is a starfield
+  // that has already been drawn, and a gradient would erase it.
+  virtual glm::vec3 skyZenith() const { return glm::vec3(0.055f, 0.070f, 0.115f); }
+  virtual glm::vec3 skyHorizon() const { return glm::vec3(0.28f, 0.20f, 0.20f); }
+  virtual float skyIntensity() const { return 1.0f; }
+
   // How far the far plane and the shadow cascades have to reach. A mission
   // arena is tens of metres; open space is tens of thousands, and clamping
   // both to one number would either clip the planets away or throw all the

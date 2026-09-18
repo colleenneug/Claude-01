@@ -33,6 +33,12 @@ public:
   void textCentered(float cx, float y, const std::string& s, float scale, glm::vec4 colour);
   // Advance width of `s`, for laying out around a string.
   static float textWidth(const std::string& s, float scale);
+  // Lays `s` out across at most `maxWidth` pixels, breaking on spaces, and
+  // returns the y just past the last line. Mission briefings are prose
+  // written for the browser build, where the browser wrapped it; here
+  // nothing wraps it unless this does.
+  float wrapped(float x, float y, float maxWidth, const std::string& s,
+                float scale, glm::vec4 colour, float lineHeight);
 
   // Everything the mission HUD reads, in one struct rather than twenty
   // positional arguments — it grew past the point where a call site was
@@ -59,6 +65,12 @@ public:
     // "+24 AMMO" style note just under the crosshair after a pickup.
     std::string pickupNote;
     float pickupAlpha = 0.0f;
+
+    // The field ability's recharge, 0..1, and whether it is ready. An
+    // ability on a nine-second cooldown that the screen says nothing about
+    // is an ability nobody presses.
+    float abilityFrac = 1.0f;
+    bool abilityReady = true;
 
     // The equipped cosmetic's colour (Game::hudAccent): tints the
     // crosshair, ammo pips and the health bar's "full" tier. The health

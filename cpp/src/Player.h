@@ -14,7 +14,25 @@ public:
   glm::vec3 velocity{0.0f};
   float radius = 0.4f;
   float height = 1.8f;
-  float eyeHeight = 1.62f;
+  // Where the camera sits. Not a constant any more: crouching and sliding
+  // drop it, and it eases between the two so the transition reads as the
+  // body moving rather than the view teleporting.
+  float eyeHeight = 1.68f;
+
+  // Crouch and slide, ported from src/js/fps/player.js. Crouch on its own is
+  // slow and short; crouch *at speed* is a slide, which is the one movement
+  // trick the browser build is built around — you come out of it faster than
+  // you went in, and jumping out of it keeps that speed.
+  bool crouching = false;
+  bool sliding = false;
+
+  // The wall run, also from player.js. Leave the ground at speed with a wall
+  // beside you and you run along it. Gravity is turned down rather than off,
+  // so a wall run is always a descent: it buys distance, not flight. You
+  // cannot re-attach to the same wall until you have touched something else.
+  bool wallRunning = false;
+  float wallSide = 0.0f;                    // -1 left, +1 right, 0 not attached
+  glm::vec3 wallNormal{0.0f};
 
   float maxHp = 100.0f;
   float hp = 100.0f;
@@ -29,6 +47,21 @@ public:
   void update(GLFWwindow* window, float dt, float yawRadians, bool sprint, const Level& level,
               bool forceForward = false);
 
+  // Ground speed, ignoring any fall or jump. What decides whether a crouch
+  // becomes a slide, and what the HUD reads to show how fast you're moving.
+  float planarSpeed() const { return glm::length(glm::vec2(velocity.x, velocity.z)); }
+
   glm::vec3 eyePosition() const { return position + glm::vec3(0, eyeHeight, 0); }
   bool alive() const { return hp > 0.0f; }
+
+private:
+  float slideT_ = 0.0f;       // time left in the current slide
+  float slideCool_ = 0.0f;    // stops crouch-spamming into a permanent slide
+  bool crouchWasHeld_ = false;   // a slide starts on the press, not on the hold
+  float wallT_ = 0.0f;        // time left on the current wall
+  float wallCool_ = 0.0f;
+  // Which collider the last wall run was on, so releasing and re-probing the
+  // same surface does not give you an unlimited climb. Compared by the face
+  // normal and the side, which is as much identity as a box has here.
+  glm::vec3 wallLast_{0.0f};
 };

@@ -51,6 +51,32 @@ float Hud::textWidth(const std::string& s, float scale) {
   return (float)s.size() * 6.0f * scale - scale;
 }
 
+float Hud::wrapped(float x, float y, float maxWidth, const std::string& s,
+                   float scale, glm::vec4 colour, float lineHeight) {
+  std::string line;
+  size_t i = 0;
+  while (i <= s.size()) {
+    // Take the next word, including the space that ended it.
+    size_t sp = s.find(' ', i);
+    std::string word = s.substr(i, sp == std::string::npos ? std::string::npos : sp - i);
+    std::string candidate = line.empty() ? word : line + " " + word;
+    if (!line.empty() && textWidth(candidate, scale) > maxWidth) {
+      text(x, y, line, scale, colour);
+      y += lineHeight;
+      line = word;
+    } else {
+      line = candidate;
+    }
+    if (sp == std::string::npos) break;
+    i = sp + 1;
+  }
+  if (!line.empty()) {
+    text(x, y, line, scale, colour);
+    y += lineHeight;
+  }
+  return y;
+}
+
 void Hud::text(float x, float y, const std::string& s, float scale, glm::vec4 colour) {
   for (char c : s) {
     const Glyph* g = findGlyph(c);
@@ -195,6 +221,20 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   std::snprintf(buf, sizeof(buf), "%d / %d", (int)std::lround(s.hp), (int)std::lround(s.maxHp));
   text(bx, by - 16, buf, 2.0f, glm::vec4(hpCol, 0.95f));
   text(bx + bw - textWidth("INTEGRITY", 1.6f), by - 15, "INTEGRITY", 1.6f, dim);
+
+  // ---- field ability charge, a short bar under the health bar. Green and
+  // labelled with its key when it is ready, dim and filling when it is not.
+  {
+    const float aw = 120.0f, ah = 8.0f;
+    float ay = by + bh + 8.0f;
+    rect(bx - 3, ay - 3, aw + 6, ah + 6, glm::vec4(0, 0, 0, 0.45f));
+    rect(bx, ay, aw, ah, glm::vec4(0.08f, 0.10f, 0.13f, 0.9f));
+    glm::vec4 col = s.abilityReady ? glm::vec4(0.45f, 0.95f, 0.65f, 0.95f)
+                                   : glm::vec4(0.35f, 0.50f, 0.68f, 0.9f);
+    rect(bx, ay, aw * std::clamp(s.abilityFrac, 0.0f, 1.0f), ah, col);
+    text(bx + aw + 10, ay - 1, s.abilityReady ? "Q PHASE STEP" : "PHASE STEP", 1.5f,
+         s.abilityReady ? col : dim);
+  }
 
   // ---- ammo pips + counts, bottom-right. One small rect per round in the
   // mag, capped so a huge magazine doesn't paint a wall of pips; the real
@@ -400,6 +440,10 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
   const glm::vec4 unaffordable(0.85f, 0.35f, 0.32f, 0.85f);
 
   float x = 48.0f;
+  // The screen is two columns: gear on the left, the route on the right. Both
+  // right-align their trailing labels, so the gear column needs its own right
+  // edge — against the screen's, its prices land on top of the route list.
+  const float gearRight = screenW * 0.46f;
   char buf[96];
 
   // ---- masthead
@@ -435,7 +479,7 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                                  : unaffordable;
 
       if (i == selected) {
-        rect(x + 8, y - 4, screenW - 96.0f - 16.0f, rowH - 4, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
+        rect(x + 8, y - 4, gearRight - x - 8.0f, rowH - 4, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
         text(x + 14, y + 2, ">", 2.2f, bright);
       }
       rect(x + 34, y + 2, 10, 14, col);
@@ -450,7 +494,7 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
         right = buf;
       }
       float rw = textWidth(right, 1.8f);
-      text(screenW - 48 - rw, y + 4, right, 1.8f,
+      text(gearRight - rw, y + 4, right, 1.8f,
            isEquipped ? equippedCol : (owned ? ownedCol : (affordable ? gold : unaffordable)));
       y += rowH;
     }
@@ -479,36 +523,79 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                  return d ? d->name : id;
                });
 
-  // ---- destinations. Free to launch, and green once cleared at least
-  // once (Profile::recordMissionComplete only pays the reward the first
-  // time, so the tint doubles as "already paid out").
-  text(x, y, "[TAB] DESTINATION", 2.0f, glm::vec4(0.75f, 0.85f, 0.95f, 0.95f));
-  y += 24.0f;
+  // ---- the route, in a column of its own. Twenty-two destinations do not
+  // fit under three gear lists at the old row height, and shrinking the rows
+  // until they do makes the whole screen unreadable. So the route lives on
+  // the right, windowed to whatever fits, with the selected sector's
+  // objective and briefing underneath it — which is also where the browser
+  // build puts them (src/js/fps/hub.js).
+  const float rx = screenW * 0.52f;
+  const float rw2 = screenW - rx - 48.0f;
+  float ry = 118.0f;
+  text(rx, ry, "[TAB] ROUTE", 2.0f, glm::vec4(0.75f, 0.85f, 0.95f, 0.95f));
+  ry += 24.0f;
+
   const auto& missions = hub.missionIds();
-  for (int i = 0; i < (int)missions.size(); i++) {
+  const float missionRowH = 26.0f;
+  // Leave room for the briefing block below the list.
+  const int visible = std::max(4, (int)((screenH - 300.0f - ry) / missionRowH));
+  int first = hub.missionIndex() - visible / 2;
+  first = std::max(0, std::min(first, (int)missions.size() - visible));
+  int last = std::min((int)missions.size(), first + visible);
+
+  for (int i = first; i < last; i++) {
     const MissionDef* m = content.mission(missions[i]);
     bool completed = profile.hasCompleted(missions[i]);
-    glm::vec4 col = completed ? equippedCol : glm::vec4(0.8f, 0.85f, 0.92f, 0.95f);
+    bool locked = hub.missionLocked(i);
+    glm::vec4 col = locked     ? glm::vec4(0.42f, 0.44f, 0.48f, 0.8f)
+                  : completed  ? equippedCol
+                               : glm::vec4(0.8f, 0.85f, 0.92f, 0.95f);
     if (i == hub.missionIndex()) {
-      rect(x + 8, y - 4, screenW - 96.0f - 16.0f, rowH - 4, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
-      text(x + 14, y + 2, ">", 2.2f, bright);
+      rect(rx + 4, ry - 4, rw2 - 8, missionRowH - 4, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
+      text(rx + 8, ry, ">", 2.0f, bright);
     }
-    rect(x + 34, y + 2, 10, 14, col);
-    text(x + 54, y + 2, m ? m->name : missions[i], 2.2f, col);
+    rect(rx + 26, ry, 8, 12, col);
 
-    std::string right = completed ? "CLEARED" : "NEW";
-    if (m && !completed) {
-      std::snprintf(buf, sizeof(buf), "NEW - %d CHITS", m->rewardChits);
-      right = buf;
+    // The route is numbered so its order reads as a route rather than a menu.
+    std::string label = m ? m->name : missions[i];
+    if (m && m->campaignIndex > 0) {
+      std::snprintf(buf, sizeof(buf), "%02d %s", m->campaignIndex, label.c_str());
+      label = buf;
     }
-    float rw = textWidth(right, 1.8f);
-    text(screenW - 48 - rw, y + 4, right, 1.8f, completed ? equippedCol : gold);
-    y += rowH;
+    text(rx + 42, ry, label, 1.9f, col);
+
+    std::string right = locked ? "LOCKED" : (completed ? "CLEARED" : "OPEN");
+    float rww = textWidth(right, 1.6f);
+    text(screenW - 58 - rww, ry + 2, right, 1.6f,
+         locked ? glm::vec4(0.5f, 0.5f, 0.54f, 0.8f) : (completed ? equippedCol : gold));
+    ry += missionRowH;
+  }
+  if (last < (int)missions.size() || first > 0) {
+    std::snprintf(buf, sizeof(buf), "%d OF %d", hub.missionIndex() + 1, (int)missions.size());
+    text(rx + 42, ry + 2, buf, 1.6f, dim);
+  }
+
+  // ---- the selected sector's objective and briefing, wrapped to the column.
+  const MissionDef* sel = content.mission(hub.selectedMission());
+  if (sel) {
+    float by = screenH - 268.0f;
+    rect(rx, by - 14, rw2, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.5f));
+    if (!sel->objective.empty()) {
+      text(rx, by, "OBJECTIVE", 1.6f, glm::vec4(0.75f, 0.85f, 0.95f, 0.8f));
+      by += 20.0f;
+      by = wrapped(rx, by, rw2, sel->objective, 1.9f, gold, 22.0f);
+      by += 10.0f;
+    }
+    if (!sel->brief.empty()) {
+      text(rx, by, "BRIEFING", 1.6f, glm::vec4(0.75f, 0.85f, 0.95f, 0.8f));
+      by += 20.0f;
+      wrapped(rx, by, rw2, sel->brief, 1.7f, glm::vec4(0.72f, 0.78f, 0.86f, 0.95f), 20.0f);
+    }
   }
 
   // ---- footer hint
   textCentered(screenW * 0.5f, screenH - 42.0f,
-               "1 2 3 CYCLE GEAR   TAB CYCLE DESTINATION   ENTER DEPLOY", 2.0f, dim);
+               "1 2 3 CYCLE GEAR   TAB CYCLE ROUTE   ENTER DEPLOY   Q UNDOCK", 2.0f, dim);
 
   end();
 }

@@ -23,6 +23,15 @@ struct EnemyType {
   glm::vec3 colour{0.55f, 0.58f, 0.5f};
   glm::vec3 glow{0.6f, 0.85f, 1.0f};
   bool ranged = false;
+  // Flyers get a different body entirely (see Hostile::collect): a core in
+  // a cowl with a spinning ring and a thruster, rather than legs. They also
+  // hover, so the rig sits at a fraction of `height` instead of standing on
+  // the ground at it.
+  bool flying = false;
+  // Elites and bosses get the wider, more heavily plated build and carry a
+  // shoulder cannon instead of a forearm one. It is a content decision, not
+  // one to infer from a health number that also moves for balance reasons.
+  bool elite = false;
   float xp = 20.0f;
 };
 
@@ -42,12 +51,38 @@ struct CommsBeat {
 
 struct MissionDef {
   std::string id, name;
+  // One line of what you are here to do, and a few of why. The browser build
+  // shows both on the mission card before you launch (see src/js/fps/hub.js);
+  // this is the same text, so the two builds tell the same story.
+  std::string objective;
+  std::string brief;
   float arenaSize = 80.0f;
   std::vector<WaveSpawn> waves;
   std::string bossId;       // empty = no boss
   float bossHpMultiplier = 1.0f;
   int rewardChits = 40;     // paid out once, on first completion — see Profile
   std::vector<CommsBeat> comms;
+  // Position in the campaign route down the ark, 1..N, or 0 for a mission
+  // that is not part of it (a planet's patrol, a debug fixture). The route is
+  // ordered by this number and unlocks one step at a time, so a mission's
+  // place in the story lives in the mission's own file rather than in a list
+  // somewhere else that has to be kept in step with it.
+  int campaignIndex = 0;
+  // Where aboard the ark it happens. Missions that share a zone share a look.
+  std::string zone;
+
+  // The look of the place. Defaults are the dusty-planet grade the renderer
+  // was built around; a mission overrides whichever of them it cares about.
+  // This is what makes the route down the ark read as a route rather than
+  // sixteen fights in the same room — THE FALSE SKY is a held sunset, the
+  // reactor runs hot and orange, Deck Zero is nearly black.
+  glm::vec3 skyZenith{0.055f, 0.070f, 0.115f};
+  glm::vec3 skyHorizon{0.28f, 0.20f, 0.20f};
+  glm::vec3 fogColour{0.42f, 0.30f, 0.34f};
+  glm::vec3 sunColour{1.0f, 0.94f, 0.82f};
+  glm::vec3 floorColour{0.31f, 0.26f, 0.21f};
+  float fogDensity = 0.011f;
+  float sunIntensity = 3.4f;
 };
 
 // content/weapons/<id>.cfg — equipping one (see Game::equipWeapon) sets
@@ -113,6 +148,10 @@ public:
 
   std::vector<std::string> planetIds() const;
   std::vector<std::string> missionIds() const;
+  // The campaign route in story order — every mission with a campaign
+  // number, sorted by it. Side content (a planet's patrol, a debug
+  // fixture) has no number and does not appear here.
+  std::vector<std::string> campaignIds() const;
   std::vector<std::string> weaponIds() const;
   std::vector<std::string> armorIds() const;
   std::vector<std::string> cosmeticIds() const;
