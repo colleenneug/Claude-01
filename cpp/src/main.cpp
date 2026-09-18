@@ -166,7 +166,7 @@ int main(int argc, char** argv) {
   // The Cradle you walk around in. Built once: its geometry never changes,
   // and rebuilding it every time you dock would throw away and re-upload
   // several hundred boxes for nothing.
-  station.init();
+  station.init(hubContent);
 
   // EREBUS_SKIP_HUB=1 boots straight into --mission with whatever's
   // currently equipped, bypassing the Hub entirely — kept for every
@@ -314,6 +314,11 @@ int main(int argc, char** argv) {
   bool p1 = false, p2 = false, p3 = false, pUp = false, pDown = false;
   bool pEnter = false, pSpace = false, pDel = false, pY = false, pN = false;
   bool prevEngageKey = false, prevUndockKey = false, prevAbilityKey = false;
+  bool prevTalkEsc = false;
+  // Who you are mid-conversation with, and which of their lines is up.
+  // Points into Station's own crew list, which outlives every frame.
+  const Crew::Person* talkingTo = nullptr;
+  int talkIndex = 0;
 
   // Everything that has to happen once a record is settled on, whether it
   // came out of an existing slot or was just created. Lives here rather than
@@ -607,37 +612,68 @@ int main(int argc, char** argv) {
       }
     } else if (state == AppState::Station) {
       ScriptedInput stationInput;
-      stationInput.forward = forceForward;
+      // Don't walk while you are mid-conversation: the person you are talking
+      // to is standing right in front of you, and the scripted walk would
+      // shove past them and out of range of their own dialogue.
+      stationInput.forward = forceForward && talkingTo == nullptr;
       station.update(window, camera, dt, stationInput);
       renderer.renderFrame(station, camera, (float)now, dt);
 
-      const Station::Terminal* term = station.nearestTerminal();
+      const Crew::Person* person = station.nearestPerson();
+      const Station::Terminal* term = person ? nullptr : station.nearestTerminal();
       // E uses whatever is in reach. The scripted press (EREBUS_FORCE_ENGAGE,
-      // shared with docking) lets a headless run walk the concourse and open
-      // the flight deck without a keyboard.
-      bool eDown = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS || (forceEngage && term);
+      // shared with docking) lets a headless run walk the concourse and talk
+      // to somebody without a keyboard.
+      // A conversation advances on a *press* per line, so the scripted key has
+      // to be pulsed rather than held: held, it fires its one rising edge on
+      // the first line and the talk never gets past it.
+      bool scriptedE = forceEngage && (term || person || talkingTo) && (frame % 16 < 8);
+      bool eDown = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS || scriptedE;
       bool ePressed = eDown && !prevEngageKey;
       prevEngageKey = eDown;
       bool qDown = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS;
       bool qPressed = qDown && !prevUndockKey;
       prevUndockKey = qDown;
+      bool escDown = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+      bool escPressed = escDown && !prevTalkEsc;
+      prevTalkEsc = escDown;
 
-      if ((ePressed && term && term->id == "airlock") || qPressed) {
+      if (talkingTo) {
+        // Mid-conversation. E advances a line; the last line, or Escape, ends
+        // it — and for the ones with a counter, ending it opens what they are
+        // standing behind.
+        if (escPressed) {
+          talkingTo = nullptr;
+        } else if (ePressed) {
+          talkIndex++;
+          if (talkIndex >= (int)talkingTo->def->say.size()) {
+            const CrewDef* def = talkingTo->def;
+            talkingTo = nullptr;
+            if (def->shop != CrewShop::None) {
+              hub.init(hubContent, profile);
+              // Shaw keeps the side work; Kaur keeps the ark. Opening the hub
+              // on the right part of the list is the whole difference between
+              // "talk to the right person" and "read the whole board again".
+              if (def->shop == CrewShop::Contracts) hub.preselectFirstSideContract();
+              else if (missionIdGiven) hub.preselectMission(missionId);
+              hub.setFocus(def->shop == CrewShop::Gear ? Hub::Focus::Gear : Hub::Focus::Route);
+              hub.setHost(def->name, def->title, def->colour);
+              launchedFromStation = true;
+              state = AppState::Hub;
+              glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+              mouseCaptured = false;
+            }
+          }
+        }
+      } else if ((ePressed && term && term->id == "airlock") || qPressed) {
         ProfileStore::save(profile, savePath);
         space.placeNear("");
         state = AppState::Space;
+        talkingTo = nullptr;
         prevEngageKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
-      } else if (ePressed && term) {
-        // The armoury and the flight deck both open the hub screen: this
-        // build has one, listing gear and the route together. Splitting it in
-        // two to match the browser's separate screens would be two screens
-        // saying what one says.
-        hub.init(hubContent, profile);
-        if (missionIdGiven) hub.preselectMission(missionId);
-        launchedFromStation = true;
-        state = AppState::Hub;
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-        mouseCaptured = false;
+      } else if (ePressed && person && !person->def->say.empty()) {
+        talkingTo = person;
+        talkIndex = 0;
       }
 
       glfwGetFramebufferSize(window, &width, &height);
@@ -650,6 +686,33 @@ int main(int argc, char** argv) {
         ss.terminalName = term->name;
         ss.terminalLine = term->line;
         ss.terminalColour = term->colour;
+        ss.terminalAction = term->id == "airlock" ? "UNDOCK" : "USE";
+      } else if (person) {
+        ss.terminalName = person->def->name;
+        ss.terminalLine = person->def->line;
+        ss.terminalColour = person->def->colour;
+        ss.terminalAction = "TALK";
+      }
+      if (talkingTo) {
+        ss.talkingTo = talkingTo->def->name;
+        ss.talkTitle = talkingTo->def->title;
+        ss.talkLine = talkingTo->def->say[talkIndex];
+        ss.talkIndex = talkIndex;
+        ss.talkCount = (int)talkingTo->def->say.size();
+        ss.talkColour = talkingTo->def->colour;
+      }
+      // Nameplates need the same matrices the scene was drawn with, so they
+      // sit on the people rather than near them.
+      ss.viewProj = renderer.lastViewProj();
+      ss.eye = camera.position;
+      for (const Crew::Person& c : station.crew().people()) {
+        if (!c.def) continue;
+        Hud::StationState::Nameplate np;
+        np.worldPos = c.pos + glm::vec3(0.0f, 2.24f, 0.0f);
+        np.name = c.def->name;
+        np.title = c.def->title;
+        np.colour = c.def->colour;
+        ss.nameplates.push_back(np);
       }
       hud.drawStation(width, height, ss);
 

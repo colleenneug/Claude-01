@@ -37,6 +37,28 @@ struct EnemyType {
 
 struct WaveSpawn { std::string enemyId; int count = 1; float radius = 20.0f; };
 
+// content/crew/<id>.cfg — one of the people standing in the Cradle. A hub is
+// not a room, it is the people standing in it; the browser build draws the
+// same line (src/js/fps/crew.js).
+//
+// `shop` is what separates a vendor from a conversation. Empty means talking
+// to them is the whole interaction, which is the honest answer for the posts
+// whose screens this build does not have: the appraiser has nothing to break
+// down and the muster officer has nobody to muster, and they say so rather
+// than opening something that would do nothing.
+enum class CrewShop { None, Gear, Route, Contracts };
+
+struct CrewDef {
+  std::string id, name, title, line;
+  glm::vec3 colour{0.8f, 0.9f, 1.0f};
+  glm::vec3 position{0.0f};
+  float facingDegrees = 0.0f;
+  CrewShop shop = CrewShop::None;
+  bool desk = true;     // a lit post to stand behind, so they read as a station
+  bool board = false;   // ...and a wall of lit slates behind it, for the contracts post
+  std::vector<std::string> say;
+};
+
 // When a comms beat fires. The browser build stages its story the same way
 // (see src/js/fps/game.js): each objective fires its own beats as you reach
 // it, rather than stopping the game for a dialogue screen.
@@ -193,9 +215,11 @@ public:
   const CosmeticDef* cosmetic(const std::string& id) const;
   const PlanetDef* planet(const std::string& id) const;
   const ClassDef* playerClass(const std::string& id) const;
+  const CrewDef* crew(const std::string& id) const;
 
   std::vector<std::string> planetIds() const;
   std::vector<std::string> classIds() const;
+  std::vector<std::string> crewIds() const;
   std::vector<std::string> missionIds() const;
   // The campaign route in story order — every mission with a campaign
   // number, sorted by it. Side content (a planet's patrol, a debug
@@ -213,4 +237,5 @@ private:
   std::unordered_map<std::string, CosmeticDef> cosmetics_;
   std::unordered_map<std::string, PlanetDef> planets_;
   std::unordered_map<std::string, ClassDef> classes_;
+  std::unordered_map<std::string, CrewDef> crew_;
 };

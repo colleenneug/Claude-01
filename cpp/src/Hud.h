@@ -40,6 +40,14 @@ public:
   float wrapped(float x, float y, float maxWidth, const std::string& s,
                 float scale, glm::vec4 colour, float lineHeight);
 
+  // Projects a world point to pixels. Returns false when it is behind the
+  // camera, which is not a detail: a point behind you projects to a
+  // perfectly plausible on-screen position with the sign flipped, so
+  // without this check every nameplate has a mirror image floating over
+  // your shoulder.
+  static bool worldToScreen(const glm::mat4& viewProj, const glm::vec3& world,
+                            int screenW, int screenH, glm::vec2& out);
+
   // Everything the mission HUD reads, in one struct rather than twenty
   // positional arguments — it grew past the point where a call site was
   // readable once names, counts and comms lines joined the bars.
@@ -118,7 +126,25 @@ public:
     std::string deck;            // "DECK A - CONCOURSE"
     std::string terminalName;    // empty when nothing is in reach
     std::string terminalLine;
+    std::string terminalAction;  // "TALK", "BROWSE", "UNDOCK" — what E does here
     glm::vec3 terminalColour{0.6f, 0.9f, 1.0f};
+
+    // A name and title floating over each crew member with a post, so you can
+    // see who is where from across the concourse instead of walking up to
+    // everyone to find out. Projected from world space — see worldToScreen.
+    struct Nameplate {
+      glm::vec3 worldPos{0.0f};
+      std::string name, title;
+      glm::vec3 colour{0.8f, 0.9f, 1.0f};
+    };
+    std::vector<Nameplate> nameplates;
+    glm::mat4 viewProj{1.0f};
+    glm::vec3 eye{0.0f};
+
+    // One line of conversation, shown while you are talking to someone.
+    std::string talkingTo, talkTitle, talkLine;
+    int talkIndex = 0, talkCount = 0;
+    glm::vec3 talkColour{0.8f, 0.9f, 1.0f};
   };
   void drawStation(int screenW, int screenH, const StationState& s);
 

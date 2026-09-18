@@ -40,6 +40,12 @@ public:
   // (a geometry/lighting bug) vs "the scene has real radiance but the
   // composite pass is crushing it to black" (a tonemap/exposure bug) —
   // rather than guessing from a description alone.
+  // The view-projection the last frame was drawn with. The HUD needs it to
+  // put a label on a thing in the world — projecting with a matrix it
+  // rebuilt itself would drift from what was actually rendered the moment
+  // the FOV moved, which it does every time you aim.
+  const glm::mat4& lastViewProj() const { return lastViewProj_; }
+
   void debugPrintCenterPixel() const;
 
   // ---------- adaptive quality (ported from the browser build's engine.js
@@ -97,6 +103,7 @@ private:
   // plane would either clip the planets out of existence or spend all the
   // depth precision (and every shadow cascade) on empty air.
   float farPlane_ = 500.0f;
+  glm::mat4 lastViewProj_{1.0f};
 
   Shader depthShader_, pbrShader_, motesShader_, dofShader_, compositeShader_;
   Framebuffer sceneHdr_;   // full-res HDR + depth texture

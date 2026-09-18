@@ -339,6 +339,61 @@ ClassDef parseClass(const std::string& id, const fs::path& path) {
   return c;
 }
 
+CrewDef parseCrew(const std::string& id, const fs::path& path) {
+  CrewDef c;
+  c.id = id;
+  c.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+
+    // say | <one line of dialogue>
+    // The pipe keeps the line itself free to contain anything but a pipe,
+    // which is the same trick the comms beats use.
+    if (line.rfind("say", 0) == 0) {
+      size_t bar = line.find('|');
+      if (bar == std::string::npos) {
+        std::fprintf(stderr, "[Content] %s: malformed say line '%s', skipped\n",
+                     path.string().c_str(), line.c_str());
+        continue;
+      }
+      std::string spoken = line.substr(bar + 1);
+      size_t a = spoken.find_first_not_of(" \t");
+      if (a != std::string::npos) c.say.push_back(spoken.substr(a));
+      continue;
+    }
+
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") c.name = v;
+      else if (k == "title") c.title = v;
+      else if (k == "line") c.line = v;
+      else if (k == "colour" || k == "color") c.colour = parseVec3(v, c.colour);
+      else if (k == "position") c.position = parseVec3(v, c.position);
+      else if (k == "facing") c.facingDegrees = std::stof(v);
+      else if (k == "desk") c.desk = (v == "true" || v == "1");
+      else if (k == "board") c.board = (v == "true" || v == "1");
+      else if (k == "shop") {
+        if (v == "gear") c.shop = CrewShop::Gear;
+        else if (v == "route") c.shop = CrewShop::Route;
+        else if (v == "contracts") c.shop = CrewShop::Contracts;
+        else if (v == "none") c.shop = CrewShop::None;
+        else {
+          std::fprintf(stderr, "[Content] %s: unknown shop '%s', treated as none\n",
+                       path.string().c_str(), v.c_str());
+        }
+      }
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return c;
+}
+
 }  // namespace
 
 bool Content::loadAll(const std::string& dir) {
@@ -411,10 +466,20 @@ bool Content::loadAll(const std::string& dir) {
     }
   }
 
+  fs::path crewDir = root / "crew";
+  if (fs::exists(crewDir)) {
+    for (auto& entry : fs::directory_iterator(crewDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      crew_[id] = parseCrew(id, entry.path());
+    }
+  }
+
   std::printf("[Content] loaded %zu enemy type(s), %zu mission(s), %zu weapon(s), "
-              "%zu armor piece(s), %zu cosmetic(s), %zu planet(s), %zu class(es) from %s\n",
+              "%zu armor piece(s), %zu cosmetic(s), %zu planet(s), %zu class(es), "
+              "%zu crew from %s\n",
               enemies_.size(), missions_.size(), weapons_.size(), armor_.size(),
-              cosmetics_.size(), planets_.size(), classes_.size(), dir.c_str());
+              cosmetics_.size(), planets_.size(), classes_.size(), crew_.size(), dir.c_str());
   return true;
 }
 
@@ -427,6 +492,19 @@ std::vector<std::string> Content::classIds() const {
   std::vector<std::string> out;
   out.reserve(classes_.size());
   for (auto& kv : classes_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+const CrewDef* Content::crew(const std::string& id) const {
+  auto it = crew_.find(id);
+  return it == crew_.end() ? nullptr : &it->second;
+}
+
+std::vector<std::string> Content::crewIds() const {
+  std::vector<std::string> out;
+  out.reserve(crew_.size());
+  for (auto& kv : crew_) out.push_back(kv.first);
   std::sort(out.begin(), out.end());
   return out;
 }

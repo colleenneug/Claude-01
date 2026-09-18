@@ -133,11 +133,26 @@ run "$OUT/stairs.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
 check "the stairs climb to deck B" "$OUT/stairs.json" \
       "s['appState'] == 'station' and s['pos'][1] > 6.5"
 
-# Walking up to the flight deck and pressing E opens the route.
-run "$OUT/flight.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
-    EREBUS_STATION_AT=0,0,32 EREBUS_STATION_YAW=90 EREBUS_MAX_FRAMES=60
-check "the flight deck opens the route" "$OUT/flight.json" \
+# The posts are people now, not kiosks. Walking up to Kaur and hearing her
+# out opens the route; Voss opens the armoury. The scripted key is pulsed, so
+# this also covers the conversation advancing a line at a time.
+run "$OUT/kaur.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=0,0,31 EREBUS_STATION_YAW=90 EREBUS_MAX_FRAMES=160
+check "the flight officer opens the route" "$OUT/kaur.json" \
       "s['appState'] == 'hub'"
+
+run "$OUT/voss.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=-34.5,7,2 EREBUS_STATION_YAW=180 EREBUS_MAX_FRAMES=160
+check "the quartermaster opens the armoury" "$OUT/voss.json" \
+      "s['appState'] == 'hub'"
+
+# ...and the ones with nothing to sell are a conversation and nothing else.
+# The Rook has no shop, so talking all the way through leaves you standing in
+# the concourse rather than opening a screen that would do nothing.
+run "$OUT/rook.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=-8,0,-13 EREBUS_STATION_YAW=-90 EREBUS_MAX_FRAMES=160
+check "a post with no shop is only a conversation" "$OUT/rook.json" \
+      "s['appState'] == 'station'"
 
 # A brand-new record starts on Earth, at the ground site, and is walked
 # through its kit. A record that has cleared anything at all goes straight up.

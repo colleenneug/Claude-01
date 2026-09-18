@@ -51,6 +51,17 @@ float Hud::textWidth(const std::string& s, float scale) {
   return (float)s.size() * 6.0f * scale - scale;
 }
 
+bool Hud::worldToScreen(const glm::mat4& viewProj, const glm::vec3& world,
+                        int screenW, int screenH, glm::vec2& out) {
+  glm::vec4 clip = viewProj * glm::vec4(world, 1.0f);
+  if (clip.w <= 0.0001f) return false;
+  glm::vec3 ndc = glm::vec3(clip) / clip.w;
+  if (ndc.x < -1.4f || ndc.x > 1.4f || ndc.y < -1.4f || ndc.y > 1.4f) return false;
+  out.x = (ndc.x * 0.5f + 0.5f) * (float)screenW;
+  out.y = (1.0f - (ndc.y * 0.5f + 0.5f)) * (float)screenH;
+  return true;
+}
+
 float Hud::wrapped(float x, float y, float maxWidth, const std::string& s,
                    float scale, glm::vec4 colour, float lineHeight) {
   std::string line;
@@ -507,17 +518,61 @@ void Hud::drawStation(int screenW, int screenH, const StationState& s) {
   text(28, 34, "THE CRADLE", 2.6f, bright);
   if (!s.deck.empty()) text(28, 66, s.deck, 1.8f, dim);
 
-  if (!s.terminalName.empty()) {
+  // ---- nameplates over the crew with posts. Fading them with distance is
+  // what keeps a concourse with five of them in it from becoming a wall of
+  // text: the far ones say where somebody is, the near one says who.
+  for (const StationState::Nameplate& n : s.nameplates) {
+    glm::vec2 at;
+    if (!worldToScreen(s.viewProj, n.worldPos, screenW, screenH, at)) continue;
+    float dist = glm::length(n.worldPos - s.eye);
+    float a = 1.0f - std::clamp((dist - 14.0f) / 34.0f, 0.0f, 0.75f);
+    float scale = dist > 24.0f ? 1.5f : 1.9f;
+    float w = std::max(textWidth(n.name, scale), textWidth(n.title, scale * 0.78f));
+    rect(at.x - w * 0.5f - 8, at.y - 6, w + 16, scale > 1.6f ? 42.0f : 34.0f,
+         glm::vec4(0.03f, 0.04f, 0.06f, 0.55f * a));
+    textCentered(at.x, at.y, n.name, scale, glm::vec4(n.colour, 0.95f * a));
+    if (!n.title.empty())
+      textCentered(at.x, at.y + scale * 11.0f, n.title, scale * 0.78f,
+                   glm::vec4(0.72f, 0.78f, 0.86f, 0.8f * a));
+  }
+
+  // ---- what you are standing in front of
+  if (!s.terminalName.empty() && s.talkingTo.empty()) {
     glm::vec4 col(s.terminalColour, 0.98f);
     float w = textWidth(s.terminalName, 3.0f);
     rect(cx - w * 0.5f - 16, cy + 44, w + 32, 40, glm::vec4(0.05f, 0.07f, 0.10f, 0.72f));
     textCentered(cx, cy + 54, s.terminalName, 3.0f, col);
     if (!s.terminalLine.empty()) textCentered(cx, cy + 92, s.terminalLine, 1.7f, dim);
-    textCentered(cx, cy + 116, "PRESS E", 2.0f, col);
+    textCentered(cx, cy + 116, "PRESS E TO " + (s.terminalAction.empty() ? std::string("USE")
+                                                                         : s.terminalAction),
+                 2.0f, col);
+  }
+
+  // ---- the conversation itself, along the bottom, where a subtitle goes
+  if (!s.talkingTo.empty()) {
+    glm::vec4 col(s.talkColour, 0.98f);
+    float boxTop = screenH - 214.0f;
+    rect(48, boxTop, screenW - 96.0f, 132.0f, glm::vec4(0.04f, 0.05f, 0.07f, 0.86f));
+    rect(48, boxTop, 4, 132.0f, col);
+
+    text(72, boxTop + 18, s.talkingTo, 2.6f, col);
+    if (!s.talkTitle.empty())
+      text(72 + textWidth(s.talkingTo, 2.6f) + 18, boxTop + 24, s.talkTitle, 1.6f, dim);
+    wrapped(72, boxTop + 58, screenW - 192.0f, s.talkLine, 2.0f,
+            glm::vec4(0.90f, 0.94f, 1.0f, 0.97f), 24.0f);
+
+    char buf[48];
+    std::snprintf(buf, sizeof(buf), "%d / %d", s.talkIndex + 1, s.talkCount);
+    text(screenW - 72 - textWidth(buf, 1.6f), boxTop + 20, buf, 1.6f, dim);
+    std::string more = s.talkIndex + 1 < s.talkCount ? "E CONTINUE   ESC LEAVE" : "E LEAVE";
+    text(screenW - 72 - textWidth(more, 1.7f), boxTop + 104, more, 1.7f, col);
   }
 
   textCentered(cx, screenH - 40.0f,
-               "WASD MOVE   SHIFT SPRINT   SPACE JUMP   E USE   Q AIRLOCK", 1.9f, dim);
+               s.talkingTo.empty()
+                   ? "WASD MOVE   SHIFT SPRINT   SPACE JUMP   E USE   Q AIRLOCK"
+                   : "E CONTINUE   ESC LEAVE",
+               1.9f, dim);
   end();
 }
 
@@ -615,9 +670,16 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
   const float gearRight = screenW * 0.46f;
   char buf[96];
 
-  // ---- masthead
-  text(x, 40, "THE CRADLE", 4.0f, bright);
-  text(x, 78, "ORBITAL STAGING - SELECT LOADOUT AND DESTINATION", 1.8f, dim);
+  // ---- masthead. Whoever's counter this is gets their name on it.
+  const bool hosted = !hub.hostName().empty();
+  text(x, 40, hosted ? hub.hostName() : std::string("THE CRADLE"), 4.0f,
+       hosted ? glm::vec4(hub.hostColour(), 0.98f) : bright);
+  text(x, 78, hosted ? hub.hostTitle() : std::string("ORBITAL STAGING - SELECT LOADOUT AND DESTINATION"),
+       1.8f, dim);
+  // Dim the half you did not come for. Both stay usable — walking back down
+  // three decks for a rifle you forgot would be a punishment, not a hub.
+  const float gearFade = hub.focus() == Hub::Focus::Route ? 0.45f : 1.0f;
+  const float routeFade = hub.focus() == Hub::Focus::Gear ? 0.45f : 1.0f;
   std::snprintf(buf, sizeof(buf), "%d CHITS", profile.chits);
   float chitsW = textWidth(buf, 2.6f);
   text(screenW - 48 - chitsW, 42, buf, 2.6f, gold);
@@ -651,6 +713,7 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
         rect(x + 8, y - 4, gearRight - x - 8.0f, rowH - 4, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
         text(x + 14, y + 2, ">", 2.2f, bright);
       }
+      col.a *= gearFade;
       rect(x + 34, y + 2, 10, 14, col);
 
       text(x + 54, y + 2, statFn(id), 2.2f, col);
@@ -723,6 +786,7 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
       rect(rx + 4, ry - 4, rw2 - 8, missionRowH - 4, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
       text(rx + 8, ry, ">", 2.0f, bright);
     }
+    col.a *= routeFade;
     rect(rx + 26, ry, 8, 12, col);
 
     // The route is numbered so its order reads as a route rather than a menu.

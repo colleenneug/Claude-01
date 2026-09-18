@@ -54,6 +54,10 @@ void Hub::preselectMission(const std::string& id) {
   missionIndex_ = index;
 }
 
+void Hub::preselectFirstSideContract() {
+  if (campaignCount_ < (int)missionIds_.size()) missionIndex_ = campaignCount_;
+}
+
 void Hub::cycleWeapon() {
   if (weaponIds_.empty()) return;
   weaponIndex_ = (weaponIndex_ + 1) % (int)weaponIds_.size();

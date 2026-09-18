@@ -115,7 +115,7 @@ struct Builder {
 
 }  // namespace
 
-bool Station::init() {
+bool Station::init(const Content& content) {
   Builder b;
   const std::vector<Hole> noHoles;
 
@@ -254,9 +254,11 @@ bool Station::init() {
 
   // ---------- terminals. The things you actually came here to do, each a lit
   // kiosk you stand at, placed apart on purpose.
+  // Only the airlock is an unattended kiosk now. The armoury and the flight
+  // deck are people — Voss and Kaur stand at them (content/crew) — and a
+  // terminal next to a person offering the same thing is two prompts for one
+  // job.
   terminals_ = {
-    {"armoury", "ARMOURY", "Salvage, parts and the bench.", {-37.0f, DECK_B, 2.0f}, {1.0f, 0.71f, 0.33f}},
-    {"flight", "FLIGHT DECK", "The ark, and the ground below it.", {0.0f, DECK_A, 34.0f}, {0.37f, 0.92f, 1.0f}},
     {"airlock", "AIRLOCK", "Back to the ship.", {0.0f, DECK_A, 44.0f}, {0.49f, 1.0f, 0.61f}},
   };
   for (const Terminal& t : terminals_) {
@@ -307,7 +309,58 @@ bool Station::init() {
   b.lit(29, 45, DECK_B + 5.26f, DECK_B + 5.4f, -0.5f, 0.5f, WARM, 2.4f);
   b.lit(21, 41, DECK_A + 5.76f, DECK_A + 5.9f, -0.5f, 0.5f, WARM, 2.4f);
 
+  // The crew's furniture is the station's, not the crew's: a counter you can
+  // walk through is not a counter, and only what goes into the level's part
+  // list gets a collider. The people themselves are drawn by Crew.
+  for (const std::string& id : content.crewIds()) {
+    const CrewDef* def = content.crew(id);
+    if (!def || !def->desk) continue;
+    // Rotating an axis-aligned box would leave its collider describing
+    // something wider than what you can see, so a post is placed on whichever
+    // axis it faces and sized accordingly. Facings are quarter turns.
+    float yaw = def->facingDegrees;
+    bool alongZ = std::abs(std::fmod(std::abs(yaw), 180.0f)) < 45.0f;   // faces +/-Z
+    float fx = -std::sin(glm::radians(yaw));   // the local -Z direction, in world
+    float fz = -std::cos(glm::radians(yaw));
+    glm::vec3 front = def->position + glm::vec3(fx, 0.0f, fz) * 1.3f;
+    glm::vec3 half = alongZ ? glm::vec3(1.3f, 0.0f, 0.45f) : glm::vec3(0.45f, 0.0f, 1.3f);
+
+    b.box(front.x - half.x, front.x + half.x, def->position.y, def->position.y + 1.05f,
+          front.z - half.z, front.z + half.z, glm::vec3(0.19f, 0.21f, 0.25f), true, 0.75f, 0.45f);
+    // A lit edge along the counter's front, not a lit tabletop: a whole
+    // glowing surface at this size stops reading as a light and starts
+    // reading as a slab of colour, and silhouettes whoever is behind it.
+    glm::vec3 edge = front + glm::vec3(fx, 0.0f, fz) * (alongZ ? 0.40f : 0.40f);
+    glm::vec3 eh = alongZ ? glm::vec3(half.x * 0.92f, 0.0f, 0.05f)
+                          : glm::vec3(0.05f, 0.0f, half.z * 0.92f);
+    b.lit(edge.x - eh.x, edge.x + eh.x, def->position.y + 1.02f, def->position.y + 1.08f,
+          edge.z - eh.z, edge.z + eh.z, def->colour, 1.4f);
+
+    if (def->board) {
+      glm::vec3 back = def->position - glm::vec3(fx, 0.0f, fz) * 1.5f;
+      glm::vec3 bh = alongZ ? glm::vec3(2.3f, 0.0f, 0.125f) : glm::vec3(0.125f, 0.0f, 2.3f);
+      b.box(back.x - bh.x, back.x + bh.x, def->position.y + 0.3f, def->position.y + 3.3f,
+            back.z - bh.z, back.z + bh.z, glm::vec3(0.11f, 0.13f, 0.16f), true, 0.6f, 0.6f);
+      for (int r = 0; r < 2; r++) {
+        for (int c = 0; c < 3; c++) {
+          float off = ((float)c - 1.0f) * 1.42f;
+          float y = def->position.y + 2.45f - (float)r * 1.3f;
+          // Proud of the slab's face, not sharing its centre — sharing it
+          // buries every slate inside the board.
+          glm::vec3 at = back + glm::vec3(fx, 0.0f, fz) * 0.18f +
+                         (alongZ ? glm::vec3(off, 0.0f, 0.0f) : glm::vec3(0.0f, 0.0f, off));
+          glm::vec3 sh = alongZ ? glm::vec3(0.62f, 0.0f, 0.04f) : glm::vec3(0.04f, 0.0f, 0.62f);
+          // Dim: six lit slates at full strength turn the whole post into a
+          // wall of flat colour with a silhouette in front of it.
+          b.lit(at.x - sh.x, at.x + sh.x, y - 0.57f, y + 0.57f, at.z - sh.z, at.z + sh.z,
+                def->colour * 0.55f, 0.55f);
+        }
+      }
+    }
+  }
+
   level_.buildFromParts(b.parts, DECK_A);
+  crew_.init(content);
   player_.radius = 0.4f;
   player_.height = 1.8f;
   return true;
@@ -341,6 +394,11 @@ void Station::update(GLFWwindow* window, Camera& camera, float dt,
   bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
   player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scripted);
   camera.position = player_.eyePosition();
+  crew_.update(dt);
+}
+
+const Crew::Person* Station::nearestPerson() const {
+  return crew_.nearestPost(player_.position, reach_);
 }
 
 const Station::Terminal* Station::nearestTerminal() const {
@@ -361,4 +419,5 @@ const Station::Terminal* Station::nearestTerminal() const {
 void Station::collect(float time, std::vector<DrawItem>& out) const {
   (void)time;
   level_.collect(out);
+  crew_.collect(out);
 }

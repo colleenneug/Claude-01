@@ -118,6 +118,13 @@ Then you're in **open space**, in your ship:
 | Left Shift | Boost |
 | E | Land on the world you're near, or dock at the Cradle |
 
+There are **people in it**. Five have posts you can walk up to — VOSS the
+quartermaster, KAUR the flight officer, SHAW on contracts, THE ROOK
+appraising, ODIL on muster — and the rest are crew, walking routes across
+the three decks or leaning on a gallery rail watching the Earth go past. The
+walkers are not decoration for its own sake: people you have to walk around
+are what make a room feel used rather than like a lobby.
+
 Docking at the Cradle puts you **inside it, on foot**. Three decks around an
 open concourse, joined by four stair flights, ported from the browser build's
 `../src/js/fps/station.js` — same layout, same module names, same deck
@@ -129,8 +136,16 @@ heights:
 | E | Use whatever you are standing at |
 | Q | Airlock — back to the ship |
 
-The FLIGHT DECK terminal at the far end of the concourse and the ARMOURY on
-deck B both open the **Hub** (Q backs out to where you were standing):
+Walk up to someone and press E to talk; E again for the next line, Escape to
+leave. Hearing **Voss** out opens the armoury and **Kaur** the route —
+they are the same Hub screen, with their name on it and the half you did not
+come for dimmed (both stay usable: walking back down three decks for a rifle
+you forgot would be a punishment, not a hub). **Shaw** opens it on the side
+contracts. The Rook and Odil are conversations and nothing else, and say so
+in as many words — this build has no duplicate gear to break down and no
+second seat to muster, and a screen that did nothing would be worse than an
+honest answer. Q, or the airlock at the end of the concourse, backs out to
+the ship:
 
 | Input | Action |
 |---|---|
@@ -275,6 +290,26 @@ a plain wave clear, and cannot complete until the lesson is done however
 fast you shoot the targets. It is a mission rather than a mode of its own,
 so it gets the level, the weapon, the HUD and the comms thread for free.
 
+**`content/crew/<id>.cfg`** — somebody standing in the Cradle:
+
+```
+name = VOSS
+title = QUARTERMASTER
+line = Gear, parts, and the bench.
+colour = 1.00, 0.71, 0.33
+position = -37, 7, 2
+facing = -90                  # degrees; a figure's front is local -Z
+shop = gear                   # gear | route | contracts | none
+desk = true                   # a lit post to stand behind
+# board = true                # ...and a wall of lit slates, for contracts
+say | You want something that will still be working when the shooting stops.
+say | Everything on this bench came off something that stopped working.
+```
+
+`shop` is what separates a vendor from a conversation. `none` means talking
+to them is the whole interaction, which is the honest answer for the posts
+whose screens this build does not have.
+
 **`content/classes/<id>.cfg`** — a doctrine:
 
 ```
@@ -411,6 +446,14 @@ see `Content::loadAll` in `src/Content.cpp`.
   directional light and a probe and emissive geometry illuminates nothing.
   The strips read as the sources; the flat fill (`ambientFill`) carries the
   room, standing in for the bounce off a hundred metres of white panel.
+- **Crew** (`Crew.h/.cpp`): the people. Their figures are deliberately *not*
+  the enemy rig — those are armoured frames, plated and jointed and visored;
+  these are people in coats, built lighter and rounder and shaded as cloth
+  rather than plate, because you should never have to look twice to tell a
+  quartermaster from something that came off the ark. The furniture they
+  stand behind belongs to the Station rather than to Crew: only what goes
+  into the level's part list gets a collider, and a counter you can walk
+  through is not a counter.
 - **Hub** ("THE CRADLE" — `Hub.h/.cpp`): the between-mission loadout and
   destination picker — see *Controls* above. Cycling an unowned item buys
   it if it's affordable; `Hud::drawHub` lists every weapon, armour piece,

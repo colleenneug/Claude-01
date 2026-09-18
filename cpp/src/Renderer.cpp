@@ -245,7 +245,10 @@ void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, G
 
   glm::mat4 view = camera.view();
   glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
-  compositeShader_.set("uInvViewProj", glm::inverse(proj * view));
+  // Kept so the HUD can label things in the world with the same matrices
+  // the frame was actually drawn with.
+  lastViewProj_ = proj * view;
+  compositeShader_.set("uInvViewProj", glm::inverse(lastViewProj_));
   compositeShader_.set("uCamPos", camera.position);
   compositeShader_.set("uNear", 0.05f);
   compositeShader_.set("uFar", farPlane_);

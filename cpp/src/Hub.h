@@ -34,6 +34,30 @@ public:
   bool missionLocked(int index) const;
   int campaignCount() const { return campaignCount_; }
 
+  // Which half of the screen the person who opened it is responsible for.
+  // Both halves stay usable — walking back down three decks to buy a rifle
+  // you forgot would be a punishment, not a hub — but the one you came for
+  // is lit and the other is dimmed, so it is obvious whose counter you are
+  // standing at.
+  enum class Focus { All, Gear, Route };
+  void setFocus(Focus f) { focus_ = f; }
+  Focus focus() const { return focus_; }
+
+  // Who is serving. Empty when the screen was opened by a terminal rather
+  // than by a person.
+  void setHost(const std::string& name, const std::string& title, glm::vec3 colour) {
+    hostName_ = name;
+    hostTitle_ = title;
+    hostColour_ = colour;
+  }
+  const std::string& hostName() const { return hostName_; }
+  const std::string& hostTitle() const { return hostTitle_; }
+  glm::vec3 hostColour() const { return hostColour_; }
+
+  // Move the selection to the first mission that is not part of the ark
+  // campaign — the side work, which is what the contracts post deals in.
+  void preselectFirstSideContract();
+
   const std::vector<std::string>& weaponIds() const { return weaponIds_; }
   const std::vector<std::string>& armorIds() const { return armorIds_; }
   const std::vector<std::string>& cosmeticIds() const { return cosmeticIds_; }
@@ -59,6 +83,9 @@ private:
 
   std::vector<std::string> weaponIds_, armorIds_, cosmeticIds_, missionIds_;
   int campaignCount_ = 0;   // how many leading entries of missionIds_ are the route
+  Focus focus_ = Focus::All;
+  std::string hostName_, hostTitle_;
+  glm::vec3 hostColour_{0.8f, 0.9f, 1.0f};
   int weaponIndex_ = 0, armorIndex_ = 0, cosmeticIndex_ = 0, missionIndex_ = 0;
 
   bool prev1_ = false, prev2_ = false, prev3_ = false, prevTab_ = false,

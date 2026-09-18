@@ -5,6 +5,7 @@
 #include "Player.h"
 #include "Camera.h"
 #include "Content.h"
+#include "Crew.h"
 #include <string>
 #include <vector>
 
@@ -38,7 +39,9 @@ public:
     glm::vec3 colour{0.6f, 0.9f, 1.0f};
   };
 
-  bool init();
+  // `content` supplies the crew (content/crew/*.cfg): the station's geometry
+  // never changes, but who is standing in it is content.
+  bool init(const Content& content);
   void destroy();
 
   // Walks the player. `scriptedForward` stands in for holding W, the same
@@ -55,6 +58,13 @@ public:
   // with no mouse cannot steer, so without this the only thing a test can
   // prove is that you can walk in a straight line down the spine.
   void placeAt(Camera& camera, glm::vec3 at, float yawDegrees);
+
+  // The crew member with a post within reach, or null. Takes precedence over
+  // the terminals: where both exist they are the same station, and being
+  // offered "FLIGHT DECK" while standing in front of Kaur is two prompts for
+  // one thing.
+  const Crew::Person* nearestPerson() const;
+  const Crew& crew() const { return crew_; }
 
   // The terminal within reach, or null. Reach is generous — you are meant to
   // walk up and press a key, not stand on a mark.
@@ -87,6 +97,7 @@ public:
 private:
   Level level_;
   Player player_;
+  Crew crew_;
   std::vector<Terminal> terminals_;
   glm::vec3 sunDir_{-0.42f, -0.36f, -0.83f};
   float reach_ = 3.2f;
