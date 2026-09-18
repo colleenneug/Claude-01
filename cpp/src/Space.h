@@ -57,8 +57,12 @@ public:
   float moteSize() const override { return 1.3f; }       // fixed pixels, not metres
   float moteOpacity() const override { return 0.75f; }
   bool moteDistanceScaled() const override { return false; }
-  // Just enough fill to keep the night side from being pure black.
-  float iblIntensity() const override { return 0.10f; }
+  // Out here the sun is the only light, so the station-interior probe
+  // contributes nothing; the night sides get a trace of flat starlight
+  // instead, which keeps them from reading as holes cut in the sky
+  // without painting the probe's cube faces across them.
+  float iblIntensity() const override { return 0.0f; }
+  glm::vec3 ambientFill() const override { return glm::vec3(0.012f, 0.014f, 0.022f); }
   glm::vec3 clearColour() const override { return glm::vec3(0.0016f, 0.0018f, 0.0035f); }
   float viewDistance() const override { return 60000.0f; }
   bool wantsShadows() const override { return false; }

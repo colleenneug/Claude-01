@@ -35,6 +35,12 @@ uniform sampler2DShadow uCascadeMap2;
 uniform samplerCube uIrradianceMap;
 uniform float uIblMaxMip;
 uniform float uIblIntensity;
+// A flat fill added on top of the probe, for scenes that want *some*
+// bounce light without the probe's shape. Scaling the probe down keeps
+// its structure: it is a capture of one lit interior, so even at a tenth
+// strength its cube faces read as hard-edged panels across something as
+// large on screen as a planet. A constant has no structure to leak.
+uniform vec3 uAmbientFill;
 
 uniform int uMaterial;        // MaterialType: 0 armour, 1 terrain, 2 emissive,
                               //               3 rock, 4 planet
@@ -464,7 +470,7 @@ void main() {
   vec2 ab = envBRDFApprox(NoV, roughness);
   vec3 specularIbl = prefiltered * (F0 * ab.x + ab.y);
 
-  vec3 ambient = (diffuseIbl + specularIbl) * uIblIntensity;
+  vec3 ambient = (diffuseIbl + specularIbl) * uIblIntensity + uAmbientFill * albedo;
 
   fragColor = vec4(direct + ambient, 1.0);
 }

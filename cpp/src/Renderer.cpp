@@ -144,6 +144,7 @@ void Renderer::renderSceneToHdr(const SceneSource& scene, const Camera& camera) 
   pbrShader_.set("uIrradianceMap", 4);
   pbrShader_.set("uIblMaxMip", (float)ibl_.maxMipLevel());
   pbrShader_.set("uIblIntensity", scene.iblIntensity());
+  pbrShader_.set("uAmbientFill", scene.ambientFill());
 
   for (const auto& item : drawList_) {
     pbrShader_.set("uModel", item.model);

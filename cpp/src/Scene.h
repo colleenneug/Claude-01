@@ -45,6 +45,13 @@ public:
   // which world you're looking at. Out there the sun is the only light.
   virtual float iblIntensity() const { return 1.0f; }
 
+  // A structureless fill added on top of the probe. Turning the probe
+  // down is not the same as turning the light down: at a tenth strength
+  // its cube faces still read as hard-edged panels on the night side of
+  // something as big on screen as a planet. A scene that wants a little
+  // fill and none of the probe's shape asks for it here.
+  virtual glm::vec3 ambientFill() const { return glm::vec3(0.0f); }
+
   // What the HDR buffer is cleared to before anything is drawn. A mission's
   // is a dim dust haze; space wants near-black so the stars read at all.
   virtual glm::vec3 clearColour() const { return glm::vec3(0.02f, 0.018f, 0.03f); }
