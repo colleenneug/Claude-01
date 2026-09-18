@@ -39,8 +39,15 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   killCount_ = 0;
   pickupNote_.clear();
   pickupNoteT_ = 0.0f;
+  tutorialWalked_ = tutorialSprinted_ = 0.0f;
+  tutorialKills_ = 0;
+  tutorialFired_ = tutorialReloaded_ = tutorialJumped_ = false;
+  tutorialSlid_ = tutorialUsedAbility_ = false;
+  tutorialPrompt_.clear();
+  tutorialHint_.clear();
+  tutorialProgress_ = 0.0f;
 
-  level_.build(mission_.arenaSize, mission_.floorColour);
+  level_.build(mission_.arenaSize, mission_.floorColour, mission_.coverDensity);
   HostileGeometry::ensure();
 
   // Gear: looked up by the ids the profile has equipped, in the same
@@ -175,6 +182,9 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
               mission_.name.c_str(), waveTotal_, bossPending_ ? mission_.bossId.c_str() : "none",
               mission_.comms.size());
   loaded_ = true;
+  tutorialLastPos_ = player_.position;
+  if (mission_.tutorial) setTutorialStep(TutorialStep::Move);
+  else tutorialStep_ = TutorialStep::Done;
   fireComms(CommsTrigger::Deploy);
   return true;
 }
@@ -214,6 +224,124 @@ void Game::updateComms(float dt) {
     commsHold_ = std::max(2.4f, 0.055f * (float)beat->line.size());
     commsQueue_.erase(commsQueue_.begin() + (long)i);
     return;
+  }
+}
+
+// -------------------------------------------------------------- tutorial
+//
+// A brand-new record starts planetside, on Recovery Division's ground site,
+// and is walked through the controls one at a time. Every step watches for
+// the thing it teaches and will not advance until it has happened: a prompt
+// you can clear by waiting is a prompt nobody reads.
+
+void Game::setTutorialStep(TutorialStep step) {
+  tutorialStep_ = step;
+  tutorialProgress_ = 0.0f;
+  // A short beat on each change, so two steps completed in quick succession
+  // do not flash past as one.
+  tutorialHold_ = 0.9f;
+
+  switch (step) {
+    case TutorialStep::Move:
+      tutorialPrompt_ = "WALK";
+      tutorialHint_ = "W A S D, OR THE ARROW KEYS";
+      break;
+    case TutorialStep::Sprint:
+      tutorialPrompt_ = "SPRINT";
+      tutorialHint_ = "HOLD LEFT SHIFT AND KEEP MOVING FORWARD";
+      break;
+    case TutorialStep::Jump:
+      tutorialPrompt_ = "JUMP";
+      tutorialHint_ = "SPACE";
+      break;
+    case TutorialStep::Slide:
+      tutorialPrompt_ = "SLIDE";
+      tutorialHint_ = "SPRINT, THEN CROUCH - LEFT CTRL OR C. JUMP OUT OF IT TO KEEP THE SPEED.";
+      break;
+    case TutorialStep::Fire:
+      tutorialPrompt_ = "FIRE";
+      tutorialHint_ = "LEFT MOUSE. HOLD RIGHT MOUSE TO AIM.";
+      break;
+    case TutorialStep::Reload:
+      tutorialPrompt_ = "RELOAD";
+      tutorialHint_ = "R";
+      break;
+    case TutorialStep::Ability:
+      tutorialPrompt_ = "FIELD ABILITY";
+      tutorialHint_ = class_ ? "Q OR E - " + class_->abilityName : "Q OR E";
+      break;
+    case TutorialStep::Clear:
+      tutorialPrompt_ = "CLEAR THE RANGE";
+      tutorialHint_ = "PUT DOWN EVERY TARGET ON THE FIELD";
+      break;
+    case TutorialStep::Done:
+      tutorialPrompt_.clear();
+      tutorialHint_.clear();
+      break;
+  }
+}
+
+void Game::updateTutorial(float dt) {
+  if (!mission_.tutorial || tutorialStep_ == TutorialStep::Done) return;
+
+  if (tutorialHold_ > 0.0f) {
+    tutorialHold_ -= dt;
+    return;
+  }
+
+  glm::vec3 now = player_.position;
+  float moved = glm::length(glm::vec2(now.x - tutorialLastPos_.x, now.z - tutorialLastPos_.z));
+  tutorialLastPos_ = now;
+
+  switch (tutorialStep_) {
+    case TutorialStep::Move:
+      tutorialWalked_ += moved;
+      tutorialProgress_ = std::min(1.0f, tutorialWalked_ / 12.0f);
+      if (tutorialProgress_ >= 1.0f) setTutorialStep(TutorialStep::Sprint);
+      break;
+
+    case TutorialStep::Sprint:
+      // Sprinting is a speed, not a key: holding shift while standing still
+      // is not sprinting, and the step should not accept it.
+      if (player_.planarSpeed() > 7.0f) tutorialSprinted_ += dt;
+      tutorialProgress_ = std::min(1.0f, tutorialSprinted_ / 1.2f);
+      if (tutorialProgress_ >= 1.0f) setTutorialStep(TutorialStep::Jump);
+      break;
+
+    case TutorialStep::Jump:
+      if (!player_.grounded && player_.velocity.y > 0.5f) tutorialJumped_ = true;
+      tutorialProgress_ = tutorialJumped_ ? 1.0f : 0.0f;
+      if (tutorialJumped_ && player_.grounded) setTutorialStep(TutorialStep::Slide);
+      break;
+
+    case TutorialStep::Slide:
+      if (player_.sliding) tutorialSlid_ = true;
+      tutorialProgress_ = tutorialSlid_ ? 1.0f : 0.0f;
+      if (tutorialSlid_ && !player_.sliding) setTutorialStep(TutorialStep::Fire);
+      break;
+
+    case TutorialStep::Fire:
+      tutorialProgress_ = tutorialFired_ ? 1.0f : 0.0f;
+      if (tutorialFired_) setTutorialStep(TutorialStep::Reload);
+      break;
+
+    case TutorialStep::Reload:
+      tutorialProgress_ = tutorialReloaded_ ? 1.0f : 0.0f;
+      if (tutorialReloaded_ && !weapon_.reloading) setTutorialStep(TutorialStep::Ability);
+      break;
+
+    case TutorialStep::Ability:
+      tutorialProgress_ = tutorialUsedAbility_ ? 1.0f : 0.0f;
+      if (tutorialUsedAbility_) setTutorialStep(TutorialStep::Clear);
+      break;
+
+    case TutorialStep::Clear: {
+      tutorialProgress_ = waveProgress();
+      break;   // the ordinary win condition finishes it
+    }
+
+    case TutorialStep::Done:
+      break;
   }
 }
 
@@ -285,6 +413,7 @@ bool Game::useAbility() {
   }
 
   pickupNoteT_ = 1.4f;
+  tutorialUsedAbility_ = true;
   return true;
 }
 
@@ -374,7 +503,7 @@ void Game::spawnBossIfReady() {
 }
 
 void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed, bool reloadHeld,
-                   bool forceForward) {
+                   const ScriptedInput& scripted) {
   if (!loaded_) return;
   // Advanced here, once per frame, rather than inside updateComms: both the
   // comms schedule and the post-drop grace period below read it.
@@ -398,11 +527,13 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   camAim_ = camera.aim;
 
   bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-  player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, forceForward);
+  player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scripted);
   camera.position = player_.eyePosition();
 
   weapon_.update(dt);
+  bool wasReloading = weapon_.reloading;
   if (reloadHeld) weapon_.startReload();
+  if (!wasReloading && weapon_.reloading) tutorialReloaded_ = true;
 
   if (firePressed && weapon_.canFire()) {
     // One trigger pull can strike several hostiles — a shotgun's cone across
@@ -425,6 +556,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     // Scaled by the round's damage against a rifle's, so a breaching shotgun
     // throws the gun and a suppressed carbine barely moves it.
     recoil_ = std::min(1.0f, recoil_ + 0.35f + weapon_.damage * weapon_.pellets * 0.0016f);
+    tutorialFired_ = true;
   }
 
   // Sway: the gun lags the view. The impulse is how far the aim moved this
@@ -454,6 +586,8 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   // rather than as a fight. They still advance and wind up during it.
   const float kDeployGrace = 3.0f;
   bool graced = missionT_ < kDeployGrace;
+  // On the range, nothing shoots back until you have been taught to shoot.
+  if (mission_.tutorial && tutorialStep_ < TutorialStep::Fire) graced = true;
 
   for (auto& h : hostiles_) {
     if (!h.alive()) continue;
@@ -465,6 +599,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       damageFlashT = 0.4f;
     }
   }
+  updateTutorial(dt);
   spawnBossIfReady();
 
   hitMarkerT = std::max(0.0f, hitMarkerT - dt * 2.5f);
@@ -482,7 +617,11 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
                                   [](const Hostile& h) { return h.state == HostileState::Gone; });
     bool bossClear = bossIndex_ < 0 || hostiles_[bossIndex_].state == HostileState::Gone;
     if (wavesClear) fireComms(CommsTrigger::WavesCleared);
-    if (wavesClear && !bossPending_ && bossClear) {
+    // A tutorial is not over when the targets are down, it is over when the
+    // lesson is: shooting the range dry during the FIRE step would otherwise
+    // end it before it had taught the reload or the ability.
+    bool lessonDone = !mission_.tutorial || tutorialStep_ == TutorialStep::Clear;
+    if (wavesClear && lessonDone && !bossPending_ && bossClear) {
       if (profile_ && !rewardApplied_) {
         profile_->recordMissionComplete(mission_.id, mission_.rewardChits);
         rewardApplied_ = true;

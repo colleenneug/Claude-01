@@ -336,9 +336,10 @@ void Station::placeAt(Camera& camera, glm::vec3 at, float yawDegrees) {
   camera.position = player_.eyePosition();
 }
 
-void Station::update(GLFWwindow* window, Camera& camera, float dt, bool scriptedForward) {
+void Station::update(GLFWwindow* window, Camera& camera, float dt,
+                     const ScriptedInput& scripted) {
   bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-  player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scriptedForward);
+  player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scripted);
   camera.position = player_.eyePosition();
 }
 

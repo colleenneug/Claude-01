@@ -71,6 +71,12 @@ struct MissionDef {
   // Where aboard the ark it happens. Missions that share a zone share a look.
   std::string zone;
 
+  // A tutorial runs a scripted sequence of prompts instead of a wave clear:
+  // walk, sprint, jump, slide, shoot, reload, use the field ability. It is a
+  // mission rather than a mode of its own so it gets the level, the weapon,
+  // the HUD and the comms thread for free.
+  bool tutorial = false;
+
   // The look of the place. Defaults are the dusty-planet grade the renderer
   // was built around; a mission overrides whichever of them it cares about.
   // This is what makes the route down the ark read as a route rather than
@@ -81,6 +87,10 @@ struct MissionDef {
   glm::vec3 fogColour{0.42f, 0.30f, 0.34f};
   glm::vec3 sunColour{1.0f, 0.94f, 0.82f};
   glm::vec3 floorColour{0.31f, 0.26f, 0.21f};
+  // How much cover to scatter, as a multiplier on the density the arena
+  // size implies. A gun range wants open ground; a junction wants to be
+  // full of things to stand behind.
+  float coverDensity = 1.0f;
   float fogDensity = 0.011f;
   float sunIntensity = 3.4f;
 };

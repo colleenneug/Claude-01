@@ -28,6 +28,7 @@ run() {  # run <state-file> <env assignments...> [-- <binary args>]
   # that wants a different doctrine just passes its own, later on the command
   # line, which wins.
   xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 EREBUS_CLASS=wraith \
+    EREBUS_SKIP_TUTORIAL=1 \
     EREBUS_SAVE_PATH="$save" EREBUS_LOG_STATE="$log" "${env_args[@]}" \
     "$BIN" "${bin_args[@]}" >/dev/null 2>&1
 }
@@ -137,6 +138,21 @@ run "$OUT/flight.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
     EREBUS_STATION_AT=0,0,32 EREBUS_STATION_YAW=90 EREBUS_MAX_FRAMES=60
 check "the flight deck opens the route" "$OUT/flight.json" \
       "s['appState'] == 'hub'"
+
+# A brand-new record starts on Earth, at the ground site, and is walked
+# through its kit. A record that has cleared anything at all goes straight up.
+run "$OUT/newrec.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
+check "a new record starts on the ground site" "$OUT/newrec.json" \
+      "s['appState'] == 'mission'"
+
+# ...and the whole sequence plays end to end: walk, sprint, jump, slide,
+# fire, reload, field ability, then clear the range. The driver substitutes
+# exactly the input each step asks for, which is also the check that no step
+# can be cleared by standing still and waiting.
+run "$OUT/tutorial.json" EREBUS_SKIP_HUB=1 EREBUS_TUTORIAL_AUTO=1 EREBUS_FORCE_FIRE=1 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=2400 -- --mission tutorial_earth
+check "the ground site teaches and completes" "$OUT/tutorial.json" \
+      "s['missionState'] == 'complete' and s['chits'] > 100"
 
 # Space renders without blowing up at either end of the quality ladder. The
 # proof is that the run got where it was flying: the tier switches shadow

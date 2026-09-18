@@ -24,6 +24,16 @@ going somewhere: the promenade is a sunset that has been holding since year
 six, the reactor runs hot and orange, Deck Zero is nearly black. The
 planets stay alongside it as side destinations you can fly to at any time.
 
+A brand-new record starts **on Earth**, on Recovery Division's ground site,
+the morning you ship out — pick a doctrine, then get walked through your kit
+one control at a time: walk, sprint, jump, slide, fire, reload, field
+ability, then clear the range. Every step watches for the thing it teaches
+and will not advance until it has actually happened, because a prompt you
+can clear by waiting is a prompt nobody reads. The browser build's read-in
+(`../src/js/story.js`, BRIEF 44-C) plays over it as comms traffic rather
+than as a wall of text on a screen you skip, and finishing it ships you up
+to the Cradle. A record that has cleared anything at all goes straight up.
+
 A record is created under one of **three doctrines** — BULWARK, ORACLE,
 WRAITH — and the choice is the browser build's (`../src/js/classes.js`):
 each one is an issued weapon, a field ability and a passive, and it is fixed
@@ -259,6 +269,11 @@ cap = 0.55                    # how far the polar ice reaches, 0 = none
 mission = glacius_ice_fields  # what landing here drops you into
 # station = true              # the Cradle instead: docking opens the hub
 ```
+
+A mission with `tutorial = true` runs that scripted step sequence instead of
+a plain wave clear, and cannot complete until the lesson is done however
+fast you shoot the targets. It is a mission rather than a mode of its own,
+so it gets the level, the weapon, the HUD and the comms thread for free.
 
 **`content/classes/<id>.cfg`** — a doctrine:
 
@@ -525,6 +540,20 @@ a way to prove movement, combat and mission state actually work:
   kept the weapon permanently mid-reload and let a whole run fire about six
   rounds — fine for the one-hostile fixture it was written against, and
   quietly useless for measuring whether a real wave is survivable.)
+- `EREBUS_TUTORIAL_AUTO=1` — walks the ground site's steps by feeding each
+  one exactly the input it is asking for (sprint, jump, crouch-at-speed,
+  reload, ability). The same idea as `EREBUS_DEBUG_AUTOAIM`: it exists so the
+  sequence can be proved end to end without a keyboard, and it is also the
+  check that no step can be cleared by standing still and waiting.
+- `EREBUS_SKIP_TUTORIAL=1` — sends a brand-new record straight up instead of
+  to the ground site. Every check in `tools/verify.sh` starts from a fresh
+  save, so without this every one of them would begin in the tutorial.
+- `EREBUS_CLASS=<id>` — settles the doctrine without the creation screen, the
+  same idea as `EREBUS_SLOT` for the record itself: a headless run has no way
+  to press a key on a screen whose whole job is to ask a question.
+- `EREBUS_STATION_AT="x,y,z"` / `EREBUS_STATION_YAW=<deg>` — drop the player
+  at a spot inside the Cradle on arrival, so a run can stand at the foot of a
+  stair flight rather than only walking the spine in a straight line.
 - `EREBUS_DEBUG_AUTOAIM=1` — snaps the camera onto the nearest hostile it
   can actually see, every frame. A verification aid only, **never enabled by
   default** — it exists so firing can be exercised without simulating real

@@ -85,6 +85,11 @@ public:
     // The doctrine's name, top-left under the health bar.
     std::string className;
 
+    // The tutorial's current step: what it is asking for, how to do it,
+    // and how far through the step you are. Empty outside a tutorial.
+    std::string tutorialPrompt, tutorialHint;
+    float tutorialProgress = 0.0f;
+
     // The equipped cosmetic's colour (Game::hudAccent): tints the
     // crosshair, ammo pips and the health bar's "full" tier. The health
     // bar's low/critical tiers stay fixed amber/red regardless — that's a

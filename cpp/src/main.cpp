@@ -31,7 +31,24 @@ void framebufferSizeCallback(GLFWwindow* window, int w, int h) {
 
 }  // namespace
 
+// An on/off environment hook. Empty counts as unset, not as set: the
+// verification suite turns a flag off for one check by assigning it an empty
+// string over the runner's default, and a plain getenv != nullptr test reads
+// that as "still on" — which is exactly how the ground-site check ended up
+// asserting against a run that had skipped the ground site.
+static bool envFlag(const char* name) {
+  const char* v = std::getenv(name);
+  return v != nullptr && *v != '\0';
+}
+
 enum class AppState { SlotSelect, CreateRecord, Space, Station, Hub, Mission };
+
+// Where a new record starts: Earth, on Recovery Division's ground site.
+// Named here rather than inferred from MissionDef::tutorial, because the
+// question at record creation is "which mission do I launch", and a scan
+// for the first tutorial-flagged file would pick an arbitrary one the day
+// a second gets added.
+constexpr const char* kTutorialMission = "tutorial_earth";
 
 int main(int argc, char** argv) {
   // --mission <id> both names the mission EREBUS_SKIP_HUB boots straight
@@ -156,8 +173,12 @@ int main(int argc, char** argv) {
   // headless verification flow that predates the Hub and still expects to
   // land in a mission on frame 0. EREBUS_SKIP_SPACE=1 goes to the hub menu
   // instead of open space, for the hub-script tests that predate flight.
-  bool skipHub = std::getenv("EREBUS_SKIP_HUB") != nullptr;
-  bool skipSpace = std::getenv("EREBUS_SKIP_SPACE") != nullptr || !spaceReady;
+  bool skipHub = envFlag("EREBUS_SKIP_HUB");
+  bool skipSpace = envFlag("EREBUS_SKIP_SPACE") || !spaceReady;
+  // EREBUS_SKIP_TUTORIAL=1 sends a brand-new record straight up instead of
+  // to the ground site. Every headless check starts from a fresh save, so
+  // without this every one of them would begin in the tutorial.
+  bool skipTutorial = envFlag("EREBUS_SKIP_TUTORIAL");
   AppState afterSlot = skipSpace ? AppState::Hub : AppState::Space;
   AppState state = skipHub      ? AppState::Mission
                    : slotChosen ? afterSlot
@@ -227,14 +248,17 @@ int main(int argc, char** argv) {
   // nearest live hostile every frame — a verification aid only, never on
   // by default, so firing can be tested without simulating real mouse
   // input. EREBUS_FORCE_FIRE=1 holds the trigger the whole run.
-  bool forceForward = std::getenv("EREBUS_FORCE_FORWARD") != nullptr;
-  bool forceFire = std::getenv("EREBUS_FORCE_FIRE") != nullptr;
-  bool debugAutoaim = std::getenv("EREBUS_DEBUG_AUTOAIM") != nullptr;
+  bool forceForward = envFlag("EREBUS_FORCE_FORWARD");
+  bool forceFire = envFlag("EREBUS_FORCE_FIRE");
+  bool debugAutoaim = envFlag("EREBUS_DEBUG_AUTOAIM");
+  // EREBUS_TUTORIAL_AUTO=1 walks the ground site's steps by feeding each
+  // one the input it is asking for. Verification aid only.
+  bool tutorialAuto = envFlag("EREBUS_TUTORIAL_AUTO");
   // Prints the screen-centre pixel, before and after tone mapping, every
   // 60 frames — see Renderer::debugPrintCenterPixel for why: it turns "the
   // screen looks dark/black" from a description into a number, so hardware
   // this project was never tested on doesn't have to be debugged by guessing.
-  bool debugPixel = std::getenv("EREBUS_DEBUG_PIXEL") != nullptr;
+  bool debugPixel = envFlag("EREBUS_DEBUG_PIXEL");
   // Flight aids, the space-mode counterparts of EREBUS_DEBUG_AUTOAIM:
   // EREBUS_SPACE_AUTOPILOT=<planet id> steers the ship at that body every
   // frame, and EREBUS_FORCE_ENGAGE=1 presses E the moment it's in range, so
@@ -247,7 +271,7 @@ int main(int argc, char** argv) {
   const char* stationAt = std::getenv("EREBUS_STATION_AT");
   float stationYaw = 90.0f;
   if (const char* sy = std::getenv("EREBUS_STATION_YAW")) stationYaw = (float)std::atof(sy);
-  bool forceEngage = std::getenv("EREBUS_FORCE_ENGAGE") != nullptr;
+  bool forceEngage = envFlag("EREBUS_FORCE_ENGAGE");
   const char* dumpPath = std::getenv("EREBUS_DUMP_FRAME");
   int maxFrames = 0;
   if (const char* mf = std::getenv("EREBUS_MAX_FRAMES")) maxFrames = std::atoi(mf);
@@ -298,6 +322,24 @@ int main(int argc, char** argv) {
   auto enterAfterSlot = [&]() {
     hub.init(hubContent, profile);
     if (missionIdGiven) hub.preselectMission(missionId);
+
+    // A record that has never finished anything starts on Earth, on the
+    // ground site, and is walked through its kit. The test is "has cleared
+    // nothing at all" rather than "has not cleared the ground site", so a
+    // save made before the tutorial existed is not sent back to school.
+    if (!skipSpace && !skipHub && !skipTutorial && profile.completedMissions.empty() &&
+        hubContent.mission(kTutorialMission) &&
+        game.init(contentDir, kTutorialMission, profile)) {
+      gameEverStarted = true;
+      launchedFromStation = false;
+      camera.position = game.player().eyePosition();
+      state = AppState::Mission;
+      glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+      mouseCaptured = true;
+      firstMouse = true;
+      return;
+    }
+
     state = afterSlot;
     if (state == AppState::Space) {
       space.placeNear("");   // start docked off the Cradle
@@ -306,6 +348,11 @@ int main(int argc, char** argv) {
       firstMouse = true;
     }
   };
+
+  // Startup may already have settled on a record (EREBUS_SLOT, or
+  // EREBUS_SAVE_PATH). Run it through the same entry path the slot screen
+  // uses rather than a second copy that would quietly skip the ground site.
+  if (state == afterSlot && !skipHub) enterAfterSlot();
 
   double lastTime = glfwGetTime();
   int frame = 0;
@@ -559,7 +606,9 @@ int main(int argc, char** argv) {
         }
       }
     } else if (state == AppState::Station) {
-      station.update(window, camera, dt, forceForward);
+      ScriptedInput stationInput;
+      stationInput.forward = forceForward;
+      station.update(window, camera, dt, stationInput);
       renderer.renderFrame(station, camera, (float)now, dt);
 
       const Station::Terminal* term = station.nearestTerminal();
@@ -711,11 +760,37 @@ int main(int argc, char** argv) {
       // Reload only when the magazine is actually empty.
       bool reloadHeld = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS ||
                         (forceFire && game.weapon().ammoInMag == 0);
-      game.update(window, camera, dt, firePressed, reloadHeld, forceForward);
+      // The tutorial driver: a headless run has no keyboard, so on each step
+      // it substitutes exactly the input that step is asking for. The same
+      // idea as EREBUS_DEBUG_AUTOAIM — it exists so the sequence can be
+      // proved end to end, and it is never on by default.
+      ScriptedInput playerInput;
+      playerInput.forward = forceForward || tutorialAuto;
+      bool autoAbility = false;
+      bool autoReload = false;
+      if (tutorialAuto) {
+        switch (game.tutorialStep()) {
+          case Game::TutorialStep::Sprint: playerInput.sprint = true; break;
+          case Game::TutorialStep::Jump:   playerInput.jump = true; break;
+          case Game::TutorialStep::Slide:
+            // A slide needs speed first, so hold sprint *and* crouch: crouch
+            // outranks sprint in Player::update, but the speed you arrive
+            // with is what the slide kicks off.
+            playerInput.sprint = true;
+            playerInput.crouch = game.player().planarSpeed() > 6.0f;
+            break;
+          case Game::TutorialStep::Reload:  autoReload = true; break;
+          case Game::TutorialStep::Ability: autoAbility = true; break;
+          default: break;
+        }
+      }
+      if (autoReload) reloadHeld = true;
+      game.update(window, camera, dt, firePressed, reloadHeld, playerInput);
 
       // The field ability is on Q or E, the same two keys the browser build
       // accepts (src/js/fps/game.js). On the press, not the hold.
-      bool abilityDown = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS ||
+      bool abilityDown = autoAbility ||
+                         glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS ||
                          glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
       if (abilityDown && !prevAbilityKey) game.useAbility();
       prevAbilityKey = abilityDown;
@@ -729,6 +804,9 @@ int main(int argc, char** argv) {
       hs.hp = game.player().hp;
       hs.abilityReady = game.abilityReady();
       hs.weaponName = game.weaponName();
+      hs.tutorialPrompt = game.tutorialPrompt();
+      hs.tutorialHint = game.tutorialHint();
+      hs.tutorialProgress = game.tutorialProgress();
       hs.overshield = game.player().overshield;
       hs.overshieldMax = game.player().overshieldMax;
       if (const ClassDef* pc = game.playerClass()) {
@@ -819,6 +897,8 @@ int main(int argc, char** argv) {
                           glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
                           glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         if (wantReturn && !prevReturnKey) {
+          bool justFinishedTutorial = game.isTutorial() &&
+                                      game.missionState() == MissionState::Complete;
           ProfileStore::save(profile, savePath);
           game.destroy();
           hub.init(hubContent, profile);   // refresh: reward chits / new completion just landed
@@ -826,8 +906,10 @@ int main(int argc, char** argv) {
             state = AppState::Hub;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             mouseCaptured = false;
-          } else if (launchedFromStation) {
-            // You launched off the flight deck, so you come back to it.
+          } else if (launchedFromStation || justFinishedTutorial) {
+            // You launched off the flight deck, so you come back to it — and
+            // finishing the ground site ships you up, which is the same
+            // arrival.
             station.enter(camera);
             state = AppState::Station;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);

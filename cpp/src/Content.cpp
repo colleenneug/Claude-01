@@ -173,6 +173,7 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "objective") m.objective = v;
         else if (k == "brief") m.brief = v;
         else if (k == "zone") m.zone = v;
+        else if (k == "tutorial") m.tutorial = (v == "true" || v == "1");
         else if (k == "campaign") { try { m.campaignIndex = std::stoi(v); } catch (...) {} }
         else if (k == "sky_zenith") m.skyZenith = parseVec3(v, m.skyZenith);
         else if (k == "floor_colour" || k == "floor_color") m.floorColour = parseVec3(v, m.floorColour);
@@ -180,6 +181,7 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "fog_colour" || k == "fog_color") m.fogColour = parseVec3(v, m.fogColour);
         else if (k == "sun_colour" || k == "sun_color") m.sunColour = parseVec3(v, m.sunColour);
         else if (k == "fog_density") { try { m.fogDensity = std::stof(v); } catch (...) {} }
+        else if (k == "cover") { try { m.coverDensity = std::stof(v); } catch (...) {} }
         else if (k == "sun_intensity") { try { m.sunIntensity = std::stof(v); } catch (...) {} }
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }

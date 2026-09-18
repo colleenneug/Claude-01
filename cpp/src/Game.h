@@ -50,7 +50,7 @@ public:
   // window/dt drive the player; camera is both read (for aim direction)
   // and written (position synced to the player's eye every frame).
   void update(GLFWwindow* window, Camera& camera, float dt, bool firePressed, bool reloadHeld,
-              bool forceForward = false);
+              const ScriptedInput& scripted = ScriptedInput{});
 
   // ---------- SceneSource ----------
   void collect(float time, std::vector<DrawItem>& out) const override;
@@ -112,6 +112,25 @@ public:
   const std::string& pickupNote() const { return pickupNote_; }
   float pickupNoteAlpha() const { return std::max(0.0f, std::min(1.0f, pickupNoteT_ * 1.4f)); }
 
+  // ---------- the tutorial ----------
+  // A brand-new record starts planetside and is walked through the controls
+  // one at a time. Each step watches for the thing it is teaching and only
+  // moves on once it has actually happened — a prompt you can skip by
+  // waiting is a prompt nobody reads.
+  enum class TutorialStep {
+    Move, Sprint, Jump, Slide, Fire, Reload, Ability, Clear, Done
+  };
+  bool isTutorial() const { return mission_.tutorial; }
+  // What to put on screen right now, and what it is asking for. Empty once
+  // the tutorial is over — or if this mission is not one.
+  const std::string& tutorialPrompt() const { return tutorialPrompt_; }
+  const std::string& tutorialHint() const { return tutorialHint_; }
+  float tutorialProgress() const { return tutorialProgress_; }
+  // Which step, for the headless driver — it has to know what input to
+  // substitute, and matching on the prompt text would be matching on a
+  // string written for a player to read.
+  TutorialStep tutorialStep() const { return tutorialStep_; }
+
   // ---------- the field ability ----------
   // Phase step, on Q or E: a short dash along your look direction, on a
   // cooldown. The browser build gives each class a different ability
@@ -137,6 +156,8 @@ private:
   void updateComms(float dt);
   void dropPickup(const glm::vec3& at, int killIndex);
   void updatePickups(float dt);
+  void updateTutorial(float dt);
+  void setTutorialStep(TutorialStep step);
 
   Content content_;
   Level level_;
@@ -170,6 +191,16 @@ private:
   std::string pickupNote_;
   float pickupNoteT_ = 0.0f;
   float abilityCool_ = 0.0f;
+  TutorialStep tutorialStep_ = TutorialStep::Move;
+  std::string tutorialPrompt_, tutorialHint_;
+  float tutorialProgress_ = 0.0f;
+  float tutorialWalked_ = 0.0f;      // metres covered on the Move step
+  float tutorialSprinted_ = 0.0f;
+  float tutorialHold_ = 0.0f;        // beat between steps, so they do not blur past
+  int tutorialKills_ = 0;
+  glm::vec3 tutorialLastPos_{0.0f};
+  bool tutorialFired_ = false, tutorialReloaded_ = false;
+  bool tutorialJumped_ = false, tutorialSlid_ = false, tutorialUsedAbility_ = false;
   // Reused every trigger pull rather than allocated per shot.
   std::vector<ShotResult> shotBuffer_;
   const ClassDef* class_ = nullptr;   // owned by content_, valid while loaded

@@ -43,7 +43,8 @@ public:
 
   // Walks the player. `scriptedForward` stands in for holding W, the same
   // hook Player::update takes, so a headless run can cross the concourse.
-  void update(GLFWwindow* window, Camera& camera, float dt, bool scriptedForward = false);
+  void update(GLFWwindow* window, Camera& camera, float dt,
+              const ScriptedInput& scripted = ScriptedInput{});
 
   // Puts the player at the arrivals end, facing down the concourse. Called
   // every time you dock.

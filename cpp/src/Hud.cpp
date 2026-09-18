@@ -208,6 +208,23 @@ void Hud::draw(int screenW, int screenH, const State& s) {
     textCentered(cx, cy + 34, s.pickupNote, 2.2f, col);
   }
 
+  // ---- the tutorial's current step, high and centred where the eye goes
+  // when it does not yet know where else to look.
+  if (!s.tutorialPrompt.empty()) {
+    float ty = screenH * 0.22f;
+    float w = std::max(textWidth(s.tutorialPrompt, 4.0f), textWidth(s.tutorialHint, 1.8f)) + 56.0f;
+    rect(cx - w * 0.5f, ty - 18, w, 86, glm::vec4(0.04f, 0.05f, 0.07f, 0.72f));
+    textCentered(cx, ty, s.tutorialPrompt, 4.0f, glm::vec4(s.accent, 0.98f));
+    if (!s.tutorialHint.empty())
+      textCentered(cx, ty + 42, s.tutorialHint, 1.8f, glm::vec4(0.78f, 0.84f, 0.92f, 0.9f));
+    // A bar rather than a tick: several steps are "keep doing this for a
+    // moment" and want to show that they are filling.
+    float pw = w - 40.0f;
+    rect(cx - pw * 0.5f, ty + 62, pw, 4, glm::vec4(0.16f, 0.20f, 0.26f, 0.9f));
+    rect(cx - pw * 0.5f, ty + 62, pw * std::clamp(s.tutorialProgress, 0.0f, 1.0f), 4,
+         glm::vec4(s.accent, 0.95f));
+  }
+
   // ---- health bar + readout, bottom-left
   // Raised to leave room underneath for the ability charge and the
   // doctrine line, which used to run off the bottom of the frame.
@@ -308,15 +325,49 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   // ---- comms: the story, one staged line at a time, above the health bar
   if (s.commsAlpha > 0.001f && !s.commsLine.empty()) {
     float a = std::clamp(s.commsAlpha, 0.0f, 1.0f);
-    float ty = screenH - 130;
-    float lineW = textWidth(s.commsLine, 2.0f);
-    float speakerW = s.commsSpeaker.empty() ? 0.0f : textWidth(s.commsSpeaker + ":", 2.0f) + 10.0f;
-    rect(24, ty - 8, std::max(lineW + speakerW, 120.0f) + 20, 30, glm::vec4(0, 0, 0, 0.42f * a));
-    rect(24, ty - 8, 3, 30, glm::vec4(s.accent, 0.9f * a));
-    if (!s.commsSpeaker.empty()) {
-      text(36, ty, s.commsSpeaker + ":", 2.0f, glm::vec4(s.accent, a));
+    const float scale = 2.0f, lineH = 24.0f;
+    float speakerW = s.commsSpeaker.empty() ? 0.0f : textWidth(s.commsSpeaker + ":", scale) + 10.0f;
+    // Wrapped, not clipped. The ark's story is written in sentences, and a
+    // sentence at this scale is wider than the screen — the read-in lines ran
+    // off the right edge mid-word before this.
+    const float boxLeft = 24.0f, pad = 12.0f;
+    float maxW = screenW - boxLeft - pad * 2.0f - 24.0f - speakerW;
+    std::vector<std::string> lines;
+    {
+      std::string cur;
+      size_t i = 0;
+      while (i <= s.commsLine.size()) {
+        size_t sp = s.commsLine.find(' ', i);
+        std::string word = s.commsLine.substr(i, sp == std::string::npos ? std::string::npos : sp - i);
+        std::string cand = cur.empty() ? word : cur + " " + word;
+        if (!cur.empty() && textWidth(cand, scale) > maxW) {
+          lines.push_back(cur);
+          cur = word;
+        } else {
+          cur = cand;
+        }
+        if (sp == std::string::npos) break;
+        i = sp + 1;
+      }
+      if (!cur.empty()) lines.push_back(cur);
     }
-    text(36 + speakerW, ty, s.commsLine, 2.0f, glm::vec4(0.92f, 0.95f, 1.0f, a));
+
+    float boxH = 12.0f + lineH * (float)lines.size();
+    float ty = screenH - 118.0f - boxH;
+    float widest = 0.0f;
+    for (size_t i = 0; i < lines.size(); i++) {
+      float w = textWidth(lines[i], scale) + (i == 0 ? speakerW : 0.0f);
+      widest = std::max(widest, w);
+    }
+    rect(boxLeft, ty - 8, std::max(widest, 120.0f) + pad * 2.0f, boxH, glm::vec4(0, 0, 0, 0.42f * a));
+    rect(boxLeft, ty - 8, 3, boxH, glm::vec4(s.accent, 0.9f * a));
+    if (!s.commsSpeaker.empty()) {
+      text(boxLeft + 12, ty, s.commsSpeaker + ":", scale, glm::vec4(s.accent, a));
+    }
+    for (size_t i = 0; i < lines.size(); i++) {
+      text(boxLeft + 12 + (i == 0 ? speakerW : 0.0f), ty + lineH * (float)i, lines[i], scale,
+           glm::vec4(0.92f, 0.95f, 1.0f, a));
+    }
   }
 
   // ---- full-screen feedback: damage flash, mission complete/fail banner

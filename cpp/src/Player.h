@@ -9,6 +9,21 @@
 // Camera::position to Player::eyePosition() once per frame. Splitting them
 // is what makes a physical, collidable player possible without rewriting
 // the free-fly demo camera those files also serve.
+// Inputs a headless run has no keyboard to produce. Each one is OR-ed with
+// the real key, so they substitute for held keys rather than faking
+// OS-level key events. Driven by EREBUS_FORCE_FORWARD and the tutorial
+// driver (EREBUS_TUTORIAL_AUTO) in main.cpp.
+//
+// At namespace scope rather than nested in Player, because a default argument
+// of Scripted{} inside Player's own declaration would name the type before
+// its enclosing class is complete.
+struct ScriptedInput {
+  bool forward = false;
+  bool sprint = false;
+  bool jump = false;
+  bool crouch = false;
+};
+
 class Player {
 public:
   glm::vec3 position{0.0f, 0.0f, 12.0f};   // feet, at the level's floor
@@ -58,11 +73,8 @@ public:
 
   // yawRadians comes from the camera's look direction: the player walks
   // relative to wherever you're facing, not relative to a fixed axis.
-  // forceForward exists only for headless verification (EREBUS_FORCE_FORWARD
-  // in main.cpp) — a run with no real keyboard has no way to hold W, so this
-  // substitutes for that one input rather than faking OS-level key events.
   void update(GLFWwindow* window, float dt, float yawRadians, bool sprint, const Level& level,
-              bool forceForward = false);
+              const ScriptedInput& scripted = ScriptedInput{});
 
   // Ground speed, ignoring any fall or jump. What decides whether a crouch
   // becomes a slide, and what the HUD reads to show how fast you're moving.

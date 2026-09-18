@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 
-void Level::build(float arenaSize, glm::vec3 floorTint) {
+void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity) {
   // Safe to call more than once on the same Level — the Hub lets a player
   // run several missions in one session, and each one rebuilds its arena
   // from scratch. Without this, a second build() would leak the previous
@@ -54,7 +54,8 @@ void Level::build(float arenaSize, glm::vec3 floorTint) {
   srand(7);
   auto rnd = [](float lo, float hi) { return lo + (hi - lo) * (float)rand() / (float)RAND_MAX; };
   const float clearRadius = std::max(7.0f, arenaSize * 0.075f);
-  const int attempts = std::clamp((int)(arenaSize * arenaSize / 190.0f), 12, 260);
+  const int attempts = std::clamp(
+      (int)(arenaSize * arenaSize / 190.0f * std::max(0.0f, coverDensity)), 0, 260);
 
   for (int i = 0; i < attempts; i++) {
     float x = rnd(-half_ + 5.0f, half_ - 5.0f);

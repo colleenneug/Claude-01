@@ -52,16 +52,17 @@ constexpr float WALL_COOLDOWN = 0.25f;
 }  // namespace
 
 void Player::update(GLFWwindow* window, float dt, float yawRadians, bool sprint, const Level& level,
-                     bool forceForward) {
+                     const ScriptedInput& scripted) {
   glm::vec3 fwd(std::cos(yawRadians), 0.0f, std::sin(yawRadians));
   glm::vec3 right(-fwd.z, 0.0f, fwd.x);
 
   auto held = [&](int key) { return glfwGetKey(window, key) == GLFW_PRESS; };
   // Crouch is on either Ctrl or C, and the arrow keys stand in for W and S,
   // exactly as the browser build binds them.
-  const bool crouchHeld = held(GLFW_KEY_LEFT_CONTROL) || held(GLFW_KEY_RIGHT_CONTROL) ||
-                          held(GLFW_KEY_C);
-  const bool forwardHeld = forceForward || held(GLFW_KEY_W) || held(GLFW_KEY_UP);
+  const bool crouchHeld = scripted.crouch || held(GLFW_KEY_LEFT_CONTROL) ||
+                          held(GLFW_KEY_RIGHT_CONTROL) || held(GLFW_KEY_C);
+  const bool forwardHeld = scripted.forward || held(GLFW_KEY_W) || held(GLFW_KEY_UP);
+  const bool jumpHeld = scripted.jump || held(GLFW_KEY_SPACE);
 
   glm::vec3 wish(0.0f);
   if (forwardHeld) wish += fwd;
@@ -73,7 +74,7 @@ void Player::update(GLFWwindow* window, float dt, float yawRadians, bool sprint,
 
   // Sprint needs to be going forwards, and crouch outranks it: you cannot
   // sprint out of a crouch, you have to stand up first.
-  const bool sprinting = sprint && !crouchHeld && !sliding && moving && forwardHeld;
+  const bool sprinting = (sprint || scripted.sprint) && !crouchHeld && !sliding && moving && forwardHeld;
 
   // ---- starting a slide: crouch, at speed, on the ground, cooldown clear.
   // Anything else and crouch is just crouch. It triggers on the press rather
@@ -131,7 +132,7 @@ void Player::update(GLFWwindow* window, float dt, float yawRadians, bool sprint,
 
   crouching = crouchHeld || sliding;
 
-  if (grounded && held(GLFW_KEY_SPACE)) {
+  if (grounded && jumpHeld) {
     // Jumping out of a slide keeps the speed you built — that is the trick.
     if (sliding) {
       sliding = false;
@@ -211,7 +212,7 @@ void Player::update(GLFWwindow* window, float dt, float yawRadians, bool sprint,
       velocity.z *= want / along;
     }
     // Kicking off: away from the wall as well as up.
-    if (held(GLFW_KEY_SPACE)) {
+    if (jumpHeld) {
       velocity.x += n.x * WALL_JUMP_OUT;
       velocity.z += n.z * WALL_JUMP_OUT;
       velocity.y = WALL_JUMP_UP;
