@@ -15,6 +15,8 @@ void Level::build(float arenaSize, glm::vec3 floorTint) {
   props_.clear();
   colliders_.clear();
 
+  parts_.clear();
+  fromParts_ = false;
   half_ = arenaSize * 0.5f;
   floorTop_ = 0.0f;
   floorTint_ = floorTint;
@@ -115,6 +117,28 @@ void Level::destroy() {
 }
 
 void Level::collect(std::vector<DrawItem>& out) const {
+  if (fromParts_) {
+    for (const Part& p : parts_) {
+      DrawItem it;
+      it.mesh = &boxMesh_;
+      glm::vec3 centre = (p.min + p.max) * 0.5f;
+      glm::vec3 size = p.max - p.min;
+      it.model = glm::scale(glm::translate(glm::mat4(1.0f), centre), size);
+      it.material = p.emissive ? MaterialType::Emissive : MaterialType::Armour;
+      it.tint = p.tint;
+      it.metallic = p.metallic;
+      it.roughness = p.roughness;
+      it.wear = p.wear;
+      it.castShadow = p.castShadow && !p.emissive;
+      if (p.emissive) {
+        it.emissive = p.tint;
+        it.emissiveIntensity = p.emissiveIntensity;
+      }
+      out.push_back(it);
+    }
+    return;
+  }
+
   DrawItem floor;
   floor.mesh = &floorMesh_;
   floor.material = MaterialType::Terrain;
@@ -201,30 +225,86 @@ bool Level::lineOfSight(const glm::vec3& from, const glm::vec3& to) const {
 }
 
 bool Level::resolve(glm::vec3& pos, float radius, float height) const {
-  bool grounded = pos.y <= floorTop_ + 1e-3f;
-  if (pos.y < floorTop_) pos.y = floorTop_;
+  // Whether the cylinder's footprint overlaps a box at all, ignoring height.
+  auto overlapsXZ = [&](const Collider& c) {
+    return pos.x > c.min.x - radius && pos.x < c.max.x + radius &&
+           pos.z > c.min.z - radius && pos.z < c.max.z + radius;
+  };
 
-  for (auto& c : colliders_) {
-    if (pos.y + height < c.min.y || pos.y > c.max.y) continue;   // no vertical overlap
+  // ---- 1. what holds it up. The ground plane always does; a box does if its
+  // top is under the footprint and no more than a step above the feet.
+  auto findSupport = [&]() {
+    float best = floorTop_;
+    for (const Collider& c : colliders_) {
+      if (c.max.y <= best) continue;
+      if (c.max.y > pos.y + kStepHeight) continue;   // too tall to step onto
+      if (!overlapsXZ(c)) continue;
+      best = c.max.y;
+    }
+    return best;
+  };
+  float support = findSupport();
 
-    float exMinX = c.min.x - radius, exMaxX = c.max.x + radius;
-    float exMinZ = c.min.z - radius, exMaxZ = c.max.z + radius;
-    if (pos.x < exMinX || pos.x > exMaxX || pos.z < exMinZ || pos.z > exMaxZ) continue;
+  // ---- 2. push out of anything that actually blocks. Two passes, because
+  // the first can shove the cylinder into the side of a second box; a third
+  // pass buys almost nothing and this runs four times a frame per actor.
+  for (int pass = 0; pass < 2; pass++) {
+    for (const Collider& c : colliders_) {
+      // Low enough to step onto, so it is floor rather than wall.
+      if (c.max.y <= pos.y + kStepHeight) continue;
+      // Entirely above the head, so it is ceiling rather than wall.
+      if (c.min.y >= pos.y + height) continue;
+      if (!overlapsXZ(c)) continue;
 
-    float pushLeft = pos.x - exMinX, pushRight = exMaxX - pos.x;
-    float pushBack = pos.z - exMinZ, pushFwd = exMaxZ - pos.z;
-    float minX = std::min(pushLeft, pushRight);
-    float minZ = std::min(pushBack, pushFwd);
+      float exMinX = c.min.x - radius, exMaxX = c.max.x + radius;
+      float exMinZ = c.min.z - radius, exMaxZ = c.max.z + radius;
+      float pushLeft = pos.x - exMinX, pushRight = exMaxX - pos.x;
+      float pushBack = pos.z - exMinZ, pushFwd = exMaxZ - pos.z;
+      float minX = std::min(pushLeft, pushRight);
+      float minZ = std::min(pushBack, pushFwd);
 
-    if (minX < minZ) pos.x += (pushLeft < pushRight) ? -minX : minX;
-    else pos.z += (pushBack < pushFwd) ? -minZ : minZ;
+      if (minX < minZ) pos.x += (pushLeft < pushRight) ? -minX : minX;
+      else pos.z += (pushBack < pushFwd) ? -minZ : minZ;
+    }
   }
 
-  // Keep inside the arena walls even if a fast-moving substep skipped over
-  // one — belt and braces around the wall colliders above.
-  pos.x = std::clamp(pos.x, -half_ + radius + 0.05f, half_ - radius - 0.05f);
-  pos.z = std::clamp(pos.z, -half_ + radius + 0.05f, half_ - radius - 0.05f);
+  // ---- 3. settle. Being pushed sideways can move the cylinder over a
+  // different box, so the support is worked out again from where it ended up
+  // rather than from where it started.
+  support = findSupport();
+  bool grounded = pos.y <= support + 1e-3f;
+  if (pos.y < support) pos.y = support;
+
+  // The procedural arena is a walled field and its perimeter is also enforced
+  // here, belt and braces, in case a fast substep skipped clean over a wall
+  // collider. A level built from parts has no such perimeter — clamping one
+  // would pin the player inside the bounding box of the whole structure.
+  if (!fromParts_) {
+    pos.x = std::clamp(pos.x, -half_ + radius + 0.05f, half_ - radius - 0.05f);
+    pos.z = std::clamp(pos.z, -half_ + radius + 0.05f, half_ - radius - 0.05f);
+  }
   return grounded;
+}
+
+void Level::buildFromParts(const std::vector<Part>& parts, float floorY) {
+  destroy();
+  walls_.clear();
+  props_.clear();
+  colliders_.clear();
+  parts_ = parts;
+  fromParts_ = true;
+  floorTop_ = floorY;
+  boxMesh_ = Mesh::box(1.0f, 1.0f, 1.0f);
+
+  // half_ still bounds the shadow cascades and the spawn ring helper, so it
+  // is taken from the parts rather than left at whatever the last arena was.
+  float extent = 1.0f;
+  for (const Part& p : parts) {
+    extent = std::max(extent, std::max(std::abs(p.min.x), std::abs(p.max.x)));
+    extent = std::max(extent, std::max(std::abs(p.min.z), std::abs(p.max.z)));
+    if (p.solid) colliders_.push_back({p.min, p.max});
+  }
+  half_ = extent;
 }
 
 glm::vec3 Level::spawnPoint(int index, int total, float radius) const {

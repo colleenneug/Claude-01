@@ -443,6 +443,33 @@ void Hud::drawSlotSelect(int screenW, int screenH, const SlotSummary slots[3], i
   end();
 }
 
+void Hud::drawStation(int screenW, int screenH, const StationState& s) {
+  begin(screenW, screenH);
+
+  const glm::vec4 dim(0.58f, 0.64f, 0.72f, 0.85f);
+  const glm::vec4 bright(0.90f, 0.95f, 1.0f, 0.95f);
+  float cx = screenW * 0.5f, cy = screenH * 0.5f;
+
+  // A dot, not a crosshair: you are not aiming at anything in here.
+  rect(cx - 2.0f, cy - 2.0f, 4.0f, 4.0f, glm::vec4(0.85f, 0.92f, 1.0f, 0.55f));
+
+  text(28, 34, "THE CRADLE", 2.6f, bright);
+  if (!s.deck.empty()) text(28, 66, s.deck, 1.8f, dim);
+
+  if (!s.terminalName.empty()) {
+    glm::vec4 col(s.terminalColour, 0.98f);
+    float w = textWidth(s.terminalName, 3.0f);
+    rect(cx - w * 0.5f - 16, cy + 44, w + 32, 40, glm::vec4(0.05f, 0.07f, 0.10f, 0.72f));
+    textCentered(cx, cy + 54, s.terminalName, 3.0f, col);
+    if (!s.terminalLine.empty()) textCentered(cx, cy + 92, s.terminalLine, 1.7f, dim);
+    textCentered(cx, cy + 116, "PRESS E", 2.0f, col);
+  }
+
+  textCentered(cx, screenH - 40.0f,
+               "WASD MOVE   SHIFT SPRINT   SPACE JUMP   E USE   Q AIRLOCK", 1.9f, dim);
+  end();
+}
+
 void Hud::drawCreate(int screenW, int screenH, const Content& content,
                      const std::vector<std::string>& classIds, int selected) {
   begin(screenW, screenH);

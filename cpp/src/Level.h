@@ -22,15 +22,46 @@ public:
   // a sand shelf and the floor of a dead ark are not the same place, and a
   // single hardcoded dust brown made every sector look like the first one.
   void build(float arenaSize, glm::vec3 floorTint = glm::vec3(0.31f, 0.26f, 0.21f));
+
+  // One box of a hand-built level. The station (Station.cpp) is a list of
+  // these: a station is a set of rooms, and rooms are easier to write as the
+  // space they occupy than as a centre plus a size.
+  struct Part {
+    glm::vec3 min{0.0f}, max{0.0f};
+    glm::vec3 tint{0.5f};
+    float metallic = 0.3f, roughness = 0.6f, wear = 0.8f;
+    // Emissive parts are the lights and the signage: they read as sources
+    // rather than as paint, and they are never solid.
+    bool emissive = false;
+    float emissiveIntensity = 2.0f;
+    // Trim, railings' tops, ceiling panels: seen but not collided with.
+    bool solid = true;
+    bool castShadow = true;
+  };
+
+  // Build from an explicit list of boxes instead of the procedural arena.
+  // Nothing is generated and nothing is clamped to a perimeter — a station
+  // is not a walled field, and clamping to one would pin you inside the
+  // bounding box of the whole structure.
+  void buildFromParts(const std::vector<Part>& parts, float floorY);
   void destroy();
 
   void collect(std::vector<DrawItem>& out) const;
 
   // Resolves a cylinder (feet at `pos`, given radius/height) against every
-  // collider, pushing it out along whichever axis overlaps least. Returns
-  // true if the ground directly beneath is solid (so the caller can zero
-  // vertical velocity) — this project's floor is one giant collider, so in
-  // practice this is really "is pos.y at/below the floor's top".
+  // collider and returns whether it is standing on something.
+  //
+  // Three things happen, in order, and the order is the whole design:
+  //   1. Find what holds it up — the highest box top under its footprint that
+  //      is no more than a step above its feet. That is what makes a stair a
+  //      stair rather than a wall, and what lets a deck plate seven metres up
+  //      be a floor to whoever is on it and a ceiling to whoever is under it.
+  //   2. Push out of anything that actually blocks: a box whose top is more
+  //      than a step above the feet AND whose bottom is below the head. A
+  //      deck overhead fails the second test and you walk under it; a stair
+  //      step fails the first and you walk up it.
+  //   3. Settle onto the support.
+  static constexpr float kStepHeight = 0.45f;
   bool resolve(glm::vec3& pos, float radius, float height) const;
 
   float floorY() const { return floorTop_; }
@@ -70,7 +101,9 @@ private:
   Mesh floorMesh_, boxMesh_;
   std::vector<glm::mat4> walls_;
   std::vector<Prop> props_;
+  std::vector<Part> parts_;          // set only when built from parts
   std::vector<Collider> colliders_;
+  bool fromParts_ = false;
   float half_ = 40.0f;
   float floorTop_ = 0.0f;
   float wallHeight_ = 6.0f;

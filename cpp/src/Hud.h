@@ -105,6 +105,18 @@ public:
   // selection in each row, which is not necessarily the equipped item.
   void drawHub(int screenW, int screenH, const Content& content, const Hub& hub, const Profile& profile);
 
+  // Walking around the Cradle: where you are, what you can walk up to, and
+  // the controls. Deliberately sparse — the station is the one place in the
+  // game nothing is shooting at you, and a full combat HUD over it would say
+  // otherwise.
+  struct StationState {
+    std::string deck;            // "DECK A - CONCOURSE"
+    std::string terminalName;    // empty when nothing is in reach
+    std::string terminalLine;
+    glm::vec3 terminalColour{0.6f, 0.9f, 1.0f};
+  };
+  void drawStation(int screenW, int screenH, const StationState& s);
+
   // The record-creation screen: pick a doctrine. The browser build asks the
   // same question in the same place (its screen-create), and for the same
   // reason — the doctrine decides the weapon, the ability and the passive, so

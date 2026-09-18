@@ -14,6 +14,7 @@
 #include "Hud.h"
 #include "Hub.h"
 #include "Space.h"
+#include "Station.h"
 #include "Profile.h"
 #include <algorithm>
 #include <cstdio>
@@ -30,7 +31,7 @@ void framebufferSizeCallback(GLFWwindow* window, int w, int h) {
 
 }  // namespace
 
-enum class AppState { SlotSelect, CreateRecord, Space, Hub, Mission };
+enum class AppState { SlotSelect, CreateRecord, Space, Station, Hub, Mission };
 
 int main(int argc, char** argv) {
   // --mission <id> both names the mission EREBUS_SKIP_HUB boots straight
@@ -86,6 +87,7 @@ int main(int argc, char** argv) {
   Hub hub;
   Space space;
 
+  Station station;
   glfwGetFramebufferSize(window, &width, &height);
   renderer.create(width, height);
   hud.create();
@@ -144,6 +146,10 @@ int main(int argc, char** argv) {
   if (missionIdGiven) hub.preselectMission(missionId);
 
   bool spaceReady = space.init(hubContent);
+  // The Cradle you walk around in. Built once: its geometry never changes,
+  // and rebuilding it every time you dock would throw away and re-upload
+  // several hundred boxes for nothing.
+  station.init();
 
   // EREBUS_SKIP_HUB=1 boots straight into --mission with whatever's
   // currently equipped, bypassing the Hub entirely — kept for every
@@ -188,6 +194,10 @@ int main(int argc, char** argv) {
   // the world you launched from rather than to the origin.
   std::string lastBodyId;
   bool gameEverStarted = false;
+  // Whether the current mission was launched from the Cradle's flight deck
+  // rather than by landing on a world, so ending it returns you to the one
+  // you actually left from.
+  bool launchedFromStation = false;
   if (state == AppState::Mission) {
     if (!game.init(contentDir, missionId, profile)) {
       std::fprintf(stderr, "Failed to load mission '%s' — check content/missions/%s.cfg exists\n",
@@ -230,6 +240,13 @@ int main(int argc, char** argv) {
   // frame, and EREBUS_FORCE_ENGAGE=1 presses E the moment it's in range, so
   // a headless run can prove the whole fly-there-and-land path end to end.
   const char* spaceAutopilot = std::getenv("EREBUS_SPACE_AUTOPILOT");
+  // EREBUS_STATION_AT="x,y,z" and EREBUS_STATION_YAW=<degrees> drop the
+  // player at a spot inside the Cradle on arrival, so a headless run can
+  // stand at the foot of a stair flight or in the cupola rather than only
+  // walking the spine in a straight line.
+  const char* stationAt = std::getenv("EREBUS_STATION_AT");
+  float stationYaw = 90.0f;
+  if (const char* sy = std::getenv("EREBUS_STATION_YAW")) stationYaw = (float)std::atof(sy);
   bool forceEngage = std::getenv("EREBUS_FORCE_ENGAGE") != nullptr;
   const char* dumpPath = std::getenv("EREBUS_DUMP_FRAME");
   int maxFrames = 0;
@@ -465,12 +482,35 @@ int main(int argc, char** argv) {
       if (ePressed && engageable) {
         const Space::Body* target = engageable;
         if (target->isStation) {
-          state = AppState::Hub;
-          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-          mouseCaptured = false;
+          // Docking puts you inside the Cradle on foot. The hub's screens are
+          // still there — they are what the terminals in it open.
+          if (skipSpace) {
+            state = AppState::Hub;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mouseCaptured = false;
+          } else {
+            station.enter(camera);
+            if (stationAt) {
+              float ax = 0.0f, ay = 0.0f, az = 0.0f;
+              if (std::sscanf(stationAt, "%f,%f,%f", &ax, &ay, &az) == 3) {
+                station.placeAt(camera, glm::vec3(ax, ay, az), stationYaw);
+              }
+            }
+            state = AppState::Station;
+            // The contextual-action edge does not carry across a mode switch:
+            // docking set it, and leaving it set meant the E that got you in
+            // here was still "down" inside, so the first press at a terminal
+            // never registered as a press at all. Re-read the real key so a
+            // player still holding E does not immediately use something.
+            prevEngageKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
+          }
         } else if (!target->missionId.empty()) {
           if (game.init(contentDir, target->missionId, profile)) {
             gameEverStarted = true;
+            launchedFromStation = false;   // you dropped from orbit, not off the flight deck
             lastBodyId = target->id;
             camera.position = game.player().eyePosition();
             state = AppState::Mission;
@@ -518,6 +558,67 @@ int main(int argc, char** argv) {
           std::fclose(f);
         }
       }
+    } else if (state == AppState::Station) {
+      station.update(window, camera, dt, forceForward);
+      renderer.renderFrame(station, camera, (float)now, dt);
+
+      const Station::Terminal* term = station.nearestTerminal();
+      // E uses whatever is in reach. The scripted press (EREBUS_FORCE_ENGAGE,
+      // shared with docking) lets a headless run walk the concourse and open
+      // the flight deck without a keyboard.
+      bool eDown = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS || (forceEngage && term);
+      bool ePressed = eDown && !prevEngageKey;
+      prevEngageKey = eDown;
+      bool qDown = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS;
+      bool qPressed = qDown && !prevUndockKey;
+      prevUndockKey = qDown;
+
+      if ((ePressed && term && term->id == "airlock") || qPressed) {
+        ProfileStore::save(profile, savePath);
+        space.placeNear("");
+        state = AppState::Space;
+        prevEngageKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
+      } else if (ePressed && term) {
+        // The armoury and the flight deck both open the hub screen: this
+        // build has one, listing gear and the route together. Splitting it in
+        // two to match the browser's separate screens would be two screens
+        // saying what one says.
+        hub.init(hubContent, profile);
+        if (missionIdGiven) hub.preselectMission(missionId);
+        launchedFromStation = true;
+        state = AppState::Hub;
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        mouseCaptured = false;
+      }
+
+      glfwGetFramebufferSize(window, &width, &height);
+      Hud::StationState ss;
+      float py = station.player().position.y;
+      ss.deck = py > 10.5f   ? "DECK C - UPPER RING AND THE CUPOLA"
+                : py > 3.5f  ? "DECK B - GALLERY, COLUMBUS AND KIBO"
+                             : "DECK A - CONCOURSE, ARRIVALS AND THE AIRLOCK";
+      if (term) {
+        ss.terminalName = term->name;
+        ss.terminalLine = term->line;
+        ss.terminalColour = term->colour;
+      }
+      hud.drawStation(width, height, ss);
+
+      if (frame % 30 == 0) {
+        glfwSetWindowTitle(window, "Erebus Cradle | The Cradle");
+      }
+
+      if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
+        FILE* f = std::fopen(logStatePath, "w");
+        if (f) {
+          glm::vec3 p = station.player().position;
+          std::fprintf(f,
+                       "{\"appState\":\"station\",\"frame\":%d,\"pos\":[%.1f,%.1f,%.1f],"
+                       "\"terminal\":\"%s\"}\n",
+                       frame + 1, p.x, p.y, p.z, term ? term->id.c_str() : "");
+          std::fclose(f);
+        }
+      }
     } else if (state == AppState::Hub) {
       std::string scriptedStorage;
       const char* scripted = nullptr;
@@ -543,8 +644,9 @@ int main(int argc, char** argv) {
         bool undockDown = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS;
         if (undockDown && !prevUndockKey) {
           ProfileStore::save(profile, savePath);
-          space.placeNear("");
-          state = AppState::Space;
+          // Back to the terminal you were standing at, not straight out to
+          // the ship — you walked in here, so you walk out.
+          state = AppState::Station;
           glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
           mouseCaptured = true;
           firstMouse = true;
@@ -724,6 +826,13 @@ int main(int argc, char** argv) {
             state = AppState::Hub;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             mouseCaptured = false;
+          } else if (launchedFromStation) {
+            // You launched off the flight deck, so you come back to it.
+            station.enter(camera);
+            state = AppState::Station;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
           } else {
             // Back to the ship, parked at the world you dropped from, so
             // leaving a mission puts you where you were rather than at the

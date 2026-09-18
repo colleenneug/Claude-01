@@ -108,7 +108,19 @@ Then you're in **open space**, in your ship:
 | Left Shift | Boost |
 | E | Land on the world you're near, or dock at the Cradle |
 
-Docking at the Cradle opens the **Hub** (Q undocks back to the ship):
+Docking at the Cradle puts you **inside it, on foot**. Three decks around an
+open concourse, joined by four stair flights, ported from the browser build's
+`../src/js/fps/station.js` — same layout, same module names, same deck
+heights:
+
+| Input | Action |
+|---|---|
+| WASD / mouse | Walk around (the mission movement, minus the gun) |
+| E | Use whatever you are standing at |
+| Q | Airlock — back to the ship |
+
+The FLIGHT DECK terminal at the far end of the concourse and the ARMOURY on
+deck B both open the **Hub** (Q backs out to where you were standing):
 
 | Input | Action |
 |---|---|
@@ -366,6 +378,24 @@ see `Content::loadAll` in `src/Content.cpp`.
   distance (`engageRangeFor`) rather than picked separately — the two
   numbers drifting apart is exactly how the Cradle became impossible to
   dock at, with the ship held further out than the prompt could reach.
+- **Station** ("THE CRADLE" — `Station.h/.cpp`): the place you come back to,
+  and walk around in. Three decks — concourse at y 0, gallery ring at 7,
+  upper ring and the cupola at 14 — around an atrium that is open through all
+  three, so from the floor you can see the cupola and from the cupola you can
+  see the floor. It is built as a list of boxes handed to
+  `Level::buildFromParts`, which is how the browser build writes it too: a
+  station is a set of rooms, and a room is easier to write as the space it
+  occupies than as a centre plus a size. Deck plates are cut around their
+  holes — the atrium, and a well over every stair flight — because a flight
+  running under an unbroken slab stops you dead when your head reaches it,
+  two thirds of the way up. The browser's two lifts are not here; every deck
+  is reachable on foot, and a lift is a collider that moves, which collision
+  built once per level would need rebuilding for.
+
+  The room is lit by strips rather than lamps, because this renderer has one
+  directional light and a probe and emissive geometry illuminates nothing.
+  The strips read as the sources; the flat fill (`ambientFill`) carries the
+  room, standing in for the bounce off a hundred metres of white panel.
 - **Hub** ("THE CRADLE" — `Hub.h/.cpp`): the between-mission loadout and
   destination picker — see *Controls* above. Cycling an unowned item buys
   it if it's affordable; `Hud::drawHub` lists every weapon, armour piece,
@@ -392,7 +422,18 @@ see `Content::loadAll` in `src/Content.cpp`.
   perfectly against an obstacle centred on the straight line to the
   player; see the comment on `Hostile::stuckT`), attack at range or in
   melee, death.
-- **Level** (`Level.h/.cpp`): a walled arena built fresh per mission from its
+- **Level** (`Level.h/.cpp`): both the mission arenas and the station, because
+  they need the same collision. Resolution does three things in order, and
+  the order is the whole design: find what holds the cylinder up (the highest
+  box top under its footprint that is no more than a step above its feet),
+  push it out of anything that actually blocks (a box whose top is more than
+  a step above the feet *and* whose bottom is below the head), then settle it
+  onto the support — recomputed, because being pushed sideways can move it
+  over a different box. That is what makes a stair a stair rather than a
+  wall, and what lets a deck plate seven metres up be a floor to whoever is
+  standing on it and a ceiling to whoever is walking under it.
+
+  A walled arena is built fresh per mission from its
   `arena` size — from 102 metres at the docking collar to 192 on Deck Zero.
   Cover comes in three shapes, because they do three different jobs: a block
   you hide behind, a barricade you crouch behind and shoot over, and a pillar

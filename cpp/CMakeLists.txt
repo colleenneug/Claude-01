@@ -42,6 +42,7 @@ add_executable(erebus_native
   src/Profile.cpp
   src/Hub.cpp
   src/Space.cpp
+    src/Station.cpp
   src/Game.cpp
   src/Renderer.cpp
 )

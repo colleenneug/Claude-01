@@ -107,6 +107,37 @@ run "$OUT/create.json" EREBUS_MAX_FRAMES=40 EREBUS_CLASS=
 check "a record with no doctrine stops to ask" "$OUT/create.json" \
       "s['appState'] == 'create'"
 
+# Docking walks you into the Cradle rather than opening a menu, and the ship
+# starts parked at it, so the scripted engage lands you inside on frame one.
+run "$OUT/dockin.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_MAX_FRAMES=60
+check "docking walks you into the Cradle" "$OUT/dockin.json" \
+      "s['appState'] == 'station'"
+
+# The concourse is walkable end to end. Built with a solid bow wall the
+# arrivals tube is sealed off and you stop dead twelve metres short of the
+# room, which is exactly what happened the first time.
+run "$OUT/spine.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_FORCE_FORWARD=1 EREBUS_MAX_FRAMES=900
+check "the spine is walkable end to end" "$OUT/spine.json" \
+      "s['appState'] == 'station' and s['pos'][2] > 10"
+
+# ...and the stairs are stairs. This is the whole multi-deck collision model
+# in one check: a step is low enough to be support rather than a wall, and
+# the well cut in the deck above means your head does not hit the slab two
+# thirds of the way up.
+run "$OUT/stairs.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_FORCE_FORWARD=1 EREBUS_STATION_AT=-19,0,-16 EREBUS_STATION_YAW=90 \
+    EREBUS_MAX_FRAMES=520
+check "the stairs climb to deck B" "$OUT/stairs.json" \
+      "s['appState'] == 'station' and s['pos'][1] > 6.5"
+
+# Walking up to the flight deck and pressing E opens the route.
+run "$OUT/flight.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=0,0,32 EREBUS_STATION_YAW=90 EREBUS_MAX_FRAMES=60
+check "the flight deck opens the route" "$OUT/flight.json" \
+      "s['appState'] == 'hub'"
+
 # Space renders without blowing up at either end of the quality ladder. The
 # proof is that the run got where it was flying: the tier switches shadow
 # cascades, bloom and DoF on and off, and a tier that fails to build its
