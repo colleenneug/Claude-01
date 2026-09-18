@@ -58,6 +58,7 @@ void Hostile::spawn(const EnemyType* t, glm::vec3 at, bool boss, float hpMult) {
   isBoss = boss;
   bossScale = boss ? 1.35f : 1.0f;
   stuckT = 0.0f;
+  stunT = 0.0f;
   // Deterministic per-instance handedness for the stuck-avoidance steer
   // below, from the spawn position rather than a global RNG — cheap, and
   // two hostiles that spawn at different points reliably pick differently.
@@ -68,6 +69,18 @@ void Hostile::spawn(const EnemyType* t, glm::vec3 at, bool boss, float hpMult) {
 
 bool Hostile::update(float dt, const glm::vec3& playerPos, const Level& level) {
   hitFlash = std::max(0.0f, hitFlash - dt * 4.0f);
+
+  // Stunned: it stands where it is and does not shoot. Its own attack timer
+  // keeps running down, so the first thing it does when it comes back is not
+  // an instant hit — the window the ability bought would be worth nothing if
+  // the whole squad fired the moment it closed.
+  if (stunT > 0.0f) {
+    stunT -= dt;
+    cooldown = std::max(cooldown, 0.35f);
+    vel = glm::vec3(0.0f);
+    bob += dt * 0.6f;
+    return false;
+  }
 
   if (state == HostileState::Dying) {
     deathT += dt;
@@ -278,6 +291,12 @@ void Hostile::collectWalker(std::vector<DrawItem>& out, const DrawItem& base,
   glow.material = MaterialType::Emissive;
   glow.emissive = hitFlash > 0.05f ? glm::vec3(1.0f, 0.2f, 0.15f) : type->glow;
   glow.emissiveIntensity = hitFlash > 0.05f ? hitFlash * 2.0f : 1.15f;
+  // Stunned, its optics gutter: the only way to tell at a glance which of a
+  // dozen frames the pulse actually caught.
+  if (stunned()) {
+    glow.emissive = glm::vec3(0.35f, 0.55f, 1.0f);
+    glow.emissiveIntensity = 0.25f + 0.2f * std::sin(bob * 9.0f);
+  }
 
   // Rise and fall twice per stride: a body that stays at one height while its
   // legs swing is the other half of why a fake walk looks fake.
@@ -410,6 +429,12 @@ void Hostile::collectFlyer(std::vector<DrawItem>& out, const DrawItem& base,
   glow.material = MaterialType::Emissive;
   glow.emissive = hitFlash > 0.05f ? glm::vec3(1.0f, 0.2f, 0.15f) : type->glow;
   glow.emissiveIntensity = hitFlash > 0.05f ? hitFlash * 2.0f : 1.15f;
+  // Stunned, its optics gutter: the only way to tell at a glance which of a
+  // dozen frames the pulse actually caught.
+  if (stunned()) {
+    glow.emissive = glm::vec3(0.35f, 0.55f, 1.0f);
+    glow.emissiveIntensity = 0.25f + 0.2f * std::sin(bob * 9.0f);
+  }
 
   // It hovers rather than stands, so it hangs off one joint at 62% of height
   // and rolls a little as it drifts. That is also where headCentre() is

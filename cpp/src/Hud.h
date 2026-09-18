@@ -71,6 +71,19 @@ public:
     // is an ability nobody presses.
     float abilityFrac = 1.0f;
     bool abilityReady = true;
+    std::string abilityName = "PHASE STEP";
+
+    // The Bulwark's barrier, shown as its own tier stacked on the health bar
+    // rather than folded into it: it does not regenerate and it does not
+    // count towards your maximum, so showing it as extra health would lie.
+    float overshield = 0.0f, overshieldMax = 0.0f;
+
+    // What you are holding. Shown by the ammo counter, because at a glance
+    // "six rounds" means something completely different on a breaching
+    // shotgun than on a suppressed carbine.
+    std::string weaponName;
+    // The doctrine's name, top-left under the health bar.
+    std::string className;
 
     // The equipped cosmetic's colour (Game::hudAccent): tints the
     // crosshair, ammo pips and the health bar's "full" tier. The health
@@ -91,6 +104,13 @@ public:
   // cleared once). The white outline marks the currently-cycling-through
   // selection in each row, which is not necessarily the equipped item.
   void drawHub(int screenW, int screenH, const Content& content, const Hub& hub, const Profile& profile);
+
+  // The record-creation screen: pick a doctrine. The browser build asks the
+  // same question in the same place (its screen-create), and for the same
+  // reason — the doctrine decides the weapon, the ability and the passive, so
+  // it has to be answered before there is anything to play.
+  void drawCreate(int screenW, int screenH, const Content& content,
+                  const std::vector<std::string>& classIds, int selected);
 
   // One slot's line on the save-select screen: either a summary of the
   // profile in it, or EMPTY.

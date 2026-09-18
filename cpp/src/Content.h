@@ -94,6 +94,43 @@ struct WeaponDef {
   int magSize = 24;
   int reserveAmmo = 96;   // rounds carried beyond the loaded magazine
   int cost = 0;           // chits; 0 = starter gear, owned from a fresh profile
+
+  // What makes the three doctrines' weapons play differently rather than
+  // just hit for different numbers.
+  //   pellets  — rays per trigger pull. A shotgun's damage is per pellet, so
+  //              MAUL-12 does 8 x 17 at point blank and a fraction of that
+  //              once the cone has opened past its target.
+  //   spread   — the cone, in radians at one metre. Applied per pellet.
+  //   pierce   — the ray carries on through a hostile into whatever stood
+  //              behind it, instead of stopping at the first thing it hits.
+  //   range    — beyond this the shot simply misses. A shotgun that reaches
+  //              as far as a rifle is a rifle.
+  int pellets = 1;
+  float spread = 0.0f;
+  bool pierce = false;
+  float range = 200.0f;
+};
+
+// content/classes/<id>.cfg — a doctrine. Each one is its issued weapon, its
+// field ability and its passive, which is how the browser build draws the
+// line too (src/js/classes.js). Picked when a record is created and fixed
+// for that record's life.
+enum class AbilityKind { Barrier, Breach, Phase };
+
+struct ClassDef {
+  std::string id, name, role, tagline;
+  glm::vec3 accent{0.85f, 0.95f, 1.0f};
+
+  std::string weaponId;          // issued free with the record
+
+  AbilityKind ability = AbilityKind::Phase;
+  std::string abilityName = "PHASE STEP";
+  std::string abilityDesc;
+  float abilityCooldown = 10.0f;
+
+  std::string perkName, perk;
+  float hp = 100.0f;
+  float damageReduction = 0.0f;  // before any armour piece adds to it
 };
 
 // content/armor/<id>.cfg — equipping one changes Player::maxHp and the
@@ -145,8 +182,10 @@ public:
   const ArmorDef* armor(const std::string& id) const;
   const CosmeticDef* cosmetic(const std::string& id) const;
   const PlanetDef* planet(const std::string& id) const;
+  const ClassDef* playerClass(const std::string& id) const;
 
   std::vector<std::string> planetIds() const;
+  std::vector<std::string> classIds() const;
   std::vector<std::string> missionIds() const;
   // The campaign route in story order — every mission with a campaign
   // number, sorted by it. Side content (a planet's patrol, a debug
@@ -163,4 +202,5 @@ private:
   std::unordered_map<std::string, ArmorDef> armor_;
   std::unordered_map<std::string, CosmeticDef> cosmetics_;
   std::unordered_map<std::string, PlanetDef> planets_;
+  std::unordered_map<std::string, ClassDef> classes_;
 };

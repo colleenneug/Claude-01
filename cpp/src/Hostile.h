@@ -49,6 +49,11 @@ struct Hostile {
   float hitFlash = 0.0f;
   bool isBoss = false;
   float bossScale = 1.0f;
+  // Seconds left stunned by an Oracle's Systems Breach: it stops moving
+  // and cannot attack, and its optics read dead while it lasts. Stun, not
+  // damage — the ability's job is to buy the fireteam a window, not to
+  // clear a room on its own.
+  float stunT = 0.0f;
   // Direct pursuit alone deadlocks perfectly against an obstacle centred on
   // the straight line to the player — Level::resolve pushes it back to the
   // exact same boundary point every frame with nowhere to slide. stuckT
@@ -69,6 +74,7 @@ struct Hostile {
   bool takeDamage(float amount);
 
   bool alive() const { return state != HostileState::Gone; }
+  bool stunned() const { return stunT > 0.0f; }
   bool blocksShots() const { return state != HostileState::Gone && state != HostileState::Dying; }
   glm::vec3 headCentre() const { return pos + glm::vec3(0, type->height * 0.93f, 0); }
   glm::vec3 bodyCentre() const { return pos + glm::vec3(0, type->height * 0.55f, 0); }

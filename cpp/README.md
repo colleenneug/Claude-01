@@ -24,10 +24,20 @@ going somewhere: the promenade is a sunset that has been holding since year
 six, the reactor runs hot and orange, Deck Zero is nearly black. The
 planets stay alongside it as side destinations you can fly to at any time.
 
-**Scope, honestly stated:** three weapons, three armour pieces, three
-cosmetics, seven enemy archetypes, twenty-two missions (the sixteen-sector
-campaign plus six side contracts), five destinations — including an ice
-world and a desert one. All of it is real, data-driven content under
+A record is created under one of **three doctrines** — BULWARK, ORACLE,
+WRAITH — and the choice is the browser build's (`../src/js/classes.js`):
+each one is an issued weapon, a field ability and a passive, and it is fixed
+for that record's life. A Bulwark carries the MAUL-12 breaching shotgun,
+absorbs 22% of everything it is hit with, and throws up a sixty-point
+overshield. An Oracle carries the ARC LANCE, whose rounds pass through the
+front rank into whatever stood behind it, and can stun a room with an EMP.
+A Wraith carries the suppressed WHISPER, triples headshot damage, and phase
+steps out of trouble with the next round primed.
+
+**Scope, honestly stated:** three doctrines, six weapons, three armour
+pieces, three cosmetics, seven enemy archetypes, twenty-two missions (the
+sixteen-sector campaign plus six side contracts), five destinations —
+including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
 text files, not a code change (see *Content* below). What's still not here:
 co-op/netcode (see the note at the bottom of *Roadmap*), the browser
@@ -76,6 +86,17 @@ file (`save1.dat` … `save3.dat`) next to the executable.
 | Enter or Space | Load that slot and continue to the hub |
 | D, then Y | Delete the selected slot (Y confirms, N cancels — a stray key press shouldn't wipe a record) |
 
+An empty slot goes to **record creation** first — pick a doctrine. A record
+that has no doctrine is a record that has not been created yet, however it
+was reached, so even a scripted run stops here and asks rather than starting
+a campaign with no weapon, no ability and no perk.
+
+| Input | Action |
+|---|---|
+| 1 / 2 / 3, or Left / Right | Pick a doctrine |
+| Enter | Confirm — the doctrine's weapon is issued free with the record |
+| Escape | Back to the slots |
+
 Then you're in **open space**, in your ship:
 
 | Input | Action |
@@ -107,7 +128,7 @@ In a mission:
 | Space, against a wall in mid-air | Kick off a **wall run** (hold a wall beside you at speed and you run along it) |
 | Left click | Fire (hitscan) |
 | R | Reload |
-| Q or E | Phase step — a short dash along your look direction, on a nine-second cooldown |
+| Q or E | Your doctrine's field ability — barrier, EMP or phase step |
 | Right mouse, held | Aim — narrows the FOV and brings depth of field in on the background |
 | Escape | Release the mouse; left click re-captures it |
 | Enter or Space, once the mission has ended | Return to the Hub (saves your profile) |
@@ -118,8 +139,17 @@ walk 4.6, sprint 9.4, crouch 2.3, and the whole slide table
 threshold is a fraction of the walk speed and its floor and ceiling are set
 against the sprint speed, so moving one without the others changes whether
 sliding is worth doing at all. The one thing not carried across is the
-browser's per-class abilities — this build has no classes yet, so it takes
-the phase step, which is the one that needs nothing but a look direction.
+browser's wall-run camera roll.
+
+Your weapon is drawn in your hands and named next to the ammo counter,
+because at a glance "six rounds" means something completely different on a
+breaching shotgun than on a suppressed carbine. It is ordinary world
+geometry placed on the camera's own basis rather than a separate view-space
+pass — the whole renderer already works in world space, and a second pass
+with its own projection would need its own copy of the shadows, the fog and
+the tone map. Which of the three silhouettes gets built is read off the
+weapon's *ballistics*, not its id, so a content drop that adds a fourth
+shotgun puts a shotgun in your hands without touching the code.
 
 The window title shows frame time, mission name, player HP, ammo, wave
 progress and mission state, refreshed twice a second.
@@ -218,8 +248,44 @@ mission = glacius_ice_fields  # what landing here drops you into
 # station = true              # the Cradle instead: docking opens the hub
 ```
 
+**`content/classes/<id>.cfg`** — a doctrine:
+
+```
+name = BULWARK
+role = AEGIS DOCTRINE
+tagline = Armour grown from the hull of a dead ship. Walks first, always.
+accent = 1.00, 0.71, 0.33
+weapon = maul_12              # issued free with the record
+ability = barrier             # barrier | breach | phase
+ability_name = AEGIS BARRIER
+ability_desc = Overshield that soaks the next wave of fire.
+ability_cooldown = 16
+perk_name = BULKHEAD PLATING
+perk = Sealed armour absorbs 22% of all incoming damage.
+hp = 124
+damage_reduction = 0.22
+```
+
+The three abilities are the three the browser build has, and they are code
+(`Game::useAbility`) rather than data, because each one does something
+structurally different: a pool of temporary health, a stun applied to every
+hostile in a radius, and a collision-resolved dash. `damage_reduction` here
+and an armour piece's stack *multiplicatively* — 22% doctrine plus an
+eventual 80% armour piece would otherwise reach immunity, and each layer
+should shave a share of whatever got through the last one anyway.
+
 **`content/weapons/<id>.cfg`**, **`content/armor/<id>.cfg`**,
 **`content/cosmetics/<id>.cfg`** — equippable gear, all the same format:
+
+A weapon carries its ballistics too, and they are what make a doctrine's
+weapon feel like a different weapon rather than different numbers:
+`pellets` (rays per trigger pull — a shotgun's `damage` is *per pellet*),
+`spread` (the cone in radians, applied per pellet), `pierce` (the ray
+carries on through a hostile into whatever stood behind it) and `range`
+(past which the shot simply misses — a shotgun that reaches as far as a
+rifle is a rifle). The pellet scatter is a deterministic function of which
+shot and which pellet rather than a global RNG, because two identical runs
+have to produce identical results for the headless suite to mean anything.
 
 ```
 # content/weapons/marksman_carbine.cfg

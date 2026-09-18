@@ -209,13 +209,23 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   }
 
   // ---- health bar + readout, bottom-left
-  float bx = 28, by = screenH - 54, bw = 260, bh = 18;
+  // Raised to leave room underneath for the ability charge and the
+  // doctrine line, which used to run off the bottom of the frame.
+  float bx = 28, by = screenH - 84, bw = 260, bh = 18;
   rect(bx - 3, by - 3, bw + 6, bh + 6, glm::vec4(0, 0, 0, 0.45f));
   rect(bx, by, bw, bh, glm::vec4(0.12f, 0.03f, 0.03f, 0.9f));
   glm::vec3 hpCol = hpFrac > 0.5f ? s.accent
                    : hpFrac > 0.25f ? glm::vec3(0.9f, 0.75f, 0.25f)
                                     : glm::vec3(0.9f, 0.25f, 0.2f);
   rect(bx, by, bw * std::clamp(hpFrac, 0.0f, 1.0f), bh, glm::vec4(hpCol, 0.95f));
+
+  // The barrier sits on top of the bar, in its own colour, scaled against the
+  // same width — so a full barrier over half health reads as "you have more
+  // than you look like you have" without pretending your maximum moved.
+  if (s.overshield > 0.01f && s.overshieldMax > 0.01f && s.maxHp > 0.0f) {
+    float frac = std::clamp(s.overshield / s.maxHp, 0.0f, 1.0f);
+    rect(bx, by - 7, bw * frac, 5, glm::vec4(0.55f, 0.85f, 1.0f, 0.95f));
+  }
 
   char buf[96];
   std::snprintf(buf, sizeof(buf), "%d / %d", (int)std::lround(s.hp), (int)std::lround(s.maxHp));
@@ -232,8 +242,9 @@ void Hud::draw(int screenW, int screenH, const State& s) {
     glm::vec4 col = s.abilityReady ? glm::vec4(0.45f, 0.95f, 0.65f, 0.95f)
                                    : glm::vec4(0.35f, 0.50f, 0.68f, 0.9f);
     rect(bx, ay, aw * std::clamp(s.abilityFrac, 0.0f, 1.0f), ah, col);
-    text(bx + aw + 10, ay - 1, s.abilityReady ? "Q PHASE STEP" : "PHASE STEP", 1.5f,
-         s.abilityReady ? col : dim);
+    std::string label = s.abilityReady ? "Q " + s.abilityName : s.abilityName;
+    text(bx + aw + 10, ay - 1, label, 1.5f, s.abilityReady ? col : dim);
+    if (!s.className.empty()) text(bx, ay + ah + 8, s.className, 1.5f, dim);
   }
 
   // ---- ammo pips + counts, bottom-right. One small rect per round in the
@@ -255,6 +266,10 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   std::string reserveStr = "/ " + std::to_string(s.reserveAmmo);
   float resW = textWidth(reserveStr, 2.0f);
   text(reserveX - resW, py0 - 20, reserveStr, 2.0f, dim);
+  if (!s.weaponName.empty()) {
+    float nameW = textWidth(s.weaponName, 1.8f);
+    text(reserveX - nameW, py0 - 52, s.weaponName, 1.8f, glm::vec4(s.accent, 0.9f));
+  }
   text(reserveX - resW - 8 - magW, py0 - 30, buf, 4.0f,
        glm::vec4(s.ammoInMag == 0 ? glm::vec3(0.9f, 0.3f, 0.25f) : s.accent, 0.95f));
 
@@ -425,6 +440,82 @@ void Hud::drawSlotSelect(int screenW, int screenH, const SlotSummary slots[3], i
     textCentered(cx, screenH - 108.0f, "1 2 3 SELECT   ENTER CONTINUE   D DELETE", 2.0f, dim);
   }
 
+  end();
+}
+
+void Hud::drawCreate(int screenW, int screenH, const Content& content,
+                     const std::vector<std::string>& classIds, int selected) {
+  begin(screenW, screenH);
+
+  const glm::vec4 dim(0.58f, 0.64f, 0.72f, 0.9f);
+  const glm::vec4 bright(0.90f, 0.95f, 1.0f, 0.98f);
+
+  float x = 64.0f;
+  text(x, 46, "RECOVERY DIVISION", 2.0f, dim);
+  text(x, 72, "SELECT A DOCTRINE", 4.2f, bright);
+  rect(x, 126, screenW - 128.0f, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.5f));
+
+  // Three columns, one per doctrine, so they are read against each other
+  // rather than one at a time.
+  const int n = (int)classIds.size();
+  if (n <= 0) {
+    textCentered(screenW * 0.5f, screenH * 0.5f, "NO DOCTRINES IN CONTENT/CLASSES", 2.4f, bright);
+    end();
+    return;
+  }
+  const float gap = 24.0f;
+  const float colW = (screenW - 128.0f - gap * (n - 1)) / (float)n;
+
+  for (int i = 0; i < n; i++) {
+    const ClassDef* c = content.playerClass(classIds[i]);
+    float cx = x + i * (colW + gap);
+    bool on = i == selected;
+    glm::vec3 accent = c ? c->accent : glm::vec3(0.8f, 0.85f, 0.92f);
+
+    rect(cx, 152, colW, screenH - 240.0f,
+         on ? glm::vec4(0.13f, 0.17f, 0.23f, 0.9f) : glm::vec4(0.07f, 0.08f, 0.11f, 0.7f));
+    // A lit edge rather than a caret: three columns need the selection to
+    // read from across the screen, not from one glyph.
+    rect(cx, 152, on ? 5.0f : 2.0f, screenH - 240.0f, glm::vec4(accent, on ? 0.95f : 0.35f));
+
+    float ty = 174.0f;
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "[%d]", i + 1);
+    text(cx + 18, ty, buf, 1.8f, dim);
+    text(cx + 60, ty - 4, c ? c->name : classIds[i], 3.0f, glm::vec4(accent, on ? 1.0f : 0.75f));
+    ty += 34.0f;
+    if (c) {
+      text(cx + 18, ty, c->role, 1.7f, dim);
+      ty += 28.0f;
+      ty = wrapped(cx + 18, ty, colW - 36.0f, c->tagline, 1.7f,
+                   glm::vec4(0.80f, 0.86f, 0.93f, on ? 0.95f : 0.6f), 20.0f);
+      ty += 18.0f;
+
+      text(cx + 18, ty, "ISSUED", 1.5f, dim);
+      ty += 20.0f;
+      const WeaponDef* w = content.weapon(c->weaponId);
+      text(cx + 18, ty, w ? w->name : c->weaponId, 2.2f, glm::vec4(accent, on ? 0.95f : 0.6f));
+      ty += 30.0f;
+
+      text(cx + 18, ty, "ABILITY", 1.5f, dim);
+      ty += 20.0f;
+      text(cx + 18, ty, c->abilityName, 2.0f, glm::vec4(accent, on ? 0.95f : 0.6f));
+      ty += 24.0f;
+      ty = wrapped(cx + 18, ty, colW - 36.0f, c->abilityDesc, 1.5f,
+                   glm::vec4(0.72f, 0.78f, 0.86f, on ? 0.9f : 0.55f), 18.0f);
+      ty += 18.0f;
+
+      text(cx + 18, ty, "PASSIVE", 1.5f, dim);
+      ty += 20.0f;
+      text(cx + 18, ty, c->perkName, 2.0f, glm::vec4(accent, on ? 0.95f : 0.6f));
+      ty += 24.0f;
+      wrapped(cx + 18, ty, colW - 36.0f, c->perk, 1.5f,
+              glm::vec4(0.72f, 0.78f, 0.86f, on ? 0.9f : 0.55f), 18.0f);
+    }
+  }
+
+  textCentered(screenW * 0.5f, screenH - 58.0f,
+               "1 2 3 OR LEFT RIGHT SELECT   ENTER CONFIRM   ESC BACK", 2.0f, dim);
   end();
 }
 

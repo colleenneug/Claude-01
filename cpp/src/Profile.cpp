@@ -32,11 +32,12 @@ void addUnique(std::vector<std::string>& v, const std::string& id) {
 
 }  // namespace
 
-void Profile::ensureStarterGear() {
-  addUnique(ownedWeapons, "service_rifle");
+void Profile::ensureStarterGear(const std::string& issuedWeapon) {
+  const std::string rifle = issuedWeapon.empty() ? std::string("service_rifle") : issuedWeapon;
+  addUnique(ownedWeapons, rifle);
   addUnique(ownedArmor, "patrol_vest");
   addUnique(ownedCosmetics, "default");
-  if (equippedWeapon.empty()) equippedWeapon = "service_rifle";
+  if (equippedWeapon.empty()) equippedWeapon = rifle;
   if (equippedArmor.empty()) equippedArmor = "patrol_vest";
   if (equippedCosmetic.empty()) equippedCosmetic = "default";
 }
@@ -86,6 +87,7 @@ Profile ProfileStore::load(const std::string& path) {
     try {
       if (k == "name") p.name = v;
       else if (k == "chits") p.chits = std::stoi(v);
+      else if (k == "class") p.classId = v;
       else if (k == "equipped_weapon") p.equippedWeapon = v;
       else if (k == "equipped_armor") p.equippedArmor = v;
       else if (k == "equipped_cosmetic") p.equippedCosmetic = v;
@@ -119,6 +121,7 @@ bool ProfileStore::save(const Profile& p, const std::string& path) {
 
   f << "name = " << p.name << "\n";
   f << "chits = " << p.chits << "\n";
+  f << "class = " << p.classId << "\n";
   f << "equipped_weapon = " << p.equippedWeapon << "\n";
   f << "equipped_armor = " << p.equippedArmor << "\n";
   f << "equipped_cosmetic = " << p.equippedCosmetic << "\n";

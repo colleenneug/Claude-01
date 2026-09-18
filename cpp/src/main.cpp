@@ -30,7 +30,7 @@ void framebufferSizeCallback(GLFWwindow* window, int w, int h) {
 
 }  // namespace
 
-enum class AppState { SlotSelect, Space, Hub, Mission };
+enum class AppState { SlotSelect, CreateRecord, Space, Hub, Mission };
 
 int main(int argc, char** argv) {
   // --mission <id> both names the mission EREBUS_SKIP_HUB boots straight
@@ -156,6 +156,34 @@ int main(int argc, char** argv) {
   AppState state = skipHub      ? AppState::Mission
                    : slotChosen ? afterSlot
                                 : AppState::SlotSelect;
+
+  // The doctrines, for the record-creation screen. Sorted (Content::classIds)
+  // so the three columns are in the same order every run.
+  std::vector<std::string> classIds = hubContent.classIds();
+  int classIndex = 0;
+
+  // EREBUS_CLASS=<id> settles the doctrine without the creation screen, the
+  // same idea as EREBUS_SLOT for the record itself: a headless run has no way
+  // to press a key on a screen whose whole job is to ask a question.
+  const char* classEnv = std::getenv("EREBUS_CLASS");
+  if (classEnv && *classEnv) {
+    if (const ClassDef* c = hubContent.playerClass(classEnv)) {
+      profile.classId = c->id;
+      profile.ensureStarterGear(c->weaponId);
+      profile.equippedWeapon = c->weaponId;
+    } else {
+      std::fprintf(stderr, "[main] EREBUS_CLASS='%s' is not in content/classes, ignored\n",
+                   classEnv);
+    }
+  }
+
+  // A record with no doctrine has not actually been created yet, however it
+  // was reached — so even a scripted EREBUS_SLOT run stops here and asks,
+  // rather than starting a campaign with no weapon, no ability and no perk.
+  if (slotChosen && profile.classId.empty() && !classIds.empty() && !skipHub) {
+    state = AppState::CreateRecord;
+  }
+
   // Which body the ship is parked at, so a finished mission returns you to
   // the world you launched from rather than to the origin.
   std::string lastBodyId;
@@ -246,6 +274,22 @@ int main(int argc, char** argv) {
   bool pEnter = false, pSpace = false, pDel = false, pY = false, pN = false;
   bool prevEngageKey = false, prevUndockKey = false, prevAbilityKey = false;
 
+  // Everything that has to happen once a record is settled on, whether it
+  // came out of an existing slot or was just created. Lives here rather than
+  // being written twice, because the two paths diverging is exactly how a
+  // freshly created record would end up in space with no gear.
+  auto enterAfterSlot = [&]() {
+    hub.init(hubContent, profile);
+    if (missionIdGiven) hub.preselectMission(missionId);
+    state = afterSlot;
+    if (state == AppState::Space) {
+      space.placeNear("");   // start docked off the Cradle
+      glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+      mouseCaptured = true;
+      firstMouse = true;
+    }
+  };
+
   double lastTime = glfwGetTime();
   int frame = 0;
 
@@ -303,15 +347,16 @@ int main(int argc, char** argv) {
         if (edge(GLFW_KEY_D, pDel)) deletePending = slotIndex;
         if (edge(GLFW_KEY_ENTER, pEnter) || edge(GLFW_KEY_SPACE, pSpace)) {
           savePath = slotPaths[slotIndex];
+          bool fresh = !ProfileStore::exists(savePath);
           profile = ProfileStore::load(savePath);
-          hub.init(hubContent, profile);
-          if (missionIdGiven) hub.preselectMission(missionId);
-          state = afterSlot;
-          if (state == AppState::Space) {
-            space.placeNear("");   // start docked off the Cradle
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            mouseCaptured = true;
-            firstMouse = true;
+          // A record with no doctrine is a record that has not been created
+          // yet — an empty slot, or a save written before doctrines existed
+          // and now owed the choice it never got.
+          if ((fresh || profile.classId.empty()) && !classIds.empty()) {
+            classIndex = 0;
+            state = AppState::CreateRecord;
+          } else {
+            enterAfterSlot();
           }
         }
       }
@@ -340,6 +385,50 @@ int main(int argc, char** argv) {
 
       if (frame % 30 == 0) {
         glfwSetWindowTitle(window, "Erebus Cradle | Select a record");
+      }
+    } else if (state == AppState::CreateRecord) {
+      auto edge = [&](int key, bool& prev) {
+        bool down = glfwGetKey(window, key) == GLFW_PRESS;
+        bool fired = down && !prev;
+        prev = down;
+        return fired;
+      };
+      const int n = (int)classIds.size();
+      if (edge(GLFW_KEY_1, p1) && n > 0) classIndex = 0;
+      if (edge(GLFW_KEY_2, p2) && n > 1) classIndex = 1;
+      if (edge(GLFW_KEY_3, p3) && n > 2) classIndex = 2;
+      if (edge(GLFW_KEY_LEFT, pUp) && n > 0) classIndex = (classIndex + n - 1) % n;
+      if (edge(GLFW_KEY_RIGHT, pDown) && n > 0) classIndex = (classIndex + 1) % n;
+      if (edge(GLFW_KEY_ESCAPE, pDel)) {
+        state = AppState::SlotSelect;
+        slotsDirty = true;
+      } else if ((edge(GLFW_KEY_ENTER, pEnter) || edge(GLFW_KEY_SPACE, pSpace)) && n > 0) {
+        profile.classId = classIds[classIndex];
+        const ClassDef* chosen = hubContent.playerClass(profile.classId);
+        // The doctrine's weapon is issued with the record, not bought.
+        profile.ensureStarterGear(chosen ? chosen->weaponId : std::string());
+        if (chosen) profile.equippedWeapon = chosen->weaponId;
+        ProfileStore::save(profile, savePath);
+        enterAfterSlot();
+      }
+
+      glClearColor(0.03f, 0.035f, 0.05f, 1.0f);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glfwGetFramebufferSize(window, &width, &height);
+      hud.drawCreate(width, height, hubContent, classIds, classIndex);
+
+      if (frame % 30 == 0) {
+        glfwSetWindowTitle(window, "Erebus Cradle | Select a doctrine");
+      }
+
+      if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
+        FILE* f = std::fopen(logStatePath, "w");
+        if (f) {
+          std::fprintf(f, "{\"appState\":\"create\",\"frame\":%d,\"selectedClass\":\"%s\"}\n",
+                       frame + 1,
+                       classIds.empty() ? "" : classIds[classIndex].c_str());
+          std::fclose(f);
+        }
       }
     } else if (state == AppState::Space) {
       // Headless flight aids, same idea as EREBUS_DEBUG_AUTOAIM for combat:
@@ -537,6 +626,13 @@ int main(int argc, char** argv) {
       Hud::State hs;
       hs.hp = game.player().hp;
       hs.abilityReady = game.abilityReady();
+      hs.weaponName = game.weaponName();
+      hs.overshield = game.player().overshield;
+      hs.overshieldMax = game.player().overshieldMax;
+      if (const ClassDef* pc = game.playerClass()) {
+        hs.abilityName = pc->abilityName;
+        hs.className = pc->name + " - " + pc->role;
+      }
       hs.abilityFrac = game.abilityCooldownMax() > 0.0f
                      ? 1.0f - game.abilityCooldown() / game.abilityCooldownMax()
                      : 1.0f;
@@ -594,12 +690,16 @@ int main(int argc, char** argv) {
         if (f) {
           std::fprintf(f,
             "{\"appState\":\"mission\",\"frame\":%d,\"missionState\":\"%s\",\"playerHp\":%.2f,"
+            "\"maxHp\":%.2f,\"class\":\"%s\",\"weapon\":\"%s\",\"magSize\":%d,"
             "\"playerPos\":[%.2f,%.2f,%.2f],\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,"
             "\"bossAlive\":%s,\"chits\":%d}\n",
             frame + 1,
             game.missionState() == MissionState::Complete ? "complete"
               : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
-            game.player().hp, game.player().position.x, game.player().position.y, game.player().position.z,
+            game.player().hp, game.player().maxHp,
+            game.playerClass() ? game.playerClass()->id.c_str() : "",
+            game.weaponName().c_str(), w.magSize,
+            game.player().position.x, game.player().position.y, game.player().position.z,
             w.ammoInMag, w.reserveAmmo, game.waveProgress(), game.bossAlive() ? "true" : "false", profile.chits);
           std::fclose(f);
         }

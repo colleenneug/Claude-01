@@ -22,7 +22,12 @@ run() {  # run <state-file> <env assignments...> [-- <binary args>]
     if [ "$1" = "--" ]; then shift; bin_args=("$@"); break; fi
     env_args+=("$1"); shift
   done
-  xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 \
+  # Every check starts from a fresh save, which now means a record with no
+  # doctrine — and a record with no doctrine stops on the creation screen and
+  # waits, which no scripted run can answer. EREBUS_CLASS settles it. A check
+  # that wants a different doctrine just passes its own, later on the command
+  # line, which wins.
+  xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 EREBUS_CLASS=wraith \
     EREBUS_SAVE_PATH="$save" EREBUS_LOG_STATE="$log" "${env_args[@]}" \
     "$BIN" "${bin_args[@]}" >/dev/null 2>&1
 }
@@ -79,6 +84,28 @@ run "$OUT/lock.json" EREBUS_SLOT=1 EREBUS_SKIP_SPACE=1 EREBUS_HUB_SCRIPT=mission
     EREBUS_MAX_FRAMES=40
 check "route stays locked ahead of your progress" "$OUT/lock.json" \
       "s['appState'] == 'hub' and s['selectedMission'] != 'spine'"
+
+# Each doctrine plays its own weapon. The Bulwark's shell is eight pellets of
+# 17 against a rifle's single 22, so a run that fires the same number of
+# rounds should not come out with the same ammo counts or the same clear time
+# — what this asserts is the cheap, checkable part: the issued weapon is the
+# doctrine's, with its own magazine.
+run "$OUT/bulwark.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=600 -- --mission breach
+check "bulwark carries the MAUL-12" "$OUT/bulwark.json" \
+      "s['magSize'] == 6 and s['maxHp'] > 120"
+
+run "$OUT/oracle.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=oracle EREBUS_MAX_FRAMES=60 \
+    -- --mission breach
+check "oracle carries the ARC LANCE" "$OUT/oracle.json" \
+      "s['magSize'] == 24 and s['reserveAmmo'] == 168 and abs(s['maxHp'] - 94) < 0.01"
+
+# A record with no doctrine has not been created yet and must stop and ask,
+# however it was reached — otherwise a campaign starts with no weapon, no
+# ability and no perk.
+run "$OUT/create.json" EREBUS_MAX_FRAMES=40 EREBUS_CLASS=
+check "a record with no doctrine stops to ask" "$OUT/create.json" \
+      "s['appState'] == 'create'"
 
 # Space renders without blowing up at either end of the quality ladder. The
 # proof is that the run got where it was flying: the tier switches shadow

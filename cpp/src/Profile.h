@@ -14,6 +14,14 @@ struct Profile {
   std::string name = "Operative";
   int chits = 100;
 
+  // The doctrine this record was created under (content/classes/<id>.cfg).
+  // Fixed for the record's life: it decides the issued weapon, the field
+  // ability and the passive, which is how the browser build draws the line
+  // too. Empty on a save written before classes existed — Game falls back to
+  // the plain starter loadout when it cannot resolve one, so an old save
+  // still loads and plays.
+  std::string classId;
+
   std::vector<std::string> ownedWeapons;
   std::vector<std::string> ownedArmor;
   std::vector<std::string> ownedCosmetics;
@@ -32,11 +40,15 @@ struct Profile {
   bool ownsCosmetic(const std::string& id) const { return contains(ownedCosmetics, id); }
   bool hasCompleted(const std::string& missionId) const { return contains(completedMissions, missionId); }
 
-  // Grants the starter gear (service_rifle / patrol_vest / default) if not
+  // Grants the starter gear (patrol_vest / default, plus a rifle) if not
   // already owned, and equips it if nothing is currently equipped — so a
   // brand-new profile is playable without a shop trip, and an old save
   // that predates a new starter item still gets it.
-  void ensureStarterGear();
+  //
+  // `issuedWeapon` is the doctrine's own weapon (ClassDef::weaponId), granted
+  // free and equipped with the record. Empty falls back to the service rifle,
+  // which is what a save written before classes existed has.
+  void ensureStarterGear(const std::string& issuedWeapon = "");
 
   // Records that `missionId` finished successfully and pays out `reward`
   // chits — but only the first time; replaying a cleared mission doesn't

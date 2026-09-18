@@ -1,6 +1,7 @@
 #pragma once
 #include "Gl.h"
 #include "Level.h"
+#include <algorithm>
 
 // The physical player: gravity, jump, WASD relative to wherever the camera
 // is looking, and collision against the level. Distinct from Camera, which
@@ -36,7 +37,23 @@ public:
 
   float maxHp = 100.0f;
   float hp = 100.0f;
-  float damageReduction = 0.0f;   // 0..1 fraction shaved off incoming hits, from equipped armour
+  float damageReduction = 0.0f;   // 0..1 fraction shaved off incoming hits, from doctrine + armour
+  // The Bulwark's Aegis Barrier: a pool of temporary health that takes
+  // hits before `hp` does and does not regenerate. Kept separate rather
+  // than added to hp so the health bar can show it as its own tier and so
+  // it cannot heal you past your maximum.
+  float overshield = 0.0f;
+  float overshieldMax = 0.0f;
+
+  // Applies `amount` to the overshield first and the rest to health.
+  void takeDamage(float amount) {
+    if (overshield > 0.0f) {
+      float soaked = std::min(overshield, amount);
+      overshield -= soaked;
+      amount -= soaked;
+    }
+    hp -= amount;
+  }
   bool grounded = true;
 
   // yawRadians comes from the camera's look direction: the player walks

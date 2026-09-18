@@ -209,6 +209,10 @@ WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
       else if (k == "mag_size") w.magSize = std::stoi(v);
       else if (k == "reserve") w.reserveAmmo = std::stoi(v);
       else if (k == "cost") w.cost = std::stoi(v);
+      else if (k == "pellets") w.pellets = std::max(1, std::stoi(v));
+      else if (k == "spread") w.spread = std::stof(v);
+      else if (k == "range") w.range = std::stof(v);
+      else if (k == "pierce") w.pierce = (v == "true" || v == "1");
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());
@@ -292,6 +296,47 @@ PlanetDef parsePlanet(const std::string& id, const fs::path& path) {
   return p;
 }
 
+ClassDef parseClass(const std::string& id, const fs::path& path) {
+  ClassDef c;
+  c.id = id;
+  c.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") c.name = v;
+      else if (k == "role") c.role = v;
+      else if (k == "tagline") c.tagline = v;
+      else if (k == "accent") c.accent = parseVec3(v, c.accent);
+      else if (k == "weapon") c.weaponId = v;
+      else if (k == "ability") {
+        if (v == "barrier") c.ability = AbilityKind::Barrier;
+        else if (v == "breach") c.ability = AbilityKind::Breach;
+        else if (v == "phase") c.ability = AbilityKind::Phase;
+        else {
+          std::fprintf(stderr, "[Content] %s: unknown ability '%s', defaulting to phase\n",
+                       path.string().c_str(), v.c_str());
+        }
+      }
+      else if (k == "ability_name") c.abilityName = v;
+      else if (k == "ability_desc") c.abilityDesc = v;
+      else if (k == "ability_cooldown") c.abilityCooldown = std::stof(v);
+      else if (k == "perk_name") c.perkName = v;
+      else if (k == "perk") c.perk = v;
+      else if (k == "hp") c.hp = std::stof(v);
+      else if (k == "damage_reduction") c.damageReduction = std::stof(v);
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return c;
+}
+
 }  // namespace
 
 bool Content::loadAll(const std::string& dir) {
@@ -355,11 +400,33 @@ bool Content::loadAll(const std::string& dir) {
     }
   }
 
+  fs::path classDir = root / "classes";
+  if (fs::exists(classDir)) {
+    for (auto& entry : fs::directory_iterator(classDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      classes_[id] = parseClass(id, entry.path());
+    }
+  }
+
   std::printf("[Content] loaded %zu enemy type(s), %zu mission(s), %zu weapon(s), "
-              "%zu armor piece(s), %zu cosmetic(s), %zu planet(s) from %s\n",
+              "%zu armor piece(s), %zu cosmetic(s), %zu planet(s), %zu class(es) from %s\n",
               enemies_.size(), missions_.size(), weapons_.size(), armor_.size(),
-              cosmetics_.size(), planets_.size(), dir.c_str());
+              cosmetics_.size(), planets_.size(), classes_.size(), dir.c_str());
   return true;
+}
+
+const ClassDef* Content::playerClass(const std::string& id) const {
+  auto it = classes_.find(id);
+  return it == classes_.end() ? nullptr : &it->second;
+}
+
+std::vector<std::string> Content::classIds() const {
+  std::vector<std::string> out;
+  out.reserve(classes_.size());
+  for (auto& kv : classes_) out.push_back(kv.first);
+  std::sort(out.begin(), out.end());
+  return out;
 }
 
 const EnemyType* Content::enemy(const std::string& id) const {

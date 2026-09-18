@@ -121,7 +121,11 @@ public:
   // is what the ability is for.
   bool useAbility();
   float abilityCooldown() const { return abilityCool_; }
-  float abilityCooldownMax() const { return kAbilityCooldown; }
+  float abilityCooldownMax() const { return class_ ? class_->abilityCooldown : kAbilityCooldown; }
+  // What to call it on the HUD, and the doctrine behind it. Null when the
+  // record predates classes.
+  const ClassDef* playerClass() const { return class_; }
+  const std::string& weaponName() const { return weaponName_; }
   bool abilityReady() const { return abilityCool_ <= 0.0f; }
 
 private:
@@ -166,6 +170,31 @@ private:
   std::string pickupNote_;
   float pickupNoteT_ = 0.0f;
   float abilityCool_ = 0.0f;
+  // Reused every trigger pull rather than allocated per shot.
+  std::vector<ShotResult> shotBuffer_;
+  const ClassDef* class_ = nullptr;   // owned by content_, valid while loaded
+  std::string weaponName_;
+
+  // ---------- the viewmodel ----------
+  // The gun in your hands. It is drawn as ordinary world geometry placed on
+  // the camera's own basis rather than through a separate view-space pass,
+  // because the whole renderer — shadows, fog, tone map — already works in
+  // world space, and a second pass with its own projection would need its own
+  // copy of all of it.
+  //
+  // The basis is captured in update() rather than read from the camera in
+  // collect(), because collect() is the SceneSource interface the Renderer
+  // calls and it has no camera to ask.
+  glm::vec3 camPos_{0.0f}, camFwd_{0.0f, 0.0f, -1.0f}, camRight_{1.0f, 0.0f, 0.0f}, camUp_{0.0f, 1.0f, 0.0f};
+  float camAim_ = 0.0f;
+  // Recoil, sway and the walk bob, all in the viewmodel's own local space.
+  float recoil_ = 0.0f;
+  float swayX_ = 0.0f, swayY_ = 0.0f;
+  glm::vec3 prevFwd_{0.0f, 0.0f, -1.0f};
+  float bobT_ = 0.0f;
+  const WeaponDef* weaponDef_ = nullptr;
+
+  void collectViewmodel(std::vector<DrawItem>& out) const;
   glm::vec3 lookDir_{0.0f, 0.0f, -1.0f};   // last frame's aim, for the dash direction
 
   glm::vec3 sunDirection_{0.0f};
