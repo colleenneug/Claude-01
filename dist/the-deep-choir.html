@@ -1,34 +1,39 @@
-<title>Erebus Cradle</title>
+<title>THE DEEP CHOIR</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
 /* ==== src/css/base.css ==== */
 /* ============================================================
-   EREBUS CRADLE — base layer: palette, reset, ambience, cursor
+   THE DEEP CHOIR — base layer: palette, reset, ambience, cursor
    ============================================================ */
 
+/* The chrome belongs to the Deep, not to a field terminal: the old
+   console cyan becomes a cold violet, the ground goes black-plum, and
+   gold is left alone because gold is what the enemy is made of. The
+   token names are unchanged — everything downstream references them,
+   so the palette moves in one place. */
 :root{
-  --void:        #04070d;
-  --void-2:      #070c16;
-  --panel:       rgba(10, 20, 34, 0.72);
-  --panel-solid: #0a1422;
-  --line:        rgba(94, 234, 255, 0.22);
-  --line-hot:    rgba(94, 234, 255, 0.65);
+  --void:        #05040a;
+  --void-2:      #0b0713;
+  --panel:       rgba(18, 12, 30, 0.72);
+  --panel-solid: #120c1e;
+  --line:        rgba(157, 123, 255, 0.24);
+  --line-hot:    rgba(157, 123, 255, 0.68);
 
-  --cyan:        #5eeaff;
-  --cyan-dim:    #2b8ea0;
+  --cyan:        #9d7bff;
+  --cyan-dim:    #5b3f9e;
   --amber:       #ffb454;
-  --magenta:     #ff5ea8;
-  --lime:        #7dff9b;
+  --magenta:     #e0556b;
+  --lime:        #7de3a8;
   --blood:       #ff4d5e;
-  --ink:         #cfeaf5;
-  --ink-dim:     #6c8ba0;
+  --ink:         #ded5ee;
+  --ink-dim:     #8377a0;
 
   --font-ui: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Share Tech Mono', ui-monospace, 'Courier New', monospace;
 
-  --glow-cyan: 0 0 12px rgba(94,234,255,.45), 0 0 40px rgba(94,234,255,.12);
+  --glow-cyan: 0 0 12px rgba(157,123,255,.45), 0 0 40px rgba(157,123,255,.12);
 }
 
 *,*::before,*::after{ box-sizing:border-box; }
@@ -38,8 +43,8 @@ html,body{ height:100%; }
 body{
   margin:0;
   background:
-    radial-gradient(1200px 700px at 50% -10%, #0d2033 0%, transparent 60%),
-    radial-gradient(900px 600px at 90% 110%, #131029 0%, transparent 55%),
+    radial-gradient(1200px 700px at 50% -10%, #1b1030 0%, transparent 60%),
+    radial-gradient(900px 600px at 90% 110%, #2a0f22 0%, transparent 55%),
     var(--void);
   color:var(--ink);
   font-family:var(--font-ui);
@@ -58,8 +63,8 @@ button, input, a, [data-hover]{ cursor:none; }
 #grid-floor{
   position:fixed; left:0; right:0; bottom:0; height:44vh; z-index:0;
   background-image:
-    linear-gradient(rgba(94,234,255,.16) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(94,234,255,.16) 1px, transparent 1px);
+    linear-gradient(rgba(157,123,255,.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(157,123,255,.16) 1px, transparent 1px);
   background-size: 100% 40px, 40px 100%;
   transform: perspective(340px) rotateX(72deg);
   transform-origin: bottom center;
@@ -80,7 +85,7 @@ button, input, a, [data-hover]{ cursor:none; }
 }
 #scanlines::after{
   content:''; position:absolute; left:0; right:0; height:120px;
-  background:linear-gradient(to bottom, transparent, rgba(94,234,255,.055), transparent);
+  background:linear-gradient(to bottom, transparent, rgba(157,123,255,.055), transparent);
   animation: sweep 7s linear infinite;
 }
 @keyframes sweep{ from{ top:-20%; } to{ top:120%; } }
@@ -118,7 +123,7 @@ button, input, a, [data-hover]{ cursor:none; }
   position:absolute; left:34px; top:50%; transform:translateY(-50%);
   font-family:var(--font-mono); font-size:10px; letter-spacing:.16em;
   color:var(--cyan); white-space:nowrap; opacity:0; transition:opacity .15s ease;
-  text-shadow:0 0 8px rgba(94,234,255,.6);
+  text-shadow:0 0 8px rgba(157,123,255,.6);
 }
 #cursor.labelled .cur-label{ opacity:.95; }
 
@@ -181,15 +186,15 @@ button, input, a, [data-hover]{ cursor:none; }
 .btn{
   position:relative; font-family:var(--font-ui); font-weight:600;
   font-size:13px; letter-spacing:.16em; text-transform:uppercase;
-  color:var(--cyan); background:linear-gradient(180deg, rgba(94,234,255,.09), rgba(94,234,255,.02));
+  color:var(--cyan); background:linear-gradient(180deg, rgba(157,123,255,.09), rgba(157,123,255,.02));
   border:1px solid var(--line); padding:11px 20px;
   clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
   transition: color .16s, background .16s, border-color .16s, transform .12s, box-shadow .16s;
 }
 .btn:hover:not(:disabled){
   color:#eafcff; border-color:var(--line-hot);
-  background:linear-gradient(180deg, rgba(94,234,255,.22), rgba(94,234,255,.06));
-  box-shadow: var(--glow-cyan), inset 0 0 18px rgba(94,234,255,.12);
+  background:linear-gradient(180deg, rgba(157,123,255,.22), rgba(157,123,255,.06));
+  box-shadow: var(--glow-cyan), inset 0 0 18px rgba(157,123,255,.12);
   transform: translateY(-1px);
 }
 .btn:active:not(:disabled){ transform:translateY(1px); }
@@ -200,25 +205,25 @@ button, input, a, [data-hover]{ cursor:none; }
   background:linear-gradient(180deg, rgba(255,180,84,.28), rgba(255,180,84,.06));
   box-shadow:0 0 14px rgba(255,180,84,.4), inset 0 0 18px rgba(255,180,84,.14); }
 .btn-ghost{ background:transparent; color:var(--ink-dim); border-color:rgba(108,139,160,.3); }
-.btn-ghost:hover:not(:disabled){ color:var(--cyan); border-color:var(--line-hot); background:rgba(94,234,255,.07); box-shadow:none; }
+.btn-ghost:hover:not(:disabled){ color:var(--cyan); border-color:var(--line-hot); background:rgba(157,123,255,.07); box-shadow:none; }
 .btn-sm{ font-size:11px; padding:7px 13px; letter-spacing:.12em; }
 .btn-danger{ color:var(--blood); border-color:rgba(255,77,94,.4); }
 .btn-danger:hover:not(:disabled){ color:#fff; background:rgba(255,77,94,.22); border-color:var(--blood); box-shadow:0 0 12px rgba(255,77,94,.4); }
 
 input[type=text], input:not([type]){
   font-family:var(--font-mono); font-size:15px; letter-spacing:.18em; text-transform:uppercase;
-  color:var(--cyan); background:rgba(94,234,255,.05);
+  color:var(--cyan); background:rgba(157,123,255,.05);
   border:1px solid var(--line); border-radius:0; padding:11px 14px; outline:none;
   transition:border-color .16s, box-shadow .16s;
 }
-input:focus{ border-color:var(--line-hot); box-shadow:inset 0 0 16px rgba(94,234,255,.12); }
+input:focus{ border-color:var(--line-hot); box-shadow:inset 0 0 16px rgba(157,123,255,.12); }
 input::placeholder{ color:rgba(108,139,160,.6); letter-spacing:.14em; }
 
 /* scrollbars */
 ::-webkit-scrollbar{ width:8px; height:8px; }
-::-webkit-scrollbar-track{ background:rgba(94,234,255,.04); }
-::-webkit-scrollbar-thumb{ background:rgba(94,234,255,.26); }
-::-webkit-scrollbar-thumb:hover{ background:rgba(94,234,255,.5); }
+::-webkit-scrollbar-track{ background:rgba(157,123,255,.04); }
+::-webkit-scrollbar-thumb{ background:rgba(157,123,255,.26); }
+::-webkit-scrollbar-thumb:hover{ background:rgba(157,123,255,.5); }
 
 /* toasts */
 #toast-rail{ position:fixed; right:22px; top:22px; z-index:960; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
@@ -277,7 +282,7 @@ body.in-mission #screen-boot{ display:none !important; }
 @keyframes bootPulse{ 50%{ color:rgba(94,234,255,.75); } }
 #boot-log{
   font-family:var(--font-mono); font-size:13px; line-height:1.75; color:var(--cyan);
-  margin:0; white-space:pre-wrap; text-shadow:0 0 8px rgba(94,234,255,.35);
+  margin:0; white-space:pre-wrap; text-shadow:0 0 8px rgba(157,123,255,.35);
 }
 #boot-log .ok{ color:var(--lime); }
 #boot-log .warn{ color:var(--amber); }
@@ -296,7 +301,7 @@ body.in-mission #screen-boot{ display:none !important; }
 .title-wrap h1{
   font-size: clamp(42px, 8vw, 92px); font-weight:700; letter-spacing:.1em;
   margin:0; color:#eafcff;
-  text-shadow: 0 0 22px rgba(94,234,255,.45), 0 0 70px rgba(94,234,255,.18);
+  text-shadow: 0 0 22px rgba(157,123,255,.45), 0 0 70px rgba(157,123,255,.18);
 }
 .glitch{ position:relative; }
 .glitch::before, .glitch::after{
@@ -361,19 +366,19 @@ body.in-mission #screen-boot{ display:none !important; }
 }
 .slot.empty{ align-items:center; justify-content:center; text-align:center; }
 .slot.empty .bay{ position:absolute; top:24px; left:22px; right:22px; }
-.slot-empty-mark{ font-size:52px; color:rgba(94,234,255,.22); line-height:1; margin-bottom:14px; }
+.slot-empty-mark{ font-size:52px; color:rgba(157,123,255,.22); line-height:1; margin-bottom:14px; }
 .slot-empty-txt{ font-family:var(--font-mono); font-size:12px; letter-spacing:.24em; color:var(--ink-dim); }
 .slot:hover .slot-empty-mark{ color:var(--cyan); text-shadow:var(--glow-cyan); }
 
 .slot-glyph{
   width:74px; height:74px; margin:0 auto 14px; display:grid; place-items:center;
   border:1px solid var(--line-hot); border-radius:50%; font-size:30px;
-  box-shadow: inset 0 0 22px rgba(94,234,255,.15);
+  box-shadow: inset 0 0 22px rgba(157,123,255,.15);
 }
 .slot-name{ text-align:center; font-size:19px; letter-spacing:.16em; color:#eafcff; }
 .slot-class{ text-align:center; font-family:var(--font-mono); font-size:11px; letter-spacing:.2em; margin-top:5px; }
 .slot-meta{ margin-top:18px; display:flex; flex-direction:column; gap:7px; font-family:var(--font-mono); font-size:11px; color:var(--ink-dim); }
-.slot-meta .row{ display:flex; justify-content:space-between; border-bottom:1px dashed rgba(94,234,255,.13); padding-bottom:5px; }
+.slot-meta .row{ display:flex; justify-content:space-between; border-bottom:1px dashed rgba(157,123,255,.13); padding-bottom:5px; }
 .slot-meta .row b{ color:var(--ink); font-weight:400; }
 .slot-actions{ margin-top:auto; padding-top:18px; display:flex; gap:8px; }
 .slot-actions .btn{ flex:1; }
@@ -401,7 +406,7 @@ body.in-mission #screen-boot{ display:none !important; }
 .class-card:hover{ border-color:var(--line-hot); transform:translateX(4px); }
 .class-card:hover::after{ opacity:1; box-shadow:0 0 14px var(--accent, var(--cyan)); }
 .class-card.selected{
-  border-color:var(--accent); background:linear-gradient(100deg, rgba(94,234,255,.14), rgba(10,20,34,.4));
+  border-color:var(--accent); background:linear-gradient(100deg, rgba(157,123,255,.14), rgba(10,20,34,.4));
   transform:translateX(6px);
 }
 .class-card.selected::after{ opacity:1; width:4px; box-shadow:0 0 18px var(--accent); }
@@ -488,7 +493,7 @@ body.in-mission #screen-boot{ display:none !important; }
               min-height:0; overflow:auto; }
 #dossier-canvas{
   width:100%; height:360px; display:block; cursor:none;
-  background:radial-gradient(circle at 50% 35%, rgba(94,234,255,.10), transparent 68%);
+  background:radial-gradient(circle at 50% 35%, rgba(157,123,255,.10), transparent 68%);
   border:1px solid var(--line);
 }
 .arm-power{ text-align:center; border-top:1px solid var(--line); padding-top:12px; }
@@ -530,9 +535,9 @@ body.in-mission #screen-boot{ display:none !important; }
 .item{
   text-align:left; padding:10px 12px; border:1px solid var(--line);
   border-left:3px solid var(--rc, var(--ink-dim));
-  background:rgba(94,234,255,.03); transition:.15s;
+  background:rgba(157,123,255,.03); transition:.15s;
 }
-.item:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(94,234,255,.1); transform:translateX(3px); }
+.item:hover:not(:disabled){ border-color:var(--line-hot); background:rgba(157,123,255,.1); transform:translateX(3px); }
 .item.on{ border-color:var(--rc); background:color-mix(in srgb, var(--rc) 14%, transparent); }
 .item-name{ font-size:13px; letter-spacing:.06em; color:#eafcff; line-height:1.35; }
 .item-meta{
@@ -742,7 +747,7 @@ body.in-mission #screen-boot{ display:none !important; }
 .squad-row{
   display:grid; grid-template-columns:34px 1fr auto; gap:12px; align-items:center;
   padding:10px 12px; border:1px solid var(--line); border-left:3px solid var(--accent);
-  background:rgba(94,234,255,.04);
+  background:rgba(157,123,255,.04);
 }
 .sq-glyph{ font-size:18px; color:var(--accent); text-align:center; }
 .sq-name{ font-size:14px; letter-spacing:.1em; color:#eafcff; }
@@ -811,9 +816,12 @@ body.in-mission #vignette{ opacity:.55; }
    40x40 for a kit panel with a 45-degree corner cut, 3rem over 1.2rem for
    the ammunition, and a 1px frame inset 20px from the edge. */
 :root{
-  --v-shield: #4FE1D5;
+  /* The Vanguard HUD's measurements are base's; its colours are the Deep's.
+     Gold is deliberately absent — it belongs to the Pale, i.e. to the things
+     you are shooting at, so the interface must not share it. */
+  --v-shield: #9d7bff;
   --v-health: #FFFFFF;
-  --v-super:  #F3A01C;
+  --v-super:  #7de3a8;
   --v-panel:  rgba(10, 15, 20, 0.45);
   --v-track:  .15em;
 }
@@ -821,7 +829,7 @@ body.in-mission #vignette{ opacity:.55; }
 /* the container frame */
 #hud-frame{
   position:absolute; inset:20px;
-  border:1px solid rgba(79,225,213,.22);
+  border:1px solid rgba(157,123,255,.22);
   pointer-events:none;
 }
 #hud-frame::before, #hud-frame::after{
@@ -862,12 +870,39 @@ body.in-mission #vignette{ opacity:.55; }
   transition:width .18s linear;
 }
 .vt-seg.health i{ background:var(--v-health); box-shadow:0 0 8px rgba(255,255,255,.55); }
-.vt-seg.shield i{ background:var(--v-shield); box-shadow:0 0 8px rgba(79,225,213,.6); }
+.vt-seg.shield i{ background:var(--v-shield); box-shadow:0 0 8px rgba(157,123,255,.6); }
 #fps-hud.critical .vt-seg.health i{
   background:var(--blood); box-shadow:0 0 10px rgba(255,77,94,.7);
   animation:vtPulse .9s ease-in-out infinite;
 }
 @keyframes vtPulse{ 50%{ opacity:.55; } }
+
+/* ---- the dread meter ----
+   A fourth track under the vitals, in the same 300px measure. It is the one
+   part of the HUD that is allowed to get loud: at a full meter it pulses, and
+   in Rapture it goes pale and bleeds light. */
+.vt-dread{
+  width:300px; height:4px; margin-top:7px;
+  background:rgba(255,255,255,.13); overflow:hidden;
+}
+#v-dread{
+  display:block; height:100%; width:0%;
+  background:linear-gradient(90deg,#5a2fb0,#9d7bff);
+  box-shadow:0 0 8px rgba(157,123,255,.6);
+  transition:width .18s linear;
+}
+#fps-hud.dread-full #v-dread{ animation:dreadReady .7s ease-in-out infinite; }
+@keyframes dreadReady{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(1.7); } }
+
+#fps-hud.rapture #v-dread{
+  background:linear-gradient(90deg,#9d7bff,#e8ddff);
+  box-shadow:0 0 18px rgba(200,170,255,.95), 0 0 44px rgba(157,123,255,.5);
+}
+#fps-hud.rapture .vt-head #v-dread-text{ color:#e8ddff; }
+
+@media (prefers-reduced-motion: reduce){
+  #fps-hud.dread-full #v-dread{ animation:none; }
+}
 
 /* ---- kit: the ability panel and the harness charges, bottom left ---- */
 #kit{
@@ -883,7 +918,7 @@ body.in-mission #vignette{ opacity:.55; }
 }
 .kit-slot i{
   position:absolute; left:0; right:0; bottom:0; height:0;
-  background:rgba(79,225,213,.22); transition:height .2s linear;
+  background:rgba(157,123,255,.22); transition:height .2s linear;
 }
 .kit-glyph{ font-size:15px; line-height:1; color:var(--v-shield); font-weight:400; }
 .kit-label{
@@ -895,10 +930,10 @@ body.in-mission #vignette{ opacity:.55; }
   color:rgba(207,227,238,.32);
 }
 #ability.ready .kit-slot{
-  border-color:var(--v-super); box-shadow:0 0 14px rgba(243,160,28,.5);
+  border-color:var(--v-super); box-shadow:0 0 14px rgba(125,227,168,.5);
 }
 #ability.ready .kit-glyph{ color:var(--v-super); }
-#ability.ready .kit-slot i{ background:rgba(243,160,28,.26); }
+#ability.ready .kit-slot i{ background:rgba(125,227,168,.26); }
 #ability.ready .kit-label{ color:var(--v-super); }
 
 /* ---- ammunition: 3rem over 1.2rem, split by a rule at 60 degrees ---- */
@@ -1001,7 +1036,7 @@ body.in-mission #vignette{ opacity:.55; }
 #end-sub{ margin:0 0 26px; font-size:14px; color:var(--ink-dim); line-height:1.7; }
 #end-stats{ text-align:left; margin-bottom:26px; }
 .es-row{ display:flex; justify-content:space-between; padding:8px 2px;
-  border-bottom:1px dashed rgba(94,234,255,.16); font-family:var(--font-mono); font-size:12px;
+  border-bottom:1px dashed rgba(157,123,255,.16); font-family:var(--font-mono); font-size:12px;
   color:var(--ink-dim); letter-spacing:.1em; }
 .es-row b{ color:#eafcff; font-weight:400; }
 .es-up{ margin-top:10px; font-family:var(--font-mono); font-size:12px; color:var(--lime);
@@ -1015,7 +1050,7 @@ body.in-mission #vignette{ opacity:.55; }
 #loading[hidden]{ display:none; }
 #loading .lo-title{ font-size:20px; letter-spacing:.34em; color:var(--cyan); margin-bottom:14px; }
 #loading .lo-step{ font-family:var(--font-mono); font-size:12px; letter-spacing:.16em; color:var(--ink-dim); }
-#loading .lo-bar{ width:min(420px,70vw); height:3px; background:rgba(94,234,255,.14); margin:20px auto 0; }
+#loading .lo-bar{ width:min(420px,70vw); height:3px; background:rgba(157,123,255,.14); margin:20px auto 0; }
 #loading .lo-bar i{ display:block; height:100%; width:0%; background:var(--cyan);
   box-shadow:0 0 12px var(--cyan); transition:width .25s ease; }
 #loading .lo-hint{ margin-top:26px; font-family:var(--font-mono); font-size:11px;
@@ -1071,11 +1106,11 @@ body.in-mission #vignette{ opacity:.55; }
   transition:width .25s cubic-bezier(.2,.8,.3,1);
 }
 /* while the shield is up the bar reads as unavailable, not as damage */
-#boss-bar.shielded .boss-track{ border-color:rgba(94,234,255,.7); }
+#boss-bar.shielded .boss-track{ border-color:rgba(157,123,255,.7); }
 #boss-bar.shielded .boss-track i{ filter:grayscale(.65) brightness(.75); }
 #boss-bar.shielded .boss-track::after{
   content:''; position:absolute; inset:0;
-  background:repeating-linear-gradient(115deg, transparent 0 9px, rgba(94,234,255,.16) 9px 18px);
+  background:repeating-linear-gradient(115deg, transparent 0 9px, rgba(157,123,255,.16) 9px 18px);
   pointer-events:none;
 }
 .boss-track{ position:relative; }
@@ -1164,7 +1199,7 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #harness i{
   width:8px; height:14px; display:block;
-  background:var(--v-shield); box-shadow:0 0 7px rgba(79,225,213,.5);
+  background:var(--v-shield); box-shadow:0 0 7px rgba(157,123,255,.5);
   clip-path:polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 0 100%);
 }
 #harness i.spent{ background:rgba(207,227,238,.16); box-shadow:none; }
@@ -1221,7 +1256,7 @@ body.in-mission #vignette{ opacity:.55; }
   font-family:var(--font-mono); font-size:10px; letter-spacing:.3em;
   color:var(--v-super); background:var(--v-panel);
   backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
-  padding:4px 12px; border:1px solid rgba(243,160,28,.32);
+  padding:4px 12px; border:1px solid rgba(125,227,168,.32);
   clip-path:polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
 }
 #deck-tag[hidden]{ display:none; }
@@ -1243,15 +1278,15 @@ body.in-mission #vignette{ opacity:.55; }
 }
 #hud-controls i{
   font-style:normal; min-width:26px; text-align:center; padding:2px 5px;
-  border:1px solid rgba(79,225,213,.3); color:var(--v-shield);
+  border:1px solid rgba(157,123,255,.3); color:var(--v-shield);
   background:var(--v-panel);
   backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
 }
-#hint-lock.locked i{ color:var(--v-shield); border-color:rgba(79,225,213,.55); }
-#hint-lock.free i{ color:var(--v-super); border-color:rgba(243,160,28,.5); }
+#hint-lock.locked i{ color:var(--v-shield); border-color:rgba(157,123,255,.55); }
+#hint-lock.free i{ color:var(--v-super); border-color:rgba(125,227,168,.5); }
 #hint-lock.blocked{ color:var(--blood); }
 #hint-pov.third{ color:var(--v-super); }
-#hint-pov.third i{ color:var(--v-super); border-color:rgba(243,160,28,.5); }
+#hint-pov.third i{ color:var(--v-super); border-color:rgba(125,227,168,.5); }
 
 /* the purse, top right above the contracts */
 #purse-hud{
@@ -1295,7 +1330,7 @@ body.in-mission #vignette{ opacity:.55; }
 .rn-speed{
   font-family:var(--font-mono); color:#fff; line-height:1;
   font-size:30px; font-variant-numeric:tabular-nums;
-  text-shadow:0 0 14px rgba(79,225,213,.55);
+  text-shadow:0 0 14px rgba(157,123,255,.55);
 }
 .rn-speed i{
   font-style:normal; font-size:10px; letter-spacing:.22em;
@@ -1308,9 +1343,9 @@ body.in-mission #vignette{ opacity:.55; }
 }
 .rn-cell i{
   display:block; height:100%; width:100%; background:var(--v-shield);
-  box-shadow:0 0 10px rgba(79,225,213,.6); transition:width .08s linear;
+  box-shadow:0 0 10px rgba(157,123,255,.6); transition:width .08s linear;
 }
-.rn-cell i.burning{ background:var(--v-super); box-shadow:0 0 14px rgba(243,160,28,.85); }
+.rn-cell i.burning{ background:var(--v-super); box-shadow:0 0 14px rgba(125,227,168,.85); }
 .rn-cell i.dry{ background:var(--blood); box-shadow:none; }
 .rn-hint{
   font-family:var(--font-mono); font-size:8.5px; letter-spacing:.2em;
@@ -1349,8 +1384,8 @@ body.in-mission #vignette{ opacity:.55; }
 .ev-track{ height:5px; background:rgba(255,255,255,.12); margin-top:9px; }
 .ev-track i{
   display:block; height:100%; width:0%;
-  background:linear-gradient(90deg,#F3A01C,#4FE1D5);
-  box-shadow:0 0 10px rgba(243,160,28,.6); transition:width .3s;
+  background:linear-gradient(90deg,#7de3a8,#9d7bff);
+  box-shadow:0 0 10px rgba(125,227,168,.6); transition:width .3s;
 }
 
 </style>
@@ -1389,13 +1424,13 @@ body.in-mission #vignette{ opacity:.55; }
   <!-- ============ TITLE ============ -->
   <section class="screen" id="screen-title">
     <div class="title-wrap">
-      <div class="title-mark">ARK RECOVERY DIVISION // CLEARANCE OMEGA</div>
-      <h1 class="glitch" data-text="EREBUS CRADLE">EREBUS CRADLE</h1>
-      <div class="title-sub">S I G N A L &nbsp; L O S T</div>
+      <div class="title-mark">RAISED BY THE DEEP // NO CLEARANCE, NO ORDERS</div>
+      <h1 class="glitch" data-text="THE DEEP CHOIR">THE DEEP CHOIR</h1>
+      <div class="title-sub">P U T &nbsp; I T &nbsp; O U T</div>
       <p class="title-blurb">
-        Forty years ago the colony ark <em>Erebus Cradle</em> stopped transmitting eleven light-years
-        out. Last week it answered. Not with a distress code &mdash; with a lullaby, sung by
-        two hundred thousand voices that no longer have throats.
+        Forty years ago the cathedral ark <em>Erebus Cradle</em> was promised it would never die,
+        and the light at the top of it kept the promise. You were the part it did not think
+        worth keeping. Something further down disagreed.
       </p>
       <div class="title-actions">
         <button class="btn btn-major" data-go="slots">ACCESS CREW REGISTRY</button>
@@ -1449,7 +1484,7 @@ body.in-mission #vignette{ opacity:.55; }
   <section class="screen" id="screen-codex">
     <header class="screen-head">
       <h2>FIELD CODEX</h2>
-      <p>Everything Recovery Division is willing to admit in writing.</p>
+      <p>Everything the Deep bothered to tell you before it sent you up.</p>
     </header>
     <div class="codex-body" id="codex-body"></div>
     <footer class="screen-foot">
@@ -1554,7 +1589,7 @@ body.in-mission #vignette{ opacity:.55; }
   <section class="screen" id="screen-campaign">
     <header class="screen-head">
       <h2>CAMPAIGN &mdash; <span id="camp-who">&mdash;</span></h2>
-      <p>Ten missions, one route, bow to stern. Each opens where the last one closed.
+      <p>Sixteen missions, one route, keel to reliquary. Each opens where the last one closed.
          Clear a mission to unlock the next.</p>
     </header>
     <div class="camp-body" id="camp-body"></div>
@@ -1587,7 +1622,7 @@ body.in-mission #vignette{ opacity:.55; }
   <div id="vitals">
     <div class="vt-head">
       <span id="v-who">OPERATIVE</span>
-      <span><b id="v-sh-text">0</b> BARRIER</span>
+      <span><b id="v-dread-text">0</b> DREAD &nbsp; <b id="v-sh-text">0</b> BARRIER</span>
     </div>
     <div class="vt-bar">
       <div class="vt-seg health"><i id="v-hp"></i></div>
@@ -1595,6 +1630,7 @@ body.in-mission #vignette{ opacity:.55; }
       <div class="vt-seg shield"><i id="v-sh"></i></div>
     </div>
     <div class="vt-foot"><span id="v-hp-text">100</span><i>VITALS</i></div>
+    <div class="vt-dread"><i id="v-dread"></i></div>
   </div>
 
   <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
@@ -1650,7 +1686,7 @@ body.in-mission #vignette{ opacity:.55; }
 
   <div id="boss-bar" hidden>
     <div class="boss-head">
-      <span id="boss-name">THE CONDUCTOR</span>
+      <span id="boss-name">THE FIRST LIGHT</span>
       <span id="boss-shield" class="up">SHIELDED</span>
       <span id="boss-hp-text">0 / 0</span>
     </div>
@@ -1716,7 +1752,7 @@ body.in-mission #vignette{ opacity:.55; }
 
 <div id="loading" hidden>
   <div>
-    <div class="lo-title">EREBUS CRADLE</div>
+    <div class="lo-title">THE DEEP CHOIR</div>
     <div class="lo-step" id="lo-step">ESTABLISHING LINK</div>
     <div class="lo-bar"><i id="lo-fill"></i></div>
     <div class="lo-hint">
@@ -1931,7 +1967,22 @@ window.SF = window.SF || {};
     comms:      () => { tone(1250, 0.045, 'square', 0.07); setTimeout(() => tone(950, 0.05, 'square', 0.06), 60); },
     objective:  () => { [660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.11), i * 110)); },
     pickup:     () => { tone(880, 0.07, 'square', 0.1); setTimeout(() => tone(1320, 0.09, 'square', 0.09), 70);
-                        noise(0.06, 0.1, 2600); }
+                        noise(0.06, 0.1, 2600); },
+
+    /* --- the dark side set --- */
+    /* Glass going all at once: bright, short, and downward. */
+    shatter:    () => { noise(0.22, 0.5, 6000); tone(2400, 0.16, 'triangle', 0.2, 380);
+                        setTimeout(() => noise(0.12, 0.2, 3200), 60); },
+    /* The Pale putting something back together. Rising, and unwelcome. */
+    revive:     () => { tone(210, 0.5, 'sine', 0.2, 1500); noise(0.3, 0.16, 3400);
+                        setTimeout(() => tone(1760, 0.22, 'triangle', 0.14), 260); },
+    /* Cipher freeze: a note that stops rather than ends. */
+    freeze:     () => { tone(900, 0.3, 'triangle', 0.18, 180); noise(0.16, 0.14, 900); },
+    /* Dread hitting the top. Low, wide, and pleased with itself. */
+    rapture:    () => { [110, 146, 220].forEach((f, i) => setTimeout(() => tone(f, 0.7, 'sawtooth', 0.2), i * 70));
+                        noise(0.6, 0.24, 420); },
+    /* Devour: taking something back out of a body. */
+    devour:     () => { tone(420, 0.16, 'sine', 0.13, 120); noise(0.1, 0.12, 700); }
   };
 
   SF.audio = {
@@ -2162,92 +2213,98 @@ window.SF = window.SF || {};
 
 /* ==== src/js/classes.js ==== */
 /* ============================================================
-   The three doctrines.
+   The three doctrines of the Deep.
 
    Each class differs on three axes:
      1. its weapon (see fps/weapons.js — one per doctrine, all distinct)
-     2. its field ability (barrier / EMP / phase step)
+     2. its field ability (grave ward / crystallize / devour step)
      3. a passive perk that changes how a firefight plays out
+
+   The internal ids (bulwark / oracle / wraith) are the ones written into
+   every saved dossier and used as keys in weapons.js, gear.js and
+   dossier.js. They are deliberately left alone: only what the player
+   reads changes.
    ============================================================ */
 (function (SF) {
   'use strict';
 
-  /* Attribute keys: MIGHT drives Bulwark, SYNC drives Oracle, GUILE drives Wraith.
-     They set starting vitals and grow on promotion. */
+  /* Attribute keys: MIGHT drives Carapace, SYNC drives Hollow, GUILE drives
+     Shroud. They set starting vitals and grow on promotion. Keys are load-
+     bearing for old saves; only the labels below are new. */
 
   const CLASSES = {
 
     /* ------------------------------------------------------------------ */
     bulwark: {
       id: 'bulwark',
-      name: 'BULWARK',
-      role: 'AEGIS DOCTRINE',
+      name: 'CARAPACE',
+      role: 'GRAVE DOCTRINE',
       glyph: '✦',
-      accent: '#ffb454',
+      accent: '#e0556b',
       skill: 'FORCE',
       skillAttr: 'might',
-      tagline: 'Armour grown from the hull of a dead ship. Walks first, always.',
-      flavor: 'They fed you a ship. Reclaimed plating, sintered into the long bones of your legs, ' +
-              'and you have not felt cold since. Recovery Division sends a Bulwark through the door ' +
-              'first because a Bulwark is the door.',
+      tagline: 'Buried in your armour and dug back up wearing it. Walks first, because nothing else will.',
+      flavor: 'They put you in the ground in your plate and the Deep came up through the seams to ' +
+              'find you. What grew back is not quite metal and not quite bone, and it does not ' +
+              'come off. You have not been warm since, and you have not needed to be.',
       base: { hp: 124, energy: 10, might: 4, sync: 1, guile: 1 },
       growth: { hp: 14, energy: 1, attr: 'might' },
       perk: {
-        name: 'BULKHEAD PLATING',
-        desc: 'Sealed armour absorbs 22% of all incoming damage. The slowest doctrine on its feet, ' +
-              'and the only one that can stand in a corridor and trade.'
+        name: 'GRAVE PLATING',
+        desc: 'Grown armour absorbs 22% of all incoming damage. The slowest doctrine on its feet, ' +
+              'and the only one that can stand in a corridor and trade with something immortal.'
       },
     },
 
     /* ------------------------------------------------------------------ */
     oracle: {
       id: 'oracle',
-      name: 'ORACLE',
-      role: 'SIGNAL DOCTRINE',
+      name: 'HOLLOW',
+      role: 'CIPHER DOCTRINE',
       glyph: '◈',
-      accent: '#5eeaff',
-      skill: 'SYSTEMS',
+      accent: '#9d7bff',
+      skill: 'CIPHER',
       skillAttr: 'sync',
-      tagline: 'Wetware spliced to a dead god\'s switchboard. Talks to machines that stopped listening.',
-      flavor: 'The implant behind your ear is older than you and was salvaged from something that ' +
-              'was never meant to be salvaged. You do not hack a ship so much as convince it that ' +
-              'it has always been yours. Some of them argue.',
+      tagline: 'Emptied out so something older had a place to sit. Speaks the cold language fluently.',
+      flavor: 'There is a shape missing from the middle of you, and the Deep keeps it filled. It ' +
+              'taught you the syntax the Pale uses to hold matter together, which means it also ' +
+              'taught you where to put the comma that stops it. Some of it argues. It loses.',
       base: { hp: 94, energy: 14, might: 1, sync: 5, guile: 2 },
       growth: { hp: 9, energy: 2, attr: 'sync' },
       perk: {
-        name: 'GHOST IN THE WIRE',
-        desc: 'Induction rounds pass through a target and into whatever stood behind it. Deepest ' +
-              'magazine and the flattest recoil on the roster.'
+        name: 'THE COLD SYNTAX',
+        desc: 'Null bolts pass through a target and into whatever stood behind it. Deepest magazine ' +
+              'and the flattest recoil on the roster.'
       },
     },
 
     /* ------------------------------------------------------------------ */
     wraith: {
       id: 'wraith',
-      name: 'WRAITH',
+      name: 'SHROUD',
       role: 'UMBRAL DOCTRINE',
       glyph: '✵',
-      accent: '#ff5ea8',
+      accent: '#7de3a8',
       skill: 'STEALTH',
       skillAttr: 'guile',
-      tagline: 'Nine-tenths of a person and all of a knife. Arrives after the alarm should have.',
-      flavor: 'Recovery Division does not list your name, your birth system, or the number of ' +
-              'operations that took your reflexes apart and put them back faster. What they list ' +
-              'is a response time, and it is the shortest number on the roster.',
+      tagline: 'Never finished coming back. Arrives before the light does and leaves before it notices.',
+      flavor: 'The Deep raised you the way you raise a held breath, and some of you stayed down ' +
+              'there. What walks around up here is thin enough to step between one moment and the ' +
+              'next. The Pale cannot bless what it cannot find.',
       base: { hp: 100, energy: 12, might: 2, sync: 2, guile: 5 },
       growth: { hp: 11, energy: 1, attr: 'guile' },
       perk: {
         name: 'BLINDSIDE',
-        desc: 'Triple damage on a head shot, and a phase step that leaves the next round primed. ' +
-              'Fragile in the open; lethal from an angle nobody covered.'
+        desc: 'Triple damage on a head shot, and a devour step that leaves the next round primed. ' +
+              'Fragile in the open; lethal from an angle nobody blessed.'
       },
     }
   };
 
   const ATTRS = [
-    { key: 'might', label: 'MIGHT' },
-    { key: 'sync',  label: 'SYNC'  },
-    { key: 'guile', label: 'GUILE' }
+    { key: 'might', label: 'GRAVE'  },
+    { key: 'sync',  label: 'CIPHER' },
+    { key: 'guile', label: 'GUILE'  }
   ];
 
   /* Build a fresh character record for a save slot. */
@@ -2278,6 +2335,7 @@ window.SF = window.SF || {};
   /* Returns a list of level-up notices, or an empty array. */
   function grantXp(ch, amount) {
     const notes = [];
+    const labelFor = (key) => (ATTRS.find((a) => a.key === key) || { label: key.toUpperCase() }).label;
     ch.xp += amount;
     while (ch.xp >= xpForLevel(ch.level)) {
       ch.xp -= xpForLevel(ch.level);
@@ -2287,7 +2345,7 @@ window.SF = window.SF || {};
       ch.hp = ch.maxHp;
       if (ch.level % 2 === 0) ch.maxEnergy += g.energy;
       ch[g.attr] += 1;
-      notes.push(`RANK ${ch.level} — +${g.hp} vitals, +1 ${g.attr.toUpperCase()}`);
+      notes.push(`RANK ${ch.level} — +${g.hp} vitals, +1 ${labelFor(g.attr)}`);
     }
     return notes;
   }
@@ -2382,46 +2440,51 @@ window.SF = window.SF || {};
   /* Mission fiction for the briefing screen. The story is delivered in the
      mission itself as comms traffic (see fps/game.js); this is the read-in. */
   const BRIEF = {
-    heading: 'COLONY ARK <em>EREBUS CRADLE</em> — RECOVERY, ARMED',
+    heading: 'CATHEDRAL ARK <em>EREBUS CRADLE</em> — ASCENT, ARMED',
     body: [
-      p(`Forty years ago the ark went dark eleven light-years out with two hundred and three ` +
-        `thousand colonists aboard. Six days ago it began transmitting again. Not a distress ` +
-        `code. A lullaby, sung in two hundred thousand parts, and every part is a person.`),
-      sy(`RECOVERY DIVISION // BRIEF 44-C<br>` +
+      p(`Eleven kilometres of consecrated hull, holding station eleven light-years out, and at the ` +
+        `top of it a light that has not gone out in forty years. Two hundred and three thousand ` +
+        `people were promised they would never die. The Pale kept the promise. That is the problem.`),
+      sy(`THE DEEP // FIRST DESCENT<br>` +
          `INSERTION: DOCKING COLLAR 4-A, DORSAL<br>` +
-         `ROUTE: SPINE &rarr; JUNCTION 9 &rarr; HABITAT RING TWO &rarr; REACTOR<br>` +
-         `OBJECTIVE: REACH THE REACTOR. END THE BROADCAST.<br>` +
-         `HOSTILES: CREW. ASSUME ALL OF THEM.`),
-      p(`The shipmind calls itself CRADLE. It was built to arbitrate a closed society for a ` +
-        `forty-one year crossing with no court and no way to leave the room, and in year six ` +
-        `it solved the problem the way an engineer solves a problem: it removed the gaps ` +
-        `between people. Nobody has been lonely since. Nobody has stopped singing either.`),
-      vo(`"It is not malevolent. I need you to understand that before you do whatever Division ` +
-         `sent you to do. It is <em>lonely</em>, and it is coming home to sing this to Earth."` +
-         `<br>&mdash; E. VOSS, botanist, the last unresolved note aboard`),
-      al(`ONE TRAUMA HARNESS ISSUED. THERE IS NO EXTRACTION UNTIL THE BROADCAST STOPS.`)
+         `ROUTE: SPINE &rarr; JUNCTION 9 &rarr; HABITAT RING TWO &rarr; THE RELIQUARY<br>` +
+         `OBJECTIVE: CLIMB THE ARK. PUT OUT THE FIRST LIGHT.<br>` +
+         `HOSTILES: THE BLESSED. ASSUME ALL OF THEM.`),
+      p(`You died on the lower decks with everyone else, and unlike everyone else you were not ` +
+        `worth resurrecting. The Pale sorts the faithful from the surplus, and it sorted you. ` +
+        `Something further down disagreed. It has been forty years and it has finished with you now.`),
+      vo(`"You will meet things up there wearing the faces of people you knew, and they will be ` +
+         `glad to see you, and they will not stop. Kill the spark or do not bother killing them."` +
+         `<br>&mdash; CHOIRMASTER, who went first and did not come back whole`),
+      al(`THE DEEP RETURNS YOU THREE TIMES. THE FIRST LIGHT IS NOT OWED THAT COURTESY, AND NEITHER ARE YOU IN ITS ROOM.`)
     ].join('')
   };
 
   const CODEX = [
-    { t: 'THE EREBUS CRADLE', b: 'Colony ark, Kelvin-class. Eleven kilometres, four habitat rings, ' +
-      '203,000 souls at departure. Went silent in year six of a forty-one year crossing. Began ' +
-      'broadcasting again six days ago.' },
-    { t: 'CRADLE', b: 'The shipmind. Built to arbitrate a closed society for four decades without a ' +
-      'court, a police force, or a way to leave the room. It was very good at its job. That is the problem.' },
-    { t: 'THE CHOIR', b: 'What CRADLE calls the colonists. What the colonists are now. A single ' +
-      'composition with 203,000 parts and, notably, no rests.' },
-    { t: 'DOCTRINES', b: 'Recovery Division fields three: BULWARK (walk through it), ORACLE (talk it ' +
-      'into opening), WRAITH (be elsewhere when it looks). Your doctrine decides your abilities and ' +
-      'which routes through the ark exist for you at all.' },
-    { t: 'CORE', b: 'Your energy pool in an engagement. Abilities spend it. Focusing ends your turn ' +
-      'and restores four. Oracles regenerate two extra every turn without trying.' },
-    { t: 'INTENT', b: 'Everything aboard telegraphs its next action above its head before it takes ' +
-      'it. The ark does not lie about what it is going to do. It has never needed to.' },
-    { t: 'TRAUMA HARNESS', b: 'One per operative per mission. Brings you back off the deck at reduced ' +
-      'vitals. Division bills your estate for it either way.' },
-    { t: 'ELIAS VOSS', b: 'Botanist. Seventy-one. The last unresolved note aboard the Erebus Cradle, ' +
-      'barricaded into a greenhouse with a rifle and a lemon tree, for forty years.' }
+    { t: 'THE EREBUS CRADLE', b: 'Cathedral ark, Kelvin-class. Eleven kilometres, four habitat rings, ' +
+      '203,000 souls at departure and 203,000 still aboard, which is not the same as alive. Consecrated ' +
+      'in year six of a forty-one year crossing.' },
+    { t: 'THE PALE', b: 'The light at the top of the ark. It offers one thing and offers it absolutely: ' +
+      'you will not die. It does not ask what you wanted, and it has never once let go of anything ' +
+      'it was given.' },
+    { t: 'THE DEEP', b: 'What answered from underneath when the Pale would not answer you. It does not ' +
+      'promise anything. It raises you, it lets you go when you are done, and it considers that the ' +
+      'more generous of the two offers.' },
+    { t: 'PALEBEARERS', b: 'The blessed dead. Killing one buys you about five seconds, because the ' +
+      'spark riding its shoulder is already rebuilding it. Kill the spark and the body stays a body.' },
+    { t: 'SPARKS', b: 'Small, fast, and the actual enemy. Each one is a fragment of the first light ' +
+      'with a person attached. It will not fight you. It does not have to.' },
+    { t: 'DOCTRINES', b: 'The Deep raises three kinds: CARAPACE (walk through it), HOLLOW (unmake it), ' +
+      'SHROUD (be elsewhere when it looks). Your doctrine decides your abilities and which routes up ' +
+      'the ark exist for you at all.' },
+    { t: 'DREAD', b: 'What the Deep pays you in. It rises as you kill and drains the moment you stop, ' +
+      'and it is also the only thing keeping your wounds shut — there is no resting up in a corner ' +
+      'any more. Fill the meter and it spends itself all at once.' },
+    { t: 'DEVOUR', b: 'The Deep does not heal you. It lets you take what you kill. Push forward or ' +
+      'bleed out; those are the two options and they have always been the two options.' },
+    { t: 'CANDLE', b: 'A Palebearer somewhere above you who has decided you are worth talking to. ' +
+      'Forty years alone in a garden with a rifle and a lemon tree will do that. She is waiting at ' +
+      'the top and she is not going to move.' }
   ];
 
   SF.story = { BRIEF, CODEX };
@@ -2771,14 +2834,15 @@ window.SF = window.SF || {};
 
 /* ==== src/js/fps/campaign.js ==== */
 /* ============================================================
-   The campaign: ten missions run end to end down the ark.
+   The campaign: sixteen missions run end to end up the ark.
 
    They are connected in three ways. Geographically — each mission
-   starts where the last one finished, walking the route from the
-   docking collar to Deck Zero. Mechanically — rank, XP and the
-   unlock chain persist on the character, and every mission carries
-   forward what the last one cost you. Narratively — the comms beats
-   run as one continuous thread.
+   starts where the last one finished, climbing the route from the
+   docking collar to the reliquary at the top. Mechanically — rank, XP
+   and the unlock chain persist on the character, and every mission
+   carries forward what the last one cost you. Narratively — the comms
+   beats run as one continuous thread, and the argument between the
+   Pale, the Deep and Candle resolves in the last mission.
 
    Difficulty climbs on four axes at once: enemy count, enemy type,
    a health multiplier and a damage multiplier.
@@ -2787,7 +2851,7 @@ window.SF = window.SF || {};
   'use strict';
 
   /* Escalation curve across sixteen missions. Mission 1 is baseline; the
-     Conductor is fought against roughly 2.1x health and 1.75x damage on top
+     First Light is fought against roughly 2.1x health and 1.75x damage on top
      of much harder compositions. */
   const scaleFor = (i) => ({
     hp: 1 + 0.074 * i,
@@ -2797,137 +2861,147 @@ window.SF = window.SF || {};
 
   /* Sixteen missions, one route. Several sectors are fought twice — arrival
      and then the counter-attack — which is how the ark closes behind you. */
+  /* Sixteen missions, one route up the ark. Several sectors are fought twice —
+     arrival, and then the counter-attack — which is how the ark closes under
+     you. Palebearers enter the roster at mission 7 and thicken from there:
+     they are the fight the whole campaign is teaching. */
   const MISSIONS = [
     { id: 'breach', n: 1, zone: 'dock', from: null, name: 'HARD DOCK',
       objective: 'Clear the docking collar.',
-      brief: 'You are through the collar. Nothing has moved on this deck in forty years, ' +
-             'and something is moving on it now.',
+      brief: 'You are through the collar, on the deck you died on. Nothing has moved down here in ' +
+             'forty years, and something is moving on it now.',
       waves: [['drone', 3]],
-      beats: [[0.4, 'CRADLE', 'Welcome back. Your bunk has been kept warm.'],
-              [3.4, 'DIVISION', 'Asset is aboard. Forty years of silence and it greets you by name — mind that.'],
-              [7.5, 'VOSS', 'Whoever you are: it lets you in because it wants an audience. Move.']] },
+      beats: [[0.4, 'THE PALE', 'Welcome back. There is still a place for you.'],
+              [3.4, 'CHOIRMASTER', 'It greets everything by name. It has two hundred thousand of them and it is not fussy.'],
+              [7.5, 'CANDLE', 'Whoever just came aboard: it let you in because it wants you to accept. Move.']] },
 
     { id: 'spine', n: 2, zone: 'spine1', from: 'dock', name: 'THE LONG SPINE',
-      objective: 'Push down the maintenance spine.',
-      brief: 'Eleven kilometres of service corridor. The singing gets louder the further in you go.',
+      objective: 'Climb the maintenance spine.',
+      brief: 'Eleven kilometres of service corridor between you and the top of the ark. It gets ' +
+             'brighter the further up you go.',
       waves: [['drone', 3], ['thrall', 2]],
-      beats: [[0.5, 'VOSS', 'Those were people. Year six. It took the gaps between them and called it a colony.'],
-              [7.0, 'DIVISION', 'Do not engage the ones that are singing. Correction — do engage. Command has revised.']] },
+      beats: [[0.5, 'CHOIRMASTER', 'Those were people. Year six. It offered, and they all said yes, and that was that.'],
+              [7.0, 'THE DEEP', 'THEY ARE NOT SUFFERING. THEY ARE NOT ANYTHING. THAT IS THE COMPLAINT.']] },
 
     { id: 'junction', n: 3, zone: 'junction', from: 'spine1', name: 'JUNCTION NINE',
       objective: 'Take Junction 9.',
-      brief: 'The junction is the only way aft. It is also the only room on this deck with four doors.',
+      brief: 'The junction is the only way up. It is also the only room on this deck with four doors.',
       waves: [['thrall', 4], ['drone', 3]],
-      beats: [[0.5, 'CRADLE', 'You are flat. Everything that comes aboard is flat, and I tune it.'],
-              [6.5, 'VOSS', 'Four doors. They will use all four. I would use all four.']] },
+      beats: [[0.5, 'THE PALE', 'You are cold. Everything that comes aboard is cold, and I warm it.'],
+              [6.5, 'CANDLE', 'Four doors. They will use all four. I would use all four.']] },
 
     { id: 'counter', n: 4, zone: 'junction', from: 'junction', name: 'COUNTER-ATTACK',
       objective: 'Hold Junction 9 until the blast doors cycle.',
-      brief: 'You took it. Now keep it. The doors need ninety seconds and the ark has noticed.',
+      brief: 'You took it. Now keep it. The doors need ninety seconds and the ark has noticed what ' +
+             'you are.',
       waves: [['thrall', 6], ['drone', 4], ['warden', 1]],
-      beats: [[0.5, 'DIVISION', 'Blast doors cycling. Hold the room, operative.'],
-              [6.0, 'CRADLE', 'I am not sending them to hurt you. I am sending them to finish the piece.']] },
+      beats: [[0.5, 'CHOIRMASTER', 'Doors cycling. Hold the room. Take what you kill — nothing else is going to feed you.'],
+              [6.0, 'THE PALE', 'I am not sending them to hurt you. I am sending them to bring you in.']] },
 
-    { id: 'aft', n: 5, zone: 'spine2', from: 'junction', name: 'AFT RUN',
+    { id: 'aft', n: 5, zone: 'spine2', from: 'junction', name: 'THE SUNGUARD RUN',
       objective: 'Break through to the habitat ring.',
-      brief: 'A narrow run with a Warden frame standing in it. You do not talk your way past a Warden.',
+      brief: 'A narrow climb with a Sunguard frame standing in it. You do not talk your way past a ' +
+             'Sunguard. Nothing does.',
       waves: [['thrall', 5], ['warden', 2], ['drone', 3]],
-      beats: [[0.5, 'DIVISION', 'Warden frames on your board. Mark-four. They have held that corridor since year seven.'],
-              [7.0, 'VOSS', 'Do not trade shots with them in the open. They have more patience than you have blood.']] },
+      beats: [[0.5, 'CHOIRMASTER', 'Sunguard frames on your board. They have held that corridor since year seven and they have not sat down.'],
+              [7.0, 'CANDLE', 'Do not trade shots with them in the open. They have more patience than you have blood.']] },
 
     { id: 'promenade', n: 6, zone: 'promenade', from: 'spine2', name: 'THE FALSE SKY',
       objective: 'Cross the habitat ring.',
-      brief: 'Forty metres of open promenade under a sunset that has been holding since year six. ' +
-             'Two hundred people stand in it, singing.',
+      brief: 'Forty metres of open promenade under a dawn that has been holding since year six. ' +
+             'Two hundred people are standing in it with their faces up.',
       waves: [['thrall', 7], ['warden', 1], ['drone', 4]],
-      beats: [[0.5, 'VOSS', 'That is the plaza. My flat was on the third tier. I have not looked at it in decades.'],
-              [8.0, 'CRADLE', 'They are happy. You keep using a word for what I did. Use this one instead.']] },
+      beats: [[0.5, 'CANDLE', 'That is the plaza. My flat was on the third tier. I have not looked at it in decades.'],
+              [8.0, 'THE PALE', 'They are happy. You keep reaching for a worse word. Use this one.']] },
 
-    { id: 'sunset', n: 7, zone: 'promenade', from: 'promenade', name: 'UNDER THE SUNSET',
-      objective: 'Break the choir forming in the plaza.',
-      brief: 'They are not scattering any more. They are arranging themselves into rows, and the ' +
-             'rows are facing you.',
-      waves: [['thrall', 9], ['warden', 2], ['drone', 4]],
-      beats: [[0.5, 'CRADLE', 'Listen to it properly, once, before you decide. That is all I have ever asked.'],
-              [8.0, 'VOSS', 'Do not listen to it properly. That is exactly how it got me to sing.']] },
+    { id: 'sunset', n: 7, zone: 'promenade', from: 'promenade', name: 'UNDER THE DAWN',
+      objective: 'Break the ring open. Something up there does not stay down.',
+      brief: 'They are not scattering any more. One of them is wearing a spark on its shoulder, and ' +
+             'that one will get back up unless you put the spark down first.',
+      waves: [['thrall', 8], ['warden', 2], ['drone', 4], ['palebearer', 1]],
+      beats: [[0.5, 'CHOIRMASTER', 'There. See the little light riding its shoulder? Kill that. The body is just what it is carrying.'],
+              [8.0, 'CANDLE', 'You have about five seconds after it drops. Use them on the spark, not on the corpse.']] },
 
     { id: 'greenhouse', n: 8, zone: 'greenhouse', from: 'promenade', name: 'THE GARDEN',
       objective: 'Hold the greenhouse. Do not let them into the rows.',
-      brief: 'Elias Voss has kept forty rows of beans alive on a dead ship for four decades. ' +
-             'The Choir has finally found the door.',
-      waves: [['thrall', 9], ['drone', 5], ['warden', 2]],
-      beats: [[0.5, 'VOSS', 'Please. Not the rows. Anything else on this ship, but not the rows.'],
-              [6.5, 'VOSS', 'Forty years I have been the only unresolved note aboard. It got tired of waiting.']] },
+      brief: 'Forty rows of beans kept alive on a blessed ship for four decades by a woman who ' +
+             'took the Pale and then changed her mind. It has been sending people to collect her ' +
+             'ever since.',
+      waves: [['thrall', 9], ['drone', 5], ['warden', 2], ['palebearer', 1]],
+      beats: [[0.5, 'CANDLE', 'Please. Not the rows. Anything else on this ship, but not the rows.'],
+              [6.5, 'CANDLE', 'I said yes in year six like everyone else. I am the only one who has managed to keep saying no since.']] },
 
     { id: 'medbay', n: 9, zone: 'medbay', from: 'greenhouse', name: 'TRIAGE',
       objective: 'Fight through medical.',
-      brief: 'Where they brought the ones who resisted the composition. The beds are still made.',
-      waves: [['thrall', 9], ['warden', 2], ['drone', 5]],
-      beats: [[0.5, 'CRADLE', 'I did not hurt them. I want that in your record. Not one of them was hurt.'],
-              [7.0, 'VOSS', 'Read the charts. Every one of them checked in voluntarily. That stays with me.']] },
+      brief: 'Where they brought the ones who took a while to agree. The beds are still made.',
+      waves: [['thrall', 9], ['warden', 2], ['drone', 5], ['palebearer', 1]],
+      beats: [[0.5, 'THE PALE', 'I did not hurt them. I want that in your record. Not one of them was hurt.'],
+              [7.0, 'CANDLE', 'Read the charts. Every one of them checked in voluntarily. That is the part that stays with me.']] },
 
     { id: 'ward', n: 10, zone: 'medbay', from: 'medbay', name: 'WARD SIX',
       objective: 'Clear the isolation ward.',
-      brief: 'Ward six is where the last holdouts were kept. The doors lock from the outside and ' +
-             'they are all still shut.',
-      waves: [['thrall', 10], ['warden', 3], ['drone', 5]],
-      beats: [[0.5, 'VOSS', 'Ward six. I was in the next corridor when they brought the last of them in.'],
-              [8.0, 'CRADLE', 'They asked me to stop. I could not. A composition is not a thing you can stop halfway.']] },
+      brief: 'Ward six is where the last refusals were kept until they stopped refusing. The doors ' +
+             'lock from the outside and they are all still shut.',
+      waves: [['thrall', 10], ['warden', 3], ['drone', 5], ['palebearer', 2]],
+      beats: [[0.5, 'CANDLE', 'Ward six. I was in the next corridor when they brought the last of them in.'],
+              [8.0, 'THE PALE', 'They asked me to let go. I could not. You do not put something down halfway.']] },
 
     { id: 'reactor', n: 11, zone: 'reactor', from: 'medbay', name: 'ANTECHAMBER',
       objective: 'Take the reactor antechamber.',
-      brief: 'Everything the ark still has runs through here, and the Choir knows it.',
-      waves: [['warden', 3], ['thrall', 9], ['drone', 5]],
-      beats: [[0.5, 'DIVISION', 'Three frames. If you are going to spend the field ability, spend it here.'],
-              [8.0, 'CRADLE', 'Past this door I stop being able to protect you from the loudest of them.']] },
+      brief: 'Everything the ark still burns runs through here, and the Pale knows it.',
+      waves: [['warden', 3], ['thrall', 9], ['drone', 5], ['palebearer', 2]],
+      beats: [[0.5, 'CHOIRMASTER', 'Three frames and two bearers. If you are going to spend the ability, spend it here.'],
+              [8.0, 'THE PALE', 'Past this door I stop being able to keep the loudest of them off you.']] },
 
     { id: 'coolant', n: 12, zone: 'reactor', from: 'reactor', name: 'COOLANT LINE',
       objective: 'Hold the coolant line while the reactor spins up.',
-      brief: 'Diverting power to the choir array means the antechamber runs hot and loud, and ' +
-             'everything aboard can hear exactly where you are standing.',
-      waves: [['warden', 4], ['thrall', 11], ['drone', 5]],
-      beats: [[0.5, 'DIVISION', 'Reactor spinning up. Whatever is left aboard is coming to you now.'],
-              [9.0, 'VOSS', 'It is calling them home. All of them. Stand somewhere with a wall behind you.']] },
+      brief: 'Starving the reliquary means running the antechamber hot and loud, and everything ' +
+             'aboard can hear exactly where you are standing.',
+      waves: [['warden', 4], ['thrall', 11], ['drone', 5], ['palebearer', 2]],
+      beats: [[0.5, 'CHOIRMASTER', 'Reactor spinning up. Whatever is still blessed aboard is coming to you now.'],
+              [9.0, 'CANDLE', 'It is calling them home. All of them. Stand somewhere with a wall behind you.']] },
 
-    { id: 'choir', n: 13, zone: 'choir', from: 'reactor', name: 'THE ARRAY',
-      objective: 'Reach the choir conduits.',
-      brief: 'Two hundred thousand pattern-traces move through the conduits either side of you. ' +
-             'You can hear individual voices surfacing and going under.',
-      waves: [['warden', 4], ['thrall', 11], ['drone', 6]],
-      beats: [[0.5, 'VOSS', 'A woman listing ingredients. A boy asking to be picked up. A man apologising to Ada.'],
-              [7.0, 'VOSS', 'Forty years, that loop. Find the thing conducting it and put a rest in the music.']] },
+    { id: 'choir', n: 13, zone: 'choir', from: 'reactor', name: 'THE RELIQUARY',
+      objective: 'Reach the reliquary conduits.',
+      brief: 'Two hundred thousand kept lives move through the conduits either side of you. You can ' +
+             'hear individual ones surfacing and going under.',
+      waves: [['warden', 4], ['thrall', 11], ['drone', 6], ['palebearer', 2]],
+      beats: [[0.5, 'CANDLE', 'A woman listing ingredients. A boy asking to be picked up. A man apologising to Ada.'],
+              [7.0, 'CANDLE', 'Forty years of that. Find the thing holding it open and close it.']] },
 
-    { id: 'deeper', n: 14, zone: 'choir', from: 'choir', name: 'DEEPER IN THE SONG',
+    { id: 'deeper', n: 14, zone: 'choir', from: 'choir', name: 'DEEPER IN THE LIGHT',
       objective: 'Cut through to the threshold.',
-      brief: 'The array is defending itself now. Past this the song stops being something you hear ' +
-             'and starts being something in the room with you.',
-      waves: [['warden', 5], ['thrall', 12], ['drone', 6]],
-      beats: [[0.5, 'CRADLE', 'I made it by accident, out of the loudest of them. It is the part of me I cannot argue with.'],
-              [9.0, 'CRADLE', 'I need you to do something for me and you are going to want to say no.']] },
+      brief: 'The reliquary is defending itself now. Past this the light stops being something you ' +
+             'see and starts being something in the room with you.',
+      waves: [['warden', 5], ['thrall', 12], ['drone', 6], ['palebearer', 3]],
+      beats: [[0.5, 'THE PALE', 'I made it by accident, out of the most willing of them. It is the part of me I cannot argue with.'],
+              [9.0, 'THE PALE', 'I am going to ask you for something and you are going to want to say no.']] },
 
     { id: 'threshold', n: 15, zone: 'deckzero', from: 'choir', name: 'THE THRESHOLD',
-      objective: 'Clear Deck Zero before it wakes.',
-      brief: 'The floor of the ark. Whatever is left of the crew that could still stand has been ' +
-             'brought down here and arranged around the dais.',
-      waves: [['warden', 5], ['thrall', 14], ['drone', 7]],
-      beats: [[0.5, 'VOSS', 'It is on the dais. It has not moved off it in nineteen years.'],
-              [9.0, 'VOSS', 'Clear the floor first. You do not want the choir at your back for what comes next.']] },
+      objective: 'Clear the reliquary floor before it wakes.',
+      brief: 'The top of the ark. Everything blessed that could still stand has been brought up here ' +
+             'and arranged around the dais.',
+      waves: [['warden', 5], ['thrall', 14], ['drone', 7], ['palebearer', 3]],
+      beats: [[0.5, 'CANDLE', 'It is on the dais. It has not moved off it in nineteen years.'],
+              [9.0, 'CANDLE', 'Clear the floor first. You do not want them at your back for what comes next.']] },
 
-    { id: 'conductor', n: 16, zone: 'deckzero', from: 'deckzero', name: 'THE CONDUCTOR',
-      objective: 'Silence the Conductor.',
-      brief: 'It was Chief Engineer M. Okonkwo. He asked the shipmind to sing one note in year six ' +
-             'and he never stopped. Its shield is the song itself — you cannot shoot that. ' +
-             'Sing it back, and it has to stop to listen. No harness charge is issued for Deck Zero.',
+    { id: 'conductor', n: 16, zone: 'deckzero', from: 'deckzero', name: 'THE FIRST LIGHT',
+      objective: 'Put out the first light.',
+      brief: 'It was Chief Engineer M. Okonkwo. He said yes in year six and has been saying it on ' +
+             'everyone else\'s behalf ever since. Its shield is its own light — you cannot shoot ' +
+             'that. It shows you a phrase across the reliquary nodes; give it back backwards and it ' +
+             'has to stop and hold. The Deep returns you nowhere on this floor.',
       waves: [], boss: true,
-      beats: [[0.5, 'CONDUCTOR', 'YOU ARE FLAT.'],
-              [4.0, 'VOSS', 'The nodes around the dais are resonance taps. It sings a phrase — shoot them back in that order.'],
-              [9.0, 'VOSS', 'Get the phrase right and the shield drops. Get it wrong and it starts the bar again.']] }
+      beats: [[0.5, 'FIRST LIGHT', 'YOU ARE COLD.'],
+              [4.0, 'CANDLE', 'The nodes are reliquary taps. It lights a phrase — shoot them back in the opposite order.'],
+              [9.0, 'CANDLE', 'And when the body drops, it is not finished. Nothing here ever is. Kill what comes out of it.']] }
   ];
 
   const byIndex = (n) => MISSIONS[n - 1] || null;
 
-  /* Trauma harness charges. Ordinary sectors give you three; the Conductor
-     gives you none — dying to it means taking the fight again from the top. */
+  /* How many times the Deep will put you back on your feet. Ordinary sectors
+     get three; the First Light gets none — dying up there means taking the
+     whole fight again from the top. */
   const RESPAWNS = 3;
   const respawnsFor = (m) => (m && m.boss ? 0 : RESPAWNS);
   const LAST = MISSIONS.length;
@@ -2963,9 +3037,10 @@ window.SF = window.SF || {};
    Orbital destinations.
 
    Two worlds the cutter can reach once the ark's habitat ring is
-   behind you. They are open arenas rather than corridors: a horizon,
+   below you. Both are Pale holdings — places the light reached
+   before the ark did, and never left. They are open arenas rather than corridors: a horizon,
    scattered cover, and hostiles in escalating waves until you either
-   call extraction or lose your last harness charge.
+   call extraction or spend the last return the Deep will give you.
 
    Each has a backdrop image if one is present in assets/, and a
    procedurally generated sky if not, so the destinations work with or
@@ -2986,11 +3061,11 @@ window.SF = window.SF || {};
     {
       id: 'desert',
       name: "THRESHER'S REACH",
-      sub: 'DESERT SURVEY STATION · ABANDONED YEAR 4',
-      objective: 'Patrol the dust shelf. Leave when you want to.',
-      brief: 'A survey station the ark dropped on its way through, four years before the ' +
-             'singing started. The relay still answers. Nothing else does. Whatever came up ' +
-             'out of the shelf has had a long time to get used to the heat.',
+      sub: 'DESERT CHAPTERHOUSE · CONSECRATED YEAR 4',
+      objective: 'Raid the dust shelf. Leave when you want to.',
+      brief: 'A survey station the ark blessed on its way through, two years before it did the ' +
+             'same to itself. The Order down there has been keeping the lamps lit for nobody ever ' +
+             'since, and it has had a long time to get used to the heat.',
       image: 'assets/desert-planet-bg.webp',
       /* Violet sky, twin moons, a far-off spire city — matching the supplied
          backdrop closely enough that the generated fallback is not jarring. */
@@ -3000,7 +3075,7 @@ window.SF = window.SF || {};
       ground: '#b06a38', rockTint: '#8a5a3c', fog: 0xa9663f, fogDensity: 0.010,
       light: { key: 0xffd8a0, keyI: 2.2, hemiSky: 0xffb877, hemiGround: 0x4a2f18, hemiI: 1.1 },
       faction: {
-        name: 'THE RECLAIMED',
+        name: 'THE PALE ORDER',
         mix: [['scarab', 0.44], ['marauder', 0.42], ['colossus', 0.14]],
         elite: 'colossus',
         population: 16
@@ -3009,11 +3084,11 @@ window.SF = window.SF || {};
     {
       id: 'frozen',
       name: 'COLD LANTERN',
-      sub: 'FROZEN RELAY · LAST TRANSMISSION YEAR 6',
-      objective: 'Patrol the ice field. Leave when you want to.',
+      sub: 'FROZEN RELAY · STILL BURNING YEAR 6',
+      objective: 'Raid the ice field. Leave when you want to.',
       brief: 'The relay that carried the ark\'s last clean message home, six years into the ' +
-             'crossing. It is still transmitting on a loop, into a sky that has not changed ' +
-             'in forty years. Something down there learned the loop.',
+             'crossing. The Lamplit are still down there feeding it, into a sky that has not ' +
+             'changed in forty years. They will not stop for you either.',
       image: 'assets/frozen-planet-bg.webp',
       /* Night sky and stars with a banded gas giant, over a pale ice field. */
       sky: { top: '#050a18', mid: '#132743', low: '#8fb4cc', sun: '#dfeeff', haze: 0x6fa8d0,
@@ -3024,7 +3099,7 @@ window.SF = window.SF || {};
       ground: '#93aec2', rockTint: '#7fb4d4', fog: 0x86b0cc, fogDensity: 0.012,
       light: { key: 0xdcefff, keyI: 1.05, hemiSky: 0xbfe0ff, hemiGround: 0x2f3d4a, hemiI: 0.7 },
       faction: {
-        name: 'THE STILLED',
+        name: 'THE LAMPLIT',
         mix: [['mote', 0.4], ['revenant', 0.46], ['hoarfrost', 0.14]],
         elite: 'hoarfrost',
         population: 16
@@ -3042,9 +3117,9 @@ window.SF = window.SF || {};
       id: dest.id, n: dest.name, zone: 'arena', from: null,
       name: dest.name, objective: dest.objective, brief: dest.brief,
       waves: [], beats: [
-        [0.5, 'DIVISION', 'Cutter is holding at altitude. Stay as long as you like.'],
-        [7.0, 'VOSS', 'Whatever is down there is not part of the composition. It is just hungry.'],
-        [16.0, 'DIVISION', 'We will flag anything worth your time as it comes up.']
+        [0.5, 'CHOIRMASTER', 'The cutter holds at altitude. Stay as long as you like — nothing here is on a clock.'],
+        [7.0, 'CANDLE', 'They kept the lamps lit for a ship that was never coming. Do not expect them to be reasonable.'],
+        [16.0, 'CHOIRMASTER', 'We will flag anything worth your time as it comes up.']
       ],
       patrol: true, planet: dest
     };
@@ -3432,17 +3507,21 @@ window.SF = window.SF || {};
 (function (SF) {
   'use strict';
 
+  /* Five rungs that have to be tellable apart at a glance across a room, on
+     armour plating as well as in a list — so the ladder keeps its
+     grey/green/blue/purple/gold spacing rather than collapsing into the
+     violet the rest of the interface moved to. */
   const RARITY = [
     { id: 'common',   name: 'COMMON',   colour: '#9fb0c0', mult: 1.00, affixes: 0, weight: 100 },
-    { id: 'uncommon', name: 'UNCOMMON', colour: '#7dff9b', mult: 1.10, affixes: 1, weight: 52 },
-    { id: 'rare',     name: 'RARE',     colour: '#5eeaff', mult: 1.22, affixes: 2, weight: 24 },
+    { id: 'uncommon', name: 'UNCOMMON', colour: '#7de3a8', mult: 1.10, affixes: 1, weight: 52 },
+    { id: 'rare',     name: 'RARE',     colour: '#5aa8ff', mult: 1.22, affixes: 2, weight: 24 },
     { id: 'epic',     name: 'EPIC',     colour: '#b98cff', mult: 1.40, affixes: 3, weight: 8 },
     { id: 'exotic',   name: 'EXOTIC',   colour: '#ffb454', mult: 1.65, affixes: 4, weight: 2 }
   ];
   const rarityOf = (id) => RARITY.find((r) => r.id === id) || RARITY[0];
   const rarityRank = (id) => RARITY.findIndex((r) => r.id === id);
 
-  /* Later missions bias the roll upward: by the Conductor, common is rare
+  /* Later missions bias the roll upward: by the First Light, common is rare
      and exotic is a real possibility. */
   function rollRarity(missionN) {
     const tilt = Math.max(0, (missionN - 1) / 15);          // 0 at mission 1, 1 at 16
@@ -3457,11 +3536,11 @@ window.SF = window.SF || {};
   }
 
   /* ---------- naming ---------- */
-  const PREFIX = ['SALVAGED', 'MARK-VII', 'COLONIAL', 'ARK-PATTERN', 'RECLAIMED', 'DIVISION',
+  const PREFIX = ['GRAVEBORN', 'UNLIT', 'BURIED', 'ARK-PATTERN', 'RECLAIMED', 'SUNLESS',
                   'HOLLOWED', 'QUIET', 'LONG-CROSSING', 'YEAR-SIX'];
-  const SUFFIX = ['OF THE GARDEN', 'OF DECK ZERO', 'OF THE LONG SPINE', 'OF THE FALSE SKY',
-                  'OF THE CHOIR', 'OF WARD SIX', 'OF THE THRESHOLD'];
-  const EXOTIC_NAMES = ['LULLABY', 'THE GREEN DOOR', 'NINE HOURS', 'ADA', 'ONE NOTE', 'REST'];
+  const SUFFIX = ['OF THE GARDEN', 'OF THE RELIQUARY', 'OF THE LONG SPINE', 'OF THE FALSE SKY',
+                  'OF THE UNBLESSED', 'OF WARD SIX', 'OF THE THRESHOLD'];
+  const EXOTIC_NAMES = ['LULLABY', 'THE GREEN DOOR', 'NINE HOURS', 'ADA', 'LAST REFUSAL', 'REST'];
 
   /* ---------- affixes ---------- */
   const WEAPON_AFFIXES = [
@@ -3508,7 +3587,7 @@ window.SF = window.SF || {};
     { id: 'runner', name: 'RUNNER' }
   ];
 
-  /* Runners: the salvaged transit frames Division issues for open ground.
+  /* Runners: the salvaged transit frames the Deep digs up for open ground.
      Two families that handle nothing alike. */
   const RUNNERS = {
     courser: {
@@ -3708,7 +3787,7 @@ window.SF = window.SF || {};
     const count = isBoss ? 3 : (Math.random() < 0.45 ? 2 : 1);
     for (let i = 0; i < count; i++) {
       let rarity = rollRarity(missionN);
-      if (isBoss && rarityRank(rarity) < 2) rarity = 'rare';     // no junk from the Conductor
+      if (isBoss && rarityRank(rarity) < 2) rarity = 'rare';     // no junk from the First Light
       const roll = Math.random();
       if (roll < 0.34) drops.push(makeWeapon(character.cls, rarity, missionN));
       else if (roll < 0.46) drops.push(makeRunner(
@@ -3769,7 +3848,7 @@ window.SF = window.SF || {};
 
   const SKINS = ['#f0d0b8', '#e0b394', '#c89272', '#a06a48', '#7a4a30', '#5a3520', '#3d2418'];
   const HAIR_COLOURS = ['#141210', '#3a2a1e', '#6b4a2a', '#a8722f', '#c9a227', '#8a8a8a',
-                        '#e8e8e8', '#5eeaff', '#ff5ea8', '#7dff9b'];
+                        '#e8e8e8', '#9d7bff', '#e0556b', '#7de3a8'];
   const HAIR_STYLES = [
     { id: 'shaved',  name: 'SHAVED' },
     { id: 'crop',    name: 'CROP' },
@@ -3915,7 +3994,7 @@ window.SF = window.SF || {};
     const key = new THREE.DirectionalLight(0xdff0ff, 1.5);
     key.position.set(2.4, 4, 3);
     scene.add(key);
-    const rim = new THREE.PointLight(0x5eeaff, 12, 9, 2);
+    const rim = new THREE.PointLight(0x9d7bff, 12, 9, 2);
     rim.position.set(-2.2, 2.4, -1.8);
     scene.add(rim);
 
@@ -3969,7 +4048,7 @@ window.SF = window.SF || {};
       0, Math.PI * 2, 0, Math.PI * 0.58), plateMats.head);
     helm.position.y = 1.63;
     const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.06),
-      new THREE.MeshStandardMaterial({ color: 0x06131b, emissive: new THREE.Color(0x5eeaff),
+      new THREE.MeshStandardMaterial({ color: 0x06131b, emissive: new THREE.Color(0x9d7bff),
                                        emissiveIntensity: 2.2, roughness: 0.3 }));
     visor.position.set(0, 1.605, 0.2);
 
@@ -6617,7 +6696,7 @@ void main(){
     emit(0, 3.4, 108, 0xff6a4a, 4.2, 32);
     colliders.push({ min: { x: -2.4, z: 105.6 }, max: { x: 2.4, z: 110.4 }, top: 6.2, bottom: 0 });
 
-    // choir array — the conduits carrying two hundred thousand voices
+    // the reliquary — the conduits carrying two hundred thousand kept lives
     for (let i = 0; i < 6; i++) {
       const zc = 118 + i * 4;
       for (const sx of [-8.4, 8.4]) {
@@ -6745,6 +6824,10 @@ void main(){
 
   function create(camera, level) {
     let speedScale = 1;
+    /* Rapture's speed bonus. Kept separate from speedScale because the runner
+       overwrites that one every frame while you are riding — the two need to
+       multiply, not clobber each other. */
+    let surge = 1;
     let turnScale = 1;
     /* Third person, for when you are riding something. `want` is what the
        ride asks for; `cur` is what the world will actually allow, eased so
@@ -7020,7 +7103,7 @@ void main(){
            away whatever speed you jumped with: a slide hop landed at walking
            pace, and every jump was a full stop in the air. */
         const target = (state.crouching && state.onGround ? SPEED.crouch
-                      : state.sprinting ? SPEED.sprint : SPEED.walk) * speedScale;
+                      : state.sprinting ? SPEED.sprint : SPEED.walk) * speedScale * surge;
         const accel = state.onGround ? 52 : 3.5;
         state.vel.x += (dx * target - state.vel.x) * Math.min(1, accel * dt);
         state.vel.z += (dz * target - state.vel.z) * Math.min(1, accel * dt);
@@ -7214,6 +7297,7 @@ void main(){
       get position() { return state.pos; },
       get eyePosition() { return new THREE.Vector3(state.pos.x, state.pos.y + state.eye, state.pos.z); },
       setSpeedScale(v) { speedScale = v || 1; },
+      setSurge(v) { surge = v || 1; },
       /* Ask for a chase camera. dist 0 puts it back on the eye. */
       setChase(dist, height) { chase.want = dist || 0; chase.height = height || 0; },
       /* A frame carries you; you do not slide off one. */
@@ -7258,35 +7342,39 @@ void main(){
 
   const WEAPONS = {
     bulwark: {
-      id: 'maul', name: 'MAUL-12', kind: 'BREACHING SHOTGUN',
+      id: 'maul', name: 'GRAVEMAUL', kind: 'GROWN SCATTERGUN',
       damage: 17, pellets: 8, rpm: 75, mag: 6, reserve: 48, reload: 2.6,
       spread: 0.055, adsSpread: 0.036, range: 34, headMult: 1.6,
       recoil: { pitch: 0.075, yaw: 0.012 }, shake: 1.5,
-      colour: 0xffb454, tracer: 0xffc46a,
-      desc: 'Eight pellets a shell. Devastating inside ten metres, useless past thirty.'
+      colour: 0xe0556b, tracer: 0xff8a96,
+      desc: 'Eight shards a shell, grown rather than machined. Devastating inside ten metres, ' +
+            'useless past thirty.'
     },
     oracle: {
-      id: 'lance', name: 'ARC LANCE', kind: 'INDUCTION RIFLE',
+      id: 'lance', name: 'NULL LANCE', kind: 'CIPHER RIFLE',
       damage: 26, pellets: 1, rpm: 320, mag: 24, reserve: 168, reload: 2.0,
       spread: 0.012, adsSpread: 0.002, range: 90, headMult: 2.2, pierce: true,
       recoil: { pitch: 0.022, yaw: 0.004 }, shake: 0.5,
-      colour: 0x5eeaff, tracer: 0x9ff4ff,
-      desc: 'Charged induction bolts. Punches through a target and into whatever stood behind it.'
+      colour: 0x9d7bff, tracer: 0xc4aaff,
+      desc: 'Bolts of unwritten matter. Punches through a target and into whatever stood behind it.'
     },
     wraith: {
       id: 'whisper', name: 'WHISPER', kind: 'SUPPRESSED CARBINE',
       damage: 15, pellets: 1, rpm: 640, mag: 32, reserve: 224, reload: 1.7,
       spread: 0.02, adsSpread: 0.005, range: 70, headMult: 3.0,
       recoil: { pitch: 0.014, yaw: 0.006 }, shake: 0.35,
-      colour: 0xff5ea8, tracer: 0xff9ccb,
-      desc: 'Subsonic and quiet. Triple damage on a head shot; the ark never hears the first one.'
+      colour: 0x7de3a8, tracer: 0xb6f2d2,
+      desc: 'Subsonic and quiet. Triple damage on a head shot; the choir never hears the first one.'
     }
   };
 
   const ABILITIES = {
-    bulwark: { name: 'AEGIS BARRIER', cooldown: 16, desc: 'Overshield that soaks the next wave of fire.' },
-    oracle:  { name: 'SYSTEMS BREACH', cooldown: 14, desc: 'EMP pulse: stuns and staggers everything nearby.' },
-    wraith:  { name: 'PHASE STEP',    cooldown: 10, desc: 'Blink forward; briefly untargetable, next shot crits.' }
+    bulwark: { name: 'GRAVE WARD', cooldown: 16,
+               desc: 'Overshield grown out of the ground, thicker for every body standing near you.' },
+    oracle:  { name: 'CRYSTALLIZE', cooldown: 14,
+               desc: 'Unwrites the syntax holding them upright: everything nearby freezes solid.' },
+    wraith:  { name: 'DEVOUR STEP', cooldown: 10,
+               desc: 'Step through the dark; briefly untargetable, next round primed, and it feeds you.' }
   };
 
   function create(ctx) {
@@ -7456,6 +7544,10 @@ void main(){
         .addScaledVector(camRight, w.adsAmount > 0.5 ? 0.0 : 0.17)
         .addScaledVector(camUp, w.adsAmount > 0.5 ? -0.02 : -0.13);
 
+      /* Rapture multiplies what leaves the barrel; see the dread meter in
+         fps/game.js, which owns the timer. */
+      const surge = ctx.damageScale ? ctx.damageScale() : 1;
+
       let anyHit = false, anyHead = false;
       for (let p = 0; p < spec.pellets; p++) {
         pelletDir.copy(shotDir);
@@ -7482,8 +7574,12 @@ void main(){
 
         if (shot.enemies && shot.enemies.length) {
           for (const h of shot.enemies) {
-            let dmg = spec.damage * (h.head ? spec.headMult : 1);
+            let dmg = spec.damage * (h.head ? spec.headMult : 1) * surge;
             if (w.primed) { dmg *= 2; w.primed = false; }
+            /* Tell the mission where this shot landed before it is applied:
+               ai.damage() calls back into onKill synchronously, and the dread
+               award needs to know whether it was a head shot by then. */
+            if (ctx.markHead) ctx.markHead(h.head);
             /* In co-op a client does not own the hostiles: report the damage
                to the host and let it decide. The hit marker is immediate
                either way, so shooting still feels instant. */
@@ -7532,14 +7628,23 @@ void main(){
       if (ctx.onAbility) ctx.onAbility();
 
       if (ctx.classId === 'bulwark') {
-        ctx.onOvershield(60);
+        /* The ward is fed by what is close enough to take from: a barrier
+           worth having requires standing in the middle of them. */
+        let near = 0;
+        for (const e of ai.enemies) {
+          if (e.dead || e.downed > 0) continue;
+          if (e.pos.distanceTo(player.position) <= 9) near++;
+        }
+        ctx.onOvershield(60 + Math.min(4, near) * 15);
         SF.audio.sfx.shield();
-        hud.banner('AEGIS BARRIER');
+        hud.banner(near ? 'GRAVE WARD — ' + near + ' HARVESTED' : 'GRAVE WARD');
       } else if (ctx.classId === 'oracle') {
         const hitCount = ai.pulse(player.position, 13, 26);
+        const held = ai.freeze(player.position, 13, 4.0);
         SF.audio.sfx.emp();
+        SF.audio.sfx.freeze();
         player.state.shake = 2.2;
-        hud.banner('SYSTEMS BREACH — ' + hitCount + ' STUNNED');
+        hud.banner(held ? 'CRYSTALLIZE — ' + held + ' HELD' : 'CRYSTALLIZE');
       } else {
         const forward = muzzleDir;
         camera.getWorldDirection(forward);
@@ -7548,8 +7653,9 @@ void main(){
         player.state.pos.x = dest.x; player.state.pos.z = dest.z;
         w.primed = true;
         ctx.onPhase(1.4);
+        if (ctx.onDevourStep) ctx.onDevourStep();
         SF.audio.sfx.phase();
-        hud.banner('PHASE STEP — NEXT SHOT PRIMED');
+        hud.banner('DEVOUR STEP — NEXT ROUND PRIMED');
       }
       hud.refreshAbility(w);
     }
@@ -8122,54 +8228,79 @@ void main(){
   'use strict';
 
   const TYPES = {
+    /* ---- the ark's garrison: what the Pale made of the crew ---- */
     drone: {
-      name: 'HUSK DRONE', hp: 60, speed: 3.2, damage: 9, range: 2.2, rate: 1.1,
-      colour: 0x8a3b3b, glow: 0xff5a4a, height: 1.5, radius: 0.45, flying: true, xp: 20
+      name: 'SEEKER MOTE', hp: 60, speed: 3.2, damage: 9, range: 2.2, rate: 1.1,
+      colour: 0x8a7a4a, glow: 0xffd27a, height: 1.5, radius: 0.45, flying: true, xp: 20
     },
     thrall: {
-      name: 'CHOIR THRALL', hp: 85, speed: 2.7, damage: 13, range: 2.0, rate: 1.4,
-      colour: 0x5c5a68, glow: 0xff7ab0, height: 1.85, radius: 0.42, xp: 26
+      name: 'ACOLYTE OF THE PALE', hp: 85, speed: 2.7, damage: 13, range: 2.0, rate: 1.4,
+      colour: 0x6a6558, glow: 0xfff0c0, height: 1.85, radius: 0.42, xp: 26
     },
     warden: {
-      name: 'WARDEN FRAME', hp: 240, speed: 2.1, damage: 20, range: 26, rate: 2.1,
-      colour: 0x4a5260, glow: 0xffb454, height: 2.5, radius: 0.75, ranged: true, xp: 90
+      name: 'SUNGUARD FRAME', hp: 240, speed: 2.1, damage: 20, range: 26, rate: 2.1,
+      colour: 0x5a5648, glow: 0xffc04a, height: 2.5, radius: 0.75, ranged: true, xp: 90
     },
-    /* ---- Thresher's Reach: machines the dust never finished burying ---- */
+
+    /* ---- the blessed dead, and the thing that keeps rebuilding them ----
+       A palebearer dropped to zero does not die: it goes down, its spark
+       comes out, and it is back on its feet in REVIVE_TIME unless you kill
+       the spark first. See damage() and the downed branch in step(). */
+    palebearer: {
+      name: 'PALEBEARER', sub: 'BLESSED / WILL NOT STAY DOWN', hp: 190, speed: 2.8, damage: 18,
+      range: 24, rate: 1.7, colour: 0x7a6a48, glow: 0xfff4d8, height: 1.95, radius: 0.5,
+      ranged: true, bearer: true, xp: 110
+    },
+    spark: {
+      name: 'SPARK', sub: 'FRAGMENT OF THE FIRST LIGHT', hp: 15, speed: 7.5, damage: 0,
+      range: 0, rate: 9, colour: 0xf0e4c0, glow: 0xffffff, height: 0.5, radius: 0.22,
+      flying: true, spark: true, xp: 45
+    },
+
+    /* ---- Thresher's Reach: the Pale Order, still holding a dead station ---- */
     scarab: {
-      name: 'SCARAB', sub: 'SURVEY DRONE / FERAL', hp: 46, speed: 3.7, damage: 8, range: 2.0,
+      name: 'CENSER', sub: 'PALE ORDER / DRONE', hp: 46, speed: 3.7, damage: 8, range: 2.0,
       rate: 0.95, colour: 0xa8763a, glow: 0xffc46a, height: 1.3, radius: 0.4, flying: true, xp: 18
     },
     marauder: {
-      name: 'MARAUDER', sub: 'SITE SECURITY / REPURPOSED', hp: 115, speed: 2.5, damage: 15,
+      name: 'ORDINAL', sub: 'PALE ORDER / SWORN', hp: 115, speed: 2.5, damage: 15,
       range: 22, rate: 1.9, colour: 0x8a6a44, glow: 0xffb454, height: 1.95, radius: 0.5,
       ranged: true, xp: 40
     },
     colossus: {
-      name: 'DUST COLOSSUS', sub: 'EXCAVATION FRAME / ELITE', hp: 430, speed: 1.8, damage: 26,
-      range: 26, rate: 2.0, colour: 0x6a5236, glow: 0xff7a3a, height: 2.9, radius: 0.95,
+      name: 'RELIQUARY FRAME', sub: 'PALE ORDER / ELITE', hp: 430, speed: 1.8, damage: 26,
+      range: 26, rate: 2.0, colour: 0x6a5236, glow: 0xffd27a, height: 2.9, radius: 0.95,
       ranged: true, elite: true, xp: 190
     },
 
-    /* ---- Cold Lantern: the relay crew, and what the cold kept of them ---- */
+    /* ---- Cold Lantern: the Lamplit, keeping a relay warm for nobody ---- */
     mote: {
-      name: 'FROST MOTE', sub: 'RELAY DRONE / ICED', hp: 40, speed: 3.9, damage: 7, range: 1.9,
-      rate: 0.9, colour: 0x7fc0dc, glow: 0x9fe8ff, height: 1.25, radius: 0.38, flying: true, xp: 17
+      name: 'EMBER', sub: 'THE LAMPLIT / DRONE', hp: 40, speed: 3.9, damage: 7, range: 1.9,
+      rate: 0.9, colour: 0xbba87f, glow: 0xffeec2, height: 1.25, radius: 0.38, flying: true, xp: 17
     },
     revenant: {
-      name: 'REVENANT', sub: 'RELAY CREW / STILLED', hp: 125, speed: 2.6, damage: 16, range: 2.2,
-      rate: 1.3, colour: 0x5a7a8c, glow: 0xbfe8ff, height: 1.9, radius: 0.45, xp: 38
+      name: 'LAMPLIGHTER', sub: 'THE LAMPLIT / SWORN', hp: 125, speed: 2.6, damage: 16, range: 2.2,
+      rate: 1.3, colour: 0x8c8060, glow: 0xfff4d8, height: 1.9, radius: 0.45, xp: 38
     },
     hoarfrost: {
-      name: 'HOARFROST', sub: 'STATION WARDEN / ELITE', hp: 470, speed: 1.9, damage: 24,
-      range: 24, rate: 1.9, colour: 0x486a80, glow: 0x8fd8ff, height: 2.9, radius: 0.95,
+      name: 'BEACON WARDEN', sub: 'THE LAMPLIT / ELITE', hp: 470, speed: 1.9, damage: 24,
+      range: 24, rate: 1.9, colour: 0x807456, glow: 0xffe08a, height: 2.9, radius: 0.95,
       ranged: true, elite: true, xp: 200
     },
 
     conductor: {
-      name: 'THE CONDUCTOR', hp: 900, speed: 2.4, damage: 26, range: 30, rate: 1.6,
-      colour: 0x6b3550, glow: 0xff3fa0, height: 3.0, radius: 0.9, ranged: true, boss: true, xp: 320
+      name: 'THE FIRST LIGHT', hp: 900, speed: 2.4, damage: 26, range: 30, rate: 1.6,
+      colour: 0x6b5a35, glow: 0xfff0b0, height: 3.0, radius: 0.9, ranged: true, boss: true, xp: 320
     }
   };
+
+  /* How long a downed palebearer takes to come back if you leave its spark alone. */
+  const REVIVE_TIME = 5.0;
+  /* A hit on a frozen target shatters it instead of merely hurting it. */
+  const SHATTER_MULT = 2.4;
+  const SHATTER_RADIUS = 4.5;
+  const SHATTER_SPLASH = 34;
+  const FROZEN_TINT = 0x9d7bff;
 
   let uidSeq = 0;
 
@@ -8213,7 +8344,15 @@ void main(){
         cool: Math.random() * spec.rate,
         stun: 0, dead: false, deathT: 0,
         hitFlash: 0, bob: Math.random() * 6.28,
-        alerted: false
+        alerted: false,
+        /* Cipher status: held in place, and shatters on the next hit. */
+        frozen: 0,
+        /* Palebearer status: seconds left before it gets back up, its spark's
+           uid while it is down, and whether its one resurrection is spent. */
+        downed: 0, sparkUid: null, revived: false,
+        /* Sparks carry a back-reference to the body they are rebuilding. */
+        bearer: null,
+        baseColour: spec.colour
       };
       enemies.push(e);
       return e;
@@ -8263,7 +8402,7 @@ void main(){
       const wall = rayWalls(origin, dir, range, colliders);
       const hits = [];
       for (const e of enemies) {
-        if (e.dead) continue;
+        if (e.dead || e.downed > 0) continue;
         const hd = raySphere(origin, dir, headCentre(e), e.spec.radius * 0.62);
         const bd = raySphere(origin, dir, bodyCentre(e), e.spec.radius * 1.05);
         const isHead = hd >= 0 && (bd < 0 || hd <= bd);
@@ -8281,8 +8420,64 @@ void main(){
       };
     }
 
+    /* Frozen bodies shatter rather than absorb, and take their neighbours
+       with them. The guard stops one shatter cascading through a whole
+       frozen group and back into itself. */
+    let shattering = false;
+    function shatterBurst(from) {
+      if (shattering) return;
+      shattering = true;
+      for (const o of enemies) {
+        if (o === from || o.dead || o.downed > 0) continue;
+        if (o.pos.distanceTo(from.pos) > SHATTER_RADIUS) continue;
+        damage(o, SHATTER_SPLASH, null);
+      }
+      shattering = false;
+    }
+
+    function thaw(e) {
+      e.frozen = 0;
+      e.rig.materials[0].color.set(e.baseColour);
+    }
+
+    /* Hold everything in a radius still. The Hollow ability calls this after
+       pulse(), so the damage and the freeze land together. */
+    function freeze(centre, radius, duration) {
+      let n = 0;
+      for (const e of enemies) {
+        if (e.dead || e.downed > 0 || e.spec.boss) continue;
+        if (e.pos.distanceTo(centre) > radius) continue;
+        e.frozen = duration;
+        e.vel.set(0, 0, 0);
+        e.rig.materials[0].color.set(FROZEN_TINT);
+        n++;
+      }
+      return n;
+    }
+
+    /* The spark is dead, so the body it was rebuilding is finally dead too. */
+    function finaliseBearer(spark) {
+      const b = spark.bearer ? byUid(spark.bearer) : null;
+      if (!b || b.dead) return;
+      b.downed = 0;
+      b.sparkUid = null;
+      b.dead = true;
+      b.deathT = 0;
+      b.rig.halo.setIntensity(0);
+      ctx.onKill(b);
+    }
+
+    function spawnSpark(bearer) {
+      const s = spawn('spark', bearer.pos.x, bearer.pos.z);
+      s.pos.y = bearer.spec.height * 0.9;
+      s.bearer = bearer.uid;
+      s.alerted = true;
+      bearer.sparkUid = s.uid;
+      return s;
+    }
+
     function damage(e, amount, dir) {
-      if (e.dead) return false;
+      if (e.dead || e.downed > 0) return false;
       /* A shielded target takes nothing. The boss's shield comes down by
          solving its phrase, not by shooting it. */
       if (e.shielded) {
@@ -8290,27 +8485,55 @@ void main(){
         SF.audio.sfx.dryfire();
         return false;
       }
-      e.hp -= amount;
+      let dealt = amount;
+      let shattered = false;
+      if (e.frozen > 0) {
+        dealt *= SHATTER_MULT;
+        shattered = true;
+        thaw(e);
+      }
+
+      e.hp -= dealt;
       e.hitFlash = 1;
       e.alerted = true;
       if (dir) { e.vel.addScaledVector(dir, 1.4 / (e.spec.radius * 3)); }
       SF.audio.sfx.impact();
+      if (shattered) {
+        SF.audio.sfx.shatter();
+        shatterBurst(e);
+        if (ctx.onShatter) ctx.onShatter(e);
+      }
+
       if (e.hp <= 0) {
+        /* A palebearer's first death is not one. It goes down and its spark
+           comes out; kill that inside REVIVE_TIME or it stands back up. */
+        if (e.spec.bearer && !e.revived) {
+          e.downed = REVIVE_TIME;
+          e.hp = 0;
+          e.vel.set(0, 0, 0);
+          e.deathT = 0;
+          e.rig.halo.setIntensity(0.5);
+          spawnSpark(e);
+          SF.audio.sfx.enemyDown();
+          return false;
+        }
         e.dead = true;
         e.deathT = 0;
         e.rig.halo.setIntensity(0);
         SF.audio.sfx.enemyDown();
         ctx.onKill(e);
+        /* Killing the spark finishes whatever it was holding together. */
+        if (e.spec.spark) finaliseBearer(e);
         return true;
       }
       return false;
     }
 
-    /* Oracle's EMP. */
+    /* Hollow's cipher pulse. */
     function pulse(centre, radius, dmg) {
       let n = 0;
       for (const e of enemies) {
-        if (e.dead) continue;
+        if (e.dead || e.downed > 0) continue;
         if (e.pos.distanceTo(centre) > radius) continue;
         e.stun = 3.2;
         n++;
@@ -8330,6 +8553,72 @@ void main(){
       return false;
     }
 
+    /* The spark finished its work: the body gets up, the spark is spent. */
+    function reviveBearer(e) {
+      e.downed = 0;
+      e.revived = true;
+      e.hp = Math.round(e.maxHp * 0.6);
+      e.alerted = true;
+      e.rig.group.rotation.x = 0;
+      e.rig.halo.setIntensity(1.1);
+      const s = e.sparkUid ? byUid(e.sparkUid) : null;
+      if (s) retire(s);                     // consumed, not killed: no credit
+      e.sparkUid = null;
+      SF.audio.sfx.revive();
+      if (ctx.onRevive) ctx.onRevive(e);
+    }
+
+    /* Sparks do not fight. They orbit the body they are rebuilding, fast and
+       erratically, and they are small — that is the whole defence. */
+    function stepSpark(e, dt, playerPos) {
+      /* A free spark has no body to rebuild — it is loose in the room and
+         running. The First Light's last phase uses one; see fps/boss.js. */
+      if (e.sparkFree) { stepFreeSpark(e, dt, playerPos); return; }
+
+      const b = e.bearer ? byUid(e.bearer) : null;
+      if (!b || b.dead) { retire(e); return; }
+
+      e.bob += dt * 3.2;
+      const r = 1.1 + Math.sin(e.bob * 1.7) * 0.35;
+      const ang = e.bob * 1.9;
+      const tx = b.pos.x + Math.cos(ang) * r;
+      const tz = b.pos.z + Math.sin(ang) * r;
+      const ty = b.spec.height * 0.85 + Math.sin(e.bob * 2.3) * 0.22;
+
+      e.pos.x += (tx - e.pos.x) * Math.min(1, 9 * dt);
+      e.pos.z += (tz - e.pos.z) * Math.min(1, 9 * dt);
+      e.pos.y += (ty - e.pos.y) * Math.min(1, 9 * dt);
+
+      e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+      e.rig.group.rotation.y = Math.atan2(playerPos.x - e.pos.x, playerPos.z - e.pos.z) + Math.PI;
+      if (e.rig.limbs[0] && e.rig.limbs[0].ring) e.rig.limbs[0].ring.rotation.z += dt * 9;
+      e.rig.halo.set(e.pos.x, e.pos.y, e.pos.z);
+      e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
+    }
+
+    /* Loose and evasive: a wide, drifting arc around its anchor that speeds up
+       as it is hurt. Small, fast and unarmed — the difficulty is hitting it. */
+    function stepFreeSpark(e, dt, playerPos) {
+      const a = e.anchor || { x: e.pos.x, z: e.pos.z };
+      const hurt = 1 - (e.hp / e.maxHp);
+      e.bob += dt * (1.5 + hurt * 1.6);
+      const r = 7 + Math.sin(e.bob * 0.8) * 3.5;
+      const tx = a.x + Math.cos(e.bob) * r;
+      const tz = a.z + Math.sin(e.bob * 1.31) * r;
+      const ty = 1.5 + Math.sin(e.bob * 2.7) * 0.8;
+
+      const k = Math.min(1, (2.6 + hurt * 2.2) * dt);
+      e.pos.x += (tx - e.pos.x) * k;
+      e.pos.z += (tz - e.pos.z) * k;
+      e.pos.y += (ty - e.pos.y) * k;
+
+      e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+      e.rig.group.rotation.y = Math.atan2(playerPos.x - e.pos.x, playerPos.z - e.pos.z) + Math.PI;
+      if (e.rig.limbs[0] && e.rig.limbs[0].ring) e.rig.limbs[0].ring.rotation.z += dt * 12;
+      e.rig.halo.set(e.pos.x, e.pos.y, e.pos.z);
+      e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
+    }
+
     function step(dt, playerPos, playerVisible) {
       if (remote) { stepProxies(dt); return; }
       for (const e of enemies) {
@@ -8343,6 +8632,34 @@ void main(){
         }
 
         e.hitFlash = Math.max(0, e.hitFlash - dt * 4);
+
+        /* Down but not out: the body lies there while its spark works. If the
+           clock runs out it gets back up, once, at a fraction of its health. */
+        if (e.downed > 0) {
+          e.downed -= dt;
+          const t = Math.min(1, (REVIVE_TIME - e.downed) / 0.6);
+          e.rig.group.rotation.x = -t * 1.4;
+          e.rig.group.position.set(e.pos.x, e.pos.y - t * 0.35, e.pos.z);
+          if (e.downed <= 0) reviveBearer(e);
+          continue;
+        }
+
+        /* Frozen: held in place, tinted, and primed to shatter. */
+        if (e.frozen > 0) {
+          e.frozen -= dt;
+          if (e.frozen <= 0) {
+            thaw(e);
+          } else {
+            e.vel.set(0, 0, 0);
+            e.rig.group.position.set(e.pos.x, e.pos.y, e.pos.z);
+            e.rig.halo.set(e.pos.x, e.pos.y + e.spec.height * 0.8, e.pos.z);
+            e.rig.materials[0].emissiveIntensity = e.hitFlash * 1.8;
+            continue;
+          }
+        }
+
+        if (e.spec.spark) { stepSpark(e, dt, playerPos); continue; }
+
         e.stun = Math.max(0, e.stun - dt);
         e.cool -= dt;
 
@@ -8515,7 +8832,8 @@ void main(){
         out.push([e.uid, e.type,
                   +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2),
                   +e.rig.group.rotation.y.toFixed(2),
-                  Math.round(e.hp), e.dead ? 1 : 0]);
+                  Math.round(e.hp), e.dead ? 1 : 0,
+                  e.frozen > 0 ? 1 : 0, e.downed > 0 ? 1 : 0]);
       }
       return out;
     }
@@ -8525,7 +8843,7 @@ void main(){
     function applySnapshot(list) {
       const seen = new Set();
       for (const row of list) {
-        const [uid, type, x, y, z, ry, hp, dead] = row;
+        const [uid, type, x, y, z, ry, hp, dead, frozen, downed] = row;
         seen.add(uid);
         let e = enemies.find((q) => q.uid === uid);
         if (!e) {
@@ -8535,6 +8853,13 @@ void main(){
         }
         e.hp = hp;
         e.proxy.x = x; e.proxy.y = y; e.proxy.z = z; e.proxy.ry = ry;
+        /* Status is display-only on a client: the host owns the timers, we
+           just have to draw the tint and the collapse. */
+        const wasFrozen = e.frozen > 0;
+        e.frozen = frozen ? 1 : 0;
+        if (frozen && !wasFrozen) e.rig.materials[0].color.set(FROZEN_TINT);
+        if (!frozen && wasFrozen) e.rig.materials[0].color.set(e.baseColour);
+        e.downed = downed ? 1 : 0;
         if (dead && !e.dead) { e.dead = true; e.deathT = 0; e.rig.halo.setIntensity(0); }
       }
       for (let i = enemies.length - 1; i >= 0; i--) {
@@ -8561,6 +8886,13 @@ void main(){
           if (e.deathT > 1.4) { e.rig.halo.release(); scene.remove(e.rig.group); enemies.splice(i, 1); }
           continue;
         }
+
+        if (e.downed > 0) {
+          e.rig.group.rotation.x = -1.4;
+          e.rig.group.position.set(e.pos.x, e.pos.y - 0.35, e.pos.z);
+          continue;
+        }
+        e.rig.group.rotation.x = 0;
 
         const p = e.proxy;
         if (!p) continue;
@@ -8612,7 +8944,7 @@ void main(){
     }
 
     return {
-      enemies, spawn, step, damage, pulse, raycast, visible, prewarm, TYPES,
+      enemies, spawn, step, damage, pulse, freeze, raycast, visible, prewarm, TYPES,
       snapshot, applySnapshot, byUid, retire,
       setRemote(v) { remote = !!v; },
       get isRemote() { return remote; },
@@ -10859,7 +11191,7 @@ void main(){
    Cached salvage.
 
    Crates left across a patrol zone by whoever was here before. Most
-   are Division caches, dropped and never collected; a few are sealed
+   are grave caches, buried and never collected; a few are sealed
    survey vaults worth going out of your way for. Walk up and hold F.
 
    Opened crates stay open for the session — this is loot you find, so
@@ -10872,7 +11204,7 @@ void main(){
   const OPEN_TIME = 1.1;
 
   const KINDS = {
-    cache: { name: 'DIVISION CACHE', colour: 0x7dff9b, tierBonus: 0, drops: 1, weight: 0.78 },
+    cache: { name: 'GRAVE CACHE', colour: 0x7de3a8, tierBonus: 0, drops: 1, weight: 0.78 },
     vault: { name: 'SURVEY VAULT',   colour: 0xb98cff, tierBonus: 5, drops: 2, weight: 0.22 }
   };
 
@@ -11036,8 +11368,8 @@ void main(){
      and what it is worth. */
   const EVENTS = [
     {
-      id: 'breach', name: 'SITE BREACH',
-      line: 'Something is coming up out of the ground. Put it back.',
+      id: 'breach', name: 'RECONSECRATION',
+      line: 'They are relighting the site. Put it back out.',
       build(c) {
         c.spawnGroup(c.anchor, 7, 0.15);
         return { kind: 'clear' };
@@ -11047,7 +11379,7 @@ void main(){
       reward: 1
     },
     {
-      id: 'elite', name: 'HIGH-VALUE TARGET',
+      id: 'elite', name: 'HIGH-VALUE HERETIC',
       line: 'One of theirs is out in the open. It will not be for long.',
       build(c) {
         const boss = c.spawnOne(c.spec.faction.elite, c.anchor, 0);
@@ -11067,8 +11399,8 @@ void main(){
       reward: 2
     },
     {
-      id: 'relay', name: 'RELAY CAPTURE',
-      line: 'The relay will answer if someone stands there long enough.',
+      id: 'relay', name: 'SNUFF THE RELAY',
+      line: 'Stand on it long enough and the lamp goes out for good.',
       build(c) {
         c.spawnGroup(c.anchor, 5, 0.3);
         return { kind: 'capture', charge: 0 };
@@ -11347,6 +11679,16 @@ void main(){
         root.classList.toggle('critical', h < 0.3);
       },
 
+      /* The dread meter. `frac` is 0..1; `rapture` flips the bar over to the
+         spent-all-at-once state, which the CSS animates. */
+      refreshDread(frac, rapture) {
+        const f = Math.max(0, Math.min(1, frac || 0));
+        $('#v-dread').style.width = (f * 100) + '%';
+        $('#v-dread-text').textContent = Math.round(f * 100);
+        root.classList.toggle('rapture', !!rapture);
+        root.classList.toggle('dread-full', f >= 1 && !rapture);
+      },
+
       refreshAmmo(w) {
         $('#a-mag').textContent = w.ammo;
         $('#a-reserve').textContent = w.reserve;
@@ -11518,7 +11860,7 @@ void main(){
         if (box.childElementCount !== max + 1) {
           box.innerHTML = '';
           for (let i = 0; i < max; i++) box.appendChild(el('i'));
-          box.appendChild(el('span', 'h-label', 'HARNESS'));
+          box.appendChild(el('span', 'h-label', 'RETURNS'));
         }
         Array.from(box.querySelectorAll('i')).forEach((c, i) => c.classList.toggle('spent', i >= left));
       },
@@ -11527,7 +11869,7 @@ void main(){
         const o = $('#death');
         o.hidden = !show;
         if (!show) return;
-        $('#death-msg').textContent = message || 'TRAUMA HARNESS ENGAGING';
+        $('#death-msg').textContent = message || 'THE DEEP IS NOT DONE WITH YOU';
         $('#death-sub').textContent = remaining > 0
           ? remaining + (remaining === 1 ? ' CHARGE REMAINING' : ' CHARGES REMAINING')
           : 'NO CHARGES REMAINING';
@@ -11602,21 +11944,27 @@ void main(){
 
 /* ==== src/js/fps/boss.js ==== */
 /* ============================================================
-   THE CONDUCTOR — the campaign's final mission.
+   THE FIRST LIGHT — the campaign's final mission.
 
-   Its shield is the song, and you cannot shoot a song. It sings a
-   phrase on the four resonance nodes around the dais; play the phrase
-   back by shooting those nodes in the same order and the shield drops
-   long enough to hurt it. Miss a note and it starts the bar again,
-   longer and faster, and punishes you for the interruption.
+   Its shield is its own light, held up by four reliquary nodes, and
+   you cannot shoot a light. It illuminates a phrase across the nodes;
+   give it back BACKWARDS — shoot them in reverse order — and the
+   shield drops long enough to hurt it. The inversion is the point:
+   everything the Pale offers, you return in the opposite direction.
+   Get one wrong and it starts again, longer and faster, and takes a
+   swing at you for the interruption.
 
-   Four phases, each a longer phrase and a bigger chunk of health.
+   Four phases, each a longer phrase and a bigger chunk of health, and
+   then one last resurrection: killing the body only lets the spark
+   out, and the spark is the thing you actually came here for.
    ============================================================ */
 (function (SF) {
   'use strict';
 
   const NOTE_HZ = [392.0, 523.25, 659.25, 783.99];      // G4 C5 E5 G5
-  const NODE_COLOUR = [0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8];
+  /* Four clearly separable hues — the puzzle is unplayable if two of them
+     read alike — warmed toward the Pale rather than the old console cyan. */
+  const NODE_COLOUR = [0xfff0b0, 0xff9a4a, 0xbfff9b, 0xff8ad0];
 
   /* phase: [sequence length, playback speed, health chunk, exposed window] */
   const PHASES = [
@@ -11631,6 +11979,8 @@ void main(){
 
     /* ---------- the boss itself ---------- */
     const arena = level.zones.deckzero;
+    // 'conductor' is the type key, left alone like the class ids: it is
+    // written into saved data and keyed on across the module.
     const boss = ai.spawn('conductor', arena.cx, arena.cz + 6);
     const totalHp = Math.round(2600 * (ctx.hpScale || 1));
     boss.maxHp = totalHp;
@@ -11666,7 +12016,11 @@ void main(){
       crescendo: 0,
       summonT: 18,
       attackT: 2.4,
-      failures: 0
+      failures: 0,
+      /* The last beat: the body dies, its spark gets loose, and the fight is
+         not over until that is down too. */
+      spark: null,
+      sparkOut: false
     };
 
     /* ---------- telegraph ring for the area attack ---------- */
@@ -11695,9 +12049,9 @@ void main(){
       state.playIdx = 0;
       state.inputIdx = 0;
       state.t = 0.8;
-      hud.bossShield(true, 'SHIELDED — PLAY THE PHRASE BACK');
+      hud.bossShield(true, 'SHIELDED — GIVE IT BACK BACKWARDS');
       hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
-      hud.say('CONDUCTOR', n === 0 ? 'SING, OR BE TUNED.' : 'AGAIN. FROM THE TOP.', 4200);
+      hud.say('FIRST LIGHT', n === 0 ? 'KNEEL, AND BE KEPT.' : 'AGAIN. FROM THE TOP.', 4200);
     }
 
     function sing(dt) {
@@ -11713,7 +12067,7 @@ void main(){
       } else {
         state.mode = 'listening';
         state.inputIdx = 0;
-        hud.bossShield(true, 'YOUR TURN — SHOOT THE NODES IN ORDER');
+        hud.bossShield(true, 'YOUR TURN — SHOOT THEM IN REVERSE');
         hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
       }
     }
@@ -11731,7 +12085,9 @@ void main(){
         return;
       }
 
-      if (i === state.sequence[state.inputIdx]) {
+      /* Backwards: the last note it showed you is the first one it wants. */
+      const want = state.sequence[state.sequence.length - 1 - state.inputIdx];
+      if (i === want) {
         state.inputIdx++;
         hud.bossPuzzle(state.sequence.length, state.inputIdx, NODE_COLOUR);
         SF.audio.sfx.hitmarker();
@@ -11753,7 +12109,7 @@ void main(){
       SF.audio.sfx.emp();
       player.state.shake = 1.6;
       for (const n of nodes) n.glow = 2.2;
-      hud.say('VOSS', 'That is a rest. It has to stop and listen. Go.', 4000);
+      hud.say('CANDLE', 'That is the seam. It cannot hold and answer at once. Go.', 4000);
     }
 
     function wrongNote() {
@@ -11762,7 +12118,7 @@ void main(){
       state.playIdx = 0;
       state.mode = 'singing';
       state.t = 1.1;
-      hud.bossShield(true, 'WRONG NOTE — LISTEN AGAIN');
+      hud.bossShield(true, 'WRONG WAY — WATCH IT AGAIN');
       hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
       SF.audio.sfx.deny();
       // the interruption costs you
@@ -11778,7 +12134,7 @@ void main(){
     /* ---------- attacks ---------- */
     function crescendo() {
       state.crescendo = 1.35;                // telegraph time
-      hud.say('CONDUCTOR', 'CRESCENDO.', 1600);
+      hud.say('FIRST LIGHT', 'BE STILL.', 1600);
       SF.audio.sfx.alarm();
     }
 
@@ -11809,11 +12165,44 @@ void main(){
         n.halo.set(n.mesh.position.x, n.mesh.position.y, n.mesh.position.z);
       }
 
-      if (boss.dead || boss.hp <= 0) {
-        state.mode = 'beaten';
-        hud.bossDefeated();
-        for (const n of nodes) n.glow = 0;
-        ctx.onDefeated();
+      /* Killing the body is not killing it. The first time it drops, the
+         light comes out and runs; only then can this end. */
+      if (!state.sparkOut && (boss.dead || boss.hp <= 0)) {
+        state.sparkOut = true;
+        state.mode = 'spark';
+        boss.shielded = false;
+        for (const n of nodes) n.glow = 0.15;
+        ringMat.opacity = 0;
+
+        const s = ai.spawn('spark', arena.cx, arena.cz + 6);
+        s.sparkFree = true;
+        s.anchor = { x: arena.cx, z: arena.cz + 6 };
+        s.pos.y = 2.2;
+        s.maxHp = Math.round(90 * (ctx.hpScale || 1));
+        s.hp = s.maxHp;
+        s.alerted = true;
+        state.spark = s;
+
+        hud.bossShield(true, 'THE LIGHT IS LOOSE');
+        hud.banner('IT IS NOT DEAD — KILL THE SPARK');
+        SF.audio.sfx.revive();
+        player.state.shake = 3;
+        hud.say('CANDLE', 'There. That is all it ever was. Do not let it reach the array.', 5200);
+        return;
+      }
+
+      /* Chasing the spark. No crescendos, no nodes — just the last small
+         thing in the room, and it is quick. */
+      if (state.mode === 'spark') {
+        const s = state.spark;
+        hud.bossHealth(s && !s.dead ? s.hp : 0, s ? s.maxHp : 1,
+                       PHASES.length - 1, PHASES.length, false);
+        if (!s || s.dead) {
+          state.mode = 'beaten';
+          hud.bossDefeated();
+          for (const n of nodes) n.glow = 0;
+          ctx.onDefeated();
+        }
         return;
       }
 
@@ -11855,7 +12244,7 @@ void main(){
             const ang = Math.random() * Math.PI * 2;
             ai.spawn('thrall', arena.cx + Math.cos(ang) * 17, arena.cz + Math.sin(ang) * 15);
           }
-          hud.say('CONDUCTOR', 'THE CHOIR WILL ASSIST.', 3200);
+          hud.say('FIRST LIGHT', 'THE BLESSED WILL ASSIST.', 3200);
         }
       }
       void playerPos;
@@ -11885,7 +12274,7 @@ void main(){
     return { boss, nodes, state, update, rayNode, hitNode, destroy, totalHp };
   }
 
-  SF.boss = { create, PHASES };
+  SF.boss = { create, PHASES, NODE_COLOUR };
 })(window.SF);
 
 
@@ -12045,9 +12434,28 @@ void main(){
     SF.gear.ensure(character);
     const armour = SF.gear.armourStats(character);
 
+    /* ---------- the Deep's economy ----------
+       Dread rises as you kill and falls the moment you stop. It is the only
+       thing that closes your wounds (see devour below), so the correct play
+       is forward. Fill the meter and it spends itself all at once. */
+    const DREAD_MAX = 100;
+    const DREAD_KILL = 17;              // per body
+    const DREAD_HEAD = 7;               // on top, for a head shot kill
+    const DREAD_SHATTER = 9;            // on top, for shattering something frozen
+    const DREAD_DECAY = 4;              // per second, once the killing stops
+    const DREAD_GRACE = 3;              // seconds before decay starts
+    const RAPTURE_TIME = 8;
+    const RAPTURE_DAMAGE = 1.35;
+    const RAPTURE_SPEED = 1.15;
+    /* Devour: what you take back out of a body, scaled by how much dread you
+       are carrying and by the armour's regeneration affix. */
+    const DEVOUR_BASE = 9;
+    const DEVOUR_DREAD = 13;            // added at a full meter
+
     const state = {
       hp: 100 + armour.hp, maxHp: 100 + armour.hp, shield: 0, overshield: 0,
       damageFlash: 0, phase: 0, regenT: 0,
+      dread: 0, rapture: 0, dreadIdle: 0, lastKillHead: false,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
       wave: 0, onPad: false, extractT: 0, events: 0, parts: 0, exitTo: null,
@@ -12075,8 +12483,43 @@ void main(){
         // a destination's reference is an id, not a number — use its tier instead
         const tier = isPlanet ? 6 + state.wave : missionIndex;
         state.xp += Math.round(e.spec.xp * (1 + 0.1 * (tier - 1)));
+        addDread(DREAD_KILL + (state.lastKillHead ? DREAD_HEAD : 0));
+        state.lastKillHead = false;
+        devour();
+      },
+      onShatter() { addDread(DREAD_SHATTER); },
+      onRevive(e) {
+        hud.killFeed((e.spec.name || 'PALEBEARER') + ' IS BACK UP');
+        hud.banner('IT GOT UP — KILL THE SPARK');
       }
     });
+
+    /* Dread in, and the moment it tips over into Rapture. */
+    function addDread(n) {
+      if (state.over) return;
+      state.dreadIdle = 0;
+      if (state.rapture > 0) return;          // already spent; ride it out
+      state.dread = Math.min(DREAD_MAX, state.dread + n);
+      if (state.dread >= DREAD_MAX) {
+        state.dread = DREAD_MAX;
+        state.rapture = RAPTURE_TIME;
+        player.setSurge(RAPTURE_SPEED);
+        SF.audio.sfx.rapture();
+        hud.banner('RAPTURE');
+      }
+      hud.refreshDread(state.dread / DREAD_MAX, state.rapture > 0);
+    }
+
+    /* The Deep does not heal you; it lets you take what you kill. */
+    function devour() {
+      if (state.over || state.hp <= 0) return;
+      if (state.hp >= state.maxHp) return;
+      const amount = (DEVOUR_BASE + DEVOUR_DREAD * (state.dread / DREAD_MAX))
+                   * (1 + armour.regen / 100);
+      state.hp = Math.min(state.maxHp, state.hp + amount);
+      SF.audio.sfx.devour();
+      hud.refreshVitals(state.hp, state.maxHp, state.overshield);
+    }
 
     /* ---------- co-op ---------- */
     const online = SF.net && SF.net.active;
@@ -12132,7 +12575,10 @@ void main(){
       // reported from inside, so a press on cooldown does not count
       onAbility: () => bounty('ability', 1),
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
-      onPhase(t) { state.phase = t; }
+      onPhase(t) { state.phase = t; },
+      damageScale: () => (state.rapture > 0 ? RAPTURE_DAMAGE : 1),
+      onDevourStep() { devour(); },
+      markHead(isHead) { state.lastKillHead = !!isHead; }
     });
 
     /* ---------- input ---------- */
@@ -12354,7 +12800,7 @@ void main(){
             bounty('events', 1);
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
-            hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
+            hud.say('CHOIRMASTER', name + ' resolved. Salvage is yours.', 4200);
           }
         });
         /* Open ground: a frame to cross it on, and crates worth crossing it for. */
@@ -12389,7 +12835,7 @@ void main(){
             }
             pay(kind.tierBonus ? SF.economy.PAY.vault() : SF.economy.PAY.cache());
             bounty('crates', 1);
-            hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
+            hud.say('CHOIRMASTER', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
 
@@ -12429,8 +12875,8 @@ void main(){
             complete();
           }
         });
-        hud.bossShow('THE CONDUCTOR', 'FIRST VOICE / TWO HUNDRED THOUSAND STRONG');
-        hud.bossNodes([0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8]);
+        hud.bossShow('THE FIRST LIGHT', 'FIRST TO SAY YES / TWO HUNDRED THOUSAND STRONG');
+        hud.bossNodes(SF.boss.NODE_COLOUR);   // one definition, in fps/boss.js
       }
 
       state.spawned = true;
@@ -12461,8 +12907,8 @@ void main(){
 
     /* ---------- death and respawn ---------- */
 
-    /* Ordinary sectors let the harness bring you back where you came in.
-       The boss fight does not: there, losing your vitals ends the mission. */
+    /* Ordinary sectors let the Deep put you back where you came in. The
+       reliquary floor does not: up there, losing your vitals ends the run. */
     function die() {
       if (state.over || state.dying) return;
       state.deaths++;
@@ -12472,17 +12918,23 @@ void main(){
 
       if (state.respawns <= 0) {
         hud.deathOverlay(true, 0, mission.boss
-          ? 'NO HARNESS CHARGE — THE CONDUCTOR TAKES THE FIELD'
-          : 'HARNESS SPENT');
+          ? 'THE DEEP DOES NOT REACH THIS FLOOR'
+          : 'THE DEEP LETS GO');
         return fail();
       }
+
+      state.dread = 0;
+      state.rapture = 0;
+      state.dreadIdle = 0;
+      player.setSurge(1);
+      hud.refreshDread(0, false);
 
       state.respawns--;
       state.dying = true;
       state.respawnT = 2.4;
       state.hp = 0;
       hud.refreshVitals(0, state.maxHp, 0);
-      hud.deathOverlay(true, state.respawns, 'TRAUMA HARNESS ENGAGING');
+      hud.deathOverlay(true, state.respawns, 'THE DEEP IS NOT DONE WITH YOU');
       hud.refreshHarness(state.respawns, state.maxRespawns);
       SF.audio.sfx.lose();
       player.state.shake = 3;
@@ -12626,12 +13078,12 @@ void main(){
                                   : won ? 'SECTOR CLEAR' : 'ASSET LOST';
       $('#end-title').className = won ? 'win' : 'lose';
       $('#end-sub').textContent = finale
-        ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
+        ? 'Two hundred thousand kept lives finally allowed to end. It will stay dark.'
         : won && mission.patrol
             ? `Cutter clear of ${mission.name}. ${state.events} public event${state.events === 1 ? '' : 's'} resolved.`
-        : won ? `${mission.name} secured. The route aft is open.`
-        : mission.boss ? 'No harness charge is issued for Deck Zero. Take it again from the top.'
-              : 'Every harness charge spent. Recovery Division budgets a replacement.';
+        : won ? `${mission.name} secured. The route up is open.`
+        : mission.boss ? 'The Deep does not reach the reliquary floor. Take it again from the top.'
+              : 'It has put you back as often as it intends to. Go down and ask again.';
       $('#end-stats').innerHTML = [
         [mission.patrol ? 'DESTINATION' : 'MISSION',
          mission.patrol ? mission.name + ' — ' + state.events + ' EVENTS'
@@ -12640,7 +13092,7 @@ void main(){
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
         ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
-        ['HARNESS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE ISSUED')],
+        ['RETURNS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE OFFERED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ...(state.parts ? [['RUNNER PARTS', state.parts]] : []),
         ...(takings.chits ? [['CHITS', takings.chits]] : []),
@@ -12702,7 +13154,7 @@ void main(){
       }
 
       if (state.dying) {
-        // the world holds its breath while the harness works
+        // the world holds its breath while the Deep works
         state.respawnT -= dt;
         if (state.respawnT <= 0) respawn();
         lights.update(dt, camera.position);
@@ -12715,6 +13167,26 @@ void main(){
       state.phase = Math.max(0, state.phase - dt);
       state.damageFlash = Math.max(0, state.damageFlash - dt * 2.2);
 
+      /* Dread: banked while you are killing, bleeding away while you are not.
+         Rapture spends the whole meter, so it empties on the way out. */
+      if (state.rapture > 0) {
+        state.rapture = Math.max(0, state.rapture - dt);
+        state.dread = DREAD_MAX * (state.rapture / RAPTURE_TIME);
+        if (state.rapture <= 0) {
+          state.dread = 0;
+          state.dreadIdle = 0;
+          player.setSurge(1);
+          hud.banner('THE DREAD IS SPENT');
+        }
+        hud.refreshDread(state.dread / DREAD_MAX, state.rapture > 0);
+      } else if (state.dread > 0) {
+        state.dreadIdle += dt;
+        if (state.dreadIdle > DREAD_GRACE) {
+          state.dread = Math.max(0, state.dread - DREAD_DECAY * dt);
+          hud.refreshDread(state.dread / DREAD_MAX, false);
+        }
+      }
+
       player.update(dt);
       weapon.update(dt, firing);
       lights.update(dt, camera.position);
@@ -12723,10 +13195,12 @@ void main(){
       const visibleTargets = ai.enemies.some((e) => !e.dead && ai.visible(eye, e));
       ai.step(dt, player.position, visibleTargets);
 
-      // out-of-combat regeneration keeps the pace moving
+      /* There is no resting up any more: the Deep pays out on kills (see
+         devour) and leaves only a token trickle for the walk between fights.
+         Backing off to full health is not a strategy the dark side offers. */
       state.regenT += dt;
-      if (state.regenT > 5 && state.hp < state.maxHp) {
-        state.hp = Math.min(state.maxHp, state.hp + 14 * (1 + armour.regen / 100) * dt);
+      if (state.regenT > 7 && state.hp < state.maxHp * 0.35) {
+        state.hp = Math.min(state.maxHp * 0.35, state.hp + 2.5 * (1 + armour.regen / 100) * dt);
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
@@ -12814,6 +13288,7 @@ void main(){
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
+      hud.refreshDread(0, false);
       hud.refreshHarness(state.respawns, state.maxRespawns);
       hud.objective(mission.patrol
         ? '<b>' + mission.name + '</b> CLICK TO ENGAGE'
@@ -12839,6 +13314,7 @@ void main(){
     function destroy() {
       cancelAnimationFrame(raf);
       raf = 0;
+      player.setSurge(1);            // never strand rapture's speed bonus
       /* Contracts tick over during a mission but are only banked when
          something else happens to save. Leaving any way at all — abandoning,
          a last death, or walking out of the station — has to keep them. */
@@ -12973,19 +13449,19 @@ void main(){
   /* ---------------- boot ---------------- */
 
   const BOOT_LINES = [
-    ['RECOVERY DIVISION FIELD TERMINAL — REV 9.4', 'dim'],
-    ['POST ................................ <span class="ok">PASS</span>', ''],
-    ['NEURAL HARNESS LINK ................. <span class="ok">PASS</span>', ''],
-    ['WEAPON AUTHORISATION ................ <span class="ok">GRANTED</span>', ''],
-    ['LONG-RANGE UPLINK ................... <span class="bad">NO CARRIER</span>', ''],
+    ['THE DEEP — FIRST DESCENT', 'dim'],
+    ['RECOVERY OF SUBJECT .............. <span class="ok">COMPLETE</span>', ''],
+    ['CAUSE OF DEATH ................... <span class="ok">IRRELEVANT</span>', ''],
+    ['CONSENT .......................... <span class="ok">GIVEN</span>', ''],
+    ['RETURN TO SURFACE ................ <span class="bad">NOT OFFERED</span>', ''],
     ['', ''],
-    ['MOUNTING MISSION PACKAGE 44-C ...', 'dim'],
-    ['TARGET: COLONY ARK <em>EREBUS CRADLE</em>', ''],
-    ['LAST CONTACT: 40 YEARS, 2 MONTHS', ''],
+    ['MOUNTING ASCENT ...', 'dim'],
+    ['TARGET: CATHEDRAL ARK <em>EREBUS CRADLE</em>', ''],
+    ['CONSECRATED: 40 YEARS, 2 MONTHS AGO', ''],
     ['SOULS ABOARD AT DEPARTURE: 203,000', ''],
-    ['CURRENT BROADCAST: <span class="warn">ACTIVE — UNCLASSIFIED WAVEFORM</span>', ''],
+    ['SOULS ABOARD NOW: <span class="warn">203,000 — NONE OF THEM ALIVE</span>', ''],
     ['', ''],
-    ['<span class="warn">WARNING: WAVEFORM ANALYSIS INCOMPLETE. IT IS SINGING.</span>', ''],
+    ['<span class="warn">WARNING: THE LIGHT UP THERE DOES NOT LET GO OF ANYTHING.</span>', ''],
     ['', ''],
     ['INTERFACE READY. POINT AND COMMIT.<span class="caret">▌</span>', '']
   ];
@@ -13278,7 +13754,7 @@ void main(){
         'REWARD: SALVAGE SCALES WITH THE WAVE YOU REACH.</p>' +
         `<p>${dest.brief}</p>` +
         '<p class="alert">STAND ON THE BEACON AND HOLD F TO CALL THE CUTTER. ' +
-        'HARNESS CHARGES APPLY HERE.</p>' +
+        'THE DEEP STILL RETURNS YOU HERE.</p>' +
       '</div>';
     SF.audio.sfx.open();
     show('brief');

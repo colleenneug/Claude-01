@@ -104,7 +104,22 @@
     comms:      () => { tone(1250, 0.045, 'square', 0.07); setTimeout(() => tone(950, 0.05, 'square', 0.06), 60); },
     objective:  () => { [660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.11), i * 110)); },
     pickup:     () => { tone(880, 0.07, 'square', 0.1); setTimeout(() => tone(1320, 0.09, 'square', 0.09), 70);
-                        noise(0.06, 0.1, 2600); }
+                        noise(0.06, 0.1, 2600); },
+
+    /* --- the dark side set --- */
+    /* Glass going all at once: bright, short, and downward. */
+    shatter:    () => { noise(0.22, 0.5, 6000); tone(2400, 0.16, 'triangle', 0.2, 380);
+                        setTimeout(() => noise(0.12, 0.2, 3200), 60); },
+    /* The Pale putting something back together. Rising, and unwelcome. */
+    revive:     () => { tone(210, 0.5, 'sine', 0.2, 1500); noise(0.3, 0.16, 3400);
+                        setTimeout(() => tone(1760, 0.22, 'triangle', 0.14), 260); },
+    /* Cipher freeze: a note that stops rather than ends. */
+    freeze:     () => { tone(900, 0.3, 'triangle', 0.18, 180); noise(0.16, 0.14, 900); },
+    /* Dread hitting the top. Low, wide, and pleased with itself. */
+    rapture:    () => { [110, 146, 220].forEach((f, i) => setTimeout(() => tone(f, 0.7, 'sawtooth', 0.2), i * 70));
+                        noise(0.6, 0.24, 420); },
+    /* Devour: taking something back out of a body. */
+    devour:     () => { tone(420, 0.16, 'sine', 0.13, 120); noise(0.1, 0.12, 700); }
   };
 
   SF.audio = {
