@@ -487,7 +487,42 @@ void Hud::draw(int screenW, int screenH, const State& s) {
     glm::vec4 banner = won ? glm::vec4(0.6f, 1.0f, 0.75f, 0.98f) : glm::vec4(1.0f, 0.55f, 0.5f, 0.98f);
     rect(0, cy - 46, (float)screenW, 92, glm::vec4(0, 0, 0, 0.5f));
     textCentered(cx, cy - 28, won ? "MISSION COMPLETE" : "MISSION FAILED", 5.0f, banner);
-    textCentered(cx, cy + 22, "PRESS ENTER TO RETURN TO THE CRADLE", 2.0f, dim);
+    if (s.xpEarned > 0) {
+      char xbuf[64];
+      std::snprintf(xbuf, sizeof(xbuf), "+%d XP", s.xpEarned);
+      textCentered(cx, cy + 18, xbuf, 2.4f, glm::vec4(0.62f, 0.88f, 1.0f, 0.98f));
+      textCentered(cx, cy + 48, "PRESS ENTER TO RETURN", 2.0f, dim);
+    } else {
+      textCentered(cx, cy + 22, "PRESS ENTER TO RETURN", 2.0f, dim);
+    }
+  }
+
+  end();
+}
+
+void Hud::drawPromotion(int screenW, int screenH, const std::string& rankName,
+                        const std::string& unlockLine, int stipend, float t) {
+  if (t <= 0.0f || rankName.empty()) return;
+  begin(screenW, screenH);
+
+  const float a = std::clamp(t, 0.0f, 1.0f);   // the last second is the fade
+  const float cx = screenW * 0.5f;
+  const float top = screenH * 0.14f;
+
+  rect(0, top, (float)screenW, 132, glm::vec4(0.02f, 0.05f, 0.08f, 0.82f * a));
+  rect(0, top, (float)screenW, 2, glm::vec4(0.40f, 0.78f, 1.0f, 0.95f * a));
+  rect(0, top + 130, (float)screenW, 2, glm::vec4(0.40f, 0.78f, 1.0f, 0.95f * a));
+
+  textCentered(cx, top + 18, "PROMOTED", 2.0f, glm::vec4(0.62f, 0.88f, 1.0f, 0.9f * a));
+  textCentered(cx, top + 44, rankName, 5.0f, glm::vec4(0.95f, 0.98f, 1.0f, 0.98f * a));
+  if (!unlockLine.empty()) {
+    wrappedCentered(cx, top + 92, screenW * 0.7f, unlockLine, 1.7f,
+                    glm::vec4(0.70f, 0.80f, 0.90f, 0.9f * a), 22.0f);
+  }
+  if (stipend > 0) {
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "+%d CHITS", stipend);
+    textCentered(cx, top + 114, buf, 1.8f, glm::vec4(0.95f, 0.85f, 0.35f, 0.95f * a));
   }
 
   end();
@@ -777,17 +812,54 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
   std::snprintf(buf, sizeof(buf), "%d CHITS", profile.chits);
   float chitsW = textWidth(buf, 2.6f);
   text(screenW - 48 - chitsW, 42, buf, 2.6f, gold);
-  rect(x, 96, screenW - 96.0f, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.5f));
 
-  float y = 118.0f;
+  // ---- rank, under the chits: where you are on the ladder and how far the
+  // next rung is. A progression you cannot see the shape of is a number.
+  const int rankIdx = content.rankIndexForXp(profile.xp);
+  if (rankIdx >= 0) {
+    const std::vector<RankDef>& ladder = content.ranks();
+    const RankDef& now = ladder[(size_t)rankIdx];
+    const RankDef* next = rankIdx + 1 < (int)ladder.size() ? &ladder[(size_t)rankIdx + 1] : nullptr;
+
+    float rw = textWidth(now.name, 2.0f);
+    text(screenW - 48 - rw, 68, now.name, 2.0f, glm::vec4(0.62f, 0.88f, 1.0f, 0.98f));
+
+    const float barW = 190.0f, barX = screenW - 48.0f - barW;
+    rect(barX, 90, barW, 5, glm::vec4(0.16f, 0.20f, 0.26f, 0.9f));
+    if (next) {
+      float span = (float)std::max(1, next->xp - now.xp);
+      float frac = std::clamp((float)(profile.xp - now.xp) / span, 0.0f, 1.0f);
+      rect(barX, 90, barW * frac, 5, glm::vec4(0.40f, 0.78f, 1.0f, 0.95f));
+      std::snprintf(buf, sizeof(buf), "%d / %d XP", profile.xp, next->xp);
+    } else {
+      rect(barX, 90, barW, 5, glm::vec4(0.95f, 0.82f, 0.35f, 0.95f));
+      std::snprintf(buf, sizeof(buf), "%d XP - TOP OF THE LADDER", profile.xp);
+    }
+    float xw = textWidth(buf, 1.5f);
+    text(screenW - 48 - xw, 100, buf, 1.5f, dim);
+  }
+
+  rect(x, 120, screenW - 96.0f, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.5f));
+
+  float y = 140.0f;
   const float rowH = 30.0f;
 
   // One row per item: a status pip, the name, and either its cost or what
   // it does. The selected item in each category gets a caret and a lit
   // backing bar — the keyboard-only hub (Hub.h) needs an unmistakable
   // "this is what 1/2/3 will act on next" cue.
+  // What rank an item is released at, as a name, or empty if it is either
+  // unrestricted or already reached. Shown in place of the price, because a
+  // price you cannot pay with chits is not a price.
+  auto rankGate = [&](const std::string& rankId) -> std::string {
+    if (rankId.empty() || content.rankReached(rankId, profile.xp)) return "";
+    const RankDef* r = content.rank(rankId);
+    return r ? r->name : "";
+  };
+
   auto drawCategory = [&](const char* label, char key, const std::vector<std::string>& ids, int selected,
-                           const std::string& equippedId, auto ownsFn, auto costFn, auto statFn) {
+                           const std::string& equippedId, auto ownsFn, auto costFn, auto statFn,
+                           auto rankFn) {
     std::snprintf(buf, sizeof(buf), "[%c] %s", key, label);
     text(x, y, buf, 2.0f, glm::vec4(0.75f, 0.85f, 0.95f, 0.95f));
     y += 24.0f;
@@ -798,10 +870,23 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
       bool owned = ownsFn(id);
       int cost = costFn(id);
       bool affordable = profile.chits >= cost;
-      glm::vec4 col = isEquipped ? equippedCol
-                    : owned      ? ownedCol
-                    : affordable ? lockedCol
-                                 : unaffordable;
+      std::string gate = owned ? std::string() : rankGate(rankFn(id));
+      // A doctrine's own weapon is shown to everyone — you should be able to
+      // see what the other two carry — but it says whose it is instead of a
+      // price, and it will not be sold to you.
+      if (gate.empty() && !owned) {
+        const WeaponDef* wd = content.weapon(id);
+        if (wd && !wd->classRequired.empty() && wd->classRequired != profile.classId) {
+          const ClassDef* cd = content.playerClass(wd->classRequired);
+          gate = cd ? cd->name + " ISSUE" : "NOT YOUR ISSUE";
+        }
+      }
+      const bool rankLocked = !gate.empty();
+      glm::vec4 col = isEquipped  ? equippedCol
+                    : owned       ? ownedCol
+                    : rankLocked  ? glm::vec4(0.48f, 0.42f, 0.62f, 0.85f)
+                    : affordable  ? lockedCol
+                                  : unaffordable;
 
       if (i == selected) {
         rect(x + 8, y - 4, gearRight - x - 8.0f, rowH - 4, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
@@ -815,13 +900,18 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
       std::string right;
       if (isEquipped) right = "EQUIPPED";
       else if (owned) right = "OWNED";
+      else if (rankLocked) right = gate;
       else {
         std::snprintf(buf, sizeof(buf), "%d CHITS", cost);
         right = buf;
       }
       float rw = textWidth(right, 1.8f);
       text(gearRight - rw, y + 4, right, 1.8f,
-           isEquipped ? equippedCol : (owned ? ownedCol : (affordable ? gold : unaffordable)));
+           isEquipped   ? equippedCol
+           : owned      ? ownedCol
+           : rankLocked ? glm::vec4(0.72f, 0.60f, 0.95f, 0.95f)
+           : affordable ? gold
+                        : unaffordable);
       y += rowH;
     }
     y += 12.0f;
@@ -833,6 +923,10 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                [&](const std::string& id) {
                  const WeaponDef* d = content.weapon(id);
                  return d ? d->name : id;
+               },
+               [&](const std::string& id) {
+                 const WeaponDef* d = content.weapon(id);
+                 return d ? d->rankRequired : std::string();
                });
   drawCategory("ARMOUR", '2', hub.armorIds(), hub.armorIndex(), profile.equippedArmor,
                [&](const std::string& id) { return profile.ownsArmor(id); },
@@ -840,6 +934,10 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                [&](const std::string& id) {
                  const ArmorDef* d = content.armor(id);
                  return d ? d->name : id;
+               },
+               [&](const std::string& id) {
+                 const ArmorDef* d = content.armor(id);
+                 return d ? d->rankRequired : std::string();
                });
   drawCategory("SHADER", '3', hub.cosmeticIds(), hub.cosmeticIndex(), profile.equippedCosmetic,
                [&](const std::string& id) { return profile.ownsCosmetic(id); },
@@ -847,6 +945,10 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                [&](const std::string& id) {
                  const CosmeticDef* d = content.cosmetic(id);
                  return d ? d->name : id;
+               },
+               [&](const std::string& id) {
+                 const CosmeticDef* d = content.cosmetic(id);
+                 return d ? d->rankRequired : std::string();
                });
 
   // ---- the route, in a column of its own. Twenty-two destinations do not

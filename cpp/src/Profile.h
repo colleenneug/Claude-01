@@ -10,9 +10,22 @@
 // — the same "key = value" format Content.cpp reads, not JSON, for the
 // same reason: nothing here needs a library this project has no offline
 // way to fetch.
+class Content;
+
 struct Profile {
   std::string name = "Operative";
   int chits = 100;
+
+  // Career experience. The one number on a record that only ever goes up:
+  // chits are spent and gear is swapped, but what you have actually done is
+  // this. Rank is derived from it (Content::rankIndexForXp) rather than
+  // stored, so re-balancing the ladder re-ranks every existing save instead
+  // of leaving old records stranded on a rung that no longer exists.
+  int xp = 0;
+  // The highest rung this record has been paid the stipend for. Stored,
+  // because a promotion pays out once and "has xp past this rung" would pay
+  // again every time the file was loaded.
+  int rankPaid = 0;
 
   // The doctrine this record was created under (content/classes/<id>.cfg).
   // Fixed for the record's life: it decides the issued weapon, the field
@@ -52,7 +65,23 @@ struct Profile {
   // chits — but only the first time; replaying a cleared mission doesn't
   // re-pay it. Returns the amount actually paid (0 on a repeat).
   int recordMissionComplete(const std::string& missionId, int reward);
+
+  // Adds career experience. Returns the amount added, which is never
+  // negative — nothing in this game takes experience away.
+  int addXp(int amount);
 };
+
+// Brings `p`'s rank up to date with its experience and pays out the stipend
+// for every rung reached since the last time this ran — several at once, if a
+// long mission carried the record past two of them.
+//
+// Lives here rather than on Profile because it needs the ladder, and Profile
+// is deliberately a plain record that knows nothing about content. Returns
+// the rank index now held, or -1 when the content tree has no ladder at all.
+// `promotedTo`, when given, is filled with the name of the highest rank newly
+// reached — empty if nothing changed — so the caller can say so.
+int settleRank(Profile& p, const Content& content, std::string* promotedTo = nullptr,
+               int* stipendPaid = nullptr);
 
 class ProfileStore {
 public:

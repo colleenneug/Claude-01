@@ -319,6 +319,13 @@ int main(int argc, char** argv) {
   bool prevTalkEsc = false;
   bool prevSkipKey = false;
   bool wasCutscenePlaying = false;
+  // The last promotion, and how long it stays on screen. Shown wherever you
+  // land after the mission that earned it — a promotion that flashes past on
+  // the debrief you are already dismissing is a promotion nobody sees.
+  std::string promotedTo;
+  const RankDef* promotedRank = nullptr;
+  int stipendPaid = 0;
+  float promotionT = 0.0f;
   // Who you are mid-conversation with, and which of their lines is up.
   // Points into Station's own crew list, which outlives every frame.
   const Crew::Person* talkingTo = nullptr;
@@ -900,6 +907,7 @@ int main(int argc, char** argv) {
       hs.objective = game.objectiveText();
       hs.objectiveHint = game.objectiveHint();
       hs.armed = game.armed();
+      hs.xpEarned = game.xpEarned();
       hs.harnessLeft = game.harnessLeft();
       hs.harnessMax = game.harnessMax();
       hs.downed = game.downed();
@@ -975,7 +983,8 @@ int main(int argc, char** argv) {
             "{\"appState\":\"mission\",\"frame\":%d,\"missionState\":\"%s\",\"playerHp\":%.2f,"
             "\"maxHp\":%.2f,\"class\":\"%s\",\"weapon\":\"%s\",\"magSize\":%d,"
             "\"playerPos\":[%.2f,%.2f,%.2f],\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,"
-            "\"bossAlive\":%s,\"chits\":%d,\"inCutscene\":%s,\"harness\":%d}\n",
+            "\"bossAlive\":%s,\"chits\":%d,\"inCutscene\":%s,\"harness\":%d,"
+            "\"xp\":%d,\"careerXp\":%d,\"rank\":\"%s\"}\n",
             frame + 1,
             game.missionState() == MissionState::Complete ? "complete"
               : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
@@ -984,7 +993,11 @@ int main(int argc, char** argv) {
             game.weaponName().c_str(), w.magSize,
             game.player().position.x, game.player().position.y, game.player().position.z,
             w.ammoInMag, w.reserveAmmo, game.waveProgress(), game.bossAlive() ? "true" : "false",
-            profile.chits, game.cutscenePlaying() ? "true" : "false", game.harnessLeft());
+            profile.chits, game.cutscenePlaying() ? "true" : "false", game.harnessLeft(),
+            game.xpEarned(), profile.xp + game.xpUnbanked(),
+            hubContent.rankIndexForXp(profile.xp + game.xpUnbanked()) >= 0
+                ? hubContent.ranks()[(size_t)hubContent.rankIndexForXp(profile.xp + game.xpUnbanked())].name.c_str()
+                : "");
           std::fclose(f);
         }
       }
@@ -1012,6 +1025,17 @@ int main(int argc, char** argv) {
           // Washing out of Block D therefore puts you back at the top of
           // Block D — there is nothing in orbit with your name on it yet.
           bool noShipYet = game.isTutorial() && profile.completedMissions.empty();
+          // Bank what the mission earned, then settle the ladder: a run that
+          // carried the record past two rungs is promoted twice and paid for
+          // both. Done here, at the one point every mission leaves through,
+          // so quitting a debrief pays exactly what finishing it does.
+          profile.addXp(game.xpUnbanked());
+          game.bankXp();
+          int nowRank = settleRank(profile, hubContent, &promotedTo, &stipendPaid);
+          promotedRank = (!promotedTo.empty() && nowRank >= 0)
+                             ? &hubContent.ranks()[(size_t)nowRank]
+                             : nullptr;
+          promotionT = promotedTo.empty() ? 0.0f : 6.0f;
           ProfileStore::save(profile, savePath);
           game.destroy();
           hub.init(hubContent, profile);   // refresh: reward chits / new completion just landed
@@ -1052,6 +1076,18 @@ int main(int argc, char** argv) {
         prevReturnKey = false;
       }
     }
+    // A promotion sits over whatever screen you landed on, and counts down
+    // in real time rather than in frames so it lasts the same six seconds on
+    // every machine.
+    if (promotionT > 0.0f) {
+      glfwGetFramebufferSize(window, &width, &height);
+      const RankDef* r = promotedRank ? promotedRank : nullptr;
+      hud.drawPromotion(width, height, promotedTo, r ? r->unlock : std::string(),
+                        stipendPaid, promotionT);
+      promotionT = std::max(0.0f, promotionT - dt);
+      if (promotionT <= 0.0f) { promotedTo.clear(); promotedRank = nullptr; stipendPaid = 0; }
+    }
+
     frame++;
 
     if (dumpPath && maxFrames > 0 && frame >= maxFrames) {

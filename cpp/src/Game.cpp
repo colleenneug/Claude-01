@@ -34,6 +34,8 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   commsHold_ = 0.0f;
   missionT_ = 0.0f;
   commsClock_ = 0.0f;
+  xpEarned_ = 0;
+  xpBanked_ = 0;
   for (bool& fired : triggerFired_) fired = false;
   bossName_.clear();
   pickups_.clear();
@@ -848,7 +850,15 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       // reasonable future addition but wasn't asked for. A kill does drop
       // resupply, without which a long mission is unwinnable on the fixed
       // starting ammo (see dropPickup).
-      if (killed) dropPickup(h.pos, killCount_++);
+      if (killed) {
+        // ...and the experience. Every enemy archetype has carried an `xp`
+        // figure in its content file since they were written; this is what
+        // reads it. Banked in the mission and handed to the record when the
+        // mission ends, so a run you walk out of pays what you actually did
+        // rather than nothing.
+        xpEarned_ += (int)h.type->xp;
+        dropPickup(h.pos, killCount_++);
+      }
     }
     // Kick the viewmodel back on every trigger pull, whether or not it hit.
     // Scaled by the round's damage against a rifle's, so a breaching shotgun
@@ -993,6 +1003,10 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     if (wavesClear && lessonDone && !bossPending_ && bossClear) {
       if (profile_ && !rewardApplied_) {
         profile_->recordMissionComplete(mission_.id, mission_.rewardChits);
+        // The clearance bonus, on top of what the fight itself paid. Paid
+        // every time, unlike the chits: replaying a mission you have already
+        // cleared is still work, and rank is the record of work done.
+        xpEarned_ += mission_.rewardXp;
         rewardApplied_ = true;
       }
       missionState_ = MissionState::Complete;

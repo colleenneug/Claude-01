@@ -1,4 +1,5 @@
 #include "Profile.h"
+#include "Content.h"
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -48,11 +49,46 @@ void Profile::ensureStarterGear() {
   if (equippedCosmetic.empty()) equippedCosmetic = "default";
 }
 
+int Profile::addXp(int amount) {
+  if (amount <= 0) return 0;
+  xp += amount;
+  return amount;
+}
+
 int Profile::recordMissionComplete(const std::string& missionId, int reward) {
   if (hasCompleted(missionId)) return 0;
   completedMissions.push_back(missionId);
   chits += reward;
   return reward;
+}
+
+int settleRank(Profile& p, const Content& content, std::string* promotedTo,
+               int* stipendPaid) {
+  if (promotedTo) promotedTo->clear();
+  if (stipendPaid) *stipendPaid = 0;
+
+  const std::vector<RankDef>& ladder = content.ranks();
+  if (ladder.empty()) return -1;
+
+  int now = content.rankIndexForXp(p.xp);
+  if (now < 0) return -1;
+  // Clamp: a save written against a longer ladder must not index past the
+  // end of a shorter one, and must not be paid a second time for rungs that
+  // no longer exist either.
+  if (p.rankPaid > (int)ladder.size() - 1) p.rankPaid = (int)ladder.size() - 1;
+  if (p.rankPaid < 0) p.rankPaid = 0;
+
+  int paid = 0;
+  for (int i = p.rankPaid + 1; i <= now; i++) {
+    p.chits += ladder[i].stipend;
+    paid += ladder[i].stipend;
+  }
+  if (now > p.rankPaid) {
+    if (promotedTo) *promotedTo = ladder[now].name;
+    p.rankPaid = now;
+  }
+  if (stipendPaid) *stipendPaid = paid;
+  return now;
 }
 
 Profile ProfileStore::load(const std::string& path) {
@@ -93,6 +129,8 @@ Profile ProfileStore::load(const std::string& path) {
     try {
       if (k == "name") p.name = v;
       else if (k == "chits") p.chits = std::stoi(v);
+      else if (k == "xp") p.xp = std::stoi(v);
+      else if (k == "rank_paid") p.rankPaid = std::stoi(v);
       else if (k == "class") p.classId = v;
       else if (k == "equipped_weapon") p.equippedWeapon = v;
       else if (k == "equipped_armor") p.equippedArmor = v;
@@ -127,6 +165,8 @@ bool ProfileStore::save(const Profile& p, const std::string& path) {
 
   f << "name = " << p.name << "\n";
   f << "chits = " << p.chits << "\n";
+  f << "xp = " << p.xp << "\n";
+  f << "rank_paid = " << p.rankPaid << "\n";
   f << "class = " << p.classId << "\n";
   f << "equipped_weapon = " << p.equippedWeapon << "\n";
   f << "equipped_armor = " << p.equippedArmor << "\n";

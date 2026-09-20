@@ -166,6 +166,15 @@ public:
   // your feet where you fell, a few times, which is how the browser build
   // does it too (src/js/fps/campaign.js: three charges, none for the boss).
   // Running out of charges is the only thing that fails a mission.
+  // Career experience earned in this mission so far, and how much of it has
+  // already been handed to the record. The split exists because a mission
+  // can be left at any point — you walk out of a debrief, or the harness
+  // runs out — and the experience for what you actually killed should not
+  // depend on which of those happened.
+  int xpEarned() const { return xpEarned_; }
+  int xpUnbanked() const { return xpEarned_ - xpBanked_; }
+  void bankXp() { xpBanked_ = xpEarned_; }
+
   int harnessLeft() const { return harnessLeft_; }
   int harnessMax() const { return harnessMax_; }
   // Seconds left on the ground before you are back up, or 0 when you are up.
@@ -246,6 +255,7 @@ private:
   std::string pickupNote_;
   float pickupNoteT_ = 0.0f;
   float abilityCool_ = 0.0f;
+  int xpEarned_ = 0, xpBanked_ = 0;
   int harnessMax_ = 3, harnessLeft_ = 3;
   float downT_ = 0.0f;              // counts down while you are on the ground
   glm::vec3 fellAt_{0.0f};          // where you went down

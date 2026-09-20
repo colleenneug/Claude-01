@@ -47,6 +47,16 @@ sys.exit(0 if ($expr) else 1)
   fi
 }
 
+checkfile() {  # checkfile <name> <file> <grep -E pattern>
+  local name="$1" file="$2" pattern="$3"
+  if [ -f "$file" ] && grep -Eq "$pattern" "$file"; then
+    echo "  PASS $name"; PASS=$((PASS+1))
+  else
+    echo "  FAIL $name  (no '$pattern' in $(basename "$file"))"
+    FAIL=$((FAIL+1))
+  fi
+}
+
 # Flying to a world and landing on it drops you into that world's mission.
 # Keep the frame budget just past the landing: run it long enough and the
 # mission itself ends (the scripted pilot doesn't shoot back) and drops you
@@ -183,6 +193,36 @@ check "the block plays end to end" "$OUT/tutorial.json" \
 # which means the sidearm was found in the bunks and swapped at the bench.
 check "you start unarmed and end up issued" "$OUT/tutorial.json" \
       "s['weapon'] == 'MAUL-12' and s['magSize'] == 6"
+
+# Rank. Every enemy archetype has carried an `xp` figure in its content file
+# since they were written and nothing read it; now clearing the block pays
+# what its hostiles are worth plus the mission's own clearance bonus, and the
+# ladder resolves that into a rung. Asserted on the run that already walked
+# the whole building rather than on one of its own.
+check "the block pays experience and a rank" "$OUT/tutorial.json" \
+      "s['xp'] >= 400 and s['careerXp'] >= 400 and s['rank'] == 'STRIDER THIRD CLASS'"
+
+# ...and a promotion pays its stipend, once. Seeded just under the second
+# rung — run() points at a save file per check and does not delete it, so
+# writing one first is how a check starts from a record with a history
+# instead of from a fresh one.
+cat > "$OUT/save-promo.txt" <<'SEED'
+name = Operative
+chits = 100
+xp = 380
+rank_paid = 0
+class = bulwark
+equipped_weapon = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_armor patrol_vest
+owned_cosmetic default
+SEED
+run "$OUT/promo.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
+    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission breach
+checkfile "a promotion is recorded once" "$OUT/save-promo.txt" "^rank_paid = 1$"
+checkfile "a promotion pays its stipend" "$OUT/save-promo.txt" "^chits = 2[0-9][0-9]$"
 
 # Nothing is armed before you are: forty frames in you are still empty-handed
 # and the opening cutscene is running.

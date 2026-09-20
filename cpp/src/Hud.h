@@ -113,6 +113,11 @@ public:
 
     // The trauma harness: how many charges are left, and whether you are
     // on the ground right now waiting for one.
+    // Career experience banked in this mission so far — shown on the
+    // debrief, because a number that only goes up should be visible the
+    // moment it went up.
+    int xpEarned = 0;
+
     int harnessLeft = 0, harnessMax = 0;
     bool downed = false;
     float downedFor = 0.0f, downedMax = 1.0f;
@@ -142,6 +147,13 @@ public:
   // cleared once). The white outline marks the currently-cycling-through
   // selection in each row, which is not necessarily the equipped item.
   void drawHub(int screenW, int screenH, const Content& content, const Hub& hub, const Profile& profile);
+
+  // A promotion, over whatever is already on screen. Drawn wherever you
+  // happen to land after the mission that earned it rather than on the
+  // debrief you are in the middle of dismissing — a promotion nobody sees
+  // is not a promotion. `t` counts down; it fades out over the last second.
+  void drawPromotion(int screenW, int screenH, const std::string& rankName,
+                     const std::string& unlockLine, int stipend, float t);
 
   // Walking around the Cradle: where you are, what you can walk up to, and
   // the controls. Deliberately sparse — the station is the one place in the

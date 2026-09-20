@@ -67,7 +67,12 @@ void Hub::cycleWeapon() {
     return;
   }
   const WeaponDef* def = content_->weapon(id);
-  if (def && profile_->chits >= def->cost) {
+  // Rank first, then price. Something released above your rank is shown but
+  // not sold: the ladder is supposed to be visible from the counter.
+  const bool rightDoctrine =
+      !def || def->classRequired.empty() || def->classRequired == profile_->classId;
+  if (def && rightDoctrine && content_->rankReached(def->rankRequired, profile_->xp) &&
+      profile_->chits >= def->cost) {
     profile_->chits -= def->cost;
     profile_->ownedWeapons.push_back(id);
     profile_->equippedWeapon = id;
@@ -85,7 +90,8 @@ void Hub::cycleArmor() {
     return;
   }
   const ArmorDef* def = content_->armor(id);
-  if (def && profile_->chits >= def->cost) {
+  if (def && content_->rankReached(def->rankRequired, profile_->xp) &&
+      profile_->chits >= def->cost) {
     profile_->chits -= def->cost;
     profile_->ownedArmor.push_back(id);
     profile_->equippedArmor = id;
@@ -101,7 +107,8 @@ void Hub::cycleCosmetic() {
     return;
   }
   const CosmeticDef* def = content_->cosmetic(id);
-  if (def && profile_->chits >= def->cost) {
+  if (def && content_->rankReached(def->rankRequired, profile_->xp) &&
+      profile_->chits >= def->cost) {
     profile_->chits -= def->cost;
     profile_->ownedCosmetics.push_back(id);
     profile_->equippedCosmetic = id;

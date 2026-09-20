@@ -96,6 +96,11 @@ struct MissionDef {
   std::string bossId;       // empty = no boss
   float bossHpMultiplier = 1.0f;
   int rewardChits = 40;     // paid out once, on first completion — see Profile
+  // Career experience for clearing it, on top of what the hostiles in it are
+  // worth. Paid every time, not just the first: replaying a mission is still
+  // work, and rank is the record of work done rather than of ground covered
+  // once.
+  int rewardXp = 120;
   std::vector<CommsBeat> comms;
   // Position in the campaign route down the ark, 1..N, or 0 for a mission
   // that is not part of it (a planet's patrol, a debug fixture). The route is
@@ -149,6 +154,23 @@ struct MissionDef {
   float sunIntensity = 3.4f;
 };
 
+// content/ranks/<id>.cfg — one rung of the Strider ladder. The ladder is
+// ordered by `xp`, not by a number in a list somewhere, so adding a rank
+// between two others is a file with an xp figure between theirs.
+//
+// Rank is the one thing in this game that only ever goes up. Chits are spent
+// and gear is swapped; what a record actually accumulates is the experience
+// under it, and every hostile archetype has carried an `xp` figure in its
+// content file since the enemies were written — this is what finally reads
+// them.
+struct RankDef {
+  std::string id, name;
+  int xp = 0;           // total career experience this rank begins at
+  int stipend = 0;      // chits paid once, on promotion
+  std::string blurb;    // one line of who you are at this rank
+  std::string unlock;   // one line of what it opens up
+};
+
 // content/weapons/<id>.cfg — equipping one (see Game::equipWeapon) sets
 // these directly onto the live Weapon instance.
 struct WeaponDef {
@@ -178,6 +200,19 @@ struct WeaponDef {
   // in the content file; left unset, it is derived from the ballistics, so a
   // drop that adds a fourth shotgun gets a shotgun without touching code.
   std::string shape;
+
+  // The rank this is released at, as a rank id (content/ranks/<id>.cfg).
+  // Empty means anyone can buy it. A quartermaster will show it to you
+  // below rank and refuse to hand it over, which is the point: you can see
+  // what the ladder is for.
+  std::string rankRequired;
+
+  // The doctrine this is issued to, as a class id, or empty for anything
+  // general issue. A doctrine's own weapon costs nothing — it is what that
+  // doctrine carries — and without this the free MAUL-12 on the Cradle's
+  // shelf is free for a Wraith too, which makes picking a doctrine a
+  // suggestion rather than a decision.
+  std::string classRequired;
 };
 
 // content/classes/<id>.cfg — a doctrine. Each one is its issued weapon, its
@@ -209,6 +244,7 @@ struct ArmorDef {
   float hpBonus = 0.0f;
   float damageReduction = 0.0f;   // 0..~0.5, fraction of incoming damage absorbed
   int cost = 0;
+  std::string rankRequired;       // see WeaponDef::rankRequired
 };
 
 // content/cosmetics/<id>.cfg — purely visual: recolours the HUD accent
@@ -218,6 +254,7 @@ struct CosmeticDef {
   std::string id, name;
   glm::vec3 accent{0.85f, 0.95f, 1.0f};
   int cost = 0;
+  std::string rankRequired;       // see WeaponDef::rankRequired
 };
 
 // content/planets/<id>.cfg — somewhere to fly to in open space. A planet
@@ -253,6 +290,19 @@ public:
   const PlanetDef* planet(const std::string& id) const;
   const ClassDef* playerClass(const std::string& id) const;
   const CrewDef* crew(const std::string& id) const;
+  const RankDef* rank(const std::string& id) const;
+
+  // The ladder, lowest first. Sorted by xp, so the order is a property of
+  // the content rather than of the filesystem.
+  const std::vector<RankDef>& ranks() const { return rankLadder_; }
+  // Which rung `xp` of career experience puts you on, as an index into
+  // ranks(). Always valid when there is a ladder at all; -1 when there is
+  // no content/ranks at all, which is what an old content tree looks like.
+  int rankIndexForXp(int xp) const;
+  // Whether `rankId` has been reached at `xp`. An unknown or empty rank id
+  // is "no requirement", so a gear file that names a rank that was removed
+  // stays buyable rather than becoming permanently unobtainable.
+  bool rankReached(const std::string& rankId, int xp) const;
 
   std::vector<std::string> planetIds() const;
   std::vector<std::string> classIds() const;
@@ -275,4 +325,5 @@ private:
   std::unordered_map<std::string, PlanetDef> planets_;
   std::unordered_map<std::string, ClassDef> classes_;
   std::unordered_map<std::string, CrewDef> crew_;
+  std::vector<RankDef> rankLadder_;   // sorted by xp, lowest first
 };

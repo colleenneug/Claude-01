@@ -215,6 +215,7 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "sun_intensity") { try { m.sunIntensity = std::stof(v); } catch (...) {} }
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
+        else if (k == "reward_xp") { try { m.rewardXp = std::stoi(v); } catch (...) {} }
       }
     }
   }
@@ -246,6 +247,8 @@ WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
       else if (k == "range") w.range = std::stof(v);
       else if (k == "pierce") w.pierce = (v == "true" || v == "1");
       else if (k == "shape") w.shape = v;
+      else if (k == "rank_required") w.rankRequired = v;
+      else if (k == "class_required") w.classRequired = v;
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());
@@ -270,6 +273,7 @@ ArmorDef parseArmor(const std::string& id, const fs::path& path) {
       else if (k == "hp_bonus") a.hpBonus = std::stof(v);
       else if (k == "damage_reduction") a.damageReduction = std::stof(v);
       else if (k == "cost") a.cost = std::stoi(v);
+      else if (k == "rank_required") a.rankRequired = v;
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());
@@ -293,6 +297,7 @@ CosmeticDef parseCosmetic(const std::string& id, const fs::path& path) {
       if (k == "name") c.name = v;
       else if (k == "accent") c.accent = parseVec3(v, c.accent);
       else if (k == "cost") c.cost = std::stoi(v);
+      else if (k == "rank_required") c.rankRequired = v;
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());
@@ -425,6 +430,35 @@ CrewDef parseCrew(const std::string& id, const fs::path& path) {
   return c;
 }
 
+RankDef parseRank(const std::string& id, const fs::path& path) {
+  RankDef r;
+  r.id = id;
+  r.name = id;
+  std::ifstream f(path);
+  if (!f) {
+    std::fprintf(stderr, "[Content] cannot open %s\n", path.string().c_str());
+    return r;
+  }
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") r.name = v;
+      else if (k == "xp") r.xp = std::stoi(v);
+      else if (k == "stipend") r.stipend = std::stoi(v);
+      else if (k == "blurb") r.blurb = v;
+      else if (k == "unlock") r.unlock = v;
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return r;
+}
+
 }  // namespace
 
 bool Content::loadAll(const std::string& dir) {
@@ -506,12 +540,50 @@ bool Content::loadAll(const std::string& dir) {
     }
   }
 
+  fs::path rankDir = root / "ranks";
+  if (fs::exists(rankDir)) {
+    rankLadder_.clear();
+    for (auto& entry : fs::directory_iterator(rankDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      rankLadder_.push_back(parseRank(entry.path().stem().string(), entry.path()));
+    }
+    // Ordered by the experience each begins at, not by filename: the ladder
+    // is a property of the content, and a directory listing is alphabetical.
+    std::sort(rankLadder_.begin(), rankLadder_.end(),
+              [](const RankDef& a, const RankDef& b) { return a.xp < b.xp; });
+  }
+
   std::printf("[Content] loaded %zu enemy type(s), %zu mission(s), %zu weapon(s), "
               "%zu armor piece(s), %zu cosmetic(s), %zu planet(s), %zu class(es), "
-              "%zu crew from %s\n",
+              "%zu crew, %zu rank(s) from %s\n",
               enemies_.size(), missions_.size(), weapons_.size(), armor_.size(),
-              cosmetics_.size(), planets_.size(), classes_.size(), crew_.size(), dir.c_str());
+              cosmetics_.size(), planets_.size(), classes_.size(), crew_.size(),
+              rankLadder_.size(), dir.c_str());
   return true;
+}
+
+const RankDef* Content::rank(const std::string& id) const {
+  for (const RankDef& r : rankLadder_) if (r.id == id) return &r;
+  return nullptr;
+}
+
+int Content::rankIndexForXp(int xp) const {
+  if (rankLadder_.empty()) return -1;
+  int best = 0;
+  for (size_t i = 0; i < rankLadder_.size(); i++) {
+    if (xp >= rankLadder_[i].xp) best = (int)i;
+  }
+  return best;
+}
+
+bool Content::rankReached(const std::string& rankId, int xp) const {
+  if (rankId.empty()) return true;
+  const RankDef* r = rank(rankId);
+  // A gear file naming a rank that no longer exists stays buyable. The
+  // alternative is an item that is permanently unobtainable because a rank
+  // was renamed, which is a worse failure than one released slightly early.
+  if (!r) return true;
+  return xp >= r->xp;
 }
 
 const ClassDef* Content::playerClass(const std::string& id) const {
