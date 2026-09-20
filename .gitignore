@@ -1,2 +1,5 @@
 # C++ native renderer build output
 cpp/build/
+
+# Engine blueprint build output
+engine/build/

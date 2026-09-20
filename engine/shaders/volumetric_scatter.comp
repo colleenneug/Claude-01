@@ -1,0 +1,78 @@
+#version 460 core
+// =============================================================================
+//  volumetric_scatter.comp — froxel-based volumetric lighting. STUB + PLAN.
+//
+//  This is the pass that produces light shafts, god rays through a window, and
+//  the glow around a muzzle flash in dusty air. It is the single largest
+//  visual upgrade available once PBR is in, because it is what connects the
+//  lights to the space between them.
+//
+//  THE ARCHITECTURE (Wronski 2014, "Volumetric Fog"): reuse the same froxel
+//  grid the light clustering already built. Three passes:
+//
+//    1. INJECTION (this shader). For every froxel, compute the medium's
+//       density and the in-scattered light reaching it from every light in
+//       that froxel's own cluster list — which is free, because the clustering
+//       pass already computed it. Write RGB in-scattering + A extinction into
+//       a 3D texture.
+//
+//    2. SCATTERING / INTEGRATION. A second pass marches the 3D texture along Z
+//       accumulating transmittance front-to-back, producing per-froxel
+//       "light accumulated between the eye and here".
+//
+//    3. APPLY. The composite pass samples the integrated volume at each
+//       pixel's depth and blends: colour = scene * transmittance + inscatter.
+//
+//  WHY FROXELS AND NOT RAYMARCHING. A per-pixel raymarch at 1080p with 64
+//  steps is 133M samples. The froxel volume at 160x90x64 is 921K, and it is
+//  temporally reprojected and jittered so the effective sample count is far
+//  higher than the resolution suggests. It is an order of magnitude cheaper
+//  and it gives transparency and particles the same volumetric response for
+//  free, because they sample the same volume.
+//
+//  PHASE FUNCTION. Use Henyey-Greenstein with g ~ 0.7 for the forward
+//  scattering that makes a light shaft read as a shaft. Isotropic scattering
+//  produces uniform haze and no shafts at all.
+//
+//  TEMPORAL. Jitter the froxel Z sample by a per-frame Halton offset and
+//  reproject the previous frame's volume; without it the froxel grid is
+//  visible as banding in any gradient.
+// =============================================================================
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image3D uScatteringVolume;
+
+layout(push_constant) uniform Params {
+    mat4  inverseViewProjection;
+    vec4  froxelDims;        // xyz = volume resolution, w = frame index
+    vec4  fogParams;         // x = density, y = anisotropy g, z = near, w = far
+    vec4  sunDirectionWS;
+    vec4  sunColour;
+} uParams;
+
+// Henyey-Greenstein. g in (-1, 1): positive is forward scattering, which is
+// what produces a visible shaft when looking toward the light.
+float phaseHG(float cosTheta, float g) {
+    float g2 = g * g;
+    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
+    return (1.0 - g2) / (4.0 * 3.14159265 * max(pow(denom, 1.5), 1e-4));
+}
+
+void main() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(coord, ivec3(uParams.froxelDims.xyz)))) return;
+
+    // TODO(1): reconstruct this froxel's world position from `coord`, using
+    //          the same exponential Z distribution as the light clustering.
+    // TODO(2): evaluate medium density — a height-fog falloff plus whatever
+    //          local fog volumes the level places.
+    // TODO(3): sun contribution, shadowed by the cascaded shadow map, times
+    //          phaseHG(dot(viewDir, sunDir), uParams.fogParams.y).
+    // TODO(4): loop this froxel's cluster light list and add each light's
+    //          in-scattering, attenuated and phase-weighted.
+    // TODO(5): jitter Z by a Halton sequence indexed on froxelDims.w and
+    //          reproject the previous frame's volume to hide the grid.
+
+    imageStore(uScatteringVolume, coord, vec4(0.0, 0.0, 0.0, 1.0));
+}

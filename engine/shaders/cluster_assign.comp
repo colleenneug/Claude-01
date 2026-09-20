@@ -1,0 +1,111 @@
+#version 460 core
+// =============================================================================
+//  cluster_assign.comp — bins lights into froxels, once per frame.
+//
+//  ONE WORKGROUP PER FROXEL. Each workgroup builds the AABB of its own froxel
+//  in view space, then strides the light list across its threads, testing
+//  sphere-vs-AABB. Hits are appended with an atomic counter into a fixed-stride
+//  slice of the output buffer.
+//
+//  WHY SPHERE-VS-AABB AND NOT SPHERE-VS-FRUSTUM. The froxel is really a
+//  frustum slab, and its AABB is a slightly loose bound — a few extra lights
+//  per froxel near the screen edges. The exact test costs six plane distances
+//  plus the well-known false-positive correction for large spheres near a
+//  corner, and buys back light counts that were already inside the per-froxel
+//  cap. Loose and cheap is the right trade here; measure before changing it.
+//
+//  DISPATCH: (tilesX, tilesY, slicesZ) workgroups of 64 threads.
+// =============================================================================
+
+layout(local_size_x = 64) in;
+
+struct GpuLight {
+    vec3  positionVS;
+    float radius;
+    vec3  colour;
+    float intensity;
+};
+
+layout(set = 0, binding = 0, std430) readonly buffer LightBuffer    { GpuLight lights[]; };
+layout(set = 0, binding = 1, std430) writeonly buffer ClusterOffsets { uvec2 clusterOffsets[]; };
+layout(set = 0, binding = 2, std430) writeonly buffer ClusterIndices { uint clusterIndices[]; };
+
+layout(push_constant) uniform Params {
+    mat4  inverseProjection;
+    uvec4 gridSize;        // x,y,z = tiles/slices, w = light count
+    vec4  depthParams;     // x = near, y = far, z = sliceScale, w = sliceBias
+    vec4  screenSize;      // xy = pixels
+    uvec4 limits;          // x = maxLightsPerCluster
+} uParams;
+
+shared uint sCount;
+shared uint sBase;
+
+// Screen pixel -> view-space ray at the near plane.
+vec3 screenToView(vec2 pixel) {
+    vec2 ndc = (pixel / uParams.screenSize.xy) * 2.0 - 1.0;
+    vec4 clip = vec4(ndc, -1.0, 1.0);
+    vec4 view = uParams.inverseProjection * clip;
+    return view.xyz / view.w;
+}
+
+// Where a ray from the eye through `p` crosses the plane z = -depth.
+vec3 intersectDepthPlane(vec3 p, float depth) {
+    return p * (depth / max(-p.z, 1e-6));
+}
+
+float sliceNearDepth(uint slice) {
+    // Inverse of slice = log2(z) * scale + bias.
+    return exp2((float(slice) - uParams.depthParams.w) / uParams.depthParams.z);
+}
+
+void main() {
+    uvec3 cluster = gl_WorkGroupID;
+    uint clusterIndex = (cluster.z * uParams.gridSize.y + cluster.y) * uParams.gridSize.x + cluster.x;
+
+    if (gl_LocalInvocationIndex == 0u) {
+        sCount = 0u;
+        sBase  = clusterIndex * uParams.limits.x;
+    }
+    barrier();
+
+    // ---- this froxel's view-space AABB
+    vec2 tileSize = uParams.screenSize.xy / vec2(uParams.gridSize.xy);
+    vec3 minPointNear = screenToView(vec2(cluster.xy) * tileSize);
+    vec3 maxPointNear = screenToView((vec2(cluster.xy) + 1.0) * tileSize);
+
+    float zNear = sliceNearDepth(cluster.z);
+    float zFar  = sliceNearDepth(cluster.z + 1u);
+
+    vec3 minNear = intersectDepthPlane(minPointNear, zNear);
+    vec3 maxNear = intersectDepthPlane(maxPointNear, zNear);
+    vec3 minFar  = intersectDepthPlane(minPointNear, zFar);
+    vec3 maxFar  = intersectDepthPlane(maxPointNear, zFar);
+
+    vec3 aabbMin = min(min(minNear, maxNear), min(minFar, maxFar));
+    vec3 aabbMax = max(max(minNear, maxNear), max(minFar, maxFar));
+
+    // ---- stride the light list across the workgroup
+    for (uint i = gl_LocalInvocationIndex; i < uParams.gridSize.w; i += gl_WorkGroupSize.x) {
+        GpuLight L = lights[i];
+
+        // Sphere vs AABB: squared distance from the centre to the closest
+        // point on the box.
+        vec3 closest = clamp(L.positionVS, aabbMin, aabbMax);
+        vec3 d = closest - L.positionVS;
+        if (dot(d, d) > L.radius * L.radius) continue;
+
+        uint slot = atomicAdd(sCount, 1u);
+        if (slot < uParams.limits.x) {
+            clusterIndices[sBase + slot] = i;
+        }
+        // Over the cap: dropped. See ClusteredLighting.h — a dynamically sized
+        // per-froxel list is not implementable here, and the 65th light in one
+        // froxel is not visible.
+    }
+    barrier();
+
+    if (gl_LocalInvocationIndex == 0u) {
+        clusterOffsets[clusterIndex] = uvec2(sBase, min(sCount, uParams.limits.x));
+    }
+}
