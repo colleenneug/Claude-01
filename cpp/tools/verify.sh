@@ -86,20 +86,27 @@ run "$OUT/lock.json" EREBUS_SLOT=1 EREBUS_SKIP_SPACE=1 EREBUS_HUB_SCRIPT=mission
 check "route stays locked ahead of your progress" "$OUT/lock.json" \
       "s['appState'] == 'hub' and s['selectedMission'] != 'spine'"
 
-# Each doctrine plays its own weapon. The Bulwark's shell is eight pellets of
-# 17 against a rifle's single 22, so a run that fires the same number of
-# rounds should not come out with the same ammo counts or the same clear time
-# — what this asserts is the cheap, checkable part: the issued weapon is the
-# doctrine's, with its own magazine.
+# A doctrine is the body it gives you, and the three are not
+# interchangeable: a Bulwark walks into the same fight with thirty more
+# points of integrity than an Oracle and takes 22% off everything that
+# reaches it. These two runs assert that the doctrine actually reached the
+# player, on a record that has not been anywhere near an armoury.
+#
+# They deliberately do *not* assert the doctrine's weapon any more. A new
+# record owns a service sidearm and nothing else — that weapon is on the
+# armoury bench in Block D — so what is in your hands here is the pistol,
+# whichever doctrine you picked. The claim that the bench hands a Bulwark a
+# shotgun is proved where it is now true: "you start unarmed and end up
+# issued", further down, which walks the block and comes out with a MAUL-12.
 run "$OUT/bulwark.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
     EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=600 -- --mission breach
-check "bulwark carries the MAUL-12" "$OUT/bulwark.json" \
-      "s['magSize'] == 6 and s['maxHp'] > 120"
+check "a bulwark takes the field as a bulwark" "$OUT/bulwark.json" \
+      "s['class'] == 'bulwark' and abs(s['maxHp'] - 124) < 0.01 and s['magSize'] == 12"
 
 run "$OUT/oracle.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=oracle EREBUS_MAX_FRAMES=60 \
     -- --mission breach
-check "oracle carries the ARC LANCE" "$OUT/oracle.json" \
-      "s['magSize'] == 24 and s['reserveAmmo'] == 168 and abs(s['maxHp'] - 94) < 0.01"
+check "an oracle takes the field as an oracle" "$OUT/oracle.json" \
+      "s['class'] == 'oracle' and abs(s['maxHp'] - 94) < 0.01 and s['magSize'] == 12"
 
 # A record with no doctrine has not been created yet and must stop and ask,
 # however it was reached — otherwise a campaign starts with no weapon, no
