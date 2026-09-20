@@ -37,11 +37,26 @@ corridor behind you while you are still looking for a weapon.
 What you are doing shows as one line, top-left, that changes as you cross
 the place — no AREA COMPLETE banner and no pause between rooms, because a
 wall of them every ten metres turns a place into a corridor of checkpoints.
-Two **cutscenes** frame it: waking up, and stepping outside. The browser
-build's read-in (`../src/js/story.js`, BRIEF 44-C) plays over the whole
-thing as comms traffic rather than as a screen you skip, and finishing it
-ships you up to the Cradle. A record that has cleared anything at all goes
-straight up.
+Three **cutscenes** frame it: waking up, stepping outside, and the lift at
+the end. The browser build's read-in (`../src/js/story.js`, BRIEF 44-C)
+plays over the whole thing as comms traffic rather than as a screen you
+skip. A record that has cleared anything at all goes straight up.
+
+**You do not have a ship yet.** That is the point of Earth: the transport
+parked on the far pan is Division's, it is lit and ramp-down from the moment
+you walk outside, and it is not yours. Clearing the pad is what gets you
+collected — the closing cutscene is somebody coming down the ramp for you
+and Kourou dropping away — and being collected is how you arrive at the
+Cradle in the first place. Wash out of the block and you wake up at the top
+of the block again, because there is nothing in orbit with your name on it
+to go back to.
+
+The pad is not the edge of the world any more, either: the site runs out to
+four hundred metres of ground with hangars, assembly buildings and service
+towers on it, hazard lights still blinking on top. It costs two dozen boxes
+and it is what makes the closing shot work — the pan used to end at its own
+perimeter wall, so a camera that climbed showed a launch site hanging in
+mid-air over blue sky.
 
 A record is created under one of **three doctrines** — BULWARK, ORACLE,
 WRAITH — and the choice is the browser build's (`../src/js/classes.js`):
@@ -113,7 +128,7 @@ a campaign with no weapon, no ability and no perk.
 | Input | Action |
 |---|---|
 | 1 / 2 / 3, or Left / Right | Pick a doctrine |
-| Enter | Confirm — the doctrine's weapon is issued free with the record |
+| Enter | Confirm — you get a service sidearm and twelve rounds, and nothing else |
 | Escape | Back to the slots |
 
 Then you're in **open space**, in your ship:
@@ -193,9 +208,15 @@ breaching shotgun than on a suppressed carbine. It is ordinary world
 geometry placed on the camera's own basis rather than a separate view-space
 pass — the whole renderer already works in world space, and a second pass
 with its own projection would need its own copy of the shadows, the fog and
-the tone map. Which of the three silhouettes gets built is read off the
-weapon's *ballistics*, not its id, so a content drop that adds a fourth
-shotgun puts a shotgun in your hands without touching the code.
+the tone map. Which silhouette gets built is one `shape =` line in the
+weapon's own file — `pistol`, `smg`, `rifle`, `carbine`, `marksman`,
+`shotgun`, `induction` — so a content drop that adds a fourth shotgun puts a
+shotgun in your hands without touching the code, and a pistol reads as a
+pistol at a glance rather than as a short rifle. Firing it kicks the view up
+and off-centre and gives most of it back over the following fifth of a
+second, throws a muzzle flash and a shake, and every round that connects
+leaves sparks at the point it hit — sold in world geometry, like everything
+else here.
 
 The window title shows frame time, mission name, player HP, ammo, wave
 progress and mission state, refreshed twice a second.
@@ -317,12 +338,17 @@ scene wake 3.2 | -1.2, 0.75, -26.1 | -1.0, 1.6, -22.0 | The alarm is sounding.
 Each line is one held shot: how long, where the camera sits, what it looks
 at, and the caption. Consecutive shots of the same scene ease into each
 other, so a slow push in is two lines rather than a keyframe format, and a
-hard cut is two shots that do not share a position. The scene called `wake`
-plays on arrival; every other one fires from the trigger box of the same
-name. The world keeps simulating underneath — the alarm keeps sounding and
-nothing walks into a frozen room — but takes no input, so you cannot walk
-out of your own establishing shot. Any key skips: a cutscene you have
-already seen is a loading screen.
+hard cut is two shots that do not share a position. Two names are special:
+`wake` plays on arrival, and `complete` plays when the mission is won.
+Every other one fires from the trigger box of the same name. The world keeps
+simulating underneath — the alarm keeps sounding and nothing walks into a
+frozen room — but takes no input, so you cannot walk out of your own
+establishing shot. Comms hold: a scene owns the whole frame, so a line that
+came due behind the letterbox was a line nobody ever saw, and the block's
+nine-second opening was swallowing the first two things Division says to
+you. Space, Enter or Escape skips — a cutscene you have already seen is a
+loading screen — and the skip is deliberately *not* "any key", because the
+key that got you into the scene is usually still held down.
 
 **`content/crew/<id>.cfg`** — somebody standing in the Cradle:
 
@@ -436,7 +462,10 @@ see `Content::loadAll` in `src/Content.cpp`.
 - **Profile** (`Profile.h/.cpp`): chits, owned/equipped weapon, armour and
   cosmetic, completed-mission list. Saved as a plain `key = value` file; a
   first run with no save file gets a fresh profile with starter gear
-  already granted, never a "no save" error state. Three **save slots**
+  already granted, never a "no save" error state. Starter gear is a service
+  sidearm and twelve rounds — nothing else. Your doctrine's weapon is not
+  issued at a desk, it is on the armoury bench in Block D, and walking over
+  it is what puts it in your inventory. Three **save slots**
   (`save1.dat` … `save3.dat`) are picked on the startup screen, which shows
   each record's chits, missions cleared and equipped weapon, or EMPTY.
   `ProfileStore::exists` backs that distinction, since `load()` deliberately
@@ -558,6 +587,16 @@ see `Content::loadAll` in `src/Content.cpp`.
   loss (player HP 0) conditions, and on a first win pays the mission's
   `reward` chits into the profile via `Profile::recordMissionComplete` (a
   repeat clear doesn't pay out again).
+- **The trauma harness** (`Game.h/.cpp`): running out of HP does not end an
+  ordinary mission. It puts you *down* — a few seconds on the floor where
+  you fell, the world still running around you and nothing you can do about
+  it — and then the harness stands you back up on the spot at 60% health,
+  with whatever was standing over you shoved back and its swing reset. Three of them per mission; the fourth time you go down is
+  the mission. Boss missions get none, because the point of a boss is that
+  it can kill you. This replaces restarting a twenty-minute sector from the
+  top because one warden caught you at the far end of it, and it is why
+  dying somewhere specific matters: you come back *there*, into the same
+  fight, not at the spawn.
 - **Pickups** (`Game.h/.cpp`): a killed hostile drops resupply — ammo, or
   health every third kill — collected by walking over it. Not decoration:
   the dig site was measurably unwinnable without it, since clearing seven
@@ -645,6 +684,11 @@ a way to prove movement, combat and mission state actually work:
 - `EREBUS_STATION_AT="x,y,z"` / `EREBUS_STATION_YAW=<deg>` — drop the player
   at a spot inside the Cradle on arrival, so a run can stand at the foot of a
   stair flight rather than only walking the spine in a straight line.
+- `EREBUS_SCENE=<name>` — roll a named cutscene on arrival instead of `wake`.
+  Writing a cutscene otherwise means playing to the trigger box that fires
+  it: twenty minutes of walking to look at four seconds of camera, and a
+  headless check of the *closing* shots would have to clear the whole block
+  first. Every shot of Block D's lift was framed with this.
 - `EREBUS_DEBUG_AUTOAIM=1` — snaps the camera onto the nearest hostile it
   can actually see, every frame. A verification aid only, **never enabled by
   default** — it exists so firing can be exercised without simulating real

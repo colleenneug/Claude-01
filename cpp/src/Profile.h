@@ -40,15 +40,13 @@ struct Profile {
   bool ownsCosmetic(const std::string& id) const { return contains(ownedCosmetics, id); }
   bool hasCompleted(const std::string& missionId) const { return contains(completedMissions, missionId); }
 
-  // Grants the starter gear (patrol_vest / default, plus a rifle) if not
-  // already owned, and equips it if nothing is currently equipped — so a
-  // brand-new profile is playable without a shop trip, and an old save
-  // that predates a new starter item still gets it.
-  //
-  // `issuedWeapon` is the doctrine's own weapon (ClassDef::weaponId), granted
-  // free and equipped with the record. Empty falls back to the service rifle,
-  // which is what a save written before classes existed has.
-  void ensureStarterGear(const std::string& issuedWeapon = "");
+  // Grants the starter gear — a service sidearm, patrol_vest, default — if
+  // not already owned, and equips it if nothing is currently equipped, so a
+  // brand-new profile is playable without a shop trip and an old save that
+  // predates a new starter item still gets it. A new record owns the sidearm
+  // and nothing else: the weapon its doctrine carries is on the armoury
+  // bench in Block D, not handed over at a desk.
+  void ensureStarterGear();
 
   // Records that `missionId` finished successfully and pays out `reward`
   // chits — but only the first time; replaying a cleared mission doesn't

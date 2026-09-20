@@ -33,6 +33,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   commsT_ = 0.0f;
   commsHold_ = 0.0f;
   missionT_ = 0.0f;
+  commsClock_ = 0.0f;
   for (bool& fired : triggerFired_) fired = false;
   bossName_.clear();
   pickups_.clear();
@@ -92,10 +93,17 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   player_.overshield = 0.0f;
   player_.overshieldMax = 0.0f;
 
+  // Three charges, and none at all in a boss fight — the browser build's
+  // rule, and the reason its last mission reads differently from the
+  // fifteen before it.
+  harnessMax_ = mission_.bossId.empty() ? 3 : 0;
+  harnessLeft_ = harnessMax_;
+  downT_ = 0.0f;
   abilityCool_ = 0.0f;
 
-  // The issued weapon is the doctrine's, unless the player has equipped
-  // something else in the armoury.
+  // Whatever is equipped — for a new record that is the service sidearm and
+  // nothing else. The doctrine's weapon is only a fallback for a save with
+  // no equipped weapon at all.
   std::string weaponId = profile.equippedWeapon;
   if (weaponId.empty() && class_) weaponId = class_->weaponId;
   const WeaponDef* wdef = content_.weapon(weaponId);
@@ -129,6 +137,12 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   recoil_ = 0.0f;
   swayX_ = swayY_ = 0.0f;
   bobT_ = 0.0f;
+  muzzleFlash_ = 0.0f;
+  shake_ = 0.0f;
+  shakeT_ = 0.0f;
+  viewKickPitch_ = viewKickYaw_ = 0.0f;
+  viewKickRecoverPitch_ = viewKickRecoverYaw_ = 0.0f;
+  impacts_.clear();
 
   const CosmeticDef* cosmetic = content_.cosmetic(profile.equippedCosmetic);
   hudAccent_ = cosmetic ? cosmetic->accent : glm::vec3(0.85f, 0.95f, 1.0f);
@@ -165,10 +179,14 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
       Pickup p;
       p.kind = PickupKind::Weapon;
       p.pos = d.pos;
-      // "@issued" is whatever this record's doctrine was given, so the rack
-      // in the armoury hands a Bulwark a shotgun and a Wraith a carbine
-      // rather than everyone the same rifle.
-      p.weaponId = d.weaponId == "@issued" ? weaponId : d.weaponId;
+      // "@issued" is the doctrine's own weapon, so the rack in the armoury
+      // hands a Bulwark a shotgun and a Wraith a carbine rather than everyone
+      // the same rifle. The doctrine's, specifically, and not whatever is
+      // equipped: with the sidearm as the starter, what is equipped when you
+      // walk into the armoury is the pistol you are there to replace.
+      p.weaponId = d.weaponId == "@issued"
+                      ? (class_ ? class_->weaponId : weaponId)
+                      : d.weaponId;
       p.note = d.note;
       pickups_.push_back(p);
     }
@@ -260,7 +278,14 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   else tutorialStep_ = TutorialStep::Done;
   // "wake" plays on arrival, which is the one scene with no box to walk
   // into: you are already in it.
-  cutscene_.play(mission_.scenes, "wake");
+  //
+  // EREBUS_SCENE=<name> rolls a different one instead. Writing a cutscene
+  // otherwise means playing to the trigger box that fires it — twenty
+  // minutes of walking to look at four seconds of camera — and a headless
+  // check of the closing shots would have to clear the whole block first.
+  const char* forceScene = std::getenv("EREBUS_SCENE");
+  cutscene_.play(mission_.scenes,
+                 forceScene && *forceScene ? std::string(forceScene) : std::string("wake"));
   fireComms(CommsTrigger::Deploy);
   return true;
 }
@@ -273,11 +298,14 @@ void Game::fireComms(CommsTrigger trigger) {
   triggerFired_[idx] = true;
   for (const CommsBeat& beat : mission_.comms) {
     if (beat.trigger != trigger) continue;
-    commsQueue_.push_back({&beat, missionT_ + beat.delay});
+    commsQueue_.push_back({&beat, commsClock_ + beat.delay});
   }
 }
 
 void Game::updateComms(float dt) {
+  // Frozen for the duration of a cutscene: see commsClock_ in Game.h.
+  if (cutscene_.playing()) return;
+  commsClock_ += dt;
   commsT_ += dt;
 
   // A line that's had its time on screen clears, so the next queued beat
@@ -290,7 +318,7 @@ void Game::updateComms(float dt) {
   if (!commsLine_.empty()) return;   // one voice on the channel at a time
 
   for (size_t i = 0; i < commsQueue_.size(); i++) {
-    if (commsQueue_[i].at > missionT_) continue;
+    if (commsQueue_[i].at > commsClock_) continue;
     const CommsBeat* beat = commsQueue_[i].beat;
     commsSpeaker_ = beat->speaker;
     commsLine_ = beat->line;
@@ -332,6 +360,12 @@ void Game::equipWeaponById(const std::string& id) {
   weaponDef_ = def;
   weaponName_ = def->name;
   armed_ = true;
+  // Found is owned. Picking your doctrine's weapon off the armoury bench is
+  // how you come to have it at all — there is no desk that issues it.
+  if (profile_ && !profile_->ownsWeapon(id)) {
+    profile_->ownedWeapons.push_back(id);
+    profile_->equippedWeapon = id;
+  }
 }
 
 void Game::fireTrigger(const std::string& id) {
@@ -502,6 +536,60 @@ void Game::updateTutorial(float dt) {
     case TutorialStep::Done:
       break;
   }
+}
+
+void Game::addImpact(const glm::vec3& at, const glm::vec3& tint) {
+  // Capped: a full-auto weapon into a wall would otherwise grow this without
+  // bound, and thirty sparks in the same square metre look like one light.
+  if (impacts_.size() >= 48) impacts_.erase(impacts_.begin());
+  Impact im;
+  im.pos = at;
+  im.tint = tint;
+  im.life = 0.22f;
+  im.seed = std::fmod((float)impacts_.size() * 37.31f + at.x * 13.7f + at.z * 7.1f, 6.2831853f);
+  impacts_.push_back(im);
+}
+
+void Game::reviveAtFallPoint() {
+  // Back up where you fell. Not at the start of the level: crossing a
+  // building again because the last room went badly is a punishment for
+  // having got that far, and the browser build's harness does not do it
+  // either.
+  player_.hp = player_.maxHp * 0.6f;
+  player_.overshield = 0.0f;
+  player_.velocity = glm::vec3(0.0f);
+  player_.position = fellAt_;
+  player_.eyeHeight = 1.68f;
+  level_.resolve(player_.position, player_.radius, player_.height);
+
+  // Push whatever was standing over you off, and put its attack timer back.
+  // Standing up inside a thrall's swing is not a second chance.
+  const float clearRadius = 4.5f;
+  for (Hostile& h : hostiles_) {
+    if (!h.alive() || h.state == HostileState::Dying) continue;
+    glm::vec3 d = h.pos - player_.position;
+    d.y = 0.0f;
+    float dist = glm::length(d);
+    if (dist > clearRadius) continue;
+    glm::vec3 away = dist > 1e-3f ? d / dist : glm::vec3(1.0f, 0.0f, 0.0f);
+    h.pos = player_.position + away * clearRadius;
+    level_.resolve(h.pos, h.type->radius, h.type->height);
+    h.cooldown = std::max(h.cooldown, h.type->attackRate * 0.8f);
+  }
+
+  // A magazine, so you are not back on your feet with an empty weapon in a
+  // room that just killed you.
+  if (armed_ && weapon_.ammoInMag == 0) {
+    int take = std::min(weapon_.magSize, weapon_.reserveAmmo);
+    weapon_.ammoInMag += take;
+    weapon_.reserveAmmo -= take;
+    weapon_.reloading = false;
+    weapon_.reloadT = 0.0f;
+  }
+
+  damageFlashT = 0.6f;
+  pickupNote_ = "HARNESS ENGAGED";
+  pickupNoteT_ = 1.6f;
 }
 
 // ---------------------------------------------------------- field ability
@@ -707,8 +795,17 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   camUp_ = glm::normalize(glm::cross(camRight_, camFwd_));
   camAim_ = camera.aim;
 
-  bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-  player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scripted);
+  const bool onTheGround = downed();
+  if (!onTheGround) {
+    bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+    player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scripted);
+  } else {
+    // Down: the camera drops to the floor and stays where you fell. You can
+    // still look around, which is the difference between being downed and
+    // being at a menu.
+    player_.velocity = glm::vec3(0.0f);
+    player_.eyeHeight += (0.42f - player_.eyeHeight) * std::min(1.0f, 6.0f * dt);
+  }
   camera.position = player_.eyePosition();
 
   weapon_.update(dt);
@@ -716,12 +813,32 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   if (armed_ && reloadHeld) weapon_.startReload();
   if (!wasReloading && weapon_.reloading) tutorialReloaded_ = true;
 
-  if (armed_ && firePressed && weapon_.canFire()) {
+  if (armed_ && !onTheGround && firePressed && weapon_.canFire()) {
     // One trigger pull can strike several hostiles — a shotgun's cone across
     // a pair of thralls, or an induction bolt through the front rank into the
     // one behind it — so this is a list, not a single hit.
     weapon_.fire(camera.position, camera.forward(), level_, hostiles_, shotBuffer_);
+
+    // The flash, and the kick the view takes. Scaled by the round's weight
+    // against a rifle's, so a breaching shell throws the sights off the
+    // target and a suppressed carbine barely moves them.
+    const float weight = weapon_.damage * (float)weapon_.pellets / 22.0f;
+    muzzleFlash_ = std::min(1.4f, 0.85f + weight * 0.10f);
+    float kick = 0.22f + weight * 0.16f;
+    // A deterministic sideways component per shot, so a burst walks rather
+    // than climbing dead straight — and walks the same way twice.
+    float side = (std::fmod((float)weapon_.ammoInMag * 7.13f, 2.0f) - 1.0f) * kick * 0.45f;
+    viewKickPitch_ -= kick;
+    viewKickYaw_ += side;
+    viewKickRecoverPitch_ -= kick;
+    viewKickRecoverYaw_ += side;
+    shake_ = std::max(shake_, 0.10f + weight * 0.05f);
+
     for (const ShotResult& shot : shotBuffer_) {
+      if (shot.hitSomething) {
+        addImpact(shot.point, shot.hitHostile ? glm::vec3(1.0f, 0.36f, 0.30f)
+                                              : glm::vec3(1.0f, 0.84f, 0.55f));
+      }
       if (!shot.hitHostile) continue;
       Hostile& h = hostiles_[shot.hostileIndex];
       bool killed = h.takeDamage(shot.damage);
@@ -757,8 +874,48 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     swayY_ = std::clamp(swayY_, -0.06f, 0.06f);
 
     recoil_ = std::max(0.0f, recoil_ - dt * 4.5f);
+    muzzleFlash_ = std::max(0.0f, muzzleFlash_ - dt * 22.0f);
     bobT_ += dt * player_.planarSpeed() * 1.5f;
   }
+
+  // ---- the view kick. Applied to the camera, then pulled back toward where
+  // the sights started: the recovery is what stops a magazine from walking
+  // the crosshair off the top of the screen and never bringing it down.
+  {
+    const float settle = std::min(1.0f, 9.0f * dt);
+    float takePitch = viewKickPitch_ * settle;
+    float takeYaw = viewKickYaw_ * settle;
+    viewKickPitch_ -= takePitch;
+    viewKickYaw_ -= takeYaw;
+    camera.pitch = std::clamp(camera.pitch + takePitch, -89.0f, 89.0f);
+    camera.yaw += takeYaw;
+
+    // ...and the other half: give back what was taken, more slowly, so the
+    // sights drift down to roughly where they were rather than snapping.
+    const float recover = std::min(1.0f, 3.2f * dt);
+    float givePitch = viewKickRecoverPitch_ * recover;
+    float giveYaw = viewKickRecoverYaw_ * recover;
+    viewKickRecoverPitch_ -= givePitch;
+    viewKickRecoverYaw_ -= giveYaw;
+    camera.pitch = std::clamp(camera.pitch - givePitch, -89.0f, 89.0f);
+    camera.yaw -= giveYaw;
+  }
+
+  // ---- screen shake: a small, fast wobble on the view, decaying. Applied
+  // after the kick so a hit landing mid-burst reads as one event.
+  if (shake_ > 0.001f) {
+    shakeT_ += dt * 47.0f;
+    float k = shake_;
+    camera.pitch = std::clamp(camera.pitch + std::sin(shakeT_ * 1.7f) * k * 0.9f, -89.0f, 89.0f);
+    camera.yaw += std::sin(shakeT_ * 2.3f + 1.1f) * k * 0.9f;
+    shake_ = std::max(0.0f, shake_ - dt * 2.4f);
+  }
+
+  // ---- sparks age out.
+  for (Impact& im : impacts_) im.life -= dt;
+  impacts_.erase(std::remove_if(impacts_.begin(), impacts_.end(),
+                                [](const Impact& im) { return im.life <= 0.0f; }),
+                 impacts_.end());
 
   // Hostiles close in from the first frame, but nothing lands a hit for
   // the first few seconds after the drop: you arrive facing an arbitrary
@@ -773,11 +930,19 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   for (auto& h : hostiles_) {
     if (!h.alive()) continue;
     bool didAttack = h.update(dt, player_.position, level_);
-    if (didAttack && !graced) {
+    // Nothing lands while a cutscene is running either. The world keeps
+    // simulating through one on purpose — the alarm keeps sounding, nothing
+    // walks into a frozen room — but you cannot move, and thirteen seconds
+    // of being shot at by a warden you are not allowed to answer is not a
+    // cutscene, it is a punishment for having reached one.
+    if (didAttack && !graced && !onTheGround && !cutscene_.playing()) {
       float dmg = h.type->damage * (1.0f - player_.damageReduction);
       player_.takeDamage(dmg);
       player_.hp = std::max(0.0f, player_.hp);
       damageFlashT = 0.4f;
+      // Being hit moves the camera. A red vignette on its own reads as a
+      // notification; the shake is what makes it a hit.
+      shake_ = std::max(shake_, std::min(0.9f, 0.22f + dmg * 0.012f));
     }
   }
   updateSite(dt);
@@ -791,10 +956,28 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
 
   if (waveProgress() >= 0.5f) fireComms(CommsTrigger::HalfCleared);
 
-  if (!player_.alive()) {
-    missionState_ = MissionState::Failed;
-    fireComms(CommsTrigger::Failed);
-  } else {
+  if (!player_.alive() && !downed()) {
+    // Down, not out — if the harness has a charge left. A boss is issued
+    // none (see init), so dying to one means taking the fight from the top.
+    if (harnessLeft_ > 0) {
+      harnessLeft_--;
+      downT_ = kDownSeconds;
+      fellAt_ = player_.position;
+    } else {
+      missionState_ = MissionState::Failed;
+      fireComms(CommsTrigger::Failed);
+    }
+  }
+
+  if (downed()) {
+    downT_ -= dt;
+    if (downT_ <= 0.0f) {
+      downT_ = 0.0f;
+      reviveAtFallPoint();
+    }
+  }
+
+  if (player_.alive() && !downed()) {
     bool wavesClear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                                   [](const Hostile& h) { return h.state == HostileState::Gone; });
     bool bossClear = bossIndex_ < 0 || hostiles_[bossIndex_].state == HostileState::Gone;
@@ -814,6 +997,10 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       }
       missionState_ = MissionState::Complete;
       fireComms(CommsTrigger::Complete);
+      // ...and the mission's closing scene, if it wrote one. Block D's is
+      // the lift: you do not own a ship, so the way off Earth is somebody
+      // coming down to collect you.
+      cutscene_.play(mission_.scenes, "complete");
     }
   }
 
@@ -845,24 +1032,39 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
   const Mesh& box = HostileGeometry::unitBox();
   const Mesh& cyl = HostileGeometry::unitCylinder();
   const Mesh& tpr = HostileGeometry::unitTaper();
+  const Mesh& sph = HostileGeometry::unitSphere();
 
-  // Which of the three silhouettes to build. Read off the ballistics rather
-  // than off the weapon's id, so a content drop that adds a fourth shotgun
-  // gets a shotgun in your hands without touching this file.
-  const bool shotgun = weaponDef_ && weaponDef_->pellets > 1;
-  const bool induction = weaponDef_ && weaponDef_->pierce;
+  // Which silhouette to build. The weapon's own `shape` decides; left unset,
+  // it is derived from the ballistics, so a content drop that adds a fourth
+  // shotgun puts a shotgun in your hands without touching this file.
+  enum class Shape { Pistol, Shotgun, Induction, Smg, Marksman, Carbine, Rifle };
+  Shape shape = Shape::Rifle;
+  if (weaponDef_) {
+    const std::string& sh = weaponDef_->shape;
+    if (sh == "pistol") shape = Shape::Pistol;
+    else if (sh == "shotgun") shape = Shape::Shotgun;
+    else if (sh == "induction") shape = Shape::Induction;
+    else if (sh == "smg") shape = Shape::Smg;
+    else if (sh == "marksman") shape = Shape::Marksman;
+    else if (sh == "carbine") shape = Shape::Carbine;
+    else if (sh == "rifle") shape = Shape::Rifle;
+    else if (weaponDef_->pellets > 1) shape = Shape::Shotgun;
+    else if (weaponDef_->pierce) shape = Shape::Induction;
+    else if (weaponDef_->magSize <= 14) shape = Shape::Pistol;
+    else if (weaponDef_->fireInterval < 0.085f) shape = Shape::Smg;
+    else if (weaponDef_->range > 80.0f) shape = Shape::Marksman;
+  }
+  const bool isPistol = shape == Shape::Pistol;
 
   // Where it sits, in the camera's own frame: right of centre, below the
   // crosshair, far enough forward to clear the near plane. Aiming pulls it
   // to the middle and closer to the eye, which is what "down the sights"
-  // means when the sights are geometry rather than an overlay.
+  // means when the sights are geometry rather than an overlay. A sidearm
+  // rides higher and closer in, the way a pistol is actually held.
   const float aim = camAim_;
-  float right = glm::mix(0.135f, 0.0f, aim);
-  float down = glm::mix(-0.112f, -0.066f, aim);
-  // Far enough out that the perspective is not extreme. A gun two hand-spans
-  // from a 68-degree lens is mostly foreshortening: pushing it out and
-  // scaling it up keeps the same size on screen with a readable shape.
-  float fwd = glm::mix(0.62f, 0.74f, aim);
+  float right = glm::mix(isPistol ? 0.115f : 0.135f, 0.0f, aim);
+  float down = glm::mix(isPistol ? -0.145f : -0.112f, isPistol ? -0.085f : -0.066f, aim);
+  float fwd = glm::mix(isPistol ? 0.50f : 0.62f, isPistol ? 0.60f : 0.74f, aim);
 
   // Walk bob, halved while aiming; sway; and the recoil kick, which pushes
   // the gun back towards the eye and tips its muzzle up.
@@ -918,8 +1120,8 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
   lit.emissiveIntensity = weapon_.primed ? 3.4f : 1.5f;
 
   // One scale for the whole gun, so its size is a single number to tune
-  // rather than thirty.
-  const float S = 1.18f;
+  // rather than thirty. A sidearm is a smaller object, not a smaller rifle.
+  const float S = isPistol ? 0.92f : 1.18f;
   auto piece = [&](const DrawItem& src, const Mesh& mesh, glm::vec3 at,
                    glm::vec3 size, glm::vec3 eulerDeg = glm::vec3(0.0f)) {
     glm::mat4 m = glm::translate(rig, at * S);
@@ -932,41 +1134,117 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
     out.push_back(it);
   };
 
-  // Shared across all three: a receiver, a pistol grip, a magazine and a
-  // stock. What changes is the barrel and what hangs off it.
-  piece(base, box, {0.0f, 0.0f, 0.0f}, {0.062f, 0.070f, 0.230f});                 // receiver
-  piece(base, box, {0.0f, -0.058f, 0.072f}, {0.044f, 0.088f, 0.050f}, {14, 0, 0});// grip
-  piece(base, box, {0.0f, -0.052f, -0.012f}, {0.040f, 0.090f, 0.062f}, {-8, 0, 0});// magazine
-  piece(base, box, {0.0f, -0.004f, 0.138f}, {0.040f, 0.052f, 0.086f});            // stock
-  piece(base, box, {0.0f, 0.046f, -0.020f}, {0.026f, 0.016f, 0.150f});            // top rail
-
-  if (shotgun) {
-    // MAUL-12: a fat bore, a second tube under it, and a pump you can see.
-    piece(base, cyl, {0.0f, 0.004f, -0.230f}, {0.052f, 0.240f, 0.052f}, {90, 0, 0});
-    piece(base, cyl, {0.0f, -0.040f, -0.200f}, {0.036f, 0.180f, 0.036f}, {90, 0, 0});
-    piece(base, box, {0.0f, -0.040f, -0.150f}, {0.056f, 0.052f, 0.070f});
-    piece(lit, cyl, {0.0f, 0.004f, -0.352f}, {0.034f, 0.008f, 0.034f}, {90, 0, 0});
-  } else if (induction) {
-    // ARC LANCE: a long thin barrel through a pair of induction rings, lit
-    // between them.
-    piece(base, tpr, {0.0f, 0.008f, -0.300f}, {0.030f, 0.380f, 0.030f}, {90, 0, 0});
-    for (int i = 0; i < 3; i++) {
-      float z = -0.190f - (float)i * 0.085f;
-      piece(base, cyl, {0.0f, 0.008f, z}, {0.070f, 0.018f, 0.070f}, {90, 0, 0});
-      piece(lit, cyl, {0.0f, 0.008f, z - 0.030f}, {0.050f, 0.010f, 0.050f}, {90, 0, 0});
-    }
-    piece(lit, box, {0.0f, 0.046f, 0.040f}, {0.020f, 0.008f, 0.090f});
+  if (isPistol) {
+    // A sidearm is a slide, a grip and almost nothing else: short, blunt,
+    // no stock and no rail. Held higher and closer than a rifle, which is
+    // most of why it reads as a pistol before you have looked at its shape.
+    piece(base, box, {0.0f, 0.0f, -0.030f}, {0.050f, 0.062f, 0.185f});      // slide
+    piece(base, box, {0.0f, -0.030f, -0.030f}, {0.044f, 0.030f, 0.160f});   // frame
+    piece(base, box, {0.0f, -0.082f, 0.052f}, {0.042f, 0.110f, 0.055f}, {18, 0, 0});  // grip
+    piece(base, box, {0.0f, -0.075f, 0.052f}, {0.032f, 0.096f, 0.040f}, {18, 0, 0});  // magazine
+    piece(base, box, {0.0f, -0.024f, 0.010f}, {0.030f, 0.022f, 0.048f});    // trigger guard
+    piece(base, cyl, {0.0f, -0.004f, -0.128f}, {0.024f, 0.060f, 0.024f}, {90, 0, 0});  // muzzle
+    piece(lit, box, {0.0f, 0.034f, 0.058f}, {0.016f, 0.006f, 0.012f});      // rear sight
+    piece(base, box, {0.0f, 0.034f, -0.100f}, {0.008f, 0.020f, 0.008f});    // front sight
   } else {
-    // WHISPER and anything else: a slim barrel inside a suppressor can.
-    piece(base, cyl, {0.0f, 0.006f, -0.190f}, {0.026f, 0.190f, 0.026f}, {90, 0, 0});
-    piece(base, cyl, {0.0f, 0.006f, -0.300f}, {0.048f, 0.150f, 0.048f}, {90, 0, 0});
-    piece(base, box, {0.0f, -0.030f, -0.170f}, {0.034f, 0.030f, 0.120f});
-    piece(lit, box, {0.0f, 0.046f, 0.030f}, {0.016f, 0.008f, 0.060f});
+    // Shared across the long guns: a receiver, a pistol grip, a magazine and
+    // a stock. What changes is the barrel and what hangs off it.
+    piece(base, box, {0.0f, 0.0f, 0.0f}, {0.062f, 0.070f, 0.230f});                 // receiver
+    piece(base, box, {0.0f, -0.058f, 0.072f}, {0.044f, 0.088f, 0.050f}, {14, 0, 0});// grip
+    piece(base, box, {0.0f, -0.052f, -0.012f}, {0.040f, 0.090f, 0.062f}, {-8, 0, 0});// magazine
+    piece(base, box, {0.0f, -0.004f, 0.138f}, {0.040f, 0.052f, 0.086f});            // stock
+    piece(base, box, {0.0f, 0.046f, -0.020f}, {0.026f, 0.016f, 0.150f});            // top rail
+
+    switch (shape) {
+      case Shape::Shotgun:
+        // A fat bore, a second tube under it, and a pump you can see.
+        piece(base, cyl, {0.0f, 0.004f, -0.230f}, {0.052f, 0.240f, 0.052f}, {90, 0, 0});
+        piece(base, cyl, {0.0f, -0.040f, -0.200f}, {0.036f, 0.180f, 0.036f}, {90, 0, 0});
+        piece(base, box, {0.0f, -0.040f, -0.150f}, {0.056f, 0.052f, 0.070f});
+        piece(lit, cyl, {0.0f, 0.004f, -0.352f}, {0.034f, 0.008f, 0.034f}, {90, 0, 0});
+        break;
+
+      case Shape::Induction:
+        // A long thin barrel through a stack of induction rings, lit between
+        // them.
+        piece(base, tpr, {0.0f, 0.008f, -0.300f}, {0.030f, 0.380f, 0.030f}, {90, 0, 0});
+        for (int i = 0; i < 3; i++) {
+          float z = -0.190f - (float)i * 0.085f;
+          piece(base, cyl, {0.0f, 0.008f, z}, {0.070f, 0.018f, 0.070f}, {90, 0, 0});
+          piece(lit, cyl, {0.0f, 0.008f, z - 0.030f}, {0.050f, 0.010f, 0.050f}, {90, 0, 0});
+        }
+        piece(lit, box, {0.0f, 0.046f, 0.040f}, {0.020f, 0.008f, 0.090f});
+        break;
+
+      case Shape::Smg:
+        // Short and stubby, with the magazine through the grip and a folding
+        // stock that is barely there. Nothing in front of the hand.
+        piece(base, cyl, {0.0f, 0.004f, -0.150f}, {0.034f, 0.150f, 0.034f}, {90, 0, 0});
+        piece(base, box, {0.0f, -0.070f, 0.066f}, {0.038f, 0.130f, 0.046f}, {12, 0, 0});
+        piece(base, box, {0.0f, 0.010f, 0.160f}, {0.020f, 0.030f, 0.070f});
+        piece(base, box, {0.0f, -0.028f, -0.120f}, {0.044f, 0.038f, 0.090f});   // fore grip
+        piece(lit, box, {0.0f, 0.046f, 0.030f}, {0.016f, 0.008f, 0.050f});
+        break;
+
+      case Shape::Marksman:
+        // Long barrel, a bipod folded under it, and a scope you can see the
+        // tube of — the one gun whose silhouette says "range" on its own.
+        piece(base, tpr, {0.0f, 0.006f, -0.330f}, {0.026f, 0.420f, 0.026f}, {90, 0, 0});
+        piece(base, box, {0.0f, -0.034f, -0.250f}, {0.028f, 0.020f, 0.150f});
+        piece(base, cyl, {0.0f, 0.086f, -0.040f}, {0.058f, 0.230f, 0.058f}, {90, 0, 0});  // scope
+        piece(base, cyl, {0.0f, 0.086f, -0.160f}, {0.070f, 0.040f, 0.070f}, {90, 0, 0});  // objective
+        piece(lit, cyl, {0.0f, 0.086f, 0.078f}, {0.040f, 0.008f, 0.040f}, {90, 0, 0});    // eyepiece
+        break;
+
+      case Shape::Carbine:
+      case Shape::Rifle:
+      default:
+        // A slim barrel inside a suppressor can for the quiet one; a plain
+        // barrel and a gas block for the service rifle.
+        piece(base, cyl, {0.0f, 0.006f, -0.190f}, {0.026f, 0.190f, 0.026f}, {90, 0, 0});
+        if (shape == Shape::Carbine) {
+          piece(base, cyl, {0.0f, 0.006f, -0.300f}, {0.048f, 0.150f, 0.048f}, {90, 0, 0});
+        } else {
+          piece(base, cyl, {0.0f, 0.006f, -0.300f}, {0.030f, 0.160f, 0.030f}, {90, 0, 0});
+          piece(base, box, {0.0f, 0.030f, -0.210f}, {0.030f, 0.034f, 0.055f});
+        }
+        piece(base, box, {0.0f, -0.030f, -0.170f}, {0.034f, 0.030f, 0.120f});
+        piece(lit, box, {0.0f, 0.046f, 0.030f}, {0.016f, 0.008f, 0.060f});
+        break;
+    }
   }
 
-  // Front and rear sights, so aiming has something to line up.
-  piece(base, box, {0.0f, 0.070f, -0.120f}, {0.010f, 0.030f, 0.010f});
-  piece(lit, box, {0.0f, 0.072f, 0.058f}, {0.026f, 0.008f, 0.010f});
+  // Front and rear sights, so aiming has something to line up. The pistol
+  // and the marksman rifle carry their own, so they are excluded here rather
+  // than ending up with two sets.
+  if (!isPistol && shape != Shape::Marksman) {
+    piece(base, box, {0.0f, 0.070f, -0.120f}, {0.010f, 0.030f, 0.010f});
+    piece(lit, box, {0.0f, 0.072f, 0.058f}, {0.026f, 0.008f, 0.010f});
+  }
+
+  // ---- muzzle flash. Bright, brief, and in front of the barrel: a shot you
+  // can see leaving the gun rather than a number changing in the corner.
+  // Three pieces, because a single quad reads as a sticker — a hot core, a
+  // wider petal, and a short streak along the bore.
+  if (muzzleFlash_ > 0.001f) {
+    float k = std::clamp(muzzleFlash_, 0.0f, 1.0f);
+    float muzzleZ = isPistol ? -0.155f
+                  : shape == Shape::Shotgun ? -0.360f
+                  : shape == Shape::Induction ? -0.500f
+                  : shape == Shape::Smg ? -0.230f
+                  : shape == Shape::Marksman ? -0.545f
+                  : -0.380f;
+    DrawItem flash = lit;
+    flash.emissive = glm::vec3(1.0f, 0.86f, 0.62f);
+    flash.emissiveIntensity = 14.0f * k;
+    piece(flash, sph, {0.0f, 0.006f, muzzleZ}, glm::vec3(0.075f, 0.075f, 0.075f) * k);
+    flash.emissiveIntensity = 7.0f * k;
+    piece(flash, box, {0.0f, 0.006f, muzzleZ - 0.02f},
+          glm::vec3(0.19f * k, 0.028f * k, 0.028f * k), {0, 0, 45.0f * k});
+    flash.emissiveIntensity = 5.0f * k;
+    piece(flash, box, {0.0f, 0.006f, muzzleZ - 0.09f},
+          glm::vec3(0.030f * k, 0.030f * k, 0.22f * k));
+  }
 }
 
 void Game::collect(float time, std::vector<DrawItem>& out) const {
@@ -974,6 +1252,29 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
   level_.collect(out);
   for (auto& h : hostiles_) h.collect(out);
   collectViewmodel(out);
+
+  // Sparks where rounds landed. World geometry rather than a screen sprite,
+  // so they are occluded by the thing they hit like everything else.
+  for (const Impact& im : impacts_) {
+    float k = std::clamp(im.life / 0.22f, 0.0f, 1.0f);
+    DrawItem it;
+    it.mesh = &HostileGeometry::unitBox();
+    it.material = MaterialType::Emissive;
+    it.tint = im.tint;
+    it.emissive = im.tint;
+    it.emissiveIntensity = 9.0f * k;
+    it.castShadow = false;
+    // Three shards on different axes, shrinking as they fade: one cube reads
+    // as a pixel, three read as something breaking.
+    for (int i = 0; i < 3; i++) {
+      float a = im.seed + (float)i * 2.094f;
+      glm::vec3 dir(std::cos(a), std::sin(a * 1.7f) * 0.6f, std::sin(a));
+      glm::mat4 m = glm::translate(glm::mat4(1.0f), im.pos + dir * (1.0f - k) * 0.22f);
+      m = glm::rotate(m, a, glm::vec3(0.3f, 1.0f, 0.2f));
+      it.model = glm::scale(m, glm::vec3(0.055f, 0.012f, 0.012f) * k);
+      out.push_back(it);
+    }
+  }
 
   // Pickups: a small emissive box, bobbing and slowly spinning so it reads
   // as an item rather than scenery, on the shared unit box every hostile

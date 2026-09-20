@@ -233,7 +233,10 @@ void Hud::draw(int screenW, int screenH, const State& s) {
       wrappedCentered(cx, screenH - bar + 22.0f, screenW * 0.72f, s.cutsceneCaption, 2.1f,
                       glm::vec4(0.92f, 0.95f, 1.0f, 0.95f * f), 26.0f);
     }
-    textCentered(cx, screenH - 28.0f, "ANY KEY TO SKIP", 1.5f,
+    // In the top bar, not the bottom one: a caption long enough to wrap onto
+    // a second line lands exactly where this used to be, and the two drew
+    // over each other.
+    textCentered(cx, bar * 0.5f - 7.0f, "SPACE TO SKIP", 1.5f,
                  glm::vec4(0.55f, 0.60f, 0.68f, 0.7f * f));
     end();
     return;
@@ -268,6 +271,20 @@ void Hud::draw(int screenW, int screenH, const State& s) {
     bool health = s.pickupNote.find("INTEGRITY") != std::string::npos;
     glm::vec4 col = health ? glm::vec4(0.45f, 0.95f, 0.55f, a) : glm::vec4(0.95f, 0.8f, 0.35f, a);
     textCentered(cx, cy + 34, s.pickupNote, 2.2f, col);
+  }
+
+  // ---- down. The screen has gone quiet and dropped to the floor, which
+  // without this reads as a crash rather than as the harness working.
+  if (s.downed) {
+    rect(0, 0, (float)screenW, (float)screenH, glm::vec4(0.35f, 0.02f, 0.02f, 0.35f));
+    textCentered(cx, cy - 50.0f, "DOWN", 6.0f, glm::vec4(1.0f, 0.86f, 0.82f, 0.95f));
+    char dbuf[64];
+    std::snprintf(dbuf, sizeof(dbuf), "TRAUMA HARNESS - %d LEFT", s.harnessLeft);
+    textCentered(cx, cy + 16.0f, dbuf, 2.2f, glm::vec4(1.0f, 0.55f, 0.48f, 0.9f));
+    float w = 260.0f;
+    rect(cx - w * 0.5f, cy + 56.0f, w, 6, glm::vec4(0.2f, 0.05f, 0.05f, 0.9f));
+    rect(cx - w * 0.5f, cy + 56.0f, w * std::clamp(1.0f - s.downedFor / std::max(0.01f, s.downedMax), 0.0f, 1.0f), 6,
+         glm::vec4(1.0f, 0.5f, 0.42f, 0.95f));
   }
 
   // ---- what you are doing, under the mission name. One line that changes
@@ -320,6 +337,15 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   std::snprintf(buf, sizeof(buf), "%d / %d", (int)std::lround(s.hp), (int)std::lround(s.maxHp));
   text(bx, by - 16, buf, 2.0f, glm::vec4(hpCol, 0.95f));
   text(bx + bw - textWidth("INTEGRITY", 1.6f), by - 15, "INTEGRITY", 1.6f, dim);
+
+  // Harness charges, as pips beside the health readout: how many more times
+  // you can go down before the mission is over. Beside rather than under,
+  // because under is where the ability bar and the doctrine line already are.
+  for (int i = 0; i < s.harnessMax; i++) {
+    bool left = i < s.harnessLeft;
+    rect(bx + 130.0f + (float)i * 13.0f, by - 12, 9, 10,
+         left ? glm::vec4(0.95f, 0.55f, 0.45f, 0.9f) : glm::vec4(0.25f, 0.16f, 0.15f, 0.8f));
+  }
 
   // ---- field ability charge, a short bar under the health bar. Green and
   // labelled with its key when it is ready, dim and filling when it is not.

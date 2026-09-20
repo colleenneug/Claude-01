@@ -14,8 +14,8 @@
 //
 // While one is playing the world keeps simulating but takes no input: the
 // alarm keeps sounding and nothing walks into a frozen room, and you cannot
-// walk out of your own establishing shot. Any key skips it, because a
-// cutscene you have already seen is a loading screen.
+// walk out of your own establishing shot. Space, Enter or Escape skips it,
+// because a cutscene you have already seen is a loading screen.
 class Cutscene {
 public:
   // Queues every shot belonging to `scene`. Does nothing, and returns false,
@@ -30,7 +30,7 @@ public:
   // it finishes, so the caller can hand control back exactly once.
   bool update(float dt, Camera& camera);
 
-  // Skips to the end. Called on any key.
+  // Skips to the end. Called on the skip key.
   void skip() { stop(); }
 
   const std::string& caption() const { return caption_; }

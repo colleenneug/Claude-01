@@ -141,6 +141,7 @@ void Weapon::fire(const glm::vec3& origin, const glm::vec3& dir, const Level& le
         r.headshot = head;
         r.hostileIndex = hit.index;
         r.damage = dmg;
+        r.point = origin + ray * hit.dist;
         out.push_back(r);
       } else {
         existing->damage += dmg;
@@ -154,6 +155,9 @@ void Weapon::fire(const glm::vec3& origin, const glm::vec3& dir, const Level& le
   if (!hitAnything && wallDist < 1e5f) {
     ShotResult r;
     r.hitSomething = true;
+    // Pulled back a little along the ray, so the spark sits on the face of
+    // the wall rather than a hair inside it where it would be invisible.
+    r.point = origin + dir * std::max(0.0f, std::min(wallDist, range) - 0.04f);
     out.push_back(r);
   }
 }

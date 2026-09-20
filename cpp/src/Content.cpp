@@ -245,6 +245,7 @@ WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
       else if (k == "spread") w.spread = std::stof(v);
       else if (k == "range") w.range = std::stof(v);
       else if (k == "pierce") w.pierce = (v == "true" || v == "1");
+      else if (k == "shape") w.shape = v;
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());

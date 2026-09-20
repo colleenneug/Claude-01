@@ -38,6 +38,15 @@ const glm::vec3 CONCRETE(0.34f, 0.33f, 0.30f);
 const glm::vec3 STRIP(0.88f, 0.93f, 1.00f);
 const glm::vec3 ALARM(1.00f, 0.42f, 0.30f);
 const glm::vec3 EXIT_SIGN(0.45f, 1.00f, 0.60f);
+// Painted panel, not bare metal. A hull at metallic 0.7 with no strong probe
+// on it goes black the moment it turns away from the sun, and every shot of
+// this ship looks at its shaded side: the sun is off the nose and the ramp
+// is at the tail.
+const glm::vec3 HULL(0.44f, 0.46f, 0.50f);
+const glm::vec3 HULL_DARK(0.25f, 0.26f, 0.29f);
+const glm::vec3 ENGINE_GLOW(0.42f, 0.74f, 1.00f);
+const glm::vec3 STROBE(1.00f, 0.32f, 0.26f);
+const glm::vec3 HOLD_LIGHT(1.00f, 0.86f, 0.62f);
 
 struct Builder {
   std::vector<Level::Part> parts;
@@ -218,9 +227,130 @@ void buildKourouBlockD(Site& s) {
     float z = 44.0f + (float)((i * 7) % 5) * 5.0f;
     b.box(x - 3.2f, x + 3.2f, 0.0f, 1.5f, z, z + 0.8f, CONCRETE, true, 0.1f, 0.85f);
   }
+  // Service pylons. Kept west of x = 16: the transport's pan starts at 22
+  // and the row used to put a five-metre concrete post straight through its
+  // port nacelle.
   for (int i = 0; i < 4; i++) {
-    float x = -24.0f + (float)i * 16.0f;
+    float x = -32.0f + (float)i * 16.0f;
     b.box(x - 1.0f, x + 1.0f, 0.0f, 5.0f, 70.0f, 72.0f, CONCRETE, true, 0.1f, 0.85f);
+  }
+
+  // Kourou, beyond the pan. The pad's perimeter wall used to be the edge of
+  // the world: from anything above head height you could see the concrete
+  // stop and blue sky start underneath it, and the closing shot — which
+  // climbs — made a launch site look like a platform hanging in mid-air.
+  // A ground plane out to four hundred metres and a scatter of buildings on
+  // it cost two dozen boxes and fix both.
+  b.box(-420, 420, -0.9f, -0.4f, -420, 440, glm::vec3(0.35f, 0.33f, 0.28f), false, 0.05f, 0.92f);
+  // It is flat, it is under everything, and it is in every cascade: casting
+  // from it buys nothing and only risks acne on itself.
+  b.parts.back().castShadow = false;
+  {
+    // Hangars, assembly buildings and towers, out where you will never walk
+    // to them. Deterministic placement: a launch site is laid out, not
+    // scattered, and a seeded rand() here would differ between runs.
+    const float far_[][5] = {
+      // x, z, half-width, half-depth, height
+      {-150.0f, 210.0f, 34.0f, 22.0f, 26.0f},
+      { -78.0f, 300.0f, 20.0f, 20.0f, 14.0f},
+      {  96.0f, 180.0f, 26.0f, 30.0f, 34.0f},
+      { 190.0f, 260.0f, 40.0f, 24.0f, 18.0f},
+      {-230.0f, 120.0f, 24.0f, 34.0f, 12.0f},
+      { 150.0f,  20.0f, 18.0f, 18.0f, 22.0f},
+      {-140.0f, -60.0f, 30.0f, 20.0f, 16.0f},
+      {  60.0f, -90.0f, 22.0f, 26.0f, 28.0f},
+    };
+    for (const auto& g : far_) {
+      b.box(g[0] - g[2], g[0] + g[2], -0.9f, g[4], g[1] - g[3], g[1] + g[3],
+            glm::vec3(0.40f, 0.39f, 0.36f), false, 0.1f, 0.85f);
+      // A service tower on the corner of each, and a hazard light on top of
+      // it: at four hundred metres that red pinprick is the only thing that
+      // says the rest of the site is still crewed.
+      float tx = g[0] + g[2] * 0.7f, tz = g[1] - g[3] * 0.7f;
+      b.box(tx - 2.2f, tx + 2.2f, -0.9f, g[4] + 16.0f, tz - 2.2f, tz + 2.2f,
+            glm::vec3(0.33f, 0.33f, 0.31f), false, 0.2f, 0.8f);
+      b.lit(tx - 1.2f, tx + 1.2f, g[4] + 16.0f, g[4] + 17.2f, tz - 1.2f, tz + 1.2f,
+            glm::vec3(1.0f, 0.30f, 0.22f), 2.6f);
+    }
+  }
+
+  // The transport, parked on the far pan with its ramp down and its hold
+  // lit, from the moment you walk outside. It is not yours and you cannot
+  // fly it — you do not have a ship yet, you have a pistol you found in a
+  // footlocker — but it is the thing Division keeps saying is holding for
+  // you, and it is visible across the whole fight so that the lift at the
+  // end is something you have been walking toward rather than a surprise.
+  //
+  // Parked nose-out (+Z) off to the right of the pan, clear of the pylons,
+  // so the walk out of the blast door puts it in frame without it standing
+  // between you and anything you have to shoot.
+  {
+    const float CX = 30.0f;
+    // Legs first: the hull floats 1.7m off the concrete and something has
+    // to be holding it there.
+    for (int sx = -1; sx <= 1; sx += 2) {
+      for (int sz = -1; sz <= 1; sz += 2) {
+        float x = CX + (float)sx * 2.6f;
+        float z = 70.0f + (float)sz * 5.4f;
+        b.box(x - 0.34f, x + 0.34f, 0.0f, 1.9f, z - 0.34f, z + 0.34f, HULL_DARK, true, 0.34f, 0.55f);
+        b.box(x - 0.85f, x + 0.85f, 0.0f, 0.2f, z - 0.85f, z + 0.85f, HULL_DARK, true, 0.30f, 0.62f);
+      }
+    }
+    // Fuselage, nose, dorsal spine, tail fin.
+    b.box(CX - 3.0f, CX + 3.0f, 1.7f, 4.0f, 62.0f, 78.0f, HULL, true, 0.30f, 0.52f);
+    b.box(CX - 2.2f, CX + 2.2f, 2.0f, 3.7f, 78.0f, 81.4f, HULL, true, 0.30f, 0.50f);
+    b.box(CX - 2.4f, CX + 2.4f, 4.0f, 4.7f, 65.0f, 75.0f, HULL_DARK, true, 0.34f, 0.55f);
+    b.box(CX - 0.4f, CX + 0.4f, 4.7f, 7.0f, 62.4f, 66.0f, HULL, true, 0.30f, 0.52f);
+    // Nacelles on their pylons, and the bells facing back down the pad.
+    for (int sx = -1; sx <= 1; sx += 2) {
+      float in = CX + (float)sx * 3.0f;
+      float out = CX + (float)sx * 7.8f;
+      b.box(std::min(in, out), std::max(in, out), 2.5f, 3.2f, 68.0f, 74.0f, HULL_DARK, true, 0.34f, 0.55f);
+      float n0 = CX + (float)sx * 5.0f, n1 = out;
+      float a = std::min(n0, n1), c = std::max(n0, n1);
+      b.box(a, c, 2.1f, 3.9f, 65.2f, 77.0f, HULL, true, 0.32f, 0.48f);
+      // The bell: a dark housing with the glow set back inside it. An
+      // emissive panel across the nacelle's whole end face does not read as
+      // an engine, it reads as a lit screen bolted to the back of the wing,
+      // which is exactly what the first pass looked like.
+      b.box(a, c, 2.1f, 3.9f, 64.6f, 65.2f, HULL_DARK, true, 0.30f, 0.60f);
+      b.lit(a + 0.75f, c - 0.75f, 2.65f, 3.35f, 64.74f, 64.86f, ENGINE_GLOW, 1.15f);
+      // Wingtip strobe, and formation lights down the nacelle's outboard
+      // side so the shaded half of the ship is not one black slab.
+      b.lit(a + 0.4f, a + 0.9f, 3.9f, 4.1f, 70.0f, 70.9f, STROBE, 2.4f);
+      float outer = (sx < 0) ? a : c;
+      for (int k = 0; k < 3; k++) {
+        float z = 67.5f + (float)k * 4.0f;
+        b.lit(outer - 0.05f, outer + 0.05f, 2.9f, 3.1f, z, z + 1.2f,
+              glm::vec3(0.70f, 0.84f, 1.00f), 0.8f);
+      }
+    }
+    // Cabin windows down both flanks.
+    for (int sx = -1; sx <= 1; sx += 2) {
+      float x = CX + (float)sx * 3.0f;
+      b.lit(x - 0.06f, x + 0.06f, 3.05f, 3.45f, 73.5f, 79.5f, glm::vec3(0.62f, 0.80f, 1.00f), 1.1f);
+    }
+    // The ramp, down on the concrete, and the hold lit behind it. This is
+    // the shot at the end of the mission: you walk up that.
+    b.box(CX - 2.2f, CX + 2.2f, 0.0f, 0.3f, 58.4f, 62.2f, HULL_DARK, true, 0.30f, 0.58f);
+    // The hold behind it, and one strip lighting it. An emissive panel the
+    // size of the whole opening does not read as light spilling out of a
+    // hold — it reads as a white billboard nailed to the back of the ship,
+    // which is exactly what it looked like the first time.
+    // The opening itself glows faintly — a hold with the lights on, seen
+    // from outside — with the strip that is doing the lighting bright above
+    // it. A flat black rectangle here is a hole in the ship, not a door.
+    b.lit(CX - 2.0f, CX + 2.0f, 0.3f, 2.5f, 61.9f, 62.1f, glm::vec3(0.52f, 0.43f, 0.33f), 0.32f);
+    b.lit(CX - 1.7f, CX + 1.7f, 2.18f, 2.34f, 61.95f, 62.08f, HOLD_LIGHT, 1.8f);
+    // Ramp lights either side of it, and a tail beacon. The sun is off the
+    // nose, so every shot that looks at the ramp is looking at the ship's
+    // shadow side: without these the beat where somebody reaches down for
+    // you happens inside a black rectangle.
+    for (int sx = -1; sx <= 1; sx += 2) {
+      float x = CX + (float)sx * 1.9f;
+      b.lit(x - 0.12f, x + 0.12f, 0.30f, 0.40f, 58.6f, 62.0f, HOLD_LIGHT, 1.4f);
+    }
+    b.lit(CX - 0.35f, CX + 0.35f, 6.6f, 6.9f, 62.5f, 63.0f, STROBE, 2.2f);
   }
 
   s.parts = std::move(b.parts);

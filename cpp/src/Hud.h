@@ -111,6 +111,12 @@ public:
     // nothing to count.
     bool armed = true;
 
+    // The trauma harness: how many charges are left, and whether you are
+    // on the ground right now waiting for one.
+    int harnessLeft = 0, harnessMax = 0;
+    bool downed = false;
+    float downedFor = 0.0f, downedMax = 1.0f;
+
     // A cutscene, if one is playing: the letterbox closes to `cutsceneFade`
     // and the caption rides the bottom bar.
     std::string cutsceneCaption;

@@ -173,6 +173,11 @@ struct WeaponDef {
   float spread = 0.0f;
   bool pierce = false;
   float range = 200.0f;
+
+  // Which silhouette it gets in your hands (Game::collectViewmodel). Set it
+  // in the content file; left unset, it is derived from the ballistics, so a
+  // drop that adds a fourth shotgun gets a shotgun without touching code.
+  std::string shape;
 };
 
 // content/classes/<id>.cfg — a doctrine. Each one is its issued weapon, its

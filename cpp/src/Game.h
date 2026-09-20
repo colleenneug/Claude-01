@@ -161,6 +161,21 @@ public:
   // string written for a player to read.
   TutorialStep tutorialStep() const { return tutorialStep_; }
 
+  // ---------- the trauma harness ----------
+  // Going down is not the end of a mission. The harness gets you back on
+  // your feet where you fell, a few times, which is how the browser build
+  // does it too (src/js/fps/campaign.js: three charges, none for the boss).
+  // Running out of charges is the only thing that fails a mission.
+  int harnessLeft() const { return harnessLeft_; }
+  int harnessMax() const { return harnessMax_; }
+  // Seconds left on the ground before you are back up, or 0 when you are up.
+  float downedFor() const { return downT_; }
+  // How long a charge takes to stand you back up. The HUD draws the
+  // countdown against it, so it lives here rather than as the same literal
+  // typed into two files.
+  static constexpr float kDownSeconds = 2.6f;
+  bool downed() const { return downT_ > 0.0f; }
+
   // ---------- the field ability ----------
   // Phase step, on Q or E: a short dash along your look direction, on a
   // cooldown. The browser build gives each class a different ability
@@ -188,6 +203,7 @@ private:
   void updatePickups(float dt);
   void updateTutorial(float dt);
   void updateSite(float dt);
+  void reviveAtFallPoint();
   void fireTrigger(const std::string& id);
   void equipWeaponById(const std::string& id);
   void setTutorialStep(TutorialStep step);
@@ -216,6 +232,12 @@ private:
   float commsT_ = 0.0f;        // seconds the current line has been up
   float commsHold_ = 0.0f;     // how long it stays up before fading
   float missionT_ = 0.0f;      // seconds since the mission started
+  // Comms run on their own clock, which stops dead while a cutscene plays.
+  // A cutscene owns the whole frame, so a line that comes due behind the
+  // letterbox is a line nobody ever sees — and the block's opening scene is
+  // nine seconds long, which was swallowing the first two things Division
+  // says to you.
+  float commsClock_ = 0.0f;
   bool triggerFired_[6] = {};  // one per CommsTrigger
   std::string bossName_;
 
@@ -224,6 +246,9 @@ private:
   std::string pickupNote_;
   float pickupNoteT_ = 0.0f;
   float abilityCool_ = 0.0f;
+  int harnessMax_ = 3, harnessLeft_ = 3;
+  float downT_ = 0.0f;              // counts down while you are on the ground
+  glm::vec3 fellAt_{0.0f};          // where you went down
   TutorialStep tutorialStep_ = TutorialStep::Move;
   std::string tutorialPrompt_, tutorialHint_;
   float tutorialProgress_ = 0.0f;
@@ -253,6 +278,33 @@ private:
   float camAim_ = 0.0f;
   // Recoil, sway and the walk bob, all in the viewmodel's own local space.
   float recoil_ = 0.0f;
+  // Decays fast — a muzzle flash you can still see a tenth of a second
+  // later reads as a lamp on the end of the barrel.
+  float muzzleFlash_ = 0.0f;
+
+  // ---------- what a shot feels like ----------
+  // Recoil is applied to the *view*, not just to the gun: a rifle that kicks
+  // the model but leaves the crosshair nailed to the target is a rifle you
+  // are watching rather than firing. The kick goes on instantly and is
+  // pulled back toward zero, so the sight settles roughly where it started
+  // instead of walking up the screen forever.
+  float viewKickPitch_ = 0.0f, viewKickYaw_ = 0.0f;
+  float viewKickRecoverPitch_ = 0.0f, viewKickRecoverYaw_ = 0.0f;
+  // Screen shake, from taking a hit or from something big going off nearby.
+  float shake_ = 0.0f;
+  float shakeT_ = 0.0f;
+
+  // A spark where a round landed. Short-lived and drawn as world geometry,
+  // so it is lit and occluded like everything else rather than being a
+  // sprite pasted over the frame.
+  struct Impact {
+    glm::vec3 pos{0.0f};
+    glm::vec3 tint{1.0f, 0.82f, 0.55f};
+    float life = 0.0f;
+    float seed = 0.0f;
+  };
+  std::vector<Impact> impacts_;
+  void addImpact(const glm::vec3& at, const glm::vec3& tint);
   float swayX_ = 0.0f, swayY_ = 0.0f;
   glm::vec3 prevFwd_{0.0f, 0.0f, -1.0f};
   float bobT_ = 0.0f;

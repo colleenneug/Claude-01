@@ -10,6 +10,9 @@ struct ShotResult {
   bool headshot = false;
   int hostileIndex = -1;
   float damage = 0.0f;
+  // Where it landed, so the caller can put a spark there. Only meaningful
+  // when hitSomething is true.
+  glm::vec3 point{0.0f};
 };
 
 // A single hitscan weapon: fixed damage, a magazine, a reload, and a fire

@@ -196,8 +196,10 @@ int main(int argc, char** argv) {
   if (classEnv && *classEnv) {
     if (const ClassDef* c = hubContent.playerClass(classEnv)) {
       profile.classId = c->id;
-      profile.ensureStarterGear(c->weaponId);
-      profile.equippedWeapon = c->weaponId;
+      // Doctrine only. The weapon that doctrine carries is not issued with
+      // the record — it is on the armoury bench in Block D — so this grants
+      // the sidearm and nothing else, exactly like the creation screen.
+      profile.ensureStarterGear();
     } else {
       std::fprintf(stderr, "[main] EREBUS_CLASS='%s' is not in content/classes, ignored\n",
                    classEnv);
@@ -316,6 +318,7 @@ int main(int argc, char** argv) {
   bool prevEngageKey = false, prevUndockKey = false, prevAbilityKey = false;
   bool prevTalkEsc = false;
   bool prevSkipKey = false;
+  bool wasCutscenePlaying = false;
   // Who you are mid-conversation with, and which of their lines is up.
   // Points into Station's own crew list, which outlives every frame.
   const Crew::Person* talkingTo = nullptr;
@@ -474,10 +477,11 @@ int main(int argc, char** argv) {
         slotsDirty = true;
       } else if ((edge(GLFW_KEY_ENTER, pEnter) || edge(GLFW_KEY_SPACE, pSpace)) && n > 0) {
         profile.classId = classIds[classIndex];
-        const ClassDef* chosen = hubContent.playerClass(profile.classId);
-        // The doctrine's weapon is issued with the record, not bought.
-        profile.ensureStarterGear(chosen ? chosen->weaponId : std::string());
-        if (chosen) profile.equippedWeapon = chosen->weaponId;
+        // Doctrine, and a service sidearm with twelve rounds in it. That is
+        // the whole of what a new record owns: the weapon your doctrine
+        // carries is in the armoury four rooms into Block D and picking it
+        // up off the bench is what puts it in your inventory.
+        profile.ensureStarterGear();
         ProfileStore::save(profile, savePath);
         enterAfterSlot();
       }
@@ -812,20 +816,28 @@ int main(int argc, char** argv) {
         camera.pitch = glm::degrees(std::asin(std::clamp(bestDir.y, -1.0f, 1.0f)));
       }
 
-      // Any key skips a cutscene — one you have already seen is a loading
-      // screen. Checked on the release edge so the key that skipped it does
-      // not also fire whatever it does in the game on the same frame.
-      if (game.cutscenePlaying()) {
-        bool anyKey = false;
-        for (int k : {GLFW_KEY_SPACE, GLFW_KEY_ENTER, GLFW_KEY_ESCAPE, GLFW_KEY_E,
-                      GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D, GLFW_KEY_F,
-                      GLFW_KEY_TAB, GLFW_KEY_LEFT_SHIFT}) {
-          if (glfwGetKey(window, k) == GLFW_PRESS) { anyKey = true; break; }
+      // Space, Enter or Escape skips a cutscene — one you have already seen
+      // is a loading screen.
+      //
+      // Two things here are the whole fix for cutscenes that were never
+      // visible at all. The skip set is deliberately *not* "any key":
+      // movement keys are held while you walk, and you walk into the trigger
+      // that starts the scene. And the edge is seeded from the live key state
+      // the moment a scene begins, because the key that got you here is still
+      // down — Enter from the doctrine screen for the opening, W through the
+      // blast door for the one outside — and an edge seeded false reads that
+      // held key as a fresh press and skips on frame one, every time.
+      {
+        bool skipDown = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS ||
+                        glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
+                        glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+        const bool nowPlaying = game.cutscenePlaying();
+        if (nowPlaying && !wasCutscenePlaying) prevSkipKey = skipDown;
+        if (nowPlaying) {
+          if (skipDown && !prevSkipKey) game.skipCutscene();
+          prevSkipKey = skipDown;
         }
-        if (anyKey && !prevSkipKey) game.skipCutscene();
-        prevSkipKey = anyKey;
-      } else {
-        prevSkipKey = false;
+        wasCutscenePlaying = nowPlaying;
       }
 
       bool aiming = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
@@ -888,6 +900,11 @@ int main(int argc, char** argv) {
       hs.objective = game.objectiveText();
       hs.objectiveHint = game.objectiveHint();
       hs.armed = game.armed();
+      hs.harnessLeft = game.harnessLeft();
+      hs.harnessMax = game.harnessMax();
+      hs.downed = game.downed();
+      hs.downedFor = game.downedFor();
+      hs.downedMax = Game::kDownSeconds;
       hs.inCutscene = game.cutscenePlaying();
       hs.cutsceneCaption = game.cutsceneCaption();
       hs.cutsceneFade = game.cutsceneFade();
@@ -958,7 +975,7 @@ int main(int argc, char** argv) {
             "{\"appState\":\"mission\",\"frame\":%d,\"missionState\":\"%s\",\"playerHp\":%.2f,"
             "\"maxHp\":%.2f,\"class\":\"%s\",\"weapon\":\"%s\",\"magSize\":%d,"
             "\"playerPos\":[%.2f,%.2f,%.2f],\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,"
-            "\"bossAlive\":%s,\"chits\":%d}\n",
+            "\"bossAlive\":%s,\"chits\":%d,\"inCutscene\":%s,\"harness\":%d}\n",
             frame + 1,
             game.missionState() == MissionState::Complete ? "complete"
               : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
@@ -966,7 +983,8 @@ int main(int argc, char** argv) {
             game.playerClass() ? game.playerClass()->id.c_str() : "",
             game.weaponName().c_str(), w.magSize,
             game.player().position.x, game.player().position.y, game.player().position.z,
-            w.ammoInMag, w.reserveAmmo, game.waveProgress(), game.bossAlive() ? "true" : "false", profile.chits);
+            w.ammoInMag, w.reserveAmmo, game.waveProgress(), game.bossAlive() ? "true" : "false",
+            profile.chits, game.cutscenePlaying() ? "true" : "false", game.harnessLeft());
           std::fclose(f);
         }
       }
@@ -979,12 +997,21 @@ int main(int argc, char** argv) {
         // forceEngage is the scripted "press the contextual action key", so
         // it covers this confirm too — otherwise a headless run can prove
         // you can fly out and land but never that you get back to the ship.
-        bool wantReturn = forceEngage ||
-                          glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
-                          glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+        const bool keyReturn = forceEngage ||
+                               glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
+                               glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+        // A closing cutscene is skipped with those same keys, so while one
+        // plays they are only a skip — and the edge is still carried through
+        // it, or the press that skipped the last shot would dismiss the
+        // debrief in the very next frame.
+        bool wantReturn = keyReturn && !game.cutscenePlaying();
         if (wantReturn && !prevReturnKey) {
           bool justFinishedTutorial = game.isTutorial() &&
                                       game.missionState() == MissionState::Complete;
+          // You do not own a ship until the Cradle sends one down for you.
+          // Washing out of Block D therefore puts you back at the top of
+          // Block D — there is nothing in orbit with your name on it yet.
+          bool noShipYet = game.isTutorial() && profile.completedMissions.empty();
           ProfileStore::save(profile, savePath);
           game.destroy();
           hub.init(hubContent, profile);   // refresh: reward chits / new completion just landed
@@ -992,6 +1019,14 @@ int main(int argc, char** argv) {
             state = AppState::Hub;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             mouseCaptured = false;
+          } else if (noShipYet && game.init(contentDir, kTutorialMission, profile)) {
+            gameEverStarted = true;
+            launchedFromStation = false;
+            camera.position = game.player().eyePosition();
+            state = AppState::Mission;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
           } else if (launchedFromStation || justFinishedTutorial) {
             // You launched off the flight deck, so you come back to it — and
             // finishing the ground site ships you up, which is the same
@@ -1012,7 +1047,7 @@ int main(int argc, char** argv) {
             firstMouse = true;
           }
         }
-        prevReturnKey = wantReturn;
+        prevReturnKey = keyReturn;
       } else {
         prevReturnKey = false;
       }

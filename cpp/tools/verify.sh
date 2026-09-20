@@ -184,6 +184,31 @@ run "$OUT/wake.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_MAX_FRAMES=40
 check "you wake up with nothing" "$OUT/wake.json" \
       "s['weapon'] == '' and s['ammoInMag'] == 0 and s['reserveAmmo'] == 0"
 
+# ...and the opening cutscene is still on screen, which is the whole of the
+# bug this check exists for: the skip used to be "any key" with its edge
+# seeded false, so the Enter still held down from the doctrine screen read as
+# a fresh press and skipped the scene on frame one, every single time. Nobody
+# ever saw a cutscene. Forty frames is 0.64 seconds into a 9.6-second scene.
+check "a cutscene is not skipped before you see it" "$OUT/wake.json" \
+      "s['inCutscene'] is True"
+
+# A fresh record owns a sidearm and nothing else — the doctrine's weapon is
+# found on the armoury bench, not issued at a desk — so dropping straight
+# into any other mission puts a pistol in your hands, not a MAUL-12.
+run "$OUT/pistol.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_MAX_FRAMES=40 \
+    -- --mission patrol_dust_shelf
+check "a new record starts with the pistol and nothing else" "$OUT/pistol.json" \
+      "s['weapon'] == 'Service Sidearm' and s['magSize'] == 12"
+
+# The trauma harness: walk into the block without firing a shot and the
+# drones put you down. That is not the end of the mission three times over —
+# it is three seconds on the floor and then back up on the spot, which is
+# what this proves: still in progress, still alive, harness spent.
+run "$OUT/harness.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FORWARD=1 \
+    EREBUS_MAX_FRAMES=2200 -- --mission tutorial_earth
+check "the harness stands you back up where you fell" "$OUT/harness.json" \
+      "s['harness'] < 3 and s['playerHp'] > 0 and s['missionState'] == 'in_progress'"
+
 # Space renders without blowing up at either end of the quality ladder. The
 # proof is that the run got where it was flying: the tier switches shadow
 # cascades, bloom and DoF on and off, and a tier that fails to build its

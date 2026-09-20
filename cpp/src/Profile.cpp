@@ -32,12 +32,18 @@ void addUnique(std::vector<std::string>& v, const std::string& id) {
 
 }  // namespace
 
-void Profile::ensureStarterGear(const std::string& issuedWeapon) {
-  const std::string rifle = issuedWeapon.empty() ? std::string("service_rifle") : issuedWeapon;
-  addUnique(ownedWeapons, rifle);
+void Profile::ensureStarterGear() {
+  // A new record owns a sidearm and nothing else. Your doctrine's weapon is
+  // not issued at a desk — it is on the armoury bench in Block D, and walking
+  // over it is what puts it in your inventory (see Game::equipWeaponById).
+  //
+  // An older save keeps whatever it already owns: its own owned_weapon lines
+  // are read before this runs, so nothing here takes a rifle away from a
+  // record that earned one before the sidearm became the starter.
+  addUnique(ownedWeapons, "sidearm");
   addUnique(ownedArmor, "patrol_vest");
   addUnique(ownedCosmetics, "default");
-  if (equippedWeapon.empty()) equippedWeapon = rifle;
+  if (equippedWeapon.empty()) equippedWeapon = "sidearm";
   if (equippedArmor.empty()) equippedArmor = "patrol_vest";
   if (equippedCosmetic.empty()) equippedCosmetic = "default";
 }
