@@ -47,7 +47,27 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   tutorialHint_.clear();
   tutorialProgress_ = 0.0f;
 
-  level_.build(mission_.arenaSize, mission_.floorColour, mission_.coverDensity);
+  usingSite_ = false;
+  site_ = Site{};
+  objectiveIndex_ = 0;
+  objectiveText_.clear();
+  objectiveHint_.clear();
+  triggerFiredById_.clear();
+  hostileWakeOn_.clear();
+  cutscene_.stop();
+
+  if (!mission_.layout.empty()) {
+    if (!buildSite(mission_.layout, site_)) {
+      std::fprintf(stderr, "[Game] mission '%s' wants layout '%s', which does not exist\n",
+                   missionId.c_str(), mission_.layout.c_str());
+      return false;
+    }
+    usingSite_ = true;
+    level_.buildFromParts(site_.parts, site_.floorY);
+    triggerFiredById_.assign(site_.triggers.size(), false);
+  } else {
+    level_.build(mission_.arenaSize, mission_.floorColour, mission_.coverDensity);
+  }
   HostileGeometry::ensure();
 
   // Gear: looked up by the ids the profile has equipped, in the same
@@ -97,6 +117,15 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
     weaponName_ = weaponId;
   }
   weaponDef_ = wdef;
+  armed_ = !mission_.startUnarmed;
+  if (!armed_) {
+    // Empty hands: no rounds, nothing to fire, no viewmodel. What you would
+    // have been issued is in the armoury on the other side of the building.
+    weapon_.ammoInMag = 0;
+    weapon_.reserveAmmo = 0;
+    weaponName_.clear();
+    weaponDef_ = nullptr;
+  }
   recoil_ = 0.0f;
   swayX_ = swayY_ = 0.0f;
   bobT_ = 0.0f;
@@ -104,8 +133,50 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   const CosmeticDef* cosmetic = content_.cosmetic(profile.equippedCosmetic);
   hudAccent_ = cosmetic ? cosmetic->accent : glm::vec3(0.85f, 0.95f, 1.0f);
 
-  player_.position = glm::vec3(0.0f, level_.floorY(), 0.0f);
+  player_.position = usingSite_ ? site_.playerSpawn
+                                : glm::vec3(0.0f, level_.floorY(), 0.0f);
   player_.hp = player_.maxHp;
+
+  // A site places its own hostiles, by hand, in the rooms they are standing
+  // in. Most of them are asleep until the room's trigger fires — the
+  // building should not empty itself into the corridor behind you while you
+  // are still looking for a weapon.
+  if (usingSite_) {
+    for (const Site::Spawn& sp : site_.hostiles) {
+      const EnemyType* t = content_.enemy(sp.enemyId);
+      if (!t) {
+        std::fprintf(stderr, "[Game] site '%s' references unknown enemy '%s', skipped\n",
+                     mission_.layout.c_str(), sp.enemyId.c_str());
+        continue;
+      }
+      Hostile h;
+      glm::vec3 at = sp.pos;
+      at.y = site_.floorY;
+      level_.resolve(at, t->radius, t->height);
+      h.spawn(t, at);
+      // Asleep: stunned indefinitely until woken, which costs nothing and
+      // reuses the one mechanism that already means "stands there and does
+      // not shoot".
+      if (!sp.wakeOn.empty()) h.stunT = 1e9f;
+      hostiles_.push_back(h);
+      hostileWakeOn_.push_back(sp.wakeOn);
+    }
+    for (const Site::WeaponDrop& d : site_.drops) {
+      Pickup p;
+      p.kind = PickupKind::Weapon;
+      p.pos = d.pos;
+      // "@issued" is whatever this record's doctrine was given, so the rack
+      // in the armoury hands a Bulwark a shotgun and a Wraith a carbine
+      // rather than everyone the same rifle.
+      p.weaponId = d.weaponId == "@issued" ? weaponId : d.weaponId;
+      p.note = d.note;
+      pickups_.push_back(p);
+    }
+    if (!site_.objectives.empty()) {
+      objectiveText_ = site_.objectives[0].text;
+      objectiveHint_ = site_.objectives[0].hint;
+    }
+  }
 
   // Spawn every non-boss wave immediately, on rings scaled to each wave's
   // own radius; the boss (if this mission has one) waits until every
@@ -183,8 +254,13 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
               mission_.comms.size());
   loaded_ = true;
   tutorialLastPos_ = player_.position;
-  if (mission_.tutorial) setTutorialStep(TutorialStep::Move);
+  // A site runs on objectives; the old step-by-step prompt sequence is for
+  // the arena tutorials that have no rooms to put an objective in.
+  if (mission_.tutorial && !usingSite_) setTutorialStep(TutorialStep::Move);
   else tutorialStep_ = TutorialStep::Done;
+  // "wake" plays on arrival, which is the one scene with no box to walk
+  // into: you are already in it.
+  cutscene_.play(mission_.scenes, "wake");
   fireComms(CommsTrigger::Deploy);
   return true;
 }
@@ -224,6 +300,89 @@ void Game::updateComms(float dt) {
     commsHold_ = std::max(2.4f, 0.055f * (float)beat->line.size());
     commsQueue_.erase(commsQueue_.begin() + (long)i);
     return;
+  }
+}
+
+// ------------------------------------------------------------------ site
+//
+// A hand-built place runs on triggers rather than on a wave counter: named
+// boxes you walk into, which wake the room's hostiles, fire the scene of the
+// same name, and tick the objective waiting on them. Objectives change
+// quietly — no banner, no pause — because a wall of AREA COMPLETE every ten
+// metres turns a place into a corridor of checkpoints.
+
+void Game::equipWeaponById(const std::string& id) {
+  const WeaponDef* def = content_.weapon(id);
+  if (!def) return;
+  weapon_.magSize = def->magSize;
+  weapon_.ammoInMag = def->magSize;
+  weapon_.reserveAmmo = def->reserveAmmo;
+  weapon_.damage = def->damage;
+  weapon_.headshotMultiplier = def->headshotMultiplier;
+  weapon_.fireInterval = def->fireInterval;
+  weapon_.reloadTime = def->reloadTime;
+  weapon_.pellets = def->pellets;
+  weapon_.spread = def->spread;
+  weapon_.pierce = def->pierce;
+  weapon_.range = def->range;
+  weapon_.reloading = false;
+  weapon_.reloadT = 0.0f;
+  weapon_.cooldown = 0.0f;
+  weapon_.primed = false;
+  weaponDef_ = def;
+  weaponName_ = def->name;
+  armed_ = true;
+}
+
+void Game::fireTrigger(const std::string& id) {
+  // Wake whatever was waiting on it.
+  for (size_t i = 0; i < hostiles_.size() && i < hostileWakeOn_.size(); i++) {
+    if (hostileWakeOn_[i] != id) continue;
+    hostileWakeOn_[i].clear();
+    hostiles_[i].stunT = 0.0f;
+  }
+  // ...and roll the scene of the same name, if the mission wrote one.
+  cutscene_.play(mission_.scenes, id);
+}
+
+void Game::updateSite(float dt) {
+  (void)dt;
+  if (!usingSite_) return;
+
+  const glm::vec3 p = player_.position;
+  for (size_t i = 0; i < site_.triggers.size(); i++) {
+    if (triggerFiredById_[i]) continue;
+    const Site::Trigger& t = site_.triggers[i];
+    if (p.x < t.min.x || p.x > t.max.x) continue;
+    if (p.z < t.min.z || p.z > t.max.z) continue;
+    if (p.y + player_.height < t.min.y || p.y > t.max.y) continue;
+    triggerFiredById_[i] = true;
+    fireTrigger(t.id);
+  }
+
+  // The objective ends when its own trigger has fired — or, for the last
+  // one, when everything that is awake is down.
+  while (objectiveIndex_ < site_.objectives.size()) {
+    const Site::Objective& o = site_.objectives[objectiveIndex_];
+    bool done = false;
+    if (o.needsClear) {
+      done = std::all_of(hostiles_.begin(), hostiles_.end(), [](const Hostile& h) {
+        return h.state == HostileState::Gone;
+      });
+    } else if (!o.trigger.empty()) {
+      for (size_t i = 0; i < site_.triggers.size(); i++) {
+        if (site_.triggers[i].id == o.trigger && triggerFiredById_[i]) { done = true; break; }
+      }
+    }
+    if (!done) break;
+    objectiveIndex_++;
+    if (objectiveIndex_ < site_.objectives.size()) {
+      objectiveText_ = site_.objectives[objectiveIndex_].text;
+      objectiveHint_ = site_.objectives[objectiveIndex_].hint;
+    } else {
+      objectiveText_.clear();
+      objectiveHint_.clear();
+    }
   }
 }
 
@@ -435,9 +594,14 @@ void Game::updatePickups(float dt) {
   if (pickupNoteT_ <= 0.0f) pickupNote_.clear();
 
   const float reach = 1.8f;
+  // Things keep turning during a cutscene, but nothing is collected: the
+  // camera is somewhere else, and picking a weapon up off a table you are
+  // not standing at would read as the game taking it for you.
+  const bool inScene = cutscene_.playing();
   for (Pickup& p : pickups_) {
     if (p.taken) continue;
     p.bob += dt * 2.2f;
+    if (inScene) continue;
 
     glm::vec3 d = p.pos - (player_.position + glm::vec3(0.0f, 0.9f, 0.0f));
     if (glm::length(d) > reach) continue;
@@ -446,7 +610,12 @@ void Game::updatePickups(float dt) {
     // the ground for later rather than silently consumed, so the gain is
     // worked out before anything is applied.
     char note[48];
-    if (p.kind == PickupKind::Ammo) {
+    if (p.kind == PickupKind::Weapon) {
+      // A weapon on the floor is taken whatever you are already holding: the
+      // armoury rack is meant to replace the sidearm you found in a bunk.
+      equipWeaponById(p.weaponId);
+      std::snprintf(note, sizeof(note), "%s", p.note.empty() ? "WEAPON RECOVERED" : p.note.c_str());
+    } else if (p.kind == PickupKind::Ammo) {
       int gain = std::min(weapon_.reserveAmmo + weapon_.magSize, weapon_.magSize * 8) -
                  weapon_.reserveAmmo;
       if (gain <= 0) continue;
@@ -516,6 +685,18 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     return;
   }
 
+  // A cutscene drives the camera and eats the input. The world keeps
+  // simulating underneath it — the alarm keeps sounding, and nothing walks
+  // into a frozen room — but you cannot walk out of your own establishing
+  // shot.
+  const bool inScene = cutscene_.playing();
+  if (inScene) {
+    cutscene_.update(dt, camera);
+    updateComms(dt);
+    updatePickups(dt);
+    return;
+  }
+
   abilityCool_ = std::max(0.0f, abilityCool_ - dt);
   // Kept for useAbility() and the viewmodel, both of which are called from
   // places that have no camera of their own to ask.
@@ -532,10 +713,10 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
 
   weapon_.update(dt);
   bool wasReloading = weapon_.reloading;
-  if (reloadHeld) weapon_.startReload();
+  if (armed_ && reloadHeld) weapon_.startReload();
   if (!wasReloading && weapon_.reloading) tutorialReloaded_ = true;
 
-  if (firePressed && weapon_.canFire()) {
+  if (armed_ && firePressed && weapon_.canFire()) {
     // One trigger pull can strike several hostiles — a shotgun's cone across
     // a pair of thralls, or an induction bolt through the front rank into the
     // one behind it — so this is a list, not a single hit.
@@ -599,6 +780,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       damageFlashT = 0.4f;
     }
   }
+  updateSite(dt);
   updateTutorial(dt);
   spawnBossIfReady();
 
@@ -619,8 +801,12 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     if (wavesClear) fireComms(CommsTrigger::WavesCleared);
     // A tutorial is not over when the targets are down, it is over when the
     // lesson is: shooting the range dry during the FIRE step would otherwise
-    // end it before it had taught the reload or the ability.
-    bool lessonDone = !mission_.tutorial || tutorialStep_ == TutorialStep::Clear;
+    // end it before it had taught the reload or the ability. A site says the
+    // same thing with its objective list — the last one is the one that ends
+    // when the place is clear.
+    bool lessonDone = !mission_.tutorial ||
+                      (usingSite_ ? objectiveIndex_ + 1 >= site_.objectives.size()
+                                  : tutorialStep_ == TutorialStep::Clear);
     if (wavesClear && lessonDone && !bossPending_ && bossClear) {
       if (profile_ && !rewardApplied_) {
         profile_->recordMissionComplete(mission_.id, mission_.rewardChits);
@@ -654,7 +840,7 @@ float Game::bossHpFraction() const {
 // ------------------------------------------------------------- viewmodel
 
 void Game::collectViewmodel(std::vector<DrawItem>& out) const {
-  if (!loaded_) return;
+  if (!loaded_ || !armed_) return;
 
   const Mesh& box = HostileGeometry::unitBox();
   const Mesh& cyl = HostileGeometry::unitCylinder();
@@ -794,17 +980,27 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
   // part also uses.
   for (const Pickup& p : pickups_) {
     if (p.taken) continue;
-    bool ammo = p.kind == PickupKind::Ammo;
     DrawItem it;
     it.mesh = &HostileGeometry::unitBox();
     it.material = MaterialType::Emissive;
     glm::vec3 at = p.pos + glm::vec3(0.0f, std::sin(p.bob) * 0.12f, 0.0f);
     it.model = glm::translate(glm::mat4(1.0f), at);
     it.model = glm::rotate(it.model, p.bob * 0.8f, glm::vec3(0.2f, 1.0f, 0.1f));
-    it.model = glm::scale(it.model, glm::vec3(0.34f, 0.34f, 0.34f));
-    it.tint = ammo ? glm::vec3(0.95f, 0.8f, 0.35f) : glm::vec3(0.4f, 0.95f, 0.55f);
+
+    if (p.kind == PickupKind::Weapon) {
+      // A weapon reads as a weapon: a long flat slab rather than the little
+      // cube resupply uses, so you can tell across a room whether the thing
+      // in the rack is a gun or a box of rounds.
+      it.model = glm::scale(it.model, glm::vec3(0.16f, 0.13f, 0.72f));
+      it.tint = glm::vec3(0.62f, 0.86f, 1.0f);
+      it.emissiveIntensity = 2.4f;
+    } else {
+      bool ammo = p.kind == PickupKind::Ammo;
+      it.model = glm::scale(it.model, glm::vec3(0.34f, 0.34f, 0.34f));
+      it.tint = ammo ? glm::vec3(0.95f, 0.8f, 0.35f) : glm::vec3(0.4f, 0.95f, 0.55f);
+      it.emissiveIntensity = 3.2f;
+    }
     it.emissive = it.tint;
-    it.emissiveIntensity = 3.2f;
     it.castShadow = false;
     out.push_back(it);
   }

@@ -160,14 +160,29 @@ run "$OUT/newrec.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
 check "a new record starts on the ground site" "$OUT/newrec.json" \
       "s['appState'] == 'mission'"
 
-# ...and the whole sequence plays end to end: walk, sprint, jump, slide,
-# fire, reload, field ability, then clear the range. The driver substitutes
-# exactly the input each step asks for, which is also the check that no step
-# can be cleared by standing still and waiting.
-run "$OUT/tutorial.json" EREBUS_SKIP_HUB=1 EREBUS_TUTORIAL_AUTO=1 EREBUS_FORCE_FIRE=1 \
-    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=2400 -- --mission tutorial_earth
-check "the ground site teaches and completes" "$OUT/tutorial.json" \
+# ...and the block plays end to end: you wake up with nothing, the sidearm is
+# in the footlocker, the issued weapon is on the armoury bench, and the route
+# runs bunks -> corridor -> armoury -> muster hall -> the pad. The block is
+# laid out along +Z on purpose, so holding W walks the whole thing: this is
+# the check that every doorway, lintel, bench and table leaves a lane
+# through, which is exactly what kept going wrong while building it.
+run "$OUT/tutorial.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FORWARD=1 \
+    EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=5600 \
+    -- --mission tutorial_earth
+check "the block plays end to end" "$OUT/tutorial.json" \
       "s['missionState'] == 'complete' and s['chits'] > 100"
+
+# You start with empty hands and end holding what your doctrine was issued —
+# which means the sidearm was found in the bunks and swapped at the bench.
+check "you start unarmed and end up issued" "$OUT/tutorial.json" \
+      "s['weapon'] == 'MAUL-12' and s['magSize'] == 6"
+
+# Nothing is armed before you are: forty frames in you are still empty-handed
+# and the opening cutscene is running.
+run "$OUT/wake.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_MAX_FRAMES=40 \
+    -- --mission tutorial_earth
+check "you wake up with nothing" "$OUT/wake.json" \
+      "s['weapon'] == '' and s['ammoInMag'] == 0 and s['reserveAmmo'] == 0"
 
 # Space renders without blowing up at either end of the quality ladder. The
 # proof is that the run got where it was flying: the tier switches shadow

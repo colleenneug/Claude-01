@@ -149,6 +149,33 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
       continue;
     }
 
+    // scene <id> <seconds> | <from x,y,z> | <lookAt x,y,z> | <caption>
+    if (tokens[0] == "scene" && tokens.size() >= 3) {
+      std::vector<std::string> fields;
+      size_t start = 0;
+      while (true) {
+        size_t bar = line.find('|', start);
+        fields.push_back(line.substr(start, bar == std::string::npos ? std::string::npos : bar - start));
+        if (bar == std::string::npos) break;
+        start = bar + 1;
+      }
+      if (fields.size() < 4) {
+        std::fprintf(stderr, "[Content] %s: malformed scene line '%s', skipped\n",
+                     path.string().c_str(), line.c_str());
+        continue;
+      }
+      CutsceneShot shot;
+      shot.scene = tokens[1];
+      try { shot.seconds = std::stof(tokens[2]); } catch (...) { shot.seconds = 3.0f; }
+      shot.from = parseVec3(fields[1], shot.from);
+      shot.lookAt = parseVec3(fields[2], shot.lookAt);
+      std::string caption = fields[3];
+      size_t a = caption.find_first_not_of(" \t");
+      if (a != std::string::npos) shot.caption = caption.substr(a);
+      m.scenes.push_back(shot);
+      continue;
+    }
+
     if (tokens[0] == "wave" && tokens.size() >= 3) {
       WaveSpawn w;
       w.enemyId = tokens[1];
@@ -174,9 +201,12 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "brief") m.brief = v;
         else if (k == "zone") m.zone = v;
         else if (k == "tutorial") m.tutorial = (v == "true" || v == "1");
+        else if (k == "layout") m.layout = v;
+        else if (k == "start_unarmed") m.startUnarmed = (v == "true" || v == "1");
         else if (k == "campaign") { try { m.campaignIndex = std::stoi(v); } catch (...) {} }
         else if (k == "sky_zenith") m.skyZenith = parseVec3(v, m.skyZenith);
         else if (k == "floor_colour" || k == "floor_color") m.floorColour = parseVec3(v, m.floorColour);
+        else if (k == "ambient") { m.ambient = parseVec3(v, m.ambient); m.ambientSet = true; }
         else if (k == "sky_horizon") m.skyHorizon = parseVec3(v, m.skyHorizon);
         else if (k == "fog_colour" || k == "fog_color") m.fogColour = parseVec3(v, m.fogColour);
         else if (k == "sun_colour" || k == "sun_color") m.sunColour = parseVec3(v, m.sunColour);

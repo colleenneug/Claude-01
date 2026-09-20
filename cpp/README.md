@@ -24,15 +24,24 @@ going somewhere: the promenade is a sunset that has been holding since year
 six, the reactor runs hot and orange, Deck Zero is nearly black. The
 planets stay alongside it as side destinations you can fly to at any time.
 
-A brand-new record starts **on Earth**, on Recovery Division's ground site,
-the morning you ship out — pick a doctrine, then get walked through your kit
-one control at a time: walk, sprint, jump, slide, fire, reload, field
-ability, then clear the range. Every step watches for the thing it teaches
-and will not advance until it has actually happened, because a prompt you
-can clear by waiting is a prompt nobody reads. The browser build's read-in
-(`../src/js/story.js`, BRIEF 44-C) plays over it as comms traffic rather
-than as a wall of text on a screen you skip, and finishing it ships you up
-to the Cradle. A record that has cleared anything at all goes straight up.
+A brand-new record starts **on Earth**, in a bunk, in the dark. Kourou,
+Block D, four hours before you ship out — and the thing Division recovered
+off the ark woke up on the other side of the building first. You pick a
+doctrine, and then you wake up with **nothing**: there is a sidearm in the
+footlocker across the room, your issued weapon is on the armoury bench four
+rooms away, and the route out runs bunks → corridor → armoury → muster hall
+→ the blast door → the pad. Real hostiles in it, and each room's own stay
+asleep until you enter it, so the building does not empty itself into the
+corridor behind you while you are still looking for a weapon.
+
+What you are doing shows as one line, top-left, that changes as you cross
+the place — no AREA COMPLETE banner and no pause between rooms, because a
+wall of them every ten metres turns a place into a corridor of checkpoints.
+Two **cutscenes** frame it: waking up, and stepping outside. The browser
+build's read-in (`../src/js/story.js`, BRIEF 44-C) plays over the whole
+thing as comms traffic rather than as a screen you skip, and finishing it
+ships you up to the Cradle. A record that has cleared anything at all goes
+straight up.
 
 A record is created under one of **three doctrines** — BULWARK, ORACLE,
 WRAITH — and the choice is the browser build's (`../src/js/classes.js`):
@@ -285,10 +294,35 @@ mission = glacius_ice_fields  # what landing here drops you into
 # station = true              # the Cradle instead: docking opens the hub
 ```
 
-A mission with `tutorial = true` runs that scripted step sequence instead of
-a plain wave clear, and cannot complete until the lesson is done however
-fast you shoot the targets. It is a mission rather than a mode of its own,
+A mission with `tutorial = true` cannot complete until its objectives are
+done, however fast you shoot. It is a mission rather than a mode of its own,
 so it gets the level, the weapon, the HUD and the comms thread for free.
+
+`layout = <name>` swaps the procedural arena for a hand-built place
+(`Site.h`, built in `Sites.cpp`): rooms with doors between them, which is
+not something a scatter of cover on a walled field can express, and the
+opening of this game is rooms. A site carries its own geometry, where the
+player starts, where the hostiles stand and which trigger wakes them, what
+weapons are lying about, the named boxes that fire a scene, and the ordered
+objectives. `start_unarmed = true` means exactly that: empty hands, no ammo
+counter, no viewmodel, nothing to fire.
+
+Cutscenes are content:
+
+```
+scene wake 3.4 | -1.2, 0.45, -26.2 | -1.2, 1.9, -25.0 | Four hours before you ship out.
+scene wake 3.2 | -1.2, 0.75, -26.1 | -1.0, 1.6, -22.0 | The alarm is sounding.
+```
+
+Each line is one held shot: how long, where the camera sits, what it looks
+at, and the caption. Consecutive shots of the same scene ease into each
+other, so a slow push in is two lines rather than a keyframe format, and a
+hard cut is two shots that do not share a position. The scene called `wake`
+plays on arrival; every other one fires from the trigger box of the same
+name. The world keeps simulating underneath — the alarm keeps sounding and
+nothing walks into a frozen room — but takes no input, so you cannot walk
+out of your own establishing shot. Any key skips: a cutscene you have
+already seen is a loading screen.
 
 **`content/crew/<id>.cfg`** — somebody standing in the Cradle:
 
@@ -446,6 +480,18 @@ see `Content::loadAll` in `src/Content.cpp`.
   directional light and a probe and emissive geometry illuminates nothing.
   The strips read as the sources; the flat fill (`ambientFill`) carries the
   room, standing in for the bounce off a hundred metres of white panel.
+- **Sites** (`Site.h`, `Sites.cpp`): hand-built places. Kourou Block D is the
+  one that exists — bunks, corridor, armoury, muster hall, pad. Doorways are
+  *cut* rather than modelled: a wall with a hole in it is two walls and a
+  lintel, for the same reason the station's deck plates are cut around their
+  wells. Every lintel is 2.6 metres up, which is unrealistically high on
+  purpose: a player standing on a knee-high bench beside a door is 2.25
+  metres tall, and a realistic 2.1-metre lintel makes them too tall to walk
+  through their own armoury. Every bench and table has a lane through it for
+  the same reason — those two, plus a footlocker that turned out to be a
+  wall, were the whole of what went wrong while building it.
+- **Cutscene** (`Cutscene.h/.cpp`): the scripted camera. See *Content* above
+  for the format.
 - **Crew** (`Crew.h/.cpp`): the people. Their figures are deliberately *not*
   the enemy rig — those are armoured frames, plated and jointed and visored;
   these are people in coats, built lighter and rounder and shaded as cloth
@@ -583,11 +629,13 @@ a way to prove movement, combat and mission state actually work:
   kept the weapon permanently mid-reload and let a whole run fire about six
   rounds — fine for the one-hostile fixture it was written against, and
   quietly useless for measuring whether a real wave is survivable.)
-- `EREBUS_TUTORIAL_AUTO=1` — walks the ground site's steps by feeding each
-  one exactly the input it is asking for (sprint, jump, crouch-at-speed,
-  reload, ability). The same idea as `EREBUS_DEBUG_AUTOAIM`: it exists so the
-  sequence can be proved end to end without a keyboard, and it is also the
-  check that no step can be cleared by standing still and waiting.
+- `EREBUS_TUTORIAL_AUTO=1` — feeds a step-sequence tutorial exactly the input
+  it is asking for (sprint, jump, crouch-at-speed, reload, ability). The same
+  idea as `EREBUS_DEBUG_AUTOAIM`: it exists so a sequence can be proved end
+  to end without a keyboard. Block D does not need it — it is laid out along
+  +Z on purpose, so holding W walks the whole thing, which is what makes
+  "every doorway, lintel, bench and table leaves a lane through" a check
+  rather than a hope.
 - `EREBUS_SKIP_TUTORIAL=1` — sends a brand-new record straight up instead of
   to the ground site. Every check in `tools/verify.sh` starts from a fresh
   save, so without this every one of them would begin in the tutorial.

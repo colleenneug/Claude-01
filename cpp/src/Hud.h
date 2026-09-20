@@ -39,6 +39,10 @@ public:
   // nothing wraps it unless this does.
   float wrapped(float x, float y, float maxWidth, const std::string& s,
                 float scale, glm::vec4 colour, float lineHeight);
+  // The same layout, centred on `cx` — for a cutscene caption, which
+  // left-aligned under a letterbox reads as a subtitle track come loose.
+  float wrappedCentered(float cx, float y, float maxWidth, const std::string& s,
+                        float scale, glm::vec4 colour, float lineHeight);
 
   // Projects a world point to pixels. Returns false when it is behind the
   // camera, which is not a detail: a point behind you projects to a
@@ -97,6 +101,21 @@ public:
     // and how far through the step you are. Empty outside a tutorial.
     std::string tutorialPrompt, tutorialHint;
     float tutorialProgress = 0.0f;
+
+    // What you are doing right now, top-left under the mission name, and the
+    // control hint under that. Changes quietly as you cross a site: no
+    // banner, no pause.
+    std::string objective, objectiveHint;
+
+    // Empty hands: no ammo counter and no weapon name, because there is
+    // nothing to count.
+    bool armed = true;
+
+    // A cutscene, if one is playing: the letterbox closes to `cutsceneFade`
+    // and the caption rides the bottom bar.
+    std::string cutsceneCaption;
+    float cutsceneFade = 0.0f;
+    bool inCutscene = false;
 
     // The equipped cosmetic's colour (Game::hudAccent): tints the
     // crosshair, ammo pips and the health bar's "full" tier. The health

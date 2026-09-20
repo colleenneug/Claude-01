@@ -7,6 +7,8 @@
 #include "Hostile.h"
 #include "Camera.h"
 #include "Profile.h"
+#include "Site.h"
+#include "Cutscene.h"
 #include "Scene.h"
 #include <algorithm>
 #include <string>
@@ -19,13 +21,18 @@ enum class MissionState { InProgress, Complete, Failed };
 // winnable only if your shooting is efficient enough to clear every wave
 // *and* a 900-HP boss out of one magazine and a fixed reserve, which the
 // dig site measurably is not.
-enum class PickupKind { Ammo, Health };
+enum class PickupKind { Ammo, Health, Weapon };
 
 struct Pickup {
   glm::vec3 pos{0.0f};
   PickupKind kind = PickupKind::Ammo;
   float bob = 0.0f;
   bool taken = false;
+  // Weapon pickups only: which weapon it is, and what the HUD says when you
+  // take it. A weapon lying where somebody left it is how you are armed on
+  // the site — you wake up with nothing.
+  std::string weaponId;
+  std::string note;
 };
 
 // Owns everything the C++ game actually simulates — content, the level, the
@@ -71,6 +78,9 @@ public:
   // shadow outdoors is the sky above it.
   float iblIntensity() const override { return 0.35f; }
   glm::vec3 ambientFill() const override {
+    // A mission with a roof on it says how lit it is; everywhere else the sky
+    // above it does, which is the physical story anyway.
+    if (mission_.ambientSet) return mission_.ambient;
     return mission_.skyHorizon * 0.070f + mission_.skyZenith * 0.055f;
   }
   GLuint moteVao() const override { return moteVao_; }
@@ -121,6 +131,26 @@ public:
     Move, Sprint, Jump, Slide, Fire, Reload, Ability, Clear, Done
   };
   bool isTutorial() const { return mission_.tutorial; }
+
+  // ---------- objectives ----------
+  // What you are doing right now, and the control hint under it. These come
+  // from the site (Site::Objective) and change as you cross it — quietly,
+  // with no banner and no pause, because a wall of AREA COMPLETE every ten
+  // metres turns a place into a corridor of checkpoints.
+  const std::string& objectiveText() const { return objectiveText_; }
+  const std::string& objectiveHint() const { return objectiveHint_; }
+
+  // ---------- cutscenes ----------
+  bool cutscenePlaying() const { return cutscene_.playing(); }
+  const std::string& cutsceneCaption() const { return cutscene_.caption(); }
+  float cutsceneFade() const { return cutscene_.fade(); }
+  void skipCutscene() { cutscene_.stop(); }
+
+  // ---------- what you are holding ----------
+  // False until you have picked something up. An empty-handed player has no
+  // ammo counter, no viewmodel and nothing to fire, which is the whole point
+  // of waking up in a bunk.
+  bool armed() const { return armed_; }
   // What to put on screen right now, and what it is asking for. Empty once
   // the tutorial is over — or if this mission is not one.
   const std::string& tutorialPrompt() const { return tutorialPrompt_; }
@@ -157,6 +187,9 @@ private:
   void dropPickup(const glm::vec3& at, int killIndex);
   void updatePickups(float dt);
   void updateTutorial(float dt);
+  void updateSite(float dt);
+  void fireTrigger(const std::string& id);
+  void equipWeaponById(const std::string& id);
   void setTutorialStep(TutorialStep step);
 
   Content content_;
@@ -224,6 +257,19 @@ private:
   glm::vec3 prevFwd_{0.0f, 0.0f, -1.0f};
   float bobT_ = 0.0f;
   const WeaponDef* weaponDef_ = nullptr;
+  bool armed_ = true;
+
+  // Hand-built levels (MissionDef::layout). Empty `site_.parts` means
+  // this mission is a procedural arena and none of this is in play.
+  Site site_;
+  bool usingSite_ = false;
+  size_t objectiveIndex_ = 0;
+  std::string objectiveText_, objectiveHint_;
+  std::vector<bool> triggerFiredById_;
+  // Hostiles asleep until their room's trigger fires, indexed alongside
+  // hostiles_ so waking one is a flag rather than a spawn.
+  std::vector<std::string> hostileWakeOn_;
+  Cutscene cutscene_;
 
   void collectViewmodel(std::vector<DrawItem>& out) const;
   glm::vec3 lookDir_{0.0f, 0.0f, -1.0f};   // last frame's aim, for the dash direction

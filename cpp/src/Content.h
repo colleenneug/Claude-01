@@ -37,6 +37,19 @@ struct EnemyType {
 
 struct WaveSpawn { std::string enemyId; int count = 1; float radius = 20.0f; };
 
+// One beat of a cutscene: where the camera sits, what it looks at, how long
+// it holds, and the line under it. A moving shot is two beats with the same
+// duration and different positions — the playback interpolates between
+// consecutive shots of the same scene, so a slow push in is two lines of
+// content rather than a keyframe format.
+struct CutsceneShot {
+  std::string scene;        // which scene it belongs to
+  float seconds = 3.0f;
+  glm::vec3 from{0.0f};
+  glm::vec3 lookAt{0.0f};
+  std::string caption;
+};
+
 // content/crew/<id>.cfg — one of the people standing in the Cradle. A hub is
 // not a room, it is the people standing in it; the browser build draws the
 // same line (src/js/fps/crew.js).
@@ -93,11 +106,24 @@ struct MissionDef {
   // Where aboard the ark it happens. Missions that share a zone share a look.
   std::string zone;
 
-  // A tutorial runs a scripted sequence of prompts instead of a wave clear:
-  // walk, sprint, jump, slide, shoot, reload, use the field ability. It is a
-  // mission rather than a mode of its own so it gets the level, the weapon,
-  // the HUD and the comms thread for free.
+  // A tutorial runs a scripted sequence of objectives instead of a wave
+  // clear. It is a mission rather than a mode of its own so it gets the
+  // level, the weapon, the HUD and the comms thread for free.
   bool tutorial = false;
+
+  // A hand-built place (see Site.h) instead of the procedural arena. Rooms
+  // with doors between them are not something a scatter of cover on a walled
+  // field can express, and the opening of this game is rooms.
+  std::string layout;
+
+  // Start with empty hands. You wake up: whatever you would have been issued
+  // is in the armoury, on the other side of the building.
+  bool startUnarmed = false;
+
+  // Scripted camera beats. Each one is a held shot with a line under it, and
+  // a scene is a run of them sharing an id — fired by the trigger of the same
+  // name, or at mission start for the one called "wake".
+  std::vector<CutsceneShot> scenes;
 
   // The look of the place. Defaults are the dusty-planet grade the renderer
   // was built around; a mission overrides whichever of them it cares about.
@@ -109,6 +135,12 @@ struct MissionDef {
   glm::vec3 fogColour{0.42f, 0.30f, 0.34f};
   glm::vec3 sunColour{1.0f, 0.94f, 0.82f};
   glm::vec3 floorColour{0.31f, 0.26f, 0.21f};
+  // Flat fill, for a place with a roof on it. Outdoors the sky does this
+  // job and Game derives it from the sky colours; indoors there is no sky
+  // in the frame and the strips overhead illuminate nothing, so an
+  // interior has to say how lit it is.
+  glm::vec3 ambient{0.0f};
+  bool ambientSet = false;
   // How much cover to scatter, as a multiplier on the density the arena
   // size implies. A gun range wants open ground; a junction wants to be
   // full of things to stand behind.

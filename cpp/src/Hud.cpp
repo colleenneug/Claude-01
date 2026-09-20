@@ -62,6 +62,35 @@ bool Hud::worldToScreen(const glm::mat4& viewProj, const glm::vec3& world,
   return true;
 }
 
+float Hud::wrappedCentered(float cx, float y, float maxWidth, const std::string& s,
+                           float scale, glm::vec4 colour, float lineHeight) {
+  // Lay the same lines out as wrapped(), but centre each one on `cx`. A
+  // caption left-aligned under a letterbox reads as a subtitle track that
+  // came loose.
+  std::string line;
+  size_t i = 0;
+  std::vector<std::string> lines;
+  while (i <= s.size()) {
+    size_t sp = s.find(' ', i);
+    std::string word = s.substr(i, sp == std::string::npos ? std::string::npos : sp - i);
+    std::string cand = line.empty() ? word : line + " " + word;
+    if (!line.empty() && textWidth(cand, scale) > maxWidth) {
+      lines.push_back(line);
+      line = word;
+    } else {
+      line = cand;
+    }
+    if (sp == std::string::npos) break;
+    i = sp + 1;
+  }
+  if (!line.empty()) lines.push_back(line);
+  for (const std::string& l : lines) {
+    textCentered(cx, y, l, scale, colour);
+    y += lineHeight;
+  }
+  return y;
+}
+
 float Hud::wrapped(float x, float y, float maxWidth, const std::string& s,
                    float scale, glm::vec4 colour, float lineHeight) {
   std::string line;
@@ -188,6 +217,28 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   float hpFrac = s.maxHp > 0.0f ? s.hp / s.maxHp : 0.0f;
   const glm::vec4 dim(0.62f, 0.68f, 0.74f, 0.85f);
 
+  // ---- a cutscene owns the frame: bars in, caption under, and nothing
+  // else. Drawing the ammo counter over an establishing shot is what makes a
+  // cutscene look like the game paused rather than like a cut.
+  if (s.inCutscene) {
+    float f = std::clamp(s.cutsceneFade, 0.0f, 1.0f);
+    float bar = screenH * 0.12f;
+    rect(0, 0, (float)screenW, bar, glm::vec4(0, 0, 0, 1.0f));
+    rect(0, screenH - bar, (float)screenW, bar, glm::vec4(0, 0, 0, 1.0f));
+    // The picture itself fades up from black behind the bars.
+    if (f < 0.999f) {
+      rect(0, bar, (float)screenW, screenH - bar * 2.0f, glm::vec4(0, 0, 0, 1.0f - f));
+    }
+    if (!s.cutsceneCaption.empty()) {
+      wrappedCentered(cx, screenH - bar + 22.0f, screenW * 0.72f, s.cutsceneCaption, 2.1f,
+                      glm::vec4(0.92f, 0.95f, 1.0f, 0.95f * f), 26.0f);
+    }
+    textCentered(cx, screenH - 28.0f, "ANY KEY TO SKIP", 1.5f,
+                 glm::vec4(0.55f, 0.60f, 0.68f, 0.7f * f));
+    end();
+    return;
+  }
+
   // ---- crosshair: four ticks with a fixed gap, brighter and squarer for
   // a moment after a confirmed hit. Each tick is drawn over a slightly
   // larger dark one: the accent colour is near-white, and this game's
@@ -217,6 +268,16 @@ void Hud::draw(int screenW, int screenH, const State& s) {
     bool health = s.pickupNote.find("INTEGRITY") != std::string::npos;
     glm::vec4 col = health ? glm::vec4(0.45f, 0.95f, 0.55f, a) : glm::vec4(0.95f, 0.8f, 0.35f, a);
     textCentered(cx, cy + 34, s.pickupNote, 2.2f, col);
+  }
+
+  // ---- what you are doing, under the mission name. One line that changes
+  // as you cross the place, with the control it wants under it.
+  if (!s.objective.empty()) {
+    text(28, 108, "OBJECTIVE", 1.5f, glm::vec4(0.58f, 0.64f, 0.72f, 0.8f));
+    text(28, 128, s.objective, 2.4f, glm::vec4(s.accent, 0.96f));
+    if (!s.objectiveHint.empty())
+      wrapped(28, 160, screenW * 0.42f, s.objectiveHint, 1.6f,
+              glm::vec4(0.72f, 0.78f, 0.86f, 0.85f), 20.0f);
   }
 
   // ---- the tutorial's current step, high and centred where the eye goes
@@ -277,7 +338,12 @@ void Hud::draw(int screenW, int screenH, const State& s) {
 
   // ---- ammo pips + counts, bottom-right. One small rect per round in the
   // mag, capped so a huge magazine doesn't paint a wall of pips; the real
-  // numbers sit above it now that there's text to print them with.
+  // numbers sit above it now that there's text to print them with. None of
+  // it while your hands are empty.
+  if (!s.armed) {
+    textCentered(screenW - 150.0f, screenH - 62.0f, "UNARMED", 2.2f,
+                 glm::vec4(0.85f, 0.45f, 0.38f, 0.9f));
+  } else {
   int shown = std::min(s.magSize, 30);
   float pipW = 6, pipGap = 3, totalW = shown * (pipW + pipGap) - pipGap;
   float px0 = screenW - 28 - totalW, py0 = screenH - 54;
@@ -331,6 +397,8 @@ void Hud::draw(int screenW, int screenH, const State& s) {
     if (!s.bossName.empty()) {
       textCentered(cx, bwy - 20, s.bossName, 2.2f, glm::vec4(0.98f, 0.55f, 0.5f, 0.98f));
     }
+  }
+
   }
 
   // ---- comms: the story, one staged line at a time, above the health bar

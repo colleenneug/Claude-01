@@ -315,6 +315,7 @@ int main(int argc, char** argv) {
   bool pEnter = false, pSpace = false, pDel = false, pY = false, pN = false;
   bool prevEngageKey = false, prevUndockKey = false, prevAbilityKey = false;
   bool prevTalkEsc = false;
+  bool prevSkipKey = false;
   // Who you are mid-conversation with, and which of their lines is up.
   // Points into Station's own crew list, which outlives every frame.
   const Crew::Person* talkingTo = nullptr;
@@ -811,6 +812,22 @@ int main(int argc, char** argv) {
         camera.pitch = glm::degrees(std::asin(std::clamp(bestDir.y, -1.0f, 1.0f)));
       }
 
+      // Any key skips a cutscene — one you have already seen is a loading
+      // screen. Checked on the release edge so the key that skipped it does
+      // not also fire whatever it does in the game on the same frame.
+      if (game.cutscenePlaying()) {
+        bool anyKey = false;
+        for (int k : {GLFW_KEY_SPACE, GLFW_KEY_ENTER, GLFW_KEY_ESCAPE, GLFW_KEY_E,
+                      GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D, GLFW_KEY_F,
+                      GLFW_KEY_TAB, GLFW_KEY_LEFT_SHIFT}) {
+          if (glfwGetKey(window, k) == GLFW_PRESS) { anyKey = true; break; }
+        }
+        if (anyKey && !prevSkipKey) game.skipCutscene();
+        prevSkipKey = anyKey;
+      } else {
+        prevSkipKey = false;
+      }
+
       bool aiming = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
       float targetAim = aiming ? 1.0f : 0.0f;
       camera.aim += (targetAim - camera.aim) * std::min(1.0f, dt * 10.0f);
@@ -868,6 +885,12 @@ int main(int argc, char** argv) {
       hs.abilityReady = game.abilityReady();
       hs.weaponName = game.weaponName();
       hs.tutorialPrompt = game.tutorialPrompt();
+      hs.objective = game.objectiveText();
+      hs.objectiveHint = game.objectiveHint();
+      hs.armed = game.armed();
+      hs.inCutscene = game.cutscenePlaying();
+      hs.cutsceneCaption = game.cutsceneCaption();
+      hs.cutsceneFade = game.cutsceneFade();
       hs.tutorialHint = game.tutorialHint();
       hs.tutorialProgress = game.tutorialProgress();
       hs.overshield = game.player().overshield;
