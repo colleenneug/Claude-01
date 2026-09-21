@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Baseball Masters</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23eef2f6'/%3E%3Cpath d='M20 24 Q50 50 20 76' stroke='%23ff5a5a' stroke-width='4' fill='none'/%3E%3Cpath d='M80 24 Q50 50 80 76' stroke='%23ff5a5a' stroke-width='4' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ============================================================ MENU -->
+  <section id="screen-menu" class="screen active">
+    <div class="menu-wrap">
+      <h1 class="logo">BASEBALL <span>MASTERS</span> <em>26</em></h1>
+      <p class="tagline">Meter pitching. PCI hitting. Card packs. Franchise glory.</p>
+      <div class="menu-grid">
+        <button id="nav-exhibition" class="menu-tile">
+          <span class="tile-title">Exhibition</span>
+          <span class="tile-sub">Pick two teams, play one game</span>
+        </button>
+        <button id="nav-derby" class="menu-tile">
+          <span class="tile-title">Home Run Derby</span>
+          <span class="tile-sub">10 swings. Go deep.</span>
+        </button>
+        <button id="nav-franchise" class="menu-tile">
+          <span class="tile-title">Franchise</span>
+          <span class="tile-sub">A season, a pennant, a champion</span>
+        </button>
+        <button id="nav-collection" class="menu-tile">
+          <span class="tile-title">Card Packs</span>
+          <span class="tile-sub">Crack packs, build My Team</span>
+        </button>
+      </div>
+      <div class="stubs-badge">💰 <span class="stubs-count">0</span> Stubs</div>
+      <div class="howto">
+        <h3>How to play</h3>
+        <p><b>Pitching:</b> pick a pitch, move the mouse (or arrow keys) to aim inside the zone, click / Space to
+          start the accuracy meter, click / Space again to lock it in — stop it near the top for a clean pitch.</p>
+        <p><b>Hitting:</b> move the reticle (mouse or arrow keys) onto the incoming ball and swing at the right
+          instant — <b>Space</b> normal, <b>Z</b> contact, <b>X</b> power, <b>C</b> bunt.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== EXHIBITION SETUP -->
+  <section id="screen-exhibition-setup" class="screen">
+    <div class="panel setup-panel">
+      <h2>Exhibition Game</h2>
+      <label>Away Team <select id="ex-away"></select></label>
+      <label>Home Team <select id="ex-home"></select></label>
+      <label>Stadium <select id="ex-stadium"></select></label>
+      <label>Difficulty
+        <select id="ex-difficulty">
+          <option value="rookie">Rookie</option>
+          <option value="veteran" selected>Veteran</option>
+          <option value="allstar">All-Star</option>
+          <option value="hof">Hall of Fame</option>
+          <option value="legend">Legend</option>
+        </select>
+      </label>
+      <label>Innings
+        <select id="ex-innings">
+          <option value="3">3</option>
+          <option value="6">6</option>
+          <option value="9" selected>9</option>
+        </select>
+      </label>
+      <fieldset class="side-pick">
+        <legend>You play as</legend>
+        <label><input type="radio" name="ex-side" value="away" checked> Away</label>
+        <label><input type="radio" name="ex-side" value="home"> Home</label>
+      </fieldset>
+      <div class="btn-row">
+        <button class="btn btn-back">Back</button>
+        <button id="ex-start" class="btn btn-primary">Play Ball</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================= DERBY SETUP -->
+  <section id="screen-derby-setup" class="screen">
+    <div class="panel setup-panel">
+      <h2>Home Run Derby</h2>
+      <label>Team <select id="derby-team"></select></label>
+      <label>Batter <select id="derby-batter"></select></label>
+      <p class="muted">10 BP fastballs. Every homer counts. Swing for the fences.</p>
+      <div class="btn-row">
+        <button class="btn btn-back">Back</button>
+        <button id="derby-start" class="btn btn-primary">Step In</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================== DERBY -->
+  <section id="screen-derby" class="screen">
+    <div class="derby-hud">
+      <div class="derby-stat"><span>Swings</span><b id="derby-swings">0 / 10</b></div>
+      <div class="derby-stat"><span>Home Runs</span><b id="derby-homers">0</b></div>
+      <div class="derby-stat"><span>Longest</span><b id="derby-longest">0 ft</b></div>
+      <button id="derby-quit" class="btn btn-small">Quit</button>
+    </div>
+    <div id="derby-slot" class="stage-slot"></div>
+    <div id="derby-feed" class="log-feed"></div>
+  </section>
+
+  <!-- ============================================================ GAME -->
+  <section id="screen-game" class="screen">
+    <div class="scorebug">
+      <div class="team-score">
+        <span class="team-name" id="hud-away-name">AWAY</span>
+        <span class="score" id="hud-away-score">0</span>
+      </div>
+      <div class="count-block">
+        <div class="inning" id="hud-inning">▲ 1</div>
+        <div class="bases">
+          <div class="base b2" id="hud-base2"></div>
+          <div class="base b1" id="hud-base1"></div>
+          <div class="base b3" id="hud-base3"></div>
+        </div>
+        <div class="bsk">
+          <div class="bsk-row">B <span id="hud-balls" class="dotrow"></span></div>
+          <div class="bsk-row">S <span id="hud-strikes" class="dotrow"></span></div>
+          <div class="bsk-row">O <span id="hud-outs" class="dotrow"></span></div>
+        </div>
+      </div>
+      <div class="team-score">
+        <span class="team-name" id="hud-home-name">HOME</span>
+        <span class="score" id="hud-home-score">0</span>
+      </div>
+    </div>
+
+    <div class="matchup-bar">
+      <span id="hud-batter">Batter</span>
+      <span class="vs">vs</span>
+      <span id="hud-pitcher">Pitcher</span>
+      <span id="hud-role" class="role-badge">—</span>
+    </div>
+
+    <div id="game-slot" class="stage-slot"></div>
+
+    <div id="playlog" class="log-feed"></div>
+  </section>
+
+  <!-- ======================================================== BOX SCORE -->
+  <section id="screen-boxscore" class="screen">
+    <div class="panel">
+      <h2>Final</h2>
+      <p id="box-summary" class="box-summary"></p>
+      <table id="box-line-table" class="tbl"></table>
+      <h3>Batting</h3>
+      <table id="box-batting-table" class="tbl small"></table>
+      <h3>Pitching</h3>
+      <table id="box-pitching-table" class="tbl small"></table>
+      <button id="box-done" class="btn btn-primary">Continue</button>
+    </div>
+  </section>
+
+  <!-- ======================================================= COLLECTION -->
+  <section id="screen-collection" class="screen">
+    <div class="panel">
+      <h2>Card Packs &amp; Collection</h2>
+      <div class="stubs-badge">💰 <span class="stubs-count">0</span> Stubs</div>
+      <div id="pack-list" class="pack-list"></div>
+      <div id="pack-reveal" class="pack-reveal"></div>
+      <h3>Your Collection</h3>
+      <div id="collection-list" class="card-grid"></div>
+      <button class="btn btn-back">Back</button>
+    </div>
+  </section>
+
+  <!-- ======================================================== FRANCHISE -->
+  <section id="screen-franchise" class="screen">
+    <div class="panel">
+      <h2>Franchise</h2>
+      <div id="franchise-body"></div>
+      <button class="btn btn-back">Back</button>
+    </div>
+  </section>
+
+</div>
+
+<!-- Shared play stage: one field canvas + one pitch canvas, moved between
+     the live-game screen and the derby screen so there is only ever one
+     copy of each in the DOM (no duplicate ids). -->
+<template id="game-stage-template">
+  <div class="game-canvases" id="game-stage">
+    <div class="canvas-wrap field-wrap"><canvas id="fieldCanvas"></canvas></div>
+    <div class="canvas-wrap pitch-wrap">
+      <canvas id="pitchCanvas"></canvas>
+
+      <div id="pitch-controls" class="overlay-controls hidden">
+        <div id="pitch-type-buttons" class="pitch-type-row"></div>
+        <p id="pitch-instruction" class="instruction">Pick a pitch, aim, then throw.</p>
+        <div id="meter-wrap" class="meter-wrap hidden">
+          <div class="meter-track"><div id="meter-marker" class="meter-marker"></div><div class="meter-sweet"></div></div>
+        </div>
+        <button id="throw-btn" class="btn btn-primary">Throw</button>
+      </div>
+
+      <div id="bat-controls" class="overlay-controls hidden">
+        <p class="instruction">Move onto the ball, swing at the right moment.</p>
+        <div class="swing-buttons">
+          <button id="swing-contact" class="btn swing-btn">Contact (Z)</button>
+          <button id="swing-normal" class="btn swing-btn primary">Swing (Space)</button>
+          <button id="swing-power" class="btn swing-btn">Power (X)</button>
+          <button id="swing-bunt" class="btn swing-btn">Bunt (C)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="js/data.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/game.js"></script>
+<script src="js/packs.js"></script>
+<script src="js/render.js"></script>
+<script src="js/input.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
