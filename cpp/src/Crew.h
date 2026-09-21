@@ -19,12 +19,29 @@
 // twice to tell a quartermaster from something that came off the ark.
 class Crew {
 public:
+  // How someone is standing when they are not going anywhere. A room where
+  // everybody stands the same way reads as a shop window, however good the
+  // individual figure is.
+  enum class Posture : int { Neutral = 0, ArmsCrossed, HandsBehindBack, HandOnHip };
+
   struct Person {
     const CrewDef* def = nullptr;   // null for the unnamed crew walking routes
     glm::vec3 pos{0.0f};
     float yaw = 0.0f;
     glm::vec3 tint{0.3f, 0.33f, 0.38f};
     glm::vec3 accent{0.6f, 0.7f, 0.85f};
+
+    // What makes one person not another. All of it is deterministic from the
+    // person's index — a crew that is differently shaped every time you dock
+    // is a crew you cannot recognise, and recognising the quartermaster from
+    // across the concourse is the whole reason she is standing there.
+    float height = 1.78f;        // 1.58 .. 1.92 metres
+    float build = 1.0f;          // 0.88 .. 1.14; shoulder and limb thickness
+    glm::vec3 skin{0.62f, 0.46f, 0.36f};
+    glm::vec3 hair{0.16f, 0.12f, 0.10f};
+    glm::vec3 trousers{0.22f, 0.23f, 0.26f};
+    int hairStyle = 0;           // 0 short, 1 cropped, 2 tied back, 3 under a cap
+    Posture posture = Posture::Neutral;
 
     // A walker follows `route` at a stroll; everyone else stands where they
     // were put. `phase` keeps two people side by side from moving in lockstep.
