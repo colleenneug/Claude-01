@@ -99,8 +99,10 @@
     this.currentGame = game;
     this.onGameDone = onDone;
     $('#playlog').innerHTML = '';
-    this.mountStage('game-slot');
+    // Show the screen first — the canvases size themselves off their
+    // container's on-screen dimensions, which read as 0 while still hidden.
     this.ui.show('screen-game');
+    this.mountStage('game-slot');
 
     this.buildPitchButtons(game);
 
@@ -296,8 +298,8 @@
   App.prototype.startDerby = function (batter, team) {
     this.mode = 'derby';
     this.derby = { batter: batter, team: team, swings: 0, maxSwings: 10, homers: 0, longest: 0, results: [] };
-    this.mountStage('derby-slot');
     this.ui.show('screen-derby');
+    this.mountStage('derby-slot');
     $('#pitch-controls').classList.add('hidden');
     $('#bat-controls').classList.remove('hidden');
     $('#derby-swings').textContent = '0 / 10';
