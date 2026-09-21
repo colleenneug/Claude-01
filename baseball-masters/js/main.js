@@ -239,11 +239,7 @@
   };
 
   App.prototype.screenToFeet = function (px, py) {
-    const pv = this.pitchView;
-    return {
-      x: (px - pv.padX) / pv.scaleX,
-      z: (pv.padTop + pv.zoneH - py) / pv.scaleZ
-    };
+    return this.pitchView.screenToFeet(px, py);
   };
 
   App.prototype.primaryAction = function () {
