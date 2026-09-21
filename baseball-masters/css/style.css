@@ -223,8 +223,16 @@ p { line-height: 1.5; }
   padding: 10px 12px 12px;
   display: flex; flex-direction: column; gap: 8px;
   align-items: center;
+  /* This sits on top of the canvas, right where an incoming pitch ends up
+     just before it crosses the plate — exactly where a "click the ball to
+     swing" gesture needs to land. Let clicks fall through to the canvas
+     everywhere except the controls themselves. */
+  pointer-events: none;
 }
 .overlay-controls.hidden { display: none; }
+.overlay-controls .btn, .overlay-controls select, .overlay-controls input {
+  pointer-events: auto;
+}
 
 .pitch-type-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .pitch-btn {

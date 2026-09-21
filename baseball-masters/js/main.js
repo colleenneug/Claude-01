@@ -211,18 +211,21 @@
 
     // Aiming while pitching (mouse).
     pv.addEventListener('mousemove', (e) => {
-      if (!this.ac) return;
       const rect = pv.getBoundingClientRect();
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
       const feet = this.screenToFeet(mx, my);
+      if (this.mode === 'derby') { this.setDerbyPCI(feet.x, feet.z); return; }
+      if (!this.ac) return;
       if (this.ac.state === 'select-pitch') this.ac.setAim(feet.x, feet.z);
       else if (this.ac.state === 'batting') this.ac.setPCI(feet.x, feet.z);
     });
     pv.addEventListener('touchmove', (e) => {
-      if (!this.ac || !e.touches[0]) return;
+      if (!e.touches[0]) return;
       const rect = pv.getBoundingClientRect();
       const mx = e.touches[0].clientX - rect.left, my = e.touches[0].clientY - rect.top;
       const feet = this.screenToFeet(mx, my);
+      if (this.mode === 'derby') { this.setDerbyPCI(feet.x, feet.z); e.preventDefault(); return; }
+      if (!this.ac) { e.preventDefault(); return; }
       if (this.ac.state === 'select-pitch') this.ac.setAim(feet.x, feet.z);
       else if (this.ac.state === 'batting') this.ac.setPCI(feet.x, feet.z);
       e.preventDefault();
@@ -243,8 +246,8 @@
   };
 
   App.prototype.primaryAction = function () {
-    if (!this.ac) return;
     if (this.mode === 'derby') { this.derbyPrimaryAction(); return; }
+    if (!this.ac) return;
     if (this.ac.state === 'select-pitch') this.ac.startMeter();
     else if (this.ac.state === 'meter') this.ac.lockMeter();
   };
@@ -256,9 +259,19 @@
   };
 
   App.prototype.onKeyDown = function (e) {
-    if (!this.ac) return;
     const arrowStep = 0.14;
-    if (this.mode !== 'derby' && this.ac.state === 'select-pitch') {
+    if (this.mode === 'derby') {
+      if (e.key === 'ArrowLeft') this.moveDerbyPCI(-arrowStep, 0);
+      if (e.key === 'ArrowRight') this.moveDerbyPCI(arrowStep, 0);
+      if (e.key === 'ArrowUp') this.moveDerbyPCI(0, arrowStep);
+      if (e.key === 'ArrowDown') this.moveDerbyPCI(0, -arrowStep);
+      if (e.key === ' ') { e.preventDefault(); this.derbySwing('normal'); }
+      if (e.key === 'z' || e.key === 'Z') this.derbySwing('contact');
+      if (e.key === 'x' || e.key === 'X') this.derbySwing('power');
+      return;
+    }
+    if (!this.ac) return;
+    if (this.ac.state === 'select-pitch') {
       const n = parseInt(e.key, 10);
       const pit = this.currentGame.pitcher();
       if (n >= 1 && n <= pit.arsenal.length) {
@@ -326,6 +339,14 @@
     this.derbySwungAt = null;
     this.derbyRunning = true;
     if (!this._derbyRaf) this._derbyRaf = requestAnimationFrame(this._derbyTick.bind(this));
+  };
+
+  App.prototype.setDerbyPCI = function (x, z) {
+    this.derbyPCI.x = clamp(x, -2.4, 2.4);
+    this.derbyPCI.z = clamp(z, -0.4, 5.4);
+  };
+  App.prototype.moveDerbyPCI = function (dx, dz) {
+    this.setDerbyPCI(this.derbyPCI.x + dx, this.derbyPCI.z + dz);
   };
 
   App.prototype.derbyGame = function () {
