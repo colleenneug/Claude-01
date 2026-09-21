@@ -150,7 +150,16 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   };
 
   std::string primaryId = profile.equippedWeapon;
-  if (primaryId.empty() && class_) primaryId = class_->weaponId;
+  // The doctrine's weapon is a fallback only for a record that already owns
+  // it. A new record does not: its primary holster is empty until the
+  // armoury bench in Block D fills it, and that is the whole of the
+  // sidearm-only start. This fallback without the ownership test quietly
+  // handed every fresh Bulwark a MAUL-12 again the moment "no equipped
+  // primary" became the normal state of a new record rather than the mark of
+  // an ancient save.
+  if (primaryId.empty() && class_ && profile.ownsWeapon(class_->weaponId)) {
+    primaryId = class_->weaponId;
+  }
   fill(SlotPrimary, primaryId);
   fill(SlotSidearm, profile.equippedSidearm);
 
