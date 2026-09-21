@@ -200,6 +200,7 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "objective") m.objective = v;
         else if (k == "brief") m.brief = v;
         else if (k == "zone") m.zone = v;
+        else if (k == "track") m.campaign = v;
         else if (k == "tutorial") m.tutorial = (v == "true" || v == "1");
         else if (k == "layout") m.layout = v;
         else if (k == "start_unarmed") m.startUnarmed = (v == "true" || v == "1");
@@ -410,6 +411,7 @@ CrewDef parseCrew(const std::string& id, const fs::path& path) {
       else if (k == "colour" || k == "color") c.colour = parseVec3(v, c.colour);
       else if (k == "position") c.position = parseVec3(v, c.position);
       else if (k == "facing") c.facingDegrees = std::stof(v);
+      else if (k == "station") c.station = v;
       else if (k == "desk") c.desk = (v == "true" || v == "1");
       else if (k == "board") c.board = (v == "true" || v == "1");
       else if (k == "shop") {
@@ -604,10 +606,13 @@ const CrewDef* Content::crew(const std::string& id) const {
   return it == crew_.end() ? nullptr : &it->second;
 }
 
-std::vector<std::string> Content::crewIds() const {
+std::vector<std::string> Content::crewIds(const std::string& station) const {
   std::vector<std::string> out;
   out.reserve(crew_.size());
-  for (auto& kv : crew_) out.push_back(kv.first);
+  for (auto& kv : crew_) {
+    if (!station.empty() && kv.second.station != station) continue;
+    out.push_back(kv.first);
+  }
   std::sort(out.begin(), out.end());
   return out;
 }
@@ -660,12 +665,47 @@ std::vector<std::string> Content::missionIds() const {
   return out;
 }
 
-std::vector<std::string> Content::campaignIds() const {
+std::vector<std::string> Content::campaignTracks() const {
+  // Earth first, then the ark, then anything a content drop invents. Not
+  // alphabetical and not filesystem order: the tracks are met in an order and
+  // the hub lists them in it.
+  std::vector<std::string> out;
+  auto push = [&](const std::string& t) {
+    if (t.empty()) return;
+    for (const std::string& seen : out) if (seen == t) return;
+    out.push_back(t);
+  };
+  push("earth");
+  push("cradle");
+  for (auto& kv : missions_) {
+    if (kv.second.campaignIndex > 0) push(kv.second.campaign);
+  }
+  // Drop any of the two built-ins that no mission actually claims, so a
+  // content tree with no Earth missions does not advertise an empty track.
+  std::vector<std::string> live;
+  for (const std::string& t : out) {
+    for (auto& kv : missions_) {
+      if (kv.second.campaignIndex > 0 && kv.second.campaign == t) { live.push_back(t); break; }
+    }
+  }
+  return live;
+}
+
+std::vector<std::string> Content::campaignIds(const std::string& track) const {
   std::vector<const MissionDef*> route;
   for (auto& kv : missions_) {
-    if (kv.second.campaignIndex > 0) route.push_back(&kv.second);
+    if (kv.second.campaignIndex <= 0) continue;
+    if (!track.empty() && kv.second.campaign != track) continue;
+    route.push_back(&kv.second);
   }
   std::sort(route.begin(), route.end(), [](const MissionDef* a, const MissionDef* b) {
+    // Earth before the ark when both are in the list, then by story order
+    // within a track. Sorting on the index alone interleaves them, which
+    // would put EARTH 02 between HARD DOCK and THE LONG SPINE.
+    const int ra = a->campaign == "earth" ? 0 : 1;
+    const int rb = b->campaign == "earth" ? 0 : 1;
+    if (ra != rb) return ra < rb;
+    if (a->campaign != b->campaign) return a->campaign < b->campaign;
     return a->campaignIndex < b->campaignIndex;
   });
   std::vector<std::string> out;

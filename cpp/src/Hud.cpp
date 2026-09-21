@@ -386,9 +386,26 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   std::string reserveStr = "/ " + std::to_string(s.reserveAmmo);
   float resW = textWidth(reserveStr, 2.0f);
   text(reserveX - resW, py0 - 20, reserveStr, 2.0f, dim);
+  // Both holsters, above the ammo counter: the one in your hands lit and
+  // keyed, the stowed one dimmed with its key next to it. Showing only the
+  // live weapon makes a second slot something you have to remember you have.
   if (!s.weaponName.empty()) {
-    float nameW = textWidth(s.weaponName, 1.8f);
-    text(reserveX - nameW, py0 - 52, s.weaponName, 1.8f, glm::vec4(s.accent, 0.9f));
+    const std::string live = s.slot == 1 ? s.sidearmName : s.primaryName;
+    const std::string stowed = s.slot == 1 ? s.primaryName : s.sidearmName;
+    const char* liveKey = s.slot == 1 ? "2" : "1";
+    const char* stowKey = s.slot == 1 ? "1" : "2";
+
+    char row[96];
+    std::snprintf(row, sizeof(row), "%s  %s", liveKey,
+                  (live.empty() ? s.weaponName : live).c_str());
+    float nameW = textWidth(row, 1.8f);
+    text(reserveX - nameW, py0 - 52, row, 1.8f, glm::vec4(s.accent, 0.9f));
+
+    if (!stowed.empty()) {
+      std::snprintf(row, sizeof(row), "%s  %s", stowKey, stowed.c_str());
+      float stowW = textWidth(row, 1.5f);
+      text(reserveX - stowW, py0 - 72, row, 1.5f, glm::vec4(0.55f, 0.60f, 0.68f, 0.7f));
+    }
   }
   text(reserveX - resW - 8 - magW, py0 - 30, buf, 4.0f,
        glm::vec4(s.ammoInMag == 0 ? glm::vec3(0.9f, 0.3f, 0.25f) : s.accent, 0.95f));
@@ -644,7 +661,7 @@ void Hud::drawStation(int screenW, int screenH, const StationState& s) {
   // A dot, not a crosshair: you are not aiming at anything in here.
   rect(cx - 2.0f, cy - 2.0f, 4.0f, 4.0f, glm::vec4(0.85f, 0.92f, 1.0f, 0.55f));
 
-  text(28, 34, "THE CRADLE", 2.6f, bright);
+  text(28, 34, s.title.empty() ? std::string("THE CRADLE") : s.title, 2.6f, bright);
   if (!s.deck.empty()) text(28, 66, s.deck, 1.8f, dim);
 
   // ---- nameplates over the crew with posts. Fading them with distance is
@@ -699,7 +716,8 @@ void Hud::drawStation(int screenW, int screenH, const StationState& s) {
 
   textCentered(cx, screenH - 40.0f,
                s.talkingTo.empty()
-                   ? "WASD MOVE   SHIFT SPRINT   SPACE JUMP   E USE   Q AIRLOCK"
+                   ? (s.canUndock ? "WASD MOVE   SHIFT SPRINT   SPACE JUMP   E USE   Q AIRLOCK"
+                                  : "WASD MOVE   SHIFT SPRINT   SPACE JUMP   E USE")
                    : "E CONTINUE   ESC LEAVE",
                1.9f, dim);
   end();
@@ -841,8 +859,8 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
 
   rect(x, 120, screenW - 96.0f, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.5f));
 
-  float y = 140.0f;
-  const float rowH = 30.0f;
+  float y = 132.0f;
+  const float rowH = 25.0f;
 
   // One row per item: a status pip, the name, and either its cost or what
   // it does. The selected item in each category gets a caret and a lit
@@ -861,8 +879,8 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                            const std::string& equippedId, auto ownsFn, auto costFn, auto statFn,
                            auto rankFn) {
     std::snprintf(buf, sizeof(buf), "[%c] %s", key, label);
-    text(x, y, buf, 2.0f, glm::vec4(0.75f, 0.85f, 0.95f, 0.95f));
-    y += 24.0f;
+    text(x, y, buf, 1.9f, glm::vec4(0.75f, 0.85f, 0.95f, 0.95f));
+    y += 21.0f;
 
     for (int i = 0; i < (int)ids.size(); i++) {
       const std::string& id = ids[i];
@@ -889,13 +907,13 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                                   : unaffordable;
 
       if (i == selected) {
-        rect(x + 8, y - 4, gearRight - x - 8.0f, rowH - 4, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
-        text(x + 14, y + 2, ">", 2.2f, bright);
+        rect(x + 8, y - 5, gearRight - x - 8.0f, rowH - 3, glm::vec4(0.16f, 0.22f, 0.30f, 0.75f));
+        text(x + 14, y, ">", 2.0f, bright);
       }
       col.a *= gearFade;
-      rect(x + 34, y + 2, 10, 14, col);
+      rect(x + 34, y + 1, 9, 12, col);
 
-      text(x + 54, y + 2, statFn(id), 2.2f, col);
+      text(x + 54, y, statFn(id), 2.0f, col);
 
       std::string right;
       if (isEquipped) right = "EQUIPPED";
@@ -905,8 +923,8 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
         std::snprintf(buf, sizeof(buf), "%d CHITS", cost);
         right = buf;
       }
-      float rw = textWidth(right, 1.8f);
-      text(gearRight - rw, y + 4, right, 1.8f,
+      float rw = textWidth(right, 1.6f);
+      text(gearRight - rw, y + 2, right, 1.6f,
            isEquipped   ? equippedCol
            : owned      ? ownedCol
            : rankLocked ? glm::vec4(0.72f, 0.60f, 0.95f, 0.95f)
@@ -914,7 +932,7 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                         : unaffordable);
       y += rowH;
     }
-    y += 12.0f;
+    y += 9.0f;
   };
 
   drawCategory("PRIMARY", '1', hub.weaponIds(), hub.weaponIndex(), profile.equippedWeapon,

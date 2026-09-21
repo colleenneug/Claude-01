@@ -50,6 +50,21 @@ enum class AppState { SlotSelect, CreateRecord, Space, Station, Hub, Mission };
 // a second gets added.
 constexpr const char* kTutorialMission = "tutorial_earth";
 
+// Whether a record has finished the Strider programme on Earth. That is what
+// decides everything about where you are: unfinished means you have no ship
+// and no seat, and every mission you leave puts you back on the ground at
+// Kourou. The test is the track rather than a mission count, so a content
+// drop that adds a seventh Earth qualification keeps records on the ground
+// until they have flown it.
+bool earthProgrammeDone(const Content& content, const Profile& profile) {
+  const std::vector<std::string> track = content.campaignIds("earth");
+  if (track.empty()) return true;   // no Earth campaign in this content tree
+  for (const std::string& id : track) {
+    if (!profile.hasCompleted(id)) return false;
+  }
+  return true;
+}
+
 int main(int argc, char** argv) {
   // --mission <id> both names the mission EREBUS_SKIP_HUB boots straight
   // into and preselects it in the hub. The fallback is only for the
@@ -166,7 +181,10 @@ int main(int argc, char** argv) {
   // The Cradle you walk around in. Built once: its geometry never changes,
   // and rebuilding it every time you dock would throw away and re-upload
   // several hundred boxes for nothing.
-  station.init(hubContent);
+  // Built here so the Cradle exists for a record that already has one; a
+  // record still on the ground rebuilds it as Kourou on its first arrival
+  // (see enterStation below).
+  station.init(hubContent, "cradle");
 
   // EREBUS_SKIP_HUB=1 boots straight into --mission with whatever's
   // currently equipped, bypassing the Hub entirely — kept for every
@@ -221,6 +239,9 @@ int main(int argc, char** argv) {
   // rather than by landing on a world, so ending it returns you to the one
   // you actually left from.
   bool launchedFromStation = false;
+  // Which hub you are in. A record on the ground lives at Kourou and does not
+  // see the Cradle until the programme is finished.
+  std::string stationLayout = "cradle";
   if (state == AppState::Mission) {
     if (!game.init(contentDir, missionId, profile)) {
       std::fprintf(stderr, "Failed to load mission '%s' — check content/missions/%s.cfg exists\n",
@@ -256,6 +277,8 @@ int main(int argc, char** argv) {
   // EREBUS_TUTORIAL_AUTO=1 walks the ground site's steps by feeding each
   // one the input it is asking for. Verification aid only.
   bool tutorialAuto = envFlag("EREBUS_TUTORIAL_AUTO");
+  int swapAtFrame = 0;
+  if (const char* sw = std::getenv("EREBUS_SWAP_AT")) swapAtFrame = std::atoi(sw);
   // Prints the screen-centre pixel, before and after tone mapping, every
   // 60 frames — see Renderer::debugPrintCenterPixel for why: it turns "the
   // screen looks dark/black" from a description into a number, so hardware
@@ -319,6 +342,7 @@ int main(int argc, char** argv) {
   bool prevTalkEsc = false;
   bool prevSkipKey = false;
   bool wasCutscenePlaying = false;
+  bool prevSlot1Key = false, prevSlot2Key = false, prevSwapKey = false;
   // The last promotion, and how long it stays on screen. Shown wherever you
   // land after the mission that earned it — a promotion that flashes past on
   // the debrief you are already dismissing is a promotion nobody sees.
@@ -330,6 +354,23 @@ int main(int argc, char** argv) {
   // Points into Station's own crew list, which outlives every frame.
   const Crew::Person* talkingTo = nullptr;
   int talkIndex = 0;
+
+  // Arriving at a hub. Rebuilding the level is not free, so it only happens
+  // when the place actually changes — which, over a record's life, is twice:
+  // once onto the ground station after Block D, and once into orbit when the
+  // programme is finished.
+  auto enterStation = [&](const std::string& layout) {
+    if (station.layout() != layout) {
+      station.destroy();
+      station.init(hubContent, layout);
+    }
+    stationLayout = layout;
+    station.enter(camera);
+    state = AppState::Station;
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    mouseCaptured = true;
+    firstMouse = true;
+  };
 
   // Everything that has to happen once a record is settled on, whether it
   // came out of an existing slot or was just created. Lives here rather than
@@ -353,6 +394,15 @@ int main(int argc, char** argv) {
       glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
       mouseCaptured = true;
       firstMouse = true;
+      return;
+    }
+
+    // A record part-way through the Strider programme is on the ground, and
+    // resuming it has to put it back where it was — not in a ship it has not
+    // been issued. This is the load-time half of the same rule the
+    // mission-exit path enforces.
+    if (!skipSpace && !skipHub && !skipTutorial && !earthProgrammeDone(hubContent, profile)) {
+      enterStation("kourou");
       return;
     }
 
@@ -661,7 +711,12 @@ int main(int argc, char** argv) {
           if (talkIndex >= (int)talkingTo->def->say.size()) {
             const CrewDef* def = talkingTo->def;
             talkingTo = nullptr;
-            if (def->shop != CrewShop::None) {
+            // The flight line will not open for an unrated record. She says
+            // so in her own lines; this is the half that means it.
+            const bool refuses = def->shop == CrewShop::Route &&
+                                 station.layout() == "kourou" &&
+                                 !earthProgrammeDone(hubContent, profile);
+            if (def->shop != CrewShop::None && !refuses) {
               hub.init(hubContent, profile);
               // Shaw keeps the side work; Kaur keeps the ark. Opening the hub
               // on the right part of the list is the whole difference between
@@ -677,7 +732,24 @@ int main(int argc, char** argv) {
             }
           }
         }
-      } else if ((ePressed && term && term->id == "airlock") || qPressed) {
+      } else if (ePressed && term && term->id == "pad") {
+        // Kourou's one kiosk. There is no ship to undock from here, so the
+        // pad door opens the route instead: it is the way out to a mission,
+        // which on the ground is the only way out there is.
+        ProfileStore::save(profile, savePath);
+        hub.init(hubContent, profile);
+        hub.setFocus(Hub::Focus::Route);
+        hub.setHost("THE PAD", "FLIGHT LINE - SELECT A DEPLOYMENT", term->colour);
+        launchedFromStation = true;
+        state = AppState::Hub;
+        talkingTo = nullptr;
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        mouseCaptured = false;
+      } else if (((ePressed && term && term->id == "airlock") || qPressed) &&
+                 station.layout() != "kourou") {
+        // Undocking is a thing you do from orbit. On the ground Q does
+        // nothing, because there is nothing parked outside with your name on
+        // it until the programme is finished.
         ProfileStore::save(profile, savePath);
         space.placeNear("");
         state = AppState::Space;
@@ -691,14 +763,22 @@ int main(int argc, char** argv) {
       glfwGetFramebufferSize(window, &width, &height);
       Hud::StationState ss;
       float py = station.player().position.y;
-      ss.deck = py > 10.5f   ? "DECK C - UPPER RING AND THE CUPOLA"
-                : py > 3.5f  ? "DECK B - GALLERY, COLUMBUS AND KIBO"
-                             : "DECK A - CONCOURSE, ARRIVALS AND THE AIRLOCK";
+      ss.title = station.title();
+      ss.canUndock = station.layout() != "kourou";
+      if (station.layout() == "kourou") {
+        ss.deck = py > 3.5f ? "GALLERY - BRIEFING AND STORES"
+                            : station.subtitle();
+      } else {
+        ss.deck = py > 10.5f   ? "DECK C - UPPER RING AND THE CUPOLA"
+                  : py > 3.5f  ? "DECK B - GALLERY, COLUMBUS AND KIBO"
+                               : "DECK A - CONCOURSE, ARRIVALS AND THE AIRLOCK";
+      }
       if (term) {
         ss.terminalName = term->name;
         ss.terminalLine = term->line;
         ss.terminalColour = term->colour;
-        ss.terminalAction = term->id == "airlock" ? "UNDOCK" : "USE";
+        ss.terminalAction = term->id == "airlock" ? "UNDOCK"
+                           : term->id == "pad" ? "DEPLOY" : "USE";
       } else if (person) {
         ss.terminalName = person->def->name;
         ss.terminalLine = person->def->line;
@@ -729,7 +809,9 @@ int main(int argc, char** argv) {
       hud.drawStation(width, height, ss);
 
       if (frame % 30 == 0) {
-        glfwSetWindowTitle(window, "Erebus Cradle | The Cradle");
+        glfwSetWindowTitle(window,
+                           station.layout() == "kourou" ? "Erebus Cradle | Kourou Ground Station"
+                                                        : "Erebus Cradle | The Cradle");
       }
 
       if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
@@ -738,8 +820,9 @@ int main(int argc, char** argv) {
           glm::vec3 p = station.player().position;
           std::fprintf(f,
                        "{\"appState\":\"station\",\"frame\":%d,\"pos\":[%.1f,%.1f,%.1f],"
-                       "\"terminal\":\"%s\"}\n",
-                       frame + 1, p.x, p.y, p.z, term ? term->id.c_str() : "");
+                       "\"terminal\":\"%s\",\"layout\":\"%s\"}\n",
+                       frame + 1, p.x, p.y, p.z, term ? term->id.c_str() : "",
+                       station.layout().c_str());
           std::fclose(f);
         }
       }
@@ -847,6 +930,27 @@ int main(int argc, char** argv) {
         wasCutscenePlaying = nowPlaying;
       }
 
+      // EREBUS_SWAP_AT=<frame> swaps holsters once, at that frame. A
+      // verification aid in the same family as EREBUS_DEBUG_AUTOAIM: a
+      // headless run has no keyboard, so without it the only thing a check
+      // can prove about a second weapon is that it was loaded.
+      if (swapAtFrame > 0 && frame == swapAtFrame) game.switchWeapon();
+
+      // ---- weapon slots. 1 and 2 select directly; X toggles, which is what
+      // your thumb reaches for mid-fight when you have run a magazine dry and
+      // do not want to look at which key is which.
+      {
+        const bool k1 = glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS;
+        const bool k2 = glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS;
+        const bool kx = glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS;
+        if (k1 && !prevSlot1Key) game.selectSlot(Game::SlotPrimary);
+        if (k2 && !prevSlot2Key) game.selectSlot(Game::SlotSidearm);
+        if (kx && !prevSwapKey) game.switchWeapon();
+        prevSlot1Key = k1;
+        prevSlot2Key = k2;
+        prevSwapKey = kx;
+      }
+
       bool aiming = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
       float targetAim = aiming ? 1.0f : 0.0f;
       camera.aim += (targetAim - camera.aim) * std::min(1.0f, dt * 10.0f);
@@ -908,6 +1012,10 @@ int main(int argc, char** argv) {
       hs.objectiveHint = game.objectiveHint();
       hs.armed = game.armed();
       hs.xpEarned = game.xpEarned();
+      hs.slot = game.slot();
+      hs.primaryName = game.holster(Game::SlotPrimary).name;
+      hs.sidearmName = game.holster(Game::SlotSidearm).name;
+      hs.swapProgress = game.swapProgress();
       hs.harnessLeft = game.harnessLeft();
       hs.harnessMax = game.harnessMax();
       hs.downed = game.downed();
@@ -984,7 +1092,8 @@ int main(int argc, char** argv) {
             "\"maxHp\":%.2f,\"class\":\"%s\",\"weapon\":\"%s\",\"magSize\":%d,"
             "\"playerPos\":[%.2f,%.2f,%.2f],\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,"
             "\"bossAlive\":%s,\"chits\":%d,\"inCutscene\":%s,\"harness\":%d,"
-            "\"xp\":%d,\"careerXp\":%d,\"rank\":\"%s\"}\n",
+            "\"xp\":%d,\"careerXp\":%d,\"rank\":\"%s\","
+            "\"slot\":%d,\"primary\":\"%s\",\"sidearm\":\"%s\"}\n",
             frame + 1,
             game.missionState() == MissionState::Complete ? "complete"
               : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
@@ -997,7 +1106,9 @@ int main(int argc, char** argv) {
             game.xpEarned(), profile.xp + game.xpUnbanked(),
             hubContent.rankIndexForXp(profile.xp + game.xpUnbanked()) >= 0
                 ? hubContent.ranks()[(size_t)hubContent.rankIndexForXp(profile.xp + game.xpUnbanked())].name.c_str()
-                : "");
+                : "",
+            game.slot(), game.holster(Game::SlotPrimary).name.c_str(),
+            game.holster(Game::SlotSidearm).name.c_str());
           std::fclose(f);
         }
       }
@@ -1019,12 +1130,14 @@ int main(int argc, char** argv) {
         // debrief in the very next frame.
         bool wantReturn = keyReturn && !game.cutscenePlaying();
         if (wantReturn && !prevReturnKey) {
-          bool justFinishedTutorial = game.isTutorial() &&
-                                      game.missionState() == MissionState::Complete;
+          bool justFinishedTutorial = game.missionState() == MissionState::Complete &&
+                                      earthProgrammeDone(hubContent, profile);
           // You do not own a ship until the Cradle sends one down for you.
           // Washing out of Block D therefore puts you back at the top of
           // Block D — there is nothing in orbit with your name on it yet.
-          bool noShipYet = game.isTutorial() && profile.completedMissions.empty();
+          // You do not own a ship until the programme says you are rated for
+          // vacuum. Until then every mission ends on the ground.
+          bool noShipYet = !earthProgrammeDone(hubContent, profile);
           // Bank what the mission earned, then settle the ladder: a run that
           // carried the record past two rungs is promoted twice and paid for
           // both. Done here, at the one point every mission leaves through,
@@ -1043,19 +1156,27 @@ int main(int argc, char** argv) {
             state = AppState::Hub;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             mouseCaptured = false;
-          } else if (noShipYet && game.init(contentDir, kTutorialMission, profile)) {
-            gameEverStarted = true;
-            launchedFromStation = false;
-            camera.position = game.player().eyePosition();
-            state = AppState::Mission;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            mouseCaptured = true;
-            firstMouse = true;
+          } else if (noShipYet) {
+            // Washed out of the very first morning, before there is a ground
+            // station to go back to: start Block D again. Once the block is
+            // behind you there is somewhere to stand, so every later failure
+            // returns you to Kourou instead of restarting anything.
+            if (profile.hasCompleted(kTutorialMission)) {
+              enterStation("kourou");
+            } else if (game.init(contentDir, kTutorialMission, profile)) {
+              gameEverStarted = true;
+              launchedFromStation = false;
+              camera.position = game.player().eyePosition();
+              state = AppState::Mission;
+              glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+              mouseCaptured = true;
+              firstMouse = true;
+            }
           } else if (launchedFromStation || justFinishedTutorial) {
-            // You launched off the flight deck, so you come back to it — and
-            // finishing the ground site ships you up, which is the same
-            // arrival.
-            station.enter(camera);
+            // You launched off a flight deck, so you come back to it. Which
+            // deck depends on whether the programme is behind you: until it
+            // is, every mission ends at Kourou.
+            enterStation(earthProgrammeDone(hubContent, profile) ? "cradle" : "kourou");
             state = AppState::Station;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             mouseCaptured = true;

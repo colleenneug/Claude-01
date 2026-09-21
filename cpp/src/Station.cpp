@@ -113,11 +113,12 @@ struct Builder {
   }
 };
 
-}  // namespace
-
-bool Station::init(const Content& content) {
-  Builder b;
+// The Cradle: three decks around an open concourse, as described in
+// Station.h. Everything in here was the body of init() before there were two
+// places to stand.
+void buildCradle(Builder& b, std::vector<Station::Terminal>& terminals) {
   const std::vector<Hole> noHoles;
+  (void)noHoles;
 
   // ---------- deck A: concourse floor, arrivals, airlock, quartermaster bay
   b.plate(-20, 20, -26, 26, DECK_A, DECKM);
@@ -258,10 +259,10 @@ bool Station::init(const Content& content) {
   // deck are people — Voss and Kaur stand at them (content/crew) — and a
   // terminal next to a person offering the same thing is two prompts for one
   // job.
-  terminals_ = {
+  terminals = {
     {"airlock", "AIRLOCK", "Back to the ship.", {0.0f, DECK_A, 44.0f}, {0.49f, 1.0f, 0.61f}},
   };
-  for (const Terminal& t : terminals_) {
+  for (const Station::Terminal& t : terminals) {
     b.box(t.pos.x - 1.1f, t.pos.x + 1.1f, t.pos.y, t.pos.y + 1.0f, t.pos.z - 0.7f, t.pos.z + 0.7f,
           DARK, true, 0.4f, 0.55f);
     b.box(t.pos.x - 0.09f, t.pos.x + 0.09f, t.pos.y + 1.0f, t.pos.y + 1.7f, t.pos.z - 0.09f,
@@ -309,10 +310,145 @@ bool Station::init(const Content& content) {
   b.lit(29, 45, DECK_B + 5.26f, DECK_B + 5.4f, -0.5f, 0.5f, WARM, 2.4f);
   b.lit(21, 41, DECK_A + 5.76f, DECK_A + 5.9f, -0.5f, 0.5f, WARM, 2.4f);
 
-  // The crew's furniture is the station's, not the crew's: a counter you can
-  // walk through is not a counter, and only what goes into the level's part
-  // list gets a collider. The people themselves are drawn by Crew.
-  for (const std::string& id : content.crewIds()) {
+}
+
+// ============================================================
+// KOUROU GROUND STATION — where the Strider programme actually happens.
+//
+// Not a smaller Cradle. The Cradle is a sealed can with strip light and no
+// horizon; this is a shed on a launch site with one wall mostly open to the
+// pan, and the difference is the point: the first campaign is spent here, and
+// arriving in orbit later should feel like somewhere else.
+//
+// One hall with a mezzanine over its sides, laid out along +Z, which is the
+// way you walk in from the pad:
+//
+//   z -32 .. -24   PAD DOOR     the way in, and the light source
+//   z -24 ..   4   MUSTER FLOOR benches, the dispatch board, the programme desk
+//   z   4 ..  20   COUNTERS     armoury on the port side, flight line starboard
+//   z  20 ..  28   RANGE WALL   a window onto the qualification range
+// ============================================================
+void buildKourou(Builder& b, std::vector<Station::Terminal>& terminals) {
+  const float FLOOR = 0.0f;
+  const float MEZZ = 5.2f;           // the gallery over the side bays
+  const float ROOF = 11.0f;
+  const float HALFW = 26.0f;         // the hall is 52m across
+  const float T = 0.5f;
+
+  const glm::vec3 CONCRETE(0.40f, 0.39f, 0.36f);
+  const glm::vec3 SLAB(0.215f, 0.215f, 0.205f);
+  const glm::vec3 PANEL(0.43f, 0.44f, 0.46f);
+  const glm::vec3 TRUSS(0.30f, 0.31f, 0.34f);
+  const glm::vec3 BENCH(0.36f, 0.30f, 0.24f);
+  const glm::vec3 SUNLIT(1.00f, 0.97f, 0.90f);
+
+  // ---------------- the floor, and the apron outside the door
+  b.plate(-HALFW, HALFW, -32, 28, FLOOR, SLAB);
+  // Concrete running out through the door, so the doorway reads as an opening
+  // onto somewhere rather than as a lit rectangle painted on a wall.
+  b.box(-14, 14, FLOOR - 0.4f, FLOOR, -88, -32, CONCRETE, true, 0.08f, 0.88f);
+  b.box(-400, 400, FLOOR - 0.9f, FLOOR - 0.4f, -400, 400,
+        glm::vec3(0.35f, 0.33f, 0.28f), false, 0.05f, 0.92f);
+  b.parts.back().castShadow = false;
+
+  // ---------------- walls. The pad end is a doorway; everything else is shed.
+  b.box(-HALFW - T, -HALFW, FLOOR - 0.4f, ROOF, -32 - T, 28 + T, PANEL, true, 0.35f, 0.62f);
+  b.box(HALFW, HALFW + T, FLOOR - 0.4f, ROOF, -32 - T, 28 + T, PANEL, true, 0.35f, 0.62f);
+  b.box(-HALFW - T, HALFW + T, FLOOR - 0.4f, ROOF, 28, 28 + T, PANEL, true, 0.35f, 0.62f);
+  // The pad end, either side of an eight-metre opening, and a lintel over it.
+  b.box(-HALFW - T, -8, FLOOR - 0.4f, ROOF, -32 - T, -32, PANEL, true, 0.35f, 0.62f);
+  b.box(8, HALFW + T, FLOOR - 0.4f, ROOF, -32 - T, -32, PANEL, true, 0.35f, 0.62f);
+  b.box(-8, 8, 6.5f, ROOF, -32 - T, -32, PANEL, true, 0.35f, 0.62f);
+  b.box(-HALFW - T, HALFW + T, ROOF, ROOF + T, -32 - T, 28 + T, TRUSS, false, 0.4f, 0.6f);
+
+  // Roof trusses, visible from the floor. A flat ceiling at this span reads
+  // as a lid; the trusses are what give the volume a scale to read against.
+  for (int i = 0; i < 11; i++) {
+    float z = -30.0f + (float)i * 5.6f;
+    b.box(-HALFW, HALFW, ROOF - 0.9f, ROOF - 0.55f, z - 0.22f, z + 0.22f, TRUSS, false, 0.5f, 0.5f);
+  }
+
+  // ---------------- the mezzanine, over the side bays only
+  // Left as two galleries rather than a ring: the middle of the hall is where
+  // the muster floor is, and a deck over it would put the whole room in
+  // shadow from the one light that reaches in through the door.
+  b.plate(-HALFW, -13, -8, 20, MEZZ, SLAB);
+  b.plate(13, HALFW, -8, 20, MEZZ, SLAB);
+  for (float x : {-13.0f, 13.0f}) {
+    // Rail along the open edge.
+    for (int i = 0; i < 15; i++) {
+      float z = -8.0f + (float)i * 2.0f;
+      b.box(x - 0.06f, x + 0.06f, MEZZ, MEZZ + 1.05f, z - 0.06f, z + 0.06f, TRUSS, false, 0.6f, 0.4f);
+    }
+    b.box(x - 0.08f, x + 0.08f, MEZZ + 1.0f, MEZZ + 1.1f, -8, 20, TRUSS, false, 0.6f, 0.4f);
+  }
+
+  // Stairs up to each gallery, against the side walls and facing inward.
+  for (int side = -1; side <= 1; side += 2) {
+    float x = (float)side * 20.0f;
+    for (int i = 0; i < 18; i++) {
+      float y = FLOOR + (float)i * RISE;
+      float z = 21.5f - (float)i * 0.62f;
+      b.box(x - 2.2f, x + 2.2f, y - 0.4f, y, z - 0.31f, z + 0.31f, TRUSS, true, 0.45f, 0.55f);
+    }
+  }
+
+  // ---------------- muster floor: benches in rows, facing the board
+  for (int r = 0; r < 4; r++) {
+    float z = -20.0f + (float)r * 4.5f;
+    for (int c = -1; c <= 1; c += 2) {
+      float x = (float)c * 6.5f;
+      b.box(x - 4.0f, x + 4.0f, FLOOR + 0.30f, FLOOR + 0.42f, z - 0.35f, z + 0.35f, BENCH, true, 0.1f, 0.8f);
+      b.box(x - 4.0f, x + 4.0f, FLOOR, FLOOR + 0.30f, z - 0.10f, z + 0.10f, TRUSS, true, 0.5f, 0.5f);
+    }
+  }
+
+  // ---------------- the range window, in the far wall
+  b.box(-10, 10, 1.6f, 4.2f, 27.9f, 28.1f, glm::vec3(0.06f, 0.08f, 0.12f), false, 0.9f, 0.08f);
+  for (float x : {-6.0f, -2.0f, 2.0f, 6.0f})
+    b.box(x - 0.1f, x + 0.1f, 1.6f, 4.2f, 27.8f, 28.2f, TRUSS, false, 0.2f, 0.85f);
+
+  // ---------------- light
+  // Overhead strips down the hall, and a much brighter band on the floor and
+  // the walls near the door where the sun actually reaches. The renderer has
+  // one directional light, so "sunlight coming through the door" has to be
+  // painted: an emissive patch on the concrete inside the opening.
+  for (int i = 0; i < 9; i++) {
+    float z = -28.0f + (float)i * 6.5f;
+    b.lit(-1.6f, 1.6f, ROOF - 1.35f, ROOF - 1.15f, z - 2.4f, z + 2.4f, SUNLIT, 2.2f);
+    b.lit(-18.0f, -15.0f, ROOF - 1.35f, ROOF - 1.15f, z - 2.4f, z + 2.4f, SUNLIT, 1.5f);
+    b.lit(15.0f, 18.0f, ROOF - 1.35f, ROOF - 1.15f, z - 2.4f, z + 2.4f, SUNLIT, 1.5f);
+  }
+  b.lit(-7.6f, 7.6f, FLOOR + 0.01f, FLOOR + 0.03f, -32.0f, -25.0f,
+        glm::vec3(1.00f, 0.94f, 0.80f), 0.22f);
+
+  // Hazard stripe across the pad door, and the two exit markers.
+  for (int i = 0; i < 8; i++) {
+    float x = -7.5f + (float)i * 2.0f;
+    b.lit(x, x + 1.0f, FLOOR + 0.02f, FLOOR + 0.04f, -25.4f, -24.6f,
+          glm::vec3(1.0f, 0.72f, 0.20f), 1.1f);
+  }
+  b.lit(-1.6f, 1.6f, 6.6f, 6.9f, -32.05f, -31.95f, glm::vec3(0.45f, 1.0f, 0.60f), 2.0f);
+
+  // ---------------- the one unattended kiosk. Everything else here is a
+  // person; a terminal standing next to somebody who offers the same thing is
+  // two prompts for one job.
+  terminals = {
+    {"pad", "THE PAD", "Out to the flight line.", {-9.5f, FLOOR, -27.0f}, {0.49f, 1.0f, 0.61f}},
+  };
+  for (const Station::Terminal& t : terminals) {
+    b.box(t.pos.x - 1.1f, t.pos.x + 1.1f, t.pos.y, t.pos.y + 1.0f, t.pos.z - 0.7f, t.pos.z + 0.7f,
+          TRUSS, true, 0.4f, 0.55f);
+    b.lit(t.pos.x - 0.95f, t.pos.x + 0.95f, t.pos.y + 1.0f, t.pos.y + 1.12f,
+          t.pos.z - 0.06f, t.pos.z + 0.06f, t.colour, 2.0f);
+  }
+}
+
+// The crew's furniture is the hub's, not the crew's: a counter you can walk
+// through is not a counter, and only what goes into the level's part list
+// gets a collider. The people themselves are drawn by Crew.
+void buildPosts(Builder& b, const Content& content, const std::string& station) {
+  for (const std::string& id : content.crewIds(station)) {
     const CrewDef* def = content.crew(id);
     if (!def || !def->desk) continue;
     // Rotating an axis-aligned box would leave its collider describing
@@ -359,8 +495,50 @@ bool Station::init(const Content& content) {
     }
   }
 
-  level_.buildFromParts(b.parts, DECK_A);
-  crew_.init(content);
+}
+
+}  // namespace
+
+bool Station::init(const Content& content, const std::string& layout) {
+  layout_ = layout.empty() ? "cradle" : layout;
+  Builder b;
+  float floorY = DECK_A;
+
+  if (layout_ == "kourou") {
+    title_ = "KOUROU GROUND STATION";
+    subtitle_ = "STRIDER PROGRAMME - MUSTER FLOOR";
+    buildKourou(b, terminals_);
+    // Daylight through a pad door, not strip light in a sealed can. The fill
+    // is warm and much stronger than the Cradle's, because the far wall of
+    // this room is a doorway onto a concrete pan in full sun and the bounce
+    // off it is most of what lights the inside.
+    spawn_ = glm::vec3(0.0f, 0.0f, -29.5f);
+    spawnYaw_ = 90.0f;
+    sunDir_ = glm::normalize(glm::vec3(-0.35f, -0.62f, 0.70f));
+    sunColour_ = glm::vec3(1.00f, 0.96f, 0.88f);
+    sunIntensity_ = 4.4f;
+    fogDensity_ = 0.0022f;
+    fogColour_ = glm::vec3(0.52f, 0.56f, 0.62f);
+    clearColour_ = glm::vec3(0.36f, 0.45f, 0.58f);
+    viewDistance_ = 600.0f;
+    skyZenith_ = glm::vec3(0.16f, 0.30f, 0.62f);
+    skyHorizon_ = glm::vec3(0.72f, 0.80f, 0.92f);
+    skyIntensity_ = 1.0f;
+    iblIntensity_ = 1.0f;
+    ambientFill_ = glm::vec3(0.150f, 0.152f, 0.158f);
+    floorY = 0.0f;
+  } else {
+    title_ = "THE CRADLE";
+    subtitle_ = "";
+    buildCradle(b, terminals_);
+    spawn_ = glm::vec3(0.0f, 0.0f, -48.0f);
+    spawnYaw_ = 90.0f;
+  }
+
+  buildPosts(b, content, layout_);
+
+  level_.buildFromParts(b.parts, floorY);
+  crew_.init(content, layout_);
   player_.radius = 0.4f;
   player_.height = 1.8f;
   return true;
@@ -369,13 +547,14 @@ bool Station::init(const Content& content) {
 void Station::destroy() { level_.destroy(); }
 
 void Station::enter(Camera& camera) {
-  // At the arrivals end of the tube, facing down the concourse — you come in
-  // through UNITY, which is what the module is for.
-  player_.position = glm::vec3(0.0f, DECK_A, -48.0f);
+  // Wherever this layout's way in is: the Cradle's arrivals tube, or Kourou's
+  // pad door. Both face down the length of the place, because the first thing
+  // you should see on arriving somewhere is the whole of it.
+  player_.position = spawn_;
   player_.velocity = glm::vec3(0.0f);
   player_.grounded = true;
   player_.hp = player_.maxHp;
-  camera.yaw = 90.0f;      // +Z, down the spine
+  camera.yaw = spawnYaw_;
   camera.pitch = -2.0f;
   camera.position = player_.eyePosition();
 }

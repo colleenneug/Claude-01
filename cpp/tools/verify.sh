@@ -224,6 +224,50 @@ run "$OUT/promo.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1
 checkfile "a promotion is recorded once" "$OUT/save-promo.txt" "^rank_paid = 1$"
 checkfile "a promotion pays its stipend" "$OUT/save-promo.txt" "^chits = 2[0-9][0-9]$"
 
+# The Strider programme. A record that has cleared Block D but not the rest of
+# Earth is on the ground: it resumes at Kourou, not in a ship it has not been
+# issued and not in orbit.
+cat > "$OUT/save-ground.txt" <<'SEED'
+name = Operative
+chits = 300
+xp = 480
+rank_paid = 1
+class = bulwark
+equipped_weapon = maul_12
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_weapon maul_12
+owned_armor patrol_vest
+owned_cosmetic default
+completed tutorial_earth
+SEED
+run "$OUT/ground.json" EREBUS_MAX_FRAMES=60 EREBUS_SKIP_TUTORIAL=
+check "an unrated record resumes on the ground at Kourou" "$OUT/ground.json" \
+      "s['appState'] == 'station' and s['layout'] == 'kourou'"
+
+# Two holsters, each with its own magazine. The swap is proved by running the
+# same fixture twice and only swapping in one of them: a check that only
+# looked at the end state could not tell a swap from a different loadout.
+cp "$OUT/save-ground.txt" "$OUT/save-holster.txt"
+run "$OUT/holster.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_MAX_FRAMES=120 \
+    -- --mission earth_range
+check "a primary and a sidearm are both carried" "$OUT/holster.json" \
+      "s['slot'] == 0 and s['primary'] == 'MAUL-12' and s['sidearm'] == 'Service Sidearm' and s['magSize'] == 6"
+
+cp "$OUT/save-ground.txt" "$OUT/save-swap.txt"
+run "$OUT/swap.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_SWAP_AT=40 \
+    EREBUS_MAX_FRAMES=120 -- --mission earth_range
+check "switching holsters brings up the other weapon" "$OUT/swap.json" \
+      "s['slot'] == 1 and s['weapon'] == 'Service Sidearm' and s['magSize'] == 12 and s['primary'] == 'MAUL-12'"
+
+# ...and an Earth qualification plays end to end.
+run "$OUT/range.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=2600 -- --mission earth_range
+check "the range qualification clears" "$OUT/range.json" \
+      "s['missionState'] == 'complete'"
+
 # Nothing is armed before you are: forty frames in you are still empty-handed
 # and the opening cutscene is running.
 run "$OUT/wake.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_MAX_FRAMES=40 \

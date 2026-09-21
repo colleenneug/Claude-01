@@ -33,10 +33,14 @@ void Hub::init(const Content& content, Profile& profile) {
   missionIds_.insert(missionIds_.end(), side.begin(), side.end());
 
   // Open on the furthest sector actually reachable rather than on mission one
-  // again every time you dock.
+  // again every time you dock. Across two tracks that means the furthest
+  // *unfinished* one: walking in and finding the list parked on a mission you
+  // cleared six deployments ago is a list that has stopped being useful.
+  missionIndex_ = 0;
   for (int i = 0; i < campaignCount_; i++) {
-    if (missionLocked(i)) break;
+    if (missionLocked(i)) continue;
     missionIndex_ = i;
+    if (!profile.hasCompleted(missionIds_[(size_t)i])) break;
   }
 
   // Open the hub on whatever's actually equipped/last-played rather than
@@ -62,8 +66,19 @@ void Hub::cycleWeapon() {
   if (weaponIds_.empty()) return;
   weaponIndex_ = (weaponIndex_ + 1) % (int)weaponIds_.size();
   const std::string& id = weaponIds_[weaponIndex_];
+  // Which slot it lands in is its shape — a pistol is a sidearm, everything
+  // else is a primary. That means one key still cycles the whole rack and
+  // there is no second list to navigate: picking a pistol changes what is in
+  // your second holster and picking a rifle changes what is in your first.
+  const WeaponDef* picked = content_->weapon(id);
+  const bool isSidearm = picked && picked->shape == "pistol";
+  auto equip = [&](const std::string& weaponId) {
+    if (isSidearm) profile_->equippedSidearm = weaponId;
+    else profile_->equippedWeapon = weaponId;
+  };
+
   if (profile_->ownsWeapon(id)) {
-    profile_->equippedWeapon = id;
+    equip(id);
     return;
   }
   const WeaponDef* def = content_->weapon(id);
@@ -75,7 +90,7 @@ void Hub::cycleWeapon() {
       profile_->chits >= def->cost) {
     profile_->chits -= def->cost;
     profile_->ownedWeapons.push_back(id);
-    profile_->equippedWeapon = id;
+    equip(id);
   }
   // else: can't afford it yet — the selection still moves so an unaffordable
   // item is visible (Hud::drawHub dims it red), it just doesn't equip.
@@ -117,8 +132,30 @@ void Hub::cycleCosmetic() {
 
 bool Hub::missionLocked(int index) const {
   if (!content_ || !profile_) return false;
-  if (index <= 0 || index >= campaignCount_) return false;   // side content, or the first sector
-  return !profile_->hasCompleted(missionIds_[index - 1]);
+  if (index < 0 || index >= campaignCount_) return false;   // side content
+  const MissionDef* m = content_->mission(missionIds_[(size_t)index]);
+  if (!m) return false;
+
+  // Within a track, a mission waits on the one before it. Across tracks, a
+  // whole track waits on the one before *it*: the ark does not open to a
+  // record that has not finished the Strider programme, and HARD DOCK
+  // showing OPEN to a candidate was the one thing that made the two
+  // campaigns read as one long list with a gap in it.
+  const bool firstOfTrack =
+      index == 0 || content_->mission(missionIds_[(size_t)index - 1])->campaign != m->campaign;
+
+  if (firstOfTrack) {
+    const std::vector<std::string> tracks = content_->campaignTracks();
+    size_t here = 0;
+    while (here < tracks.size() && tracks[here] != m->campaign) here++;
+    if (here == 0 || here >= tracks.size()) return false;    // the first track is always open
+    for (const std::string& id : content_->campaignIds(tracks[here - 1])) {
+      if (!profile_->hasCompleted(id)) return true;
+    }
+    return false;
+  }
+
+  return !profile_->hasCompleted(missionIds_[(size_t)index - 1]);
 }
 
 void Hub::cycleMission() {

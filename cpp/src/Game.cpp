@@ -4,6 +4,28 @@
 #include <cstdlib>
 #include <cstdio>
 
+// Loads a def into the live Weapon. Split out because init, the floor
+// pickups and the slot switch all need exactly this and had grown three
+// nearly-identical copies of it.
+static void applyDef(Weapon& w, const WeaponDef* def) {
+  if (!def) return;
+  w.magSize = def->magSize;
+  w.ammoInMag = def->magSize;
+  w.reserveAmmo = def->reserveAmmo;
+  w.damage = def->damage;
+  w.headshotMultiplier = def->headshotMultiplier;
+  w.fireInterval = def->fireInterval;
+  w.reloadTime = def->reloadTime;
+  w.pellets = def->pellets;
+  w.spread = def->spread;
+  w.pierce = def->pierce;
+  w.range = def->range;
+  w.reloading = false;
+  w.reloadT = 0.0f;
+  w.cooldown = 0.0f;
+  w.primed = false;
+}
+
 bool Game::init(const std::string& contentDir, const std::string& missionId, Profile& profile) {
   if (!content_.loadAll(contentDir)) return false;
   const MissionDef* def = content_.mission(missionId);
@@ -106,28 +128,42 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // Whatever is equipped — for a new record that is the service sidearm and
   // nothing else. The doctrine's weapon is only a fallback for a save with
   // no equipped weapon at all.
-  std::string weaponId = profile.equippedWeapon;
-  if (weaponId.empty() && class_) weaponId = class_->weaponId;
-  const WeaponDef* wdef = content_.weapon(weaponId);
+  // Two holsters. They are filled from the record's two equipped slots, and
+  // the one you deploy holding is the primary if there is one.
+  slots_[SlotPrimary] = Holster{};
+  slots_[SlotSidearm] = Holster{};
+  swapT_ = 0.0f;
+  swapTo_ = -1;
+
+  auto fill = [&](int s, const std::string& id) {
+    const WeaponDef* d = content_.weapon(id);
+    if (!d) return;
+    // A weapon whose shape puts it in the other holster is filed where it
+    // belongs rather than where it was asked for: a record that somehow has
+    // a pistol in its primary slot should still carry it as a sidearm.
+    const int actual = slotFor(d);
+    (void)s;
+    slots_[actual].def = d;
+    slots_[actual].name = d->name;
+    applyDef(slots_[actual].state, d);
+    slots_[actual].filled = true;
+  };
+
+  std::string primaryId = profile.equippedWeapon;
+  if (primaryId.empty() && class_) primaryId = class_->weaponId;
+  fill(SlotPrimary, primaryId);
+  fill(SlotSidearm, profile.equippedSidearm);
+
+  slot_ = slots_[SlotPrimary].filled ? SlotPrimary : SlotSidearm;
+  const WeaponDef* wdef = slots_[slot_].def;
   if (wdef) {
-    weapon_.magSize = wdef->magSize;
-    weapon_.ammoInMag = wdef->magSize;
-    weapon_.reserveAmmo = wdef->reserveAmmo;
-    weapon_.damage = wdef->damage;
-    weapon_.headshotMultiplier = wdef->headshotMultiplier;
-    weapon_.fireInterval = wdef->fireInterval;
-    weapon_.reloadTime = wdef->reloadTime;
-    weapon_.pellets = wdef->pellets;
-    weapon_.spread = wdef->spread;
-    weapon_.pierce = wdef->pierce;
-    weapon_.range = wdef->range;
-    weapon_.primed = false;
-    weaponName_ = wdef->name;
+    weapon_ = slots_[slot_].state;
+    weaponName_ = slots_[slot_].name;
   } else {
-    weaponName_ = weaponId;
+    weaponName_ = primaryId;
   }
   weaponDef_ = wdef;
-  armed_ = !mission_.startUnarmed;
+  armed_ = !mission_.startUnarmed && wdef != nullptr;
   if (!armed_) {
     // Empty hands: no rounds, nothing to fire, no viewmodel. What you would
     // have been issued is in the armoury on the other side of the building.
@@ -135,6 +171,9 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
     weapon_.reserveAmmo = 0;
     weaponName_.clear();
     weaponDef_ = nullptr;
+    slots_[SlotPrimary] = Holster{};
+    slots_[SlotSidearm] = Holster{};
+    slot_ = SlotPrimary;
   }
   recoil_ = 0.0f;
   swayX_ = swayY_ = 0.0f;
@@ -187,7 +226,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
       // equipped: with the sidearm as the starter, what is equipped when you
       // walk into the armoury is the pistol you are there to replace.
       p.weaponId = d.weaponId == "@issued"
-                      ? (class_ ? class_->weaponId : weaponId)
+                      ? (class_ ? class_->weaponId : primaryId)
                       : d.weaponId;
       p.note = d.note;
       pickups_.push_back(p);
@@ -341,6 +380,28 @@ void Game::updateComms(float dt) {
 // quietly — no banner, no pause — because a wall of AREA COMPLETE every ten
 // metres turns a place into a corridor of checkpoints.
 
+int Game::slotFor(const WeaponDef* def) {
+  // A pistol is a sidearm and everything else is a primary. Read off the
+  // weapon's own `shape`, which already exists for the viewmodel, so a drop
+  // that adds a second pistol lands in the right holster with no code.
+  return (def && def->shape == "pistol") ? SlotSidearm : SlotPrimary;
+}
+
+bool Game::selectSlot(int s) {
+  const int want = (s == SlotSidearm) ? SlotSidearm : SlotPrimary;
+  if (want == slot_ || swapT_ > 0.0f) return false;
+  if (!slots_[want].filled) return false;
+  // The swap is not instant. The hands are busy for kSwapSeconds and the
+  // change of weapon happens at the halfway point, under the bottom of the
+  // frame — an instant switch is a free reload and removes the only cost a
+  // second weapon has.
+  swapT_ = kSwapSeconds;
+  swapTo_ = want;
+  return true;
+}
+
+bool Game::switchWeapon() { return selectSlot(slot_ ^ 1); }
+
 void Game::equipWeaponById(const std::string& id) {
   const WeaponDef* def = content_.weapon(id);
   if (!def) return;
@@ -362,6 +423,18 @@ void Game::equipWeaponById(const std::string& id) {
   weaponDef_ = def;
   weaponName_ = def->name;
   armed_ = true;
+
+  // File it in the holster it belongs to, and make that holster live. Picking
+  // up a rifle while holding a pistol should leave you holding the rifle and
+  // still carrying the pistol, which is the whole point of two slots.
+  slot_ = slotFor(def);
+  slots_[slot_].def = def;
+  slots_[slot_].name = def->name;
+  slots_[slot_].state = weapon_;
+  slots_[slot_].filled = true;
+  swapT_ = 0.0f;
+  swapTo_ = -1;
+
   // Found is owned. Picking your doctrine's weapon off the armoury bench is
   // how you come to have it at all — there is no desk that issues it.
   if (profile_ && !profile_->ownsWeapon(id)) {
@@ -811,11 +884,33 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   camera.position = player_.eyePosition();
 
   weapon_.update(dt);
+
+  // The swap. The change of weapon happens at the halfway point, while the
+  // viewmodel is below the bottom of the frame, so the two guns are never
+  // both on screen and the swap costs the time it looks like it costs.
+  if (swapT_ > 0.0f) {
+    const float was = swapT_;
+    swapT_ = std::max(0.0f, swapT_ - dt);
+    if (swapTo_ >= 0 && was > kSwapSeconds * 0.5f && swapT_ <= kSwapSeconds * 0.5f) {
+      slots_[slot_].state = weapon_;       // park what was in hand
+      slot_ = swapTo_;
+      swapTo_ = -1;
+      weapon_ = slots_[slot_].state;
+      weaponDef_ = slots_[slot_].def;
+      weaponName_ = slots_[slot_].name;
+      // A swap interrupts a reload rather than carrying it across: the
+      // magazine you were part-way through is still part-way through when
+      // you come back to it.
+      weapon_.reloading = false;
+      weapon_.reloadT = 0.0f;
+      recoil_ = 0.6f;
+    }
+  }
   bool wasReloading = weapon_.reloading;
-  if (armed_ && reloadHeld) weapon_.startReload();
+  if (armed_ && swapT_ <= 0.0f && reloadHeld) weapon_.startReload();
   if (!wasReloading && weapon_.reloading) tutorialReloaded_ = true;
 
-  if (armed_ && !onTheGround && firePressed && weapon_.canFire()) {
+  if (armed_ && !onTheGround && swapT_ <= 0.0f && firePressed && weapon_.canFire()) {
     // One trigger pull can strike several hostiles — a shotgun's cone across
     // a pair of thralls, or an induction bolt through the front rank into the
     // one behind it — so this is a list, not a single hit.

@@ -44,7 +44,10 @@ void Profile::ensureStarterGear() {
   addUnique(ownedWeapons, "sidearm");
   addUnique(ownedArmor, "patrol_vest");
   addUnique(ownedCosmetics, "default");
-  if (equippedWeapon.empty()) equippedWeapon = "sidearm";
+  // A new record carries the sidearm and nothing in the primary holster.
+  // The primary is what Block D's armoury bench is for.
+  if (equippedSidearm.empty()) equippedSidearm = "sidearm";
+  if (equippedWeapon == "sidearm") equippedWeapon.clear();
   if (equippedArmor.empty()) equippedArmor = "patrol_vest";
   if (equippedCosmetic.empty()) equippedCosmetic = "default";
 }
@@ -133,6 +136,7 @@ Profile ProfileStore::load(const std::string& path) {
       else if (k == "rank_paid") p.rankPaid = std::stoi(v);
       else if (k == "class") p.classId = v;
       else if (k == "equipped_weapon") p.equippedWeapon = v;
+      else if (k == "equipped_sidearm") p.equippedSidearm = v;
       else if (k == "equipped_armor") p.equippedArmor = v;
       else if (k == "equipped_cosmetic") p.equippedCosmetic = v;
     } catch (...) {
@@ -169,6 +173,7 @@ bool ProfileStore::save(const Profile& p, const std::string& path) {
   f << "rank_paid = " << p.rankPaid << "\n";
   f << "class = " << p.classId << "\n";
   f << "equipped_weapon = " << p.equippedWeapon << "\n";
+  f << "equipped_sidearm = " << p.equippedSidearm << "\n";
   f << "equipped_armor = " << p.equippedArmor << "\n";
   f << "equipped_cosmetic = " << p.equippedCosmetic << "\n";
   for (auto& id : p.ownedWeapons) f << "owned_weapon " << id << "\n";

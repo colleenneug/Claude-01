@@ -199,6 +199,39 @@ public:
   // record predates classes.
   const ClassDef* playerClass() const { return class_; }
   const std::string& weaponName() const { return weaponName_; }
+
+  // ---------------------------------------------------------------- holsters
+  // Two slots: a primary and a sidearm. Which slot a weapon goes into is its
+  // `shape` — a pistol is a sidearm, everything else is a primary — so a
+  // content drop that adds a second pistol needs no code and no new key.
+  //
+  // The live weapon is still `weapon_`, and switching copies its state out
+  // and the other slot's state in. Keeping one live Weapon rather than two
+  // means every system that fires, reloads or reads ammo carries on reading
+  // exactly one object.
+  enum Slot : int { SlotPrimary = 0, SlotSidearm = 1 };
+
+  struct Holster {
+    const WeaponDef* def = nullptr;
+    std::string name;
+    Weapon state;          // ammo and reload timer, parked while it is stowed
+    bool filled = false;
+  };
+
+  int slot() const { return slot_; }
+  const Holster& holster(int s) const { return slots_[s == 1 ? 1 : 0]; }
+  // True if the other slot has anything in it — the HUD dims the second line
+  // rather than hiding it, so an empty holster is visibly a thing you could
+  // fill rather than a feature you do not have.
+  bool hasOtherWeapon() const { return slots_[slot_ ^ 1].filled; }
+  // Swaps to the other slot if it is filled. Returns true if anything
+  // happened, so the caller can play the sound it does not have yet.
+  bool switchWeapon();
+  bool selectSlot(int s);
+  // 0 while a swap is in progress, rising to 1: the viewmodel drops out of
+  // frame and the new one comes up, and you cannot fire through it.
+  float swapProgress() const { return swapT_ <= 0.0f ? 1.0f : 1.0f - swapT_ / kSwapSeconds; }
+  static constexpr float kSwapSeconds = 0.42f;
   bool abilityReady() const { return abilityCool_ <= 0.0f; }
 
 private:
@@ -320,6 +353,15 @@ private:
   float bobT_ = 0.0f;
   const WeaponDef* weaponDef_ = nullptr;
   bool armed_ = true;
+
+  Holster slots_[2];
+  int slot_ = SlotPrimary;
+  float swapT_ = 0.0f;          // counts down while the hands are busy
+  int swapTo_ = -1;             // the slot to become live at the halfway point
+  // Which slot a def belongs in. One rule, used by the hub, by the floor
+  // pickups and by init, so the three can never disagree about where a
+  // weapon lives.
+  static int slotFor(const WeaponDef* def);
 
   // Hand-built levels (MissionDef::layout). Empty `site_.parts` means
   // this mission is a procedural arena and none of this is in play.

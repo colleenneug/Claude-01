@@ -66,6 +66,9 @@ struct CrewDef {
   glm::vec3 colour{0.8f, 0.9f, 1.0f};
   glm::vec3 position{0.0f};
   float facingDegrees = 0.0f;
+  // Which hub they stand in: "cradle" or "kourou". Default is the Cradle,
+  // which is where everyone stood when there was only one place to stand.
+  std::string station = "cradle";
   CrewShop shop = CrewShop::None;
   bool desk = true;     // a lit post to stand behind, so they read as a station
   bool board = false;   // ...and a wall of lit slates behind it, for the contracts post
@@ -108,6 +111,18 @@ struct MissionDef {
   // place in the story lives in the mission's own file rather than in a list
   // somewhere else that has to be kept in step with it.
   int campaignIndex = 0;
+  // Which campaign that number orders. There are two, and they are separate
+  // ladders rather than one long list: `earth` is the Strider programme at
+  // Kourou, which a record walks before it has ever left the ground, and
+  // `cradle` is the route down the ark. A mission with no campaignIndex is
+  // side content and belongs to neither.
+  //
+  // Written as `track = earth` in the file. Not `campaign`, which has meant
+  // the index since the ark route was transcribed and still does.
+  //
+  // Defaulted to "cradle" so the sixteen files that were written before
+  // there were two campaigns keep meaning what they meant.
+  std::string campaign = "cradle";
   // Where aboard the ark it happens. Missions that share a zone share a look.
   std::string zone;
 
@@ -306,12 +321,17 @@ public:
 
   std::vector<std::string> planetIds() const;
   std::vector<std::string> classIds() const;
-  std::vector<std::string> crewIds() const;
+  std::vector<std::string> crewIds(const std::string& station = "") const;
   std::vector<std::string> missionIds() const;
   // The campaign route in story order — every mission with a campaign
   // number, sorted by it. Side content (a planet's patrol, a debug
   // fixture) has no number and does not appear here.
-  std::vector<std::string> campaignIds() const;
+  // Every mission on `track` with a campaign number, in story order. An empty
+  // track returns both, which is what the hub wants when it is listing
+  // everything a record could fly.
+  std::vector<std::string> campaignIds(const std::string& track = "") const;
+  // The tracks that exist, in the order a record meets them: earth first.
+  std::vector<std::string> campaignTracks() const;
   std::vector<std::string> weaponIds() const;
   std::vector<std::string> armorIds() const;
   std::vector<std::string> cosmeticIds() const;

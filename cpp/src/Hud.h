@@ -118,6 +118,13 @@ public:
     // moment it went up.
     int xpEarned = 0;
 
+    // The two holsters. Both are shown, with the stowed one dimmed: an empty
+    // second slot should read as something you could fill, not as a feature
+    // the game does not have.
+    int slot = 0;
+    std::string primaryName, sidearmName;
+    float swapProgress = 1.0f;
+
     int harnessLeft = 0, harnessMax = 0;
     bool downed = false;
     float downedFor = 0.0f, downedMax = 1.0f;
@@ -160,6 +167,14 @@ public:
   // game nothing is shooting at you, and a full combat HUD over it would say
   // otherwise.
   struct StationState {
+    // The place. Not a constant any more: there are two hubs, and a heading
+    // that says THE CRADLE while you are standing in a shed at Kourou is the
+    // kind of detail that makes a place feel like a reskin.
+    std::string title = "THE CRADLE";
+    // Whether there is a ship parked outside. Kourou has no airlock and no
+    // hull with your name on it, and a footer that offers to undock from a
+    // shed is a footer that has not been read.
+    bool canUndock = true;
     std::string deck;            // "DECK A - CONCOURSE"
     std::string terminalName;    // empty when nothing is in reach
     std::string terminalLine;

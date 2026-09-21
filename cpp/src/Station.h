@@ -39,9 +39,25 @@ public:
     glm::vec3 colour{0.6f, 0.9f, 1.0f};
   };
 
-  // `content` supplies the crew (content/crew/*.cfg): the station's geometry
-  // never changes, but who is standing in it is content.
-  bool init(const Content& content);
+  // `content` supplies the crew (content/crew/*.cfg): a hub's geometry never
+  // changes, but who is standing in it is content.
+  //
+  // `layout` picks the place. Two exist:
+  //   "cradle" — the ark in orbit, described above
+  //   "kourou" — the Strider programme's ground station on Earth, which is
+  //              where a record spends the whole of its first campaign
+  // The two differ in more than geometry: one is a sealed volume with no sky
+  // and no haze, the other has weather and a doorway onto a launch pan, so
+  // the scene parameters below are fields set by init() rather than the
+  // constants they used to be.
+  bool init(const Content& content, const std::string& layout = "cradle");
+
+  [[nodiscard]] const std::string& layout() const { return layout_; }
+  // What to put at the top of the screen. The hub is not always the Cradle
+  // any more, and a heading that says so anyway is the kind of detail that
+  // makes a place feel like a reskin.
+  [[nodiscard]] const std::string& title() const { return title_; }
+  [[nodiscard]] const std::string& subtitle() const { return subtitle_; }
   void destroy();
 
   // Walks the player. `scriptedForward` stands in for holding W, the same
@@ -75,30 +91,59 @@ public:
   // ---------- SceneSource ----------
   void collect(float time, std::vector<DrawItem>& out) const override;
   glm::vec3 sunDirection() const override { return sunDir_; }
-  glm::vec3 sunColour() const override { return glm::vec3(0.86f, 0.93f, 1.0f); }
-  float sunIntensity() const override { return 2.1f; }
+  glm::vec3 sunColour() const override { return sunColour_; }
+  float sunIntensity() const override { return sunIntensity_; }
   GLuint moteVao() const override { return 0; }
   float moteBoxSize() const override { return 0.0f; }
   int moteCount() const override { return 0; }
-  // Pressurised and clean: no haze indoors, and the volume is lit by its own
-  // strips plus the probe rather than by depth cueing.
-  float fogDensity() const override { return 0.0f; }
-  glm::vec3 clearColour() const override { return glm::vec3(0.004f, 0.006f, 0.012f); }
-  float viewDistance() const override { return 400.0f; }
-  float skyIntensity() const override { return 0.0f; }
-  float iblIntensity() const override { return 0.85f; }
+  // The Cradle is pressurised and clean — no haze, lit by its own strips and
+  // the probe. Kourou has a doorway onto a launch pan and coastal air coming
+  // through it, so it gets both fog and a sky.
+  float fogDensity() const override { return fogDensity_; }
+  glm::vec3 fogColour() const override { return fogColour_; }
+  glm::vec3 clearColour() const override { return clearColour_; }
+  float viewDistance() const override { return viewDistance_; }
+  glm::vec3 skyZenith() const override { return skyZenith_; }
+  glm::vec3 skyHorizon() const override { return skyHorizon_; }
+  float skyIntensity() const override { return skyIntensity_; }
+  float iblIntensity() const override { return iblIntensity_; }
   // A station you walk around has to be navigable, and this renderer has one
   // directional light and a probe — the emissive strips read as sources but
   // do not illuminate anything. So the fill carries the room, the way the
   // bounced light off a hundred metres of white panel would in a real one.
   // Cool, because everything in here is lit by the same cold strips.
-  glm::vec3 ambientFill() const override { return glm::vec3(0.150f, 0.168f, 0.205f); }
+  glm::vec3 ambientFill() const override { return ambientFill_; }
 
 private:
   Level level_;
   Player player_;
   Crew crew_;
   std::vector<Terminal> terminals_;
+  std::string layout_ = "cradle";
+  std::string title_ = "THE CRADLE";
+  std::string subtitle_;
+
+  // Where you arrive, and facing which way. Per layout, because the Cradle's
+  // arrivals end and Kourou's pad door are not in the same place.
+  glm::vec3 spawn_{0.0f, 0.0f, -48.0f};
+  float spawnYaw_ = 90.0f;
+
+  // The grade. Defaults are the Cradle's; buildKourou overwrites them.
   glm::vec3 sunDir_{-0.42f, -0.36f, -0.83f};
+  glm::vec3 sunColour_{0.86f, 0.93f, 1.0f};
+  float sunIntensity_ = 2.1f;
+  float fogDensity_ = 0.0f;
+  glm::vec3 fogColour_{0.30f, 0.31f, 0.36f};
+  glm::vec3 clearColour_{0.004f, 0.006f, 0.012f};
+  float viewDistance_ = 400.0f;
+  glm::vec3 skyZenith_{0.0f}, skyHorizon_{0.0f};
+  float skyIntensity_ = 0.0f;
+  float iblIntensity_ = 0.85f;
+  // A station you walk around has to be navigable, and this renderer has one
+  // directional light and a probe — the emissive strips read as sources but
+  // do not illuminate anything. So the fill carries the room, the way the
+  // bounced light off a hundred metres of white panel would in a real one.
+  glm::vec3 ambientFill_{0.150f, 0.168f, 0.205f};
+
   float reach_ = 3.2f;
 };

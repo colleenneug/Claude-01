@@ -39,7 +39,12 @@ struct Profile {
   std::vector<std::string> ownedArmor;
   std::vector<std::string> ownedCosmetics;
 
+  // Two carried weapons. `equippedWeapon` is the primary and keeps its name
+  // so saves written before there were two slots still load; the sidearm is
+  // the second holster, and a record that has one is never completely out of
+  // ammunition.
   std::string equippedWeapon;
+  std::string equippedSidearm;
   std::string equippedArmor;
   std::string equippedCosmetic;
 

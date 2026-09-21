@@ -24,7 +24,14 @@ going somewhere: the promenade is a sunset that has been holding since year
 six, the reactor runs hot and orange, Deck Zero is nearly black. The
 planets stay alongside it as side destinations you can fly to at any time.
 
-A brand-new record starts **on Earth**, in a bunk, in the dark. Kourou,
+A brand-new record starts **on Earth**, and stays there. The first campaign
+is the **Strider programme**: six qualifications at Kourou, run out of a
+ground station you walk around between them, with people to talk to, a
+quartermaster whose shelves are released against your rank, a dispatch board
+of side work, and a flight officer who will not put you on the lift until the
+programme says you are rated for vacuum. Only then does the ark open.
+
+It starts in a bunk, in the dark. Kourou,
 Block D, four hours before you ship out — and the thing Division recovered
 off the ark woke up on the other side of the building first. You pick a
 doctrine, and then you wake up with **nothing**: there is a sidearm in the
@@ -42,14 +49,33 @@ the end. The browser build's read-in (`../src/js/story.js`, BRIEF 44-C)
 plays over the whole thing as comms traffic rather than as a screen you
 skip. A record that has cleared anything at all goes straight up.
 
-**You do not have a ship yet.** That is the point of Earth: the transport
-parked on the far pan is Division's, it is lit and ramp-down from the moment
-you walk outside, and it is not yours. Clearing the pad is what gets you
-collected — the closing cutscene is somebody coming down the ramp for you
-and Kourou dropping away — and being collected is how you arrive at the
-Cradle in the first place. Wash out of the block and you wake up at the top
-of the block again, because there is nothing in orbit with your name on it
-to go back to.
+**You do not have a ship, and you do not get one for a long time.** The
+transport parked on the far pan during Block D is Division's, lit and
+ramp-down from the moment you walk outside, and it is not yours — it is there
+for what they brought back. Clearing the pad gets you walked the other way
+instead, across the pan to the ground station, and that is where the next
+five qualifications are taken from:
+
+| | | |
+|---|---|---|
+| 01 | **BLOCK D** | Wake up with nothing and get out of the building |
+| 02 | **THE RANGE** | Qualify on your weapon. Nothing here shoots back |
+| 03 | **HANGAR THREE** | Structures — and the first one that does |
+| 04 | **THE ASSEMBLY BUILDING** | Vertical work, on the gantries |
+| 05 | **THE PERIMETER** | Night and coastal fog, forty metres of visibility |
+| 06 | **LAUNCH WINDOW** | Hold the pan for nineteen minutes of fuelling |
+
+The lift lives at the end of that, not at the end of the first morning: five
+held shots ending on altitude, and eleven minutes to the Cradle. Until it
+fires, every mission you leave puts you back on the ground at Kourou — wash
+out and you wake up in the muster hall, because there is nothing in orbit
+with your name on it to go back to, and Hale on the flight line will tell you
+so herself.
+
+Campaigns are **tracks** (`track = earth` in a mission file), not one long
+list. Each track unlocks one step at a time within itself, so adding a
+seventh Earth qualification keeps records on the ground until they have flown
+it, and does not renumber the ark.
 
 The pad is not the edge of the world any more, either: the site runs out to
 four hundred metres of ground with hangars, assembly buildings and service
@@ -68,9 +94,11 @@ front rank into whatever stood behind it, and can stun a room with an EMP.
 A Wraith carries the suppressed WHISPER, triples headshot damage, and phase
 steps out of trouble with the next round primed.
 
-**Scope, honestly stated:** three doctrines, six weapons, three armour
-pieces, three cosmetics, seven enemy archetypes, twenty-two missions (the
-sixteen-sector campaign plus six side contracts), five destinations —
+**Scope, honestly stated:** three doctrines, seven weapons carried two at a
+time, three armour pieces, three cosmetics, eight enemy archetypes, an
+eight-rung rank ladder, ten crew across two walkable hubs, twenty-eight
+missions (a six-mission Earth programme, the sixteen-sector ark campaign, and
+six side contracts), five destinations —
 including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
 text files, not a code change (see *Content* below). What's still not here:
@@ -189,6 +217,8 @@ In a mission:
 | Space, against a wall in mid-air | Kick off a **wall run** (hold a wall beside you at speed and you run along it) |
 | Left click | Fire (hitscan) |
 | R | Reload |
+| 1 / 2 | Primary / sidearm |
+| X | Swap holsters |
 | Q or E | Your doctrine's field ability — barrier, EMP or phase step |
 | Right mouse, held | Aim — narrows the FOV and brings depth of field in on the background |
 | Escape | Release the mouse; left click re-captures it |
@@ -201,6 +231,17 @@ threshold is a fraction of the walk speed and its floor and ceiling are set
 against the sprint speed, so moving one without the others changes whether
 sliding is worth doing at all. The one thing not carried across is the
 browser's wall-run camera roll.
+
+You carry **two weapons**: a primary and a sidearm, each with its own
+magazine and its own reserve. Which holster a weapon lives in is its `shape`
+— a pistol is a sidearm, everything else is a primary — so one rule covers
+the shop, the floor pickups and what you deploy carrying, and a content drop
+that adds a second pistol needs no code and no new key. The swap is not
+instant: the hands are busy for four tenths of a second and the change
+happens at the halfway point, below the bottom of the frame, so the two guns
+are never both on screen and a swap costs what it looks like it costs. It
+also cancels a reload rather than carrying it across — the magazine you were
+part-way through is still part-way through when you come back to it.
 
 Your weapon is drawn in your hands and named next to the ammo counter,
 because at a glance "six rounds" means something completely different on a
@@ -350,7 +391,25 @@ you. Space, Enter or Escape skips — a cutscene you have already seen is a
 loading screen — and the skip is deliberately *not* "any key", because the
 key that got you into the scene is usually still held down.
 
-**`content/crew/<id>.cfg`** — somebody standing in the Cradle:
+**`content/ranks/<id>.cfg`** — one rung of the Strider ladder:
+
+```
+name = STRIDER SECOND CLASS
+xp = 1200            # career experience this rank begins at
+stipend = 200        # chits, paid once, on promotion
+blurb = Qualified on the range and cleared a building you had never seen.
+unlock = Marksman and suppressed patterns. The scout rig.
+```
+
+The ladder is ordered by `xp`, not by a list, so inserting a rank between two
+others is a file with a number between theirs. Rank is *derived* from a
+record's career experience rather than stored on it, so re-balancing the
+ladder re-ranks every existing save instead of stranding old records on a
+rung that no longer exists; what is stored is the highest rung already paid
+for, because a promotion pays its stipend once. Gear names a rank in
+`rank_required` and is shown-but-not-sold below it.
+
+**`content/crew/<id>.cfg`** — somebody standing in a hub:
 
 ```
 name = VOSS
@@ -362,6 +421,7 @@ facing = -90                  # degrees; a figure's front is local -Z
 shop = gear                   # gear | route | contracts | none
 desk = true                   # a lit post to stand behind
 # board = true                # ...and a wall of lit slates, for contracts
+# station = kourou            # which hub they stand in: cradle or kourou
 say | You want something that will still be working when the shooting stops.
 say | Everything on this bench came off something that stopped working.
 ```
@@ -587,6 +647,17 @@ see `Content::loadAll` in `src/Content.cpp`.
   loss (player HP 0) conditions, and on a first win pays the mission's
   `reward` chits into the profile via `Profile::recordMissionComplete` (a
   repeat clear doesn't pay out again).
+- **Two hubs** (`Station.h/.cpp`): the Cradle in orbit, and **Kourou ground
+  station** on Earth. Not a reskin of one another — the Cradle is a sealed
+  can with strip light and no horizon; Kourou is a shed on a launch site with
+  one wall mostly open to the pan, roof trusses you can read the span
+  against, benches in rows facing a dispatch board, and galleries over each
+  side bay. They differ in more than geometry: the scene parameters (sun,
+  fog, sky, ambient fill) are fields set per layout rather than the constants
+  they used to be, because a hub with a doorway onto a concrete pan in full
+  sun is lit by the bounce off it. Which one you are in is decided by whether
+  the Strider programme is finished, and the level is only rebuilt when the
+  place actually changes — twice over a record's life.
 - **The trauma harness** (`Game.h/.cpp`): running out of HP does not end an
   ordinary mission. It puts you *down* — a few seconds on the floor where
   you fell, the world still running around you and nothing you can do about
@@ -684,6 +755,10 @@ a way to prove movement, combat and mission state actually work:
 - `EREBUS_STATION_AT="x,y,z"` / `EREBUS_STATION_YAW=<deg>` — drop the player
   at a spot inside the Cradle on arrival, so a run can stand at the foot of a
   stair flight rather than only walking the spine in a straight line.
+- `EREBUS_SWAP_AT=<frame>` — swap holsters once, at that frame. The same
+  family as `EREBUS_DEBUG_AUTOAIM`: a headless run has no keyboard, so
+  without it the only thing a check could prove about a second weapon is that
+  it was loaded, not that switching to it works.
 - `EREBUS_SCENE=<name>` — roll a named cutscene on arrival instead of `wake`.
   Writing a cutscene otherwise means playing to the trigger box that fires
   it: twenty minutes of walking to look at four seconds of camera, and a
@@ -823,16 +898,24 @@ file declares.
 
 ### Still only in the browser build
 
-The browser build (`src/js/fps/`) is a much larger game than this one, and
-it's worth naming what has *not* been carried across rather than leaving
-the gap implicit. Ported so far: the renderer, the mission loop, gear and
-currency, the hub, adaptive quality, and the comms-traffic story format.
-Not ported: the campaign structure and its destination/planet system
-(`campaign.js`, `planets.js`), the walkable station hub (`station.js` — the
-Cradle here is a menu, not a place you walk around), bounties, loot chests,
-crew, the dossier/codex, gear rarity and rolls (`gear.js`), the ability
-loadout the Vanguard HUD is built around (`d2hud.js` shows grenade / melee
-/ super meters; this game has no abilities to meter), and networking.
+The browser build (`src/js/fps/`) is a larger game than this one, and it is
+worth naming what has *not* been carried across rather than leaving the gap
+implicit.
+
+Ported: the renderer, the mission loop, gear and currency, the hub, adaptive
+quality, the comms-traffic story format, the campaign structure and its
+destination/planet system (`campaign.js`, `planets.js`), the walkable station
+(`station.js`) — twice over, since there is now a ground station as well —
+the crew who stand in them (`crew.js`), the three doctrines (`classes.js`),
+and the enemy rigs (`hostiles.js`).
+
+Added here and not in the browser build at all: the Strider programme on
+Earth, the rank ladder, two carried weapons, and the trauma harness.
+
+Still not ported: bounties, loot chests, the dossier/codex, gear rarity and
+rolls (`gear.js`), the full ability loadout the Vanguard HUD is built around
+(`d2hud.js` meters grenade / melee / super; this build has one field ability
+per doctrine and meters that), and networking.
 
 Not roadmapped, and worth saying plainly rather than leaving implicit:
 **co-op/netcode** is not planned for this native build in the near term —

@@ -51,8 +51,10 @@ public:
     float phase = 0.0f;
   };
 
-  // Loads every content/crew/*.cfg plus the wandering crew and the idlers.
-  void init(const Content& content);
+  // Loads the content/crew/*.cfg files belonging to `station`, plus the
+  // wandering crew and the idlers for that place. Two hubs means two sets of
+  // routes: the Cradle's cross three decks, Kourou's cross one hall.
+  void init(const Content& content, const std::string& station = "cradle");
   void update(float dt);
 
   void collect(std::vector<DrawItem>& out) const;
