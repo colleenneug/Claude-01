@@ -46,6 +46,7 @@ add_executable(erebus_native
     src/Crew.cpp
     src/Sites.cpp
     src/Cutscene.cpp
+    src/Loadout.cpp
   src/Game.cpp
   src/Renderer.cpp
 )

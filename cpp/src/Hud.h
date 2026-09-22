@@ -6,6 +6,7 @@
 
 class Content;
 class Hub;
+class Loadout;
 struct Profile;
 
 // An ortho 2D overlay: solid-colour rectangles plus text drawn from the
@@ -154,6 +155,12 @@ public:
   // cleared once). The white outline marks the currently-cycling-through
   // selection in each row, which is not necessarily the equipped item.
   void drawHub(int screenW, int screenH, const Content& content, const Hub& hub, const Profile& profile);
+
+  // The kit screen, over whatever is already on screen. Four columns of gear
+  // with the rank gates and prices on them, and a dimmed backdrop so what is
+  // underneath is still legible as context without competing for attention.
+  void drawLoadout(int screenW, int screenH, const Content& content,
+                   const Profile& profile, const Loadout& loadout);
 
   // A promotion, over whatever is already on screen. Drawn wherever you
   // happen to land after the mission that earned it rather than on the

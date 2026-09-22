@@ -59,6 +59,12 @@ public:
   void update(GLFWwindow* window, Camera& camera, float dt, bool firePressed, bool reloadHeld,
               const ScriptedInput& scripted = ScriptedInput{});
 
+  // Stops the player reading the keyboard while something else owns it — the
+  // kit screen, which navigates on W A S D. The world carries on: hostiles
+  // still close, the alarm still sounds and you are still shootable, which is
+  // the point of the kit screen not being a pause.
+  void setInputFrozen(bool frozen) { inputFrozen_ = frozen; }
+
   // ---------- SceneSource ----------
   void collect(float time, std::vector<DrawItem>& out) const override;
   glm::vec3 sunDirection() const override { return sunDirection_; }
@@ -227,6 +233,13 @@ public:
   // Swaps to the other slot if it is filled. Returns true if anything
   // happened, so the caller can play the sound it does not have yet.
   bool switchWeapon();
+
+  // Re-reads the record's equipped gear mid-mission, after the kit screen
+  // has written to it. Holsters whose weapon did not change keep the ammo
+  // they had — swapping your armour must not silently reload you — and a
+  // holster that did change comes in full, which is the cost of the swap
+  // being free in every other respect.
+  void applyLoadout(const Profile& profile);
   bool selectSlot(int s);
   // 0 while a swap is in progress, rising to 1: the viewmodel drops out of
   // frame and the new one comes up, and you cannot fire through it.
@@ -288,6 +301,7 @@ private:
   std::string pickupNote_;
   float pickupNoteT_ = 0.0f;
   float abilityCool_ = 0.0f;
+  bool inputFrozen_ = false;
   int xpEarned_ = 0, xpBanked_ = 0;
   int harnessMax_ = 3, harnessLeft_ = 3;
   float downT_ = 0.0f;              // counts down while you are on the ground

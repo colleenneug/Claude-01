@@ -13,6 +13,7 @@
 #include "Game.h"
 #include "Hud.h"
 #include "Hub.h"
+#include "Loadout.h"
 #include "Space.h"
 #include "Station.h"
 #include "Profile.h"
@@ -277,6 +278,31 @@ int main(int argc, char** argv) {
   // EREBUS_TUTORIAL_AUTO=1 walks the ground site's steps by feeding each
   // one the input it is asking for. Verification aid only.
   bool tutorialAuto = envFlag("EREBUS_TUTORIAL_AUTO");
+  // EREBUS_KIT_AT=<frame> opens the kit screen at that frame, and
+  // EREBUS_KIT_SCRIPT="right,down,equip,close" drives it — one token every
+  // ten frames. Same family as EREBUS_HUB_SCRIPT: a headless run has no
+  // keyboard, so without these the only thing a check could prove about the
+  // kit screen is that it compiles.
+  int forceKitFrame = 0;
+  bool forceKit = false;
+  if (const char* k = std::getenv("EREBUS_KIT_AT")) {
+    forceKitFrame = std::atoi(k);
+    forceKit = forceKitFrame > 0;
+  }
+  std::vector<std::string> kitScriptTokens;
+  if (const char* ks = std::getenv("EREBUS_KIT_SCRIPT")) {
+    std::string all = ks;
+    size_t start = 0;
+    while (start <= all.size()) {
+      size_t comma = all.find(',', start);
+      std::string tok = all.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+      if (!tok.empty()) kitScriptTokens.push_back(tok);
+      if (comma == std::string::npos) break;
+      start = comma + 1;
+    }
+  }
+  size_t kitScriptPos = 0;
+
   int swapAtFrame = 0;
   if (const char* sw = std::getenv("EREBUS_SWAP_AT")) swapAtFrame = std::atoi(sw);
   // Prints the screen-centre pixel, before and after tone mapping, every
@@ -343,6 +369,11 @@ int main(int argc, char** argv) {
   bool prevSkipKey = false;
   bool wasCutscenePlaying = false;
   bool prevSlot1Key = false, prevSlot2Key = false, prevSwapKey = false;
+  // The kit screen. One instance, opened over whatever state is running:
+  // it is a modal overlay rather than an app state precisely so that it does
+  // not need one entry point per state to arrive from.
+  Loadout loadout;
+  bool prevKitKey = false;
   // The last promotion, and how long it stays on screen. Shown wherever you
   // land after the mission that earned it — a promotion that flashes past on
   // the debrief you are already dismissing is a promotion nobody sees.
@@ -423,6 +454,29 @@ int main(int argc, char** argv) {
   double lastTime = glfwGetTime();
   int frame = 0;
 
+  // The end of a frame: dump a screenshot if this was the last one, and say
+  // whether the loop should stop. A lambda rather than inline code because
+  // the kit overlay takes its own path through the loop, and the first
+  // version of that path quietly skipped the dump.
+  auto finishFrame = [&]() -> bool {
+    if (dumpPath && maxFrames > 0 && frame >= maxFrames) {
+      glfwGetFramebufferSize(window, &width, &height);
+      std::vector<unsigned char> pixels(size_t(width) * height * 3);
+      glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+      FILE* f = std::fopen(dumpPath, "wb");
+      if (f) {
+        std::fprintf(f, "P6\n%d %d\n255\n", width, height);
+        for (int y = height - 1; y >= 0; y--) {
+          std::fwrite(pixels.data() + size_t(y) * width * 3, 1, size_t(width) * 3, f);
+        }
+        std::fclose(f);
+        std::printf("[dump] wrote %s (%dx%d) at frame %d\n", dumpPath, width, height, frame);
+      }
+      return true;
+    }
+    return maxFrames > 0 && frame >= maxFrames;
+  };
+
   while (!glfwWindowShouldClose(window)) {
     double now = glfwGetTime();
     float dt = fixedDt > 0.0f
@@ -449,6 +503,91 @@ int main(int argc, char** argv) {
       camera.look((float)(mx - lastX), (float)(my - lastY), 0.09f);
     }
     lastX = mx; lastY = my;
+
+    // ---- the kit screen, from anywhere. G opens it over a mission, a
+    // station, open space or the hub; while it is up it owns the keyboard and
+    // the state underneath gets no input, though its world keeps running.
+    //
+    // Not offered on the slot and doctrine screens: there is no record to
+    // change the gear of yet on one, and on the other the record is being
+    // created and has none.
+    {
+      const bool kitState = state == AppState::Mission || state == AppState::Station ||
+                            state == AppState::Space || state == AppState::Hub;
+      const bool kitDown = glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS ||
+                           (forceKit && frame == forceKitFrame);
+      if (kitState && kitDown && !prevKitKey && !loadout.isOpen()) {
+        loadout.open(hubContent, profile);
+        // The mouse comes back: this is a menu, and swallowing the pointer
+        // while one is open is how you end up unable to find the cursor.
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        mouseCaptured = false;
+      }
+      prevKitKey = kitDown;
+    }
+
+    if (loadout.isOpen()) {
+      const char* kitScript = nullptr;
+      if (kitScriptPos < kitScriptTokens.size() && frame % 10 == 0) {
+        kitScript = kitScriptTokens[kitScriptPos++].c_str();
+      }
+      const bool closed = loadout.update(window, kitScript);
+
+      // The world underneath keeps rendering and keeps simulating, which is
+      // the whole design: a menu that freezes a firefight while you shop
+      // removes the decision it exists to serve.
+      glfwGetFramebufferSize(window, &width, &height);
+      if (state == AppState::Mission && gameEverStarted) {
+        game.setInputFrozen(true);
+        game.update(window, camera, dt, false, false, ScriptedInput{});
+        renderer.renderFrame(game, camera, (float)now, dt);
+      } else if (state == AppState::Station) {
+        station.setInputFrozen(true);
+        station.update(window, camera, dt, ScriptedInput{});
+        renderer.renderFrame(station, camera, (float)now, dt);
+      } else if (state == AppState::Space) {
+        // The ship is not updated at all: nothing out here is going to shoot
+        // you while you read, and a flight that keeps reading the throttle
+        // through a menu is a flight that ends in a planet.
+        renderer.renderFrame(space, camera, (float)now, dt);
+      } else {
+        glClearColor(0.03f, 0.035f, 0.05f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      }
+      hud.drawLoadout(width, height, hubContent, profile, loadout);
+
+      if (closed) {
+        // Whoever is underneath re-reads the record exactly once.
+        ProfileStore::save(profile, savePath);
+        game.setInputFrozen(false);
+        station.setInputFrozen(false);
+        if (state == AppState::Mission && gameEverStarted) game.applyLoadout(profile);
+        hub.init(hubContent, profile);
+        if (state != AppState::Hub) {
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+          mouseCaptured = true;
+          firstMouse = true;
+        }
+        prevKitKey = glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS;
+      }
+
+      if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
+        FILE* f = std::fopen(logStatePath, "w");
+        if (f) {
+          std::fprintf(f,
+                       "{\"appState\":\"kit\",\"frame\":%d,\"chits\":%d,"
+                       "\"primary\":\"%s\",\"sidearm\":\"%s\",\"armour\":\"%s\"}\n",
+                       frame + 1, profile.chits, profile.equippedWeapon.c_str(),
+                       profile.equippedSidearm.c_str(), profile.equippedArmor.c_str());
+          std::fclose(f);
+        }
+      }
+
+      frame++;
+      if (finishFrame()) break;
+      glfwSwapBuffers(window);
+      continue;
+    }
 
     if (state == AppState::SlotSelect) {
       auto edge = [&](int key, bool& prev) {
@@ -1211,22 +1350,7 @@ int main(int argc, char** argv) {
 
     frame++;
 
-    if (dumpPath && maxFrames > 0 && frame >= maxFrames) {
-      glfwGetFramebufferSize(window, &width, &height);
-      std::vector<unsigned char> pixels(size_t(width) * height * 3);
-      glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
-      FILE* f = std::fopen(dumpPath, "wb");
-      if (f) {
-        std::fprintf(f, "P6\n%d %d\n255\n", width, height);
-        for (int y = height - 1; y >= 0; y--) {
-          std::fwrite(pixels.data() + size_t(y) * width * 3, 1, size_t(width) * 3, f);
-        }
-        std::fclose(f);
-        std::printf("[dump] wrote %s (%dx%d) at frame %d\n", dumpPath, width, height, frame);
-      }
-      break;
-    }
-    if (maxFrames > 0 && frame >= maxFrames && !dumpPath) break;
+    if (finishFrame()) break;
 
     glfwSwapBuffers(window);
   }

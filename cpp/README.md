@@ -219,6 +219,7 @@ In a mission:
 | R | Reload |
 | 1 / 2 | Primary / sidearm |
 | X | Swap holsters |
+| **G** | **The kit screen — change your gear, from anywhere** |
 | Q or E | Your doctrine's field ability — barrier, EMP or phase step |
 | Right mouse, held | Aim — narrows the FOV and brings depth of field in on the background |
 | Escape | Release the mouse; left click re-captures it |
@@ -231,6 +232,28 @@ threshold is a fraction of the walk speed and its floor and ceiling are set
 against the sprint speed, so moving one without the others changes whether
 sliding is worth doing at all. The one thing not carried across is the
 browser's wall-run camera roll.
+
+**G opens the kit screen, from anywhere.** Over a mission, a station, open
+space or the hub itself. Four columns — primary, sidearm, armour, shader —
+with the rank gate or the price on every row, the stats of whatever the caret
+is on along the bottom, and a line saying what your last Enter actually did
+or why it did nothing. A D moves between columns, W S moves within one, Enter
+equips (buying it first if you do not own it), G or Escape closes.
+
+It is a modal overlay rather than an app state, which is exactly why it needs
+no entry point per state to arrive from. Closing it writes the record to disk
+and hands the running mission its new loadout (`Game::applyLoadout`): a
+holster whose weapon did not change keeps the magazine it had — changing your
+sidearm must not silently reload the gun in your hands — and armour carries
+your health across as a *fraction*, so swapping into heavier plate mid-fight
+is not a heal and swapping out of it does not kill you.
+
+**It does not pause a mission.** The world keeps running underneath and you
+are still shootable, exactly like a cutscene. That is deliberate: a menu that
+freezes a firefight while you shop removes the decision it exists to serve.
+Opening your kit with a warden ten metres away should be a bad idea. The
+screen says so along the bottom, because it is a rule you would otherwise
+meet the hard way.
 
 You carry **two weapons**: a primary and a sidearm, each with its own
 magazine and its own reserve. Which holster a weapon lives in is its `shape`
@@ -647,6 +670,12 @@ see `Content::loadAll` in `src/Content.cpp`.
   loss (player HP 0) conditions, and on a first win pays the mission's
   `reward` chits into the profile via `Profile::recordMissionComplete` (a
   repeat clear doesn't pay out again).
+- **The kit screen** (`Loadout.h/.cpp`): a modal gear overlay openable from
+  any state, holding its own selection and writing straight to the Profile.
+  One rule decides whether a row is takeable — `Loadout::availability`, which
+  checks doctrine, then rank, then money, in the order the reasons actually
+  bind — and both the renderer and the equip path read it, so the two can
+  never disagree about what is on the shelf.
 - **Two hubs** (`Station.h/.cpp`): the Cradle in orbit, and **Kourou ground
   station** on Earth. Not a reskin of one another — the Cradle is a sealed
   can with strip light and no horizon; Kourou is a shed on a launch site with
@@ -755,6 +784,11 @@ a way to prove movement, combat and mission state actually work:
 - `EREBUS_STATION_AT="x,y,z"` / `EREBUS_STATION_YAW=<deg>` — drop the player
   at a spot inside the Cradle on arrival, so a run can stand at the foot of a
   stair flight rather than only walking the spine in a straight line.
+- `EREBUS_KIT_AT=<frame>` / `EREBUS_KIT_SCRIPT="right,up,equip,close"` —
+  opens the kit screen at that frame and drives it, one token every ten
+  frames. The same idea as `EREBUS_HUB_SCRIPT`: without them the only thing a
+  check could prove about the kit screen is that it compiles, rather than
+  that buying from it charges the chits and reaches the live mission.
 - `EREBUS_SWAP_AT=<frame>` — swap holsters once, at that frame. The same
   family as `EREBUS_DEBUG_AUTOAIM`: a headless run has no keyboard, so
   without it the only thing a check could prove about a second weapon is that

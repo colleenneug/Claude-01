@@ -268,6 +268,67 @@ run "$OUT/range.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1
 check "the range qualification clears" "$OUT/range.json" \
       "s['missionState'] == 'complete'"
 
+# THE KIT SCREEN. G opens it over a mission, and the whole point is that it
+# writes to the record from there: a menu you can only reach from a counter is
+# the hub, which already existed.
+cat > "$OUT/save-kit.txt" <<'SEED'
+name = Operative
+chits = 520
+xp = 3000
+rank_paid = 3
+class = bulwark
+equipped_weapon = maul_12
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_weapon maul_12
+owned_armor patrol_vest
+owned_cosmetic default
+completed tutorial_earth
+SEED
+run "$OUT/kit.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_KIT_AT=40 \
+    EREBUS_MAX_FRAMES=90 -- --mission earth_hangar
+check "the kit screen opens over a running mission" "$OUT/kit.json" \
+      "s['appState'] == 'kit' and s['primary'] == 'maul_12'"
+
+# ...and buying from it charges the chits, records the weapon as owned, and
+# the mission underneath is carrying it before the screen has even closed a
+# second time. The primary keeps its magazine, which is the half of
+# Game::applyLoadout worth checking: changing your sidearm must not reload
+# the gun in your hands.
+cp "$OUT/save-kit.txt" "$OUT/save-kitbuy.txt"
+run "$OUT/kitbuy.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_KIT_AT=40 \
+    EREBUS_KIT_SCRIPT=right,up,equip,close EREBUS_MAX_FRAMES=200 -- --mission earth_hangar
+check "buying from the kit screen equips it into the live mission" "$OUT/kitbuy.json" \
+      "s['appState'] == 'mission' and s['sidearm'] == 'KESTREL' and s['chits'] == 350 \
+       and s['primary'] == 'MAUL-12' and s['ammoInMag'] == 6 and s['reserveAmmo'] == 48"
+checkfile "the kit screen writes the purchase to the record" "$OUT/save-kitbuy.txt" \
+      "^owned_weapon kestrel$"
+
+# The gates hold from the kit screen too. A candidate cannot buy an ANVIL off
+# it however many chits they are holding: the row is shown, and refused.
+cat > "$OUT/save-kitrank.txt" <<'SEED'
+name = Operative
+chits = 5000
+xp = 0
+rank_paid = 0
+class = bulwark
+equipped_weapon = maul_12
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_weapon maul_12
+owned_armor patrol_vest
+owned_cosmetic default
+completed tutorial_earth
+SEED
+run "$OUT/kitrank.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_KIT_AT=40 \
+    EREBUS_KIT_SCRIPT=up,up,up,up,equip,close EREBUS_MAX_FRAMES=220 -- --mission earth_hangar
+check "the kit screen will not sell above your rank" "$OUT/kitrank.json" \
+      "s['chits'] == 5000 and s['primary'] == 'MAUL-12'"
+
 # Nothing is armed before you are: forty frames in you are still empty-handed
 # and the opening cutscene is running.
 run "$OUT/wake.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_MAX_FRAMES=40 \

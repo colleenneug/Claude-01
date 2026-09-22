@@ -2,6 +2,7 @@
 #include "Content.h"
 #include "Font.h"
 #include "Hub.h"
+#include "Loadout.h"
 #include "Profile.h"
 #include <algorithm>
 #include <cmath>
@@ -720,6 +721,164 @@ void Hud::drawStation(int screenW, int screenH, const StationState& s) {
                                   : "WASD MOVE   SHIFT SPRINT   SPACE JUMP   E USE")
                    : "E CONTINUE   ESC LEAVE",
                1.9f, dim);
+  end();
+}
+
+void Hud::drawLoadout(int screenW, int screenH, const Content& content,
+                      const Profile& profile, const Loadout& loadout) {
+  begin(screenW, screenH);
+
+  const glm::vec4 dim(0.58f, 0.64f, 0.72f, 0.9f);
+  const glm::vec4 bright(0.90f, 0.95f, 1.0f, 0.98f);
+  const glm::vec4 gold(0.95f, 0.85f, 0.35f, 0.98f);
+  const glm::vec4 equippedCol(0.45f, 0.95f, 0.60f, 0.98f);
+  const glm::vec4 ownedCol(0.45f, 0.70f, 1.00f, 0.95f);
+  const glm::vec4 lockedCol(0.55f, 0.58f, 0.62f, 0.85f);
+  const glm::vec4 rankCol(0.72f, 0.60f, 0.95f, 0.95f);
+  const glm::vec4 poorCol(0.85f, 0.35f, 0.32f, 0.85f);
+
+  // A wash rather than a blackout: what is underneath is context — the room
+  // you are in, or the thing about to shoot you — and it should stay legible.
+  rect(0, 0, (float)screenW, (float)screenH, glm::vec4(0.02f, 0.03f, 0.05f, 0.82f));
+
+  const float cx = screenW * 0.5f;
+  char buf[128];
+
+  // ---- masthead
+  text(48, 40, "KIT", 4.0f, bright);
+  text(48, 78, "CHANGE WHAT YOU ARE CARRYING", 1.8f, dim);
+
+  std::snprintf(buf, sizeof(buf), "%d CHITS", profile.chits);
+  float chitsW = textWidth(buf, 2.6f);
+  text(screenW - 48 - chitsW, 42, buf, 2.6f, gold);
+
+  const int rankIdx = content.rankIndexForXp(profile.xp);
+  if (rankIdx >= 0) {
+    const std::string& rname = content.ranks()[(size_t)rankIdx].name;
+    float rw = textWidth(rname, 1.9f);
+    text(screenW - 48 - rw, 72, rname, 1.9f, glm::vec4(0.62f, 0.88f, 1.0f, 0.98f));
+  }
+  rect(48, 100, screenW - 96.0f, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.5f));
+
+  // ---- four columns. Equal widths across the usable span, so the layout
+  // does not need per-column tuning when a content drop adds a fifth weapon.
+  const char* headings[] = {"PRIMARY", "SIDEARM", "ARMOUR", "SHADER"};
+  const float left = 48.0f;
+  const float span = (screenW - 96.0f) / 4.0f;
+  const float rowH = 24.0f;
+
+  for (int c = 0; c < 4; c++) {
+    const Loadout::Column col = (Loadout::Column)c;
+    const std::vector<std::string>& list = loadout.ids(col);
+    const bool active = loadout.column() == col;
+    const float x = left + span * (float)c;
+    const float colRight = x + span - 18.0f;
+
+    // The active column is lit and backed; the others are dimmed but still
+    // readable, because half the reason to open this is to compare.
+    if (active) {
+      rect(x - 8, 116, span - 6.0f, 34.0f + rowH * (float)std::max<size_t>(list.size(), 1),
+           glm::vec4(0.10f, 0.14f, 0.20f, 0.85f));
+    }
+    const float fade = active ? 1.0f : 0.45f;
+
+    glm::vec4 head = active ? glm::vec4(0.80f, 0.90f, 1.0f, 0.98f)
+                            : glm::vec4(0.70f, 0.78f, 0.88f, 0.55f);
+    text(x, 126, headings[c], 1.9f, head);
+
+    float y = 154.0f;
+    for (size_t i = 0; i < list.size(); i++) {
+      const std::string& id = list[i];
+      const Loadout::Availability a = loadout.availability(col, id);
+
+      glm::vec4 col4 = a == Loadout::Availability::Equipped       ? equippedCol
+                     : a == Loadout::Availability::Owned          ? ownedCol
+                     : a == Loadout::Availability::RankLocked     ? rankCol
+                     : a == Loadout::Availability::WrongDoctrine  ? rankCol
+                     : a == Loadout::Availability::TooPoor        ? poorCol
+                                                                  : lockedCol;
+      col4.a *= fade;
+
+      if (active && (int)i == loadout.row(col)) {
+        rect(x - 4, y - 5, span - 16.0f, rowH - 2, glm::vec4(0.18f, 0.26f, 0.36f, 0.9f));
+        text(x - 2, y, ">", 1.9f, bright);
+      }
+
+      std::string name = id;
+      if (col == Loadout::Column::Primary || col == Loadout::Column::Sidearm) {
+        if (const WeaponDef* d = content.weapon(id)) name = d->name;
+      } else if (col == Loadout::Column::Armour) {
+        if (const ArmorDef* d = content.armor(id)) name = d->name;
+      } else if (const CosmeticDef* d = content.cosmetic(id)) {
+        name = d->name;
+      }
+
+      text(x + 14, y, name, 1.8f, col4);
+
+      const std::string gate = loadout.gateLabel(col, id);
+      if (!gate.empty()) {
+        float gw = textWidth(gate, 1.4f);
+        glm::vec4 gcol = a == Loadout::Availability::Equipped      ? equippedCol
+                       : a == Loadout::Availability::Owned         ? ownedCol
+                       : a == Loadout::Availability::Affordable    ? gold
+                       : a == Loadout::Availability::TooPoor       ? poorCol
+                                                                   : rankCol;
+        gcol.a *= fade;
+        text(colRight - gw, y + 2, gate, 1.4f, gcol);
+      }
+      y += rowH;
+    }
+  }
+
+  // ---- the stat line for whatever the caret is on. Numbers, because
+  // "MAUL-12" tells you nothing you did not already know and "8 x 17 at 11m"
+  // tells you whether to take it.
+  {
+    const Loadout::Column col = loadout.column();
+    const std::vector<std::string>& list = loadout.ids(col);
+    if (!list.empty()) {
+      const std::string& id = list[(size_t)std::clamp(loadout.row(col), 0, (int)list.size() - 1)];
+      std::string line;
+      if (col == Loadout::Column::Primary || col == Loadout::Column::Sidearm) {
+        if (const WeaponDef* d = content.weapon(id)) {
+          std::snprintf(buf, sizeof(buf),
+                        "%.0f DAMAGE%s   x%.1f HEAD   %d ROUND MAG   %d RESERVE   %.0fM   %.2fS",
+                        d->damage, d->pellets > 1 ? (" x" + std::to_string(d->pellets) + " PELLETS").c_str() : "",
+                        d->headshotMultiplier, d->magSize, d->reserveAmmo, d->range, d->fireInterval);
+          line = buf;
+          if (d->pierce) line += "   PIERCES";
+        }
+      } else if (col == Loadout::Column::Armour) {
+        if (const ArmorDef* d = content.armor(id)) {
+          std::snprintf(buf, sizeof(buf), "+%.0f INTEGRITY   %.0f%% DAMAGE ABSORBED",
+                        d->hpBonus, d->damageReduction * 100.0f);
+          line = buf;
+        }
+      } else {
+        line = "HUD ACCENT ONLY - NO MECHANICAL EFFECT";
+      }
+      if (!line.empty()) {
+        rect(48, screenH - 132.0f, screenW - 96.0f, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.4f));
+        text(48, screenH - 118.0f, line, 1.6f, glm::vec4(0.72f, 0.80f, 0.90f, 0.92f));
+      }
+    }
+  }
+
+  // ---- what the last Enter did, fading out. A menu that silently refuses is
+  // a menu you think is broken.
+  if (!loadout.notice().empty() && loadout.noticeAge() < 3.2f) {
+    float a = std::clamp(3.2f - loadout.noticeAge(), 0.0f, 1.0f);
+    textCentered(cx, screenH - 88.0f, loadout.notice(), 2.0f,
+                 glm::vec4(0.95f, 0.88f, 0.55f, 0.95f * a));
+  }
+
+  textCentered(cx, screenH - 44.0f,
+               "A D OR LEFT RIGHT  CATEGORY    W S OR UP DOWN  SELECT    ENTER  EQUIP    G  CLOSE",
+               1.7f, dim);
+  // Said plainly, because it is a rule you will meet the hard way otherwise.
+  textCentered(cx, screenH - 22.0f, "THE WORLD KEEPS RUNNING WHILE THIS IS OPEN", 1.4f,
+               glm::vec4(0.85f, 0.55f, 0.48f, 0.8f));
+
   end();
 }
 

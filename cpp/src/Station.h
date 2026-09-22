@@ -65,6 +65,11 @@ public:
   void update(GLFWwindow* window, Camera& camera, float dt,
               const ScriptedInput& scripted = ScriptedInput{});
 
+  // Same as Game::setInputFrozen: the kit screen navigates on W A S D, and
+  // walking off across the concourse while reading a rifle's stats is not
+  // what anyone meant. The crew keep walking their routes.
+  void setInputFrozen(bool frozen) { inputFrozen_ = frozen; }
+
   // Puts the player at the arrivals end, facing down the concourse. Called
   // every time you dock.
   void enter(Camera& camera);
@@ -145,5 +150,6 @@ private:
   // bounced light off a hundred metres of white panel would in a real one.
   glm::vec3 ambientFill_{0.150f, 0.168f, 0.205f};
 
+  bool inputFrozen_ = false;
   float reach_ = 3.2f;
 };

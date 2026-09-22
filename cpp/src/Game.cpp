@@ -411,6 +411,76 @@ bool Game::selectSlot(int s) {
 
 bool Game::switchWeapon() { return selectSlot(slot_ ^ 1); }
 
+void Game::applyLoadout(const Profile& profile) {
+  if (!loaded_) return;
+
+  // Park whatever is in hand so the comparison below sees the live ammo.
+  slots_[slot_].state = weapon_;
+
+  auto refill = [&](int s, const std::string& id) {
+    const WeaponDef* d = content_.weapon(id);
+    if (!d) {
+      slots_[s] = Holster{};
+      return;
+    }
+    if (slots_[s].def == d) return;    // unchanged: keep its magazine
+    slots_[s].def = d;
+    slots_[s].name = d->name;
+    applyDef(slots_[s].state, d);
+    slots_[s].filled = true;
+  };
+
+  // Each column writes to its own holster, and a weapon whose shape puts it
+  // in the other one is filed where it belongs — the kit screen already
+  // splits the two lists that way, but a hand-edited save need not have.
+  const WeaponDef* wantPrimary = content_.weapon(profile.equippedWeapon);
+  const WeaponDef* wantSidearm = content_.weapon(profile.equippedSidearm);
+  refill(SlotPrimary, (wantPrimary && slotFor(wantPrimary) == SlotPrimary)
+                          ? profile.equippedWeapon : std::string());
+  refill(SlotSidearm, (wantSidearm && slotFor(wantSidearm) == SlotSidearm)
+                          ? profile.equippedSidearm : std::string());
+
+  // If the holster you were holding just emptied, come up with the other one.
+  if (!slots_[slot_].filled) slot_ = slot_ ^ 1;
+  swapT_ = 0.0f;
+  swapTo_ = -1;
+
+  if (slots_[slot_].filled) {
+    weapon_ = slots_[slot_].state;
+    weaponDef_ = slots_[slot_].def;
+    weaponName_ = slots_[slot_].name;
+    armed_ = true;
+  } else {
+    // Both holsters empty. Reachable by unequipping everything, which is a
+    // thing the kit screen cannot currently do — but a mission that crashed
+    // because nobody tried it would be a poor excuse.
+    weapon_.ammoInMag = 0;
+    weapon_.reserveAmmo = 0;
+    weaponDef_ = nullptr;
+    weaponName_.clear();
+    armed_ = false;
+  }
+
+  // Armour changes maxHp. Carry the *fraction* across rather than the
+  // absolute value: swapping into heavier plate mid-fight should not be a
+  // heal, and swapping out of it should not kill you.
+  const ArmorDef* armour = content_.armor(profile.equippedArmor);
+  const float baseHp = class_ ? class_->hp : 100.0f;
+  const float newMax = baseHp + (armour ? armour->hpBonus : 0.0f);
+  if (newMax > 0.0f && player_.maxHp > 0.0f) {
+    const float frac = std::clamp(player_.hp / player_.maxHp, 0.0f, 1.0f);
+    player_.maxHp = newMax;
+    player_.hp = std::max(1.0f, newMax * frac);
+  }
+  const float baseDr = class_ ? class_->damageReduction : 0.0f;
+  const float armourDr = armour ? armour->damageReduction : 0.0f;
+  player_.damageReduction = 1.0f - (1.0f - baseDr) * (1.0f - armourDr);
+
+  if (const CosmeticDef* cos = content_.cosmetic(profile.equippedCosmetic)) {
+    hudAccent_ = cos->accent;
+  }
+}
+
 void Game::equipWeaponById(const std::string& id) {
   const WeaponDef* def = content_.weapon(id);
   if (!def) return;
@@ -880,7 +950,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   camAim_ = camera.aim;
 
   const bool onTheGround = downed();
-  if (!onTheGround) {
+  if (!onTheGround && !inputFrozen_) {
     bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
     player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scripted);
   } else {
@@ -919,7 +989,8 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   if (armed_ && swapT_ <= 0.0f && reloadHeld) weapon_.startReload();
   if (!wasReloading && weapon_.reloading) tutorialReloaded_ = true;
 
-  if (armed_ && !onTheGround && swapT_ <= 0.0f && firePressed && weapon_.canFire()) {
+  if (armed_ && !onTheGround && !inputFrozen_ && swapT_ <= 0.0f && firePressed &&
+      weapon_.canFire()) {
     // One trigger pull can strike several hostiles — a shotgun's cone across
     // a pair of thralls, or an induction bolt through the front rank into the
     // one behind it — so this is a list, not a single hit.
