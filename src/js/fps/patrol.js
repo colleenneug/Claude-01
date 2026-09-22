@@ -29,8 +29,8 @@
      and what it is worth. */
   const EVENTS = [
     {
-      id: 'breach', name: 'SITE BREACH',
-      line: 'Something is coming up out of the ground. Put it back.',
+      id: 'breach', name: 'RECONSECRATION',
+      line: 'They are relighting the site. Put it back out.',
       build(c) {
         c.spawnGroup(c.anchor, 7, 0.15);
         return { kind: 'clear' };
@@ -40,7 +40,7 @@
       reward: 1
     },
     {
-      id: 'elite', name: 'HIGH-VALUE TARGET',
+      id: 'elite', name: 'HIGH-VALUE HERETIC',
       line: 'One of theirs is out in the open. It will not be for long.',
       build(c) {
         const boss = c.spawnOne(c.spec.faction.elite, c.anchor, 0);
@@ -60,8 +60,8 @@
       reward: 2
     },
     {
-      id: 'relay', name: 'RELAY CAPTURE',
-      line: 'The relay will answer if someone stands there long enough.',
+      id: 'relay', name: 'SNUFF THE RELAY',
+      line: 'Stand on it long enough and the lamp goes out for good.',
       build(c) {
         c.spawnGroup(c.anchor, 5, 0.3);
         return { kind: 'capture', charge: 0 };

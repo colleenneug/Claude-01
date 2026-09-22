@@ -153,9 +153,28 @@
     SF.gear.ensure(character);
     const armour = SF.gear.armourStats(character);
 
+    /* ---------- the Deep's economy ----------
+       Dread rises as you kill and falls the moment you stop. It is the only
+       thing that closes your wounds (see devour below), so the correct play
+       is forward. Fill the meter and it spends itself all at once. */
+    const DREAD_MAX = 100;
+    const DREAD_KILL = 17;              // per body
+    const DREAD_HEAD = 7;               // on top, for a head shot kill
+    const DREAD_SHATTER = 9;            // on top, for shattering something frozen
+    const DREAD_DECAY = 4;              // per second, once the killing stops
+    const DREAD_GRACE = 3;              // seconds before decay starts
+    const RAPTURE_TIME = 8;
+    const RAPTURE_DAMAGE = 1.35;
+    const RAPTURE_SPEED = 1.15;
+    /* Devour: what you take back out of a body, scaled by how much dread you
+       are carrying and by the armour's regeneration affix. */
+    const DEVOUR_BASE = 9;
+    const DEVOUR_DREAD = 13;            // added at a full meter
+
     const state = {
       hp: 100 + armour.hp, maxHp: 100 + armour.hp, shield: 0, overshield: 0,
       damageFlash: 0, phase: 0, regenT: 0,
+      dread: 0, rapture: 0, dreadIdle: 0, lastKillHead: false,
       running: false, paused: false, over: false,
       xp: 0, kills: 0, time: 0, beatIdx: 0, stepT: 0, drops: null,
       wave: 0, onPad: false, extractT: 0, events: 0, parts: 0, exitTo: null,
@@ -183,8 +202,43 @@
         // a destination's reference is an id, not a number — use its tier instead
         const tier = isPlanet ? 6 + state.wave : missionIndex;
         state.xp += Math.round(e.spec.xp * (1 + 0.1 * (tier - 1)));
+        addDread(DREAD_KILL + (state.lastKillHead ? DREAD_HEAD : 0));
+        state.lastKillHead = false;
+        devour();
+      },
+      onShatter() { addDread(DREAD_SHATTER); },
+      onRevive(e) {
+        hud.killFeed((e.spec.name || 'PALEBEARER') + ' IS BACK UP');
+        hud.banner('IT GOT UP — KILL THE SPARK');
       }
     });
+
+    /* Dread in, and the moment it tips over into Rapture. */
+    function addDread(n) {
+      if (state.over) return;
+      state.dreadIdle = 0;
+      if (state.rapture > 0) return;          // already spent; ride it out
+      state.dread = Math.min(DREAD_MAX, state.dread + n);
+      if (state.dread >= DREAD_MAX) {
+        state.dread = DREAD_MAX;
+        state.rapture = RAPTURE_TIME;
+        player.setSurge(RAPTURE_SPEED);
+        SF.audio.sfx.rapture();
+        hud.banner('RAPTURE');
+      }
+      hud.refreshDread(state.dread / DREAD_MAX, state.rapture > 0);
+    }
+
+    /* The Deep does not heal you; it lets you take what you kill. */
+    function devour() {
+      if (state.over || state.hp <= 0) return;
+      if (state.hp >= state.maxHp) return;
+      const amount = (DEVOUR_BASE + DEVOUR_DREAD * (state.dread / DREAD_MAX))
+                   * (1 + armour.regen / 100);
+      state.hp = Math.min(state.maxHp, state.hp + amount);
+      SF.audio.sfx.devour();
+      hud.refreshVitals(state.hp, state.maxHp, state.overshield);
+    }
 
     /* ---------- co-op ---------- */
     const online = SF.net && SF.net.active;
@@ -240,7 +294,10 @@
       // reported from inside, so a press on cooldown does not count
       onAbility: () => bounty('ability', 1),
       onOvershield(n) { state.overshield = n; hud.refreshVitals(state.hp, state.maxHp, state.overshield); },
-      onPhase(t) { state.phase = t; }
+      onPhase(t) { state.phase = t; },
+      damageScale: () => (state.rapture > 0 ? RAPTURE_DAMAGE : 1),
+      onDevourStep() { devour(); },
+      markHead(isHead) { state.lastKillHead = !!isHead; }
     });
 
     /* ---------- input ---------- */
@@ -462,7 +519,7 @@
             bounty('events', 1);
             SF.storage.save(character.slot, character);
             for (const d of drops) hud.killFeed('SALVAGE — ' + d.name);
-            hud.say('DIVISION', name + ' resolved. Salvage is yours.', 4200);
+            hud.say('CHOIRMASTER', name + ' resolved. Salvage is yours.', 4200);
           }
         });
         /* Open ground: a frame to cross it on, and crates worth crossing it for. */
@@ -497,7 +554,7 @@
             }
             pay(kind.tierBonus ? SF.economy.PAY.vault() : SF.economy.PAY.cache());
             bounty('crates', 1);
-            hud.say('DIVISION', kind.name + ' cracked. Take what is in it.', 3400);
+            hud.say('CHOIRMASTER', kind.name + ' cracked. Take what is in it.', 3400);
           }
         });
 
@@ -537,8 +594,8 @@
             complete();
           }
         });
-        hud.bossShow('THE CONDUCTOR', 'FIRST VOICE / TWO HUNDRED THOUSAND STRONG');
-        hud.bossNodes([0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8]);
+        hud.bossShow('THE FIRST LIGHT', 'FIRST TO SAY YES / TWO HUNDRED THOUSAND STRONG');
+        hud.bossNodes(SF.boss.NODE_COLOUR);   // one definition, in fps/boss.js
       }
 
       state.spawned = true;
@@ -569,8 +626,8 @@
 
     /* ---------- death and respawn ---------- */
 
-    /* Ordinary sectors let the harness bring you back where you came in.
-       The boss fight does not: there, losing your vitals ends the mission. */
+    /* Ordinary sectors let the Deep put you back where you came in. The
+       reliquary floor does not: up there, losing your vitals ends the run. */
     function die() {
       if (state.over || state.dying) return;
       state.deaths++;
@@ -580,17 +637,23 @@
 
       if (state.respawns <= 0) {
         hud.deathOverlay(true, 0, mission.boss
-          ? 'NO HARNESS CHARGE — THE CONDUCTOR TAKES THE FIELD'
-          : 'HARNESS SPENT');
+          ? 'THE DEEP DOES NOT REACH THIS FLOOR'
+          : 'THE DEEP LETS GO');
         return fail();
       }
+
+      state.dread = 0;
+      state.rapture = 0;
+      state.dreadIdle = 0;
+      player.setSurge(1);
+      hud.refreshDread(0, false);
 
       state.respawns--;
       state.dying = true;
       state.respawnT = 2.4;
       state.hp = 0;
       hud.refreshVitals(0, state.maxHp, 0);
-      hud.deathOverlay(true, state.respawns, 'TRAUMA HARNESS ENGAGING');
+      hud.deathOverlay(true, state.respawns, 'THE DEEP IS NOT DONE WITH YOU');
       hud.refreshHarness(state.respawns, state.maxRespawns);
       SF.audio.sfx.lose();
       player.state.shake = 3;
@@ -734,12 +797,12 @@
                                   : won ? 'SECTOR CLEAR' : 'ASSET LOST';
       $('#end-title').className = won ? 'win' : 'lose';
       $('#end-sub').textContent = finale
-        ? 'Two hundred thousand held notes finally allowed to fall. It will stay quiet.'
+        ? 'Two hundred thousand kept lives finally allowed to end. It will stay dark.'
         : won && mission.patrol
             ? `Cutter clear of ${mission.name}. ${state.events} public event${state.events === 1 ? '' : 's'} resolved.`
-        : won ? `${mission.name} secured. The route aft is open.`
-        : mission.boss ? 'No harness charge is issued for Deck Zero. Take it again from the top.'
-              : 'Every harness charge spent. Recovery Division budgets a replacement.';
+        : won ? `${mission.name} secured. The route up is open.`
+        : mission.boss ? 'The Deep does not reach the reliquary floor. Take it again from the top.'
+              : 'It has put you back as often as it intends to. Go down and ask again.';
       $('#end-stats').innerHTML = [
         [mission.patrol ? 'DESTINATION' : 'MISSION',
          mission.patrol ? mission.name + ' — ' + state.events + ' EVENTS'
@@ -748,7 +811,7 @@
         ['ACCURACY', acc + '%'],
         ['HEAD SHOTS', weapon.state.headshots],
         ['TIME', Math.floor(state.time / 60) + 'm ' + Math.floor(state.time % 60) + 's'],
-        ['HARNESS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE ISSUED')],
+        ['RETURNS USED', state.deaths + (state.maxRespawns ? ' / ' + state.maxRespawns : ' — NONE OFFERED')],
         ['XP EARNED', won ? state.xp : Math.round(state.xp * 0.5)],
         ...(state.parts ? [['RUNNER PARTS', state.parts]] : []),
         ...(takings.chits ? [['CHITS', takings.chits]] : []),
@@ -810,7 +873,7 @@
       }
 
       if (state.dying) {
-        // the world holds its breath while the harness works
+        // the world holds its breath while the Deep works
         state.respawnT -= dt;
         if (state.respawnT <= 0) respawn();
         lights.update(dt, camera.position);
@@ -823,6 +886,26 @@
       state.phase = Math.max(0, state.phase - dt);
       state.damageFlash = Math.max(0, state.damageFlash - dt * 2.2);
 
+      /* Dread: banked while you are killing, bleeding away while you are not.
+         Rapture spends the whole meter, so it empties on the way out. */
+      if (state.rapture > 0) {
+        state.rapture = Math.max(0, state.rapture - dt);
+        state.dread = DREAD_MAX * (state.rapture / RAPTURE_TIME);
+        if (state.rapture <= 0) {
+          state.dread = 0;
+          state.dreadIdle = 0;
+          player.setSurge(1);
+          hud.banner('THE DREAD IS SPENT');
+        }
+        hud.refreshDread(state.dread / DREAD_MAX, state.rapture > 0);
+      } else if (state.dread > 0) {
+        state.dreadIdle += dt;
+        if (state.dreadIdle > DREAD_GRACE) {
+          state.dread = Math.max(0, state.dread - DREAD_DECAY * dt);
+          hud.refreshDread(state.dread / DREAD_MAX, false);
+        }
+      }
+
       player.update(dt);
       weapon.update(dt, firing);
       lights.update(dt, camera.position);
@@ -831,10 +914,12 @@
       const visibleTargets = ai.enemies.some((e) => !e.dead && ai.visible(eye, e));
       ai.step(dt, player.position, visibleTargets);
 
-      // out-of-combat regeneration keeps the pace moving
+      /* There is no resting up any more: the Deep pays out on kills (see
+         devour) and leaves only a token trickle for the walk between fights.
+         Backing off to full health is not a strategy the dark side offers. */
       state.regenT += dt;
-      if (state.regenT > 5 && state.hp < state.maxHp) {
-        state.hp = Math.min(state.maxHp, state.hp + 14 * (1 + armour.regen / 100) * dt);
+      if (state.regenT > 7 && state.hp < state.maxHp * 0.35) {
+        state.hp = Math.min(state.maxHp * 0.35, state.hp + 2.5 * (1 + armour.regen / 100) * dt);
         hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       }
 
@@ -922,6 +1007,7 @@
       hud.refreshVitals(state.hp, state.maxHp, state.overshield);
       hud.refreshAmmo(weapon.state);
       hud.refreshAbility(weapon.state);
+      hud.refreshDread(0, false);
       hud.refreshHarness(state.respawns, state.maxRespawns);
       hud.objective(mission.patrol
         ? '<b>' + mission.name + '</b> CLICK TO ENGAGE'
@@ -947,6 +1033,7 @@
     function destroy() {
       cancelAnimationFrame(raf);
       raf = 0;
+      player.setSurge(1);            // never strand rapture's speed bonus
       /* Contracts tick over during a mission but are only banked when
          something else happens to save. Leaving any way at all — abandoning,
          a last death, or walking out of the station — has to keep them. */

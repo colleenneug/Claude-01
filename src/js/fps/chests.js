@@ -2,7 +2,7 @@
    Cached salvage.
 
    Crates left across a patrol zone by whoever was here before. Most
-   are Division caches, dropped and never collected; a few are sealed
+   are grave caches, buried and never collected; a few are sealed
    survey vaults worth going out of your way for. Walk up and hold F.
 
    Opened crates stay open for the session — this is loot you find, so
@@ -15,7 +15,7 @@
   const OPEN_TIME = 1.1;
 
   const KINDS = {
-    cache: { name: 'DIVISION CACHE', colour: 0x7dff9b, tierBonus: 0, drops: 1, weight: 0.78 },
+    cache: { name: 'GRAVE CACHE', colour: 0x7de3a8, tierBonus: 0, drops: 1, weight: 0.78 },
     vault: { name: 'SURVEY VAULT',   colour: 0xb98cff, tierBonus: 5, drops: 2, weight: 0.22 }
   };
 

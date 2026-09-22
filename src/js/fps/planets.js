@@ -2,9 +2,10 @@
    Orbital destinations.
 
    Two worlds the cutter can reach once the ark's habitat ring is
-   behind you. They are open arenas rather than corridors: a horizon,
+   below you. Both are Pale holdings — places the light reached
+   before the ark did, and never left. They are open arenas rather than corridors: a horizon,
    scattered cover, and hostiles in escalating waves until you either
-   call extraction or lose your last harness charge.
+   call extraction or spend the last return the Deep will give you.
 
    Each has a backdrop image if one is present in assets/, and a
    procedurally generated sky if not, so the destinations work with or
@@ -25,11 +26,11 @@
     {
       id: 'desert',
       name: "THRESHER'S REACH",
-      sub: 'DESERT SURVEY STATION · ABANDONED YEAR 4',
-      objective: 'Patrol the dust shelf. Leave when you want to.',
-      brief: 'A survey station the ark dropped on its way through, four years before the ' +
-             'singing started. The relay still answers. Nothing else does. Whatever came up ' +
-             'out of the shelf has had a long time to get used to the heat.',
+      sub: 'DESERT CHAPTERHOUSE · CONSECRATED YEAR 4',
+      objective: 'Raid the dust shelf. Leave when you want to.',
+      brief: 'A survey station the ark blessed on its way through, two years before it did the ' +
+             'same to itself. The Order down there has been keeping the lamps lit for nobody ever ' +
+             'since, and it has had a long time to get used to the heat.',
       image: 'assets/desert-planet-bg.webp',
       /* Violet sky, twin moons, a far-off spire city — matching the supplied
          backdrop closely enough that the generated fallback is not jarring. */
@@ -39,7 +40,7 @@
       ground: '#b06a38', rockTint: '#8a5a3c', fog: 0xa9663f, fogDensity: 0.010,
       light: { key: 0xffd8a0, keyI: 2.2, hemiSky: 0xffb877, hemiGround: 0x4a2f18, hemiI: 1.1 },
       faction: {
-        name: 'THE RECLAIMED',
+        name: 'THE PALE ORDER',
         mix: [['scarab', 0.44], ['marauder', 0.42], ['colossus', 0.14]],
         elite: 'colossus',
         population: 16
@@ -48,11 +49,11 @@
     {
       id: 'frozen',
       name: 'COLD LANTERN',
-      sub: 'FROZEN RELAY · LAST TRANSMISSION YEAR 6',
-      objective: 'Patrol the ice field. Leave when you want to.',
+      sub: 'FROZEN RELAY · STILL BURNING YEAR 6',
+      objective: 'Raid the ice field. Leave when you want to.',
       brief: 'The relay that carried the ark\'s last clean message home, six years into the ' +
-             'crossing. It is still transmitting on a loop, into a sky that has not changed ' +
-             'in forty years. Something down there learned the loop.',
+             'crossing. The Lamplit are still down there feeding it, into a sky that has not ' +
+             'changed in forty years. They will not stop for you either.',
       image: 'assets/frozen-planet-bg.webp',
       /* Night sky and stars with a banded gas giant, over a pale ice field. */
       sky: { top: '#050a18', mid: '#132743', low: '#8fb4cc', sun: '#dfeeff', haze: 0x6fa8d0,
@@ -63,7 +64,7 @@
       ground: '#93aec2', rockTint: '#7fb4d4', fog: 0x86b0cc, fogDensity: 0.012,
       light: { key: 0xdcefff, keyI: 1.05, hemiSky: 0xbfe0ff, hemiGround: 0x2f3d4a, hemiI: 0.7 },
       faction: {
-        name: 'THE STILLED',
+        name: 'THE LAMPLIT',
         mix: [['mote', 0.4], ['revenant', 0.46], ['hoarfrost', 0.14]],
         elite: 'hoarfrost',
         population: 16
@@ -81,9 +82,9 @@
       id: dest.id, n: dest.name, zone: 'arena', from: null,
       name: dest.name, objective: dest.objective, brief: dest.brief,
       waves: [], beats: [
-        [0.5, 'DIVISION', 'Cutter is holding at altitude. Stay as long as you like.'],
-        [7.0, 'VOSS', 'Whatever is down there is not part of the composition. It is just hungry.'],
-        [16.0, 'DIVISION', 'We will flag anything worth your time as it comes up.']
+        [0.5, 'CHOIRMASTER', 'The cutter holds at altitude. Stay as long as you like — nothing here is on a clock.'],
+        [7.0, 'CANDLE', 'They kept the lamps lit for a ship that was never coming. Do not expect them to be reasonable.'],
+        [16.0, 'CHOIRMASTER', 'We will flag anything worth your time as it comes up.']
       ],
       patrol: true, planet: dest
     };

@@ -284,7 +284,7 @@
     emit(0, 3.4, 108, 0xff6a4a, 4.2, 32);
     colliders.push({ min: { x: -2.4, z: 105.6 }, max: { x: 2.4, z: 110.4 }, top: 6.2, bottom: 0 });
 
-    // choir array — the conduits carrying two hundred thousand voices
+    // the reliquary — the conduits carrying two hundred thousand kept lives
     for (let i = 0; i < 6; i++) {
       const zc = 118 + i * 4;
       for (const sx of [-8.4, 8.4]) {

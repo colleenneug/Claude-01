@@ -1,19 +1,25 @@
 /* ============================================================
-   THE CONDUCTOR — the campaign's final mission.
+   THE FIRST LIGHT — the campaign's final mission.
 
-   Its shield is the song, and you cannot shoot a song. It sings a
-   phrase on the four resonance nodes around the dais; play the phrase
-   back by shooting those nodes in the same order and the shield drops
-   long enough to hurt it. Miss a note and it starts the bar again,
-   longer and faster, and punishes you for the interruption.
+   Its shield is its own light, held up by four reliquary nodes, and
+   you cannot shoot a light. It illuminates a phrase across the nodes;
+   give it back BACKWARDS — shoot them in reverse order — and the
+   shield drops long enough to hurt it. The inversion is the point:
+   everything the Pale offers, you return in the opposite direction.
+   Get one wrong and it starts again, longer and faster, and takes a
+   swing at you for the interruption.
 
-   Four phases, each a longer phrase and a bigger chunk of health.
+   Four phases, each a longer phrase and a bigger chunk of health, and
+   then one last resurrection: killing the body only lets the spark
+   out, and the spark is the thing you actually came here for.
    ============================================================ */
 (function (SF) {
   'use strict';
 
   const NOTE_HZ = [392.0, 523.25, 659.25, 783.99];      // G4 C5 E5 G5
-  const NODE_COLOUR = [0x5eeaff, 0xffb454, 0x7dff9b, 0xff5ea8];
+  /* Four clearly separable hues — the puzzle is unplayable if two of them
+     read alike — warmed toward the Pale rather than the old console cyan. */
+  const NODE_COLOUR = [0xfff0b0, 0xff9a4a, 0xbfff9b, 0xff8ad0];
 
   /* phase: [sequence length, playback speed, health chunk, exposed window] */
   const PHASES = [
@@ -28,6 +34,8 @@
 
     /* ---------- the boss itself ---------- */
     const arena = level.zones.deckzero;
+    // 'conductor' is the type key, left alone like the class ids: it is
+    // written into saved data and keyed on across the module.
     const boss = ai.spawn('conductor', arena.cx, arena.cz + 6);
     const totalHp = Math.round(2600 * (ctx.hpScale || 1));
     boss.maxHp = totalHp;
@@ -63,7 +71,11 @@
       crescendo: 0,
       summonT: 18,
       attackT: 2.4,
-      failures: 0
+      failures: 0,
+      /* The last beat: the body dies, its spark gets loose, and the fight is
+         not over until that is down too. */
+      spark: null,
+      sparkOut: false
     };
 
     /* ---------- telegraph ring for the area attack ---------- */
@@ -92,9 +104,9 @@
       state.playIdx = 0;
       state.inputIdx = 0;
       state.t = 0.8;
-      hud.bossShield(true, 'SHIELDED — PLAY THE PHRASE BACK');
+      hud.bossShield(true, 'SHIELDED — GIVE IT BACK BACKWARDS');
       hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
-      hud.say('CONDUCTOR', n === 0 ? 'SING, OR BE TUNED.' : 'AGAIN. FROM THE TOP.', 4200);
+      hud.say('FIRST LIGHT', n === 0 ? 'KNEEL, AND BE KEPT.' : 'AGAIN. FROM THE TOP.', 4200);
     }
 
     function sing(dt) {
@@ -110,7 +122,7 @@
       } else {
         state.mode = 'listening';
         state.inputIdx = 0;
-        hud.bossShield(true, 'YOUR TURN — SHOOT THE NODES IN ORDER');
+        hud.bossShield(true, 'YOUR TURN — SHOOT THEM IN REVERSE');
         hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
       }
     }
@@ -128,7 +140,9 @@
         return;
       }
 
-      if (i === state.sequence[state.inputIdx]) {
+      /* Backwards: the last note it showed you is the first one it wants. */
+      const want = state.sequence[state.sequence.length - 1 - state.inputIdx];
+      if (i === want) {
         state.inputIdx++;
         hud.bossPuzzle(state.sequence.length, state.inputIdx, NODE_COLOUR);
         SF.audio.sfx.hitmarker();
@@ -150,7 +164,7 @@
       SF.audio.sfx.emp();
       player.state.shake = 1.6;
       for (const n of nodes) n.glow = 2.2;
-      hud.say('VOSS', 'That is a rest. It has to stop and listen. Go.', 4000);
+      hud.say('CANDLE', 'That is the seam. It cannot hold and answer at once. Go.', 4000);
     }
 
     function wrongNote() {
@@ -159,7 +173,7 @@
       state.playIdx = 0;
       state.mode = 'singing';
       state.t = 1.1;
-      hud.bossShield(true, 'WRONG NOTE — LISTEN AGAIN');
+      hud.bossShield(true, 'WRONG WAY — WATCH IT AGAIN');
       hud.bossPuzzle(state.sequence.length, 0, NODE_COLOUR);
       SF.audio.sfx.deny();
       // the interruption costs you
@@ -175,7 +189,7 @@
     /* ---------- attacks ---------- */
     function crescendo() {
       state.crescendo = 1.35;                // telegraph time
-      hud.say('CONDUCTOR', 'CRESCENDO.', 1600);
+      hud.say('FIRST LIGHT', 'BE STILL.', 1600);
       SF.audio.sfx.alarm();
     }
 
@@ -206,11 +220,44 @@
         n.halo.set(n.mesh.position.x, n.mesh.position.y, n.mesh.position.z);
       }
 
-      if (boss.dead || boss.hp <= 0) {
-        state.mode = 'beaten';
-        hud.bossDefeated();
-        for (const n of nodes) n.glow = 0;
-        ctx.onDefeated();
+      /* Killing the body is not killing it. The first time it drops, the
+         light comes out and runs; only then can this end. */
+      if (!state.sparkOut && (boss.dead || boss.hp <= 0)) {
+        state.sparkOut = true;
+        state.mode = 'spark';
+        boss.shielded = false;
+        for (const n of nodes) n.glow = 0.15;
+        ringMat.opacity = 0;
+
+        const s = ai.spawn('spark', arena.cx, arena.cz + 6);
+        s.sparkFree = true;
+        s.anchor = { x: arena.cx, z: arena.cz + 6 };
+        s.pos.y = 2.2;
+        s.maxHp = Math.round(90 * (ctx.hpScale || 1));
+        s.hp = s.maxHp;
+        s.alerted = true;
+        state.spark = s;
+
+        hud.bossShield(true, 'THE LIGHT IS LOOSE');
+        hud.banner('IT IS NOT DEAD — KILL THE SPARK');
+        SF.audio.sfx.revive();
+        player.state.shake = 3;
+        hud.say('CANDLE', 'There. That is all it ever was. Do not let it reach the array.', 5200);
+        return;
+      }
+
+      /* Chasing the spark. No crescendos, no nodes — just the last small
+         thing in the room, and it is quick. */
+      if (state.mode === 'spark') {
+        const s = state.spark;
+        hud.bossHealth(s && !s.dead ? s.hp : 0, s ? s.maxHp : 1,
+                       PHASES.length - 1, PHASES.length, false);
+        if (!s || s.dead) {
+          state.mode = 'beaten';
+          hud.bossDefeated();
+          for (const n of nodes) n.glow = 0;
+          ctx.onDefeated();
+        }
         return;
       }
 
@@ -252,7 +299,7 @@
             const ang = Math.random() * Math.PI * 2;
             ai.spawn('thrall', arena.cx + Math.cos(ang) * 17, arena.cz + Math.sin(ang) * 15);
           }
-          hud.say('CONDUCTOR', 'THE CHOIR WILL ASSIST.', 3200);
+          hud.say('FIRST LIGHT', 'THE BLESSED WILL ASSIST.', 3200);
         }
       }
       void playerPos;
@@ -282,5 +329,5 @@
     return { boss, nodes, state, update, rayNode, hitNode, destroy, totalHp };
   }
 
-  SF.boss = { create, PHASES };
+  SF.boss = { create, PHASES, NODE_COLOUR };
 })(window.SF);
