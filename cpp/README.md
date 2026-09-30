@@ -116,26 +116,98 @@ approach the browser build takes with its canvas-baked textures.
 
 ## Building
 
-Dependencies (Ubuntu/Debian package names):
+### Getting the code
+
+The repository is **public**, and its default branch is the one the work is
+on — so a plain clone needs no account, no token and no branch switching:
+
+```
+git clone https://github.com/colleenneug/Claude-01.git
+cd Claude-01/cpp
+```
+
+No submodules, no LFS. The game lives in `cpp/`, not at the repository root,
+so CMake is pointed there; `engine/` is a separate, optional project (see
+`../engine/README.md`) and the rest of the tree is the browser build.
+
+### Dependencies
+
+Four libraries — GLFW 3, GLEW, GLM and OpenGL — plus CMake 3.16+ and a
+C++17 compiler. Nothing is vendored and nothing is downloaded at build time.
+
+**Ubuntu / Debian**
 
 ```
 sudo apt install cmake g++ pkg-config libglfw3-dev libglew-dev libglm-dev libgl1-mesa-dev
 ```
 
-macOS (Homebrew): `brew install cmake glfw glew glm` — CMake will find
-Apple's OpenGL framework automatically. Windows: install the same four
-libraries via vcpkg (`vcpkg install glfw3 glew glm`) and point CMake at the
-vcpkg toolchain file.
+**macOS (Homebrew)**
+
+```
+brew install cmake glfw glew glm
+```
+
+CMake finds Apple's OpenGL framework itself. The renderer asks for a 4.1 core
+forward-compatible context, which is exactly what macOS caps at, so it works
+— but 4.1 is the ceiling there and nothing in this project may use anything
+newer.
+
+**Windows (vcpkg)**
+
+```
+vcpkg install glfw3 glew glm
+```
+
+Then pass the toolchain file when configuring, below. On Windows CMake finds
+glfw3 and GLEW through vcpkg's CMake config packages rather than pkg-config,
+which usually is not installed there — `CMakeLists.txt` branches on `WIN32`
+for exactly this reason.
+
+### Compiling
+
+**Linux / macOS**
 
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-./build/erebus_native                        # runs content/missions/patrol_dust_shelf.cfg
-./build/erebus_native --mission colossus_dig_site   # or any other mission id
+./build/erebus_native
+```
+
+**Windows**
+
+```
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release -j
+cd build\Release
+erebus_native.exe
+```
+
+MSVC is a multi-config generator, so the executable lands in
+`build\Release\` rather than in `build\`.
+
+Either way a post-build step copies `shaders/` and `content/` next to the
+executable, and the executable looks for both relative to its own path. That
+is why the Windows recipe changes into `build\Release` before running: launch
+it from somewhere else and it will not find its shaders.
+
+### Running a specific mission
+
+```
+./build/erebus_native --mission colossus_dig_site
 ```
 
 A mission id is a `.cfg` filename under `content/missions/`, without the
 extension.
+
+### If a rebuild goes wrong
+
+Delete the build directory rather than reconfiguring over it — a stale
+`CMakeCache.txt` remembers paths from the machine it was written on, which is
+the usual reason a tree that built yesterday stops finding OpenGL today:
+
+```
+rm -rf build          # Windows: rmdir /s /q build
+```
 
 ## Controls
 
