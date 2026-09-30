@@ -268,6 +268,42 @@ run "$OUT/range.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1
 check "the range qualification clears" "$OUT/range.json" \
       "s['missionState'] == 'complete'"
 
+# SAVES SURVIVE A REBUILD. They used to be written as a bare "save1.dat" in
+# whatever directory the game ran from, which the build instructions make
+# build/Release — so "delete build and rebuild" deleted every save with it.
+# They now live in a per-user folder, and a save an older build left in the
+# working directory is carried over on first run. This runs the real binary
+# from a scratch "build" folder holding an old save, then deletes that folder
+# outright and runs again from a fresh one, the way an update does.
+MIG="$OUT/migrate"
+mkdir -p "$MIG/run" "$MIG/userdata"
+cp -r "$BUILD/shaders" "$BUILD/content" "$BIN" "$MIG/run/"
+cat > "$MIG/run/save1.dat" <<'SEED'
+name = Operative
+chits = 900
+class = bulwark
+equipped_weapon = maul_12
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon maul_12
+owned_armor patrol_vest
+owned_cosmetic default
+completed breach
+completed spine
+completed junction
+SEED
+( cd "$MIG/run" && xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 \
+    EREBUS_DATA_DIR="$MIG/userdata" EREBUS_SLOT=1 EREBUS_LOG_STATE="$MIG/first.json" \
+    EREBUS_MAX_FRAMES=40 ./erebus_native >/dev/null 2>&1 )
+checkfile "an old save is carried into the per-user folder" "$MIG/userdata/save1.dat" "^completed junction$"
+rm -rf "$MIG/run" && mkdir -p "$MIG/run"
+cp -r "$BUILD/shaders" "$BUILD/content" "$BIN" "$MIG/run/"
+( cd "$MIG/run" && xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 \
+    EREBUS_DATA_DIR="$MIG/userdata" EREBUS_SLOT=1 EREBUS_LOG_STATE="$MIG/second.json" \
+    EREBUS_MAX_FRAMES=40 ./erebus_native >/dev/null 2>&1 )
+check "a save survives deleting the build folder" "$MIG/second.json" \
+      "s['appState'] == 'space'"
+
 # UPGRADING AN EXISTING SAVE. A record that was already flying the ark before
 # the Earth programme was written must not be sent back to school for it: it
 # keeps its ship, and its route stays open. Without the grandfather clause in

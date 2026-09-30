@@ -1,6 +1,7 @@
 #include "Profile.h"
 #include "Content.h"
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -176,6 +177,65 @@ bool ProfileStore::exists(const std::string& path) {
   std::error_code ec;   // the throwing overload would turn a permissions
                         // hiccup into a crash on the slot select screen
   return std::filesystem::exists(path, ec) && !ec;
+}
+
+std::string ProfileStore::dataDir() {
+  namespace fs = std::filesystem;
+  fs::path base;
+  if (const char* o = std::getenv("EREBUS_DATA_DIR"); o && *o) {
+    base = fs::path(o);
+  } else {
+#if defined(_WIN32)
+    if (const char* a = std::getenv("APPDATA"); a && *a) base = fs::path(a) / "ErebusCradle";
+#elif defined(__APPLE__)
+    if (const char* h = std::getenv("HOME"); h && *h)
+      base = fs::path(h) / "Library" / "Application Support" / "ErebusCradle";
+#else
+    if (const char* x = std::getenv("XDG_DATA_HOME"); x && *x) {
+      base = fs::path(x) / "erebus-cradle";
+    } else if (const char* h = std::getenv("HOME"); h && *h) {
+      base = fs::path(h) / ".local" / "share" / "erebus-cradle";
+    }
+#endif
+  }
+  if (base.empty()) return "";
+  std::error_code ec;
+  fs::create_directories(base, ec);
+  if (ec) {
+    std::fprintf(stderr, "[Profile] cannot create save folder '%s' (%s); saving next to the game\n",
+                 base.string().c_str(), ec.message().c_str());
+    return "";
+  }
+  return base.string();
+}
+
+std::string ProfileStore::slotPath(int slot) {
+  const std::string name = "save" + std::to_string(slot + 1) + ".dat";
+  const std::string dir = dataDir();
+  if (dir.empty()) return name;
+  return (std::filesystem::path(dir) / name).string();
+}
+
+std::string ProfileStore::migrateLegacySlot(int slot, const std::string& legacyDir) {
+  namespace fs = std::filesystem;
+  const std::string target = slotPath(slot);
+  const fs::path legacy = fs::path(legacyDir) / ("save" + std::to_string(slot + 1) + ".dat");
+
+  std::error_code ec;
+  // Nothing to do if the new slot already has a record in it — including the
+  // case where the per-user folder could not be created and slotPath fell
+  // back to the very file we would be copying.
+  if (fs::exists(target, ec)) return "";
+  if (!fs::exists(legacy, ec)) return "";
+  if (fs::equivalent(legacy, target, ec)) return "";
+
+  fs::copy_file(legacy, target, fs::copy_options::skip_existing, ec);
+  if (ec) {
+    std::fprintf(stderr, "[Profile] could not carry %s over to %s (%s)\n",
+                 legacy.string().c_str(), target.c_str(), ec.message().c_str());
+    return "";
+  }
+  return legacy.string();
 }
 
 bool ProfileStore::erase(const std::string& path) {

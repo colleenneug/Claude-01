@@ -114,4 +114,36 @@ public:
 
   // Deletes a slot's file. Returns false if there was nothing to delete.
   static bool erase(const std::string& path);
+
+  // ---- where saves live
+  //
+  // In a per-user data folder, NOT in whatever directory the game was
+  // launched from. Saves used to be written as a bare "save1.dat", which
+  // resolves against the working directory — and the build instructions have
+  // you run the game from build\Release, so every save landed inside the
+  // build tree, and the recommended way to update ("delete build, rebuild")
+  // deleted every save along with it. A save is the one file an update must
+  // never touch, so it now lives where no build step can reach:
+  //
+  //   Windows  %APPDATA%/ErebusCradle
+  //   macOS    ~/Library/Application Support/ErebusCradle
+  //   Linux    $XDG_DATA_HOME/erebus-cradle  (else ~/.local/share/erebus-cradle)
+  //
+  // (Written with forward slashes on purpose: a comment line ending in a
+  // backslash splices the next line into the comment.)
+  //
+  // EREBUS_DATA_DIR overrides it. Empty when the platform offers no usable
+  // home at all, in which case slots fall back to the working directory,
+  // which is what they always were.
+  static std::string dataDir();
+
+  // The full path of save slot `slot` (0..2).
+  static std::string slotPath(int slot);
+
+  // Carries a save written by an older build — a bare saveN.dat in
+  // `legacyDir` — into the per-user folder, the first time the new build
+  // runs. Only when the per-user slot is empty; never overwrites, never
+  // deletes the old file. Returns the path it copied from, or empty if it
+  // did nothing.
+  static std::string migrateLegacySlot(int slot, const std::string& legacyDir);
 };
