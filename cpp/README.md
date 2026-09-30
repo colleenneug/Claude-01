@@ -186,20 +186,9 @@ MSVC is a multi-config generator, so the executable lands in
 `build\Release\` rather than in `build\`.
 
 Either way a post-build step copies `shaders/` and `content/` next to the
-executable, and the game looks for both relative to the folder it is *run
-from* — not relative to the executable. That is why the Windows recipe changes
-into `build\Release` before running: launch it from somewhere else and it will
-not find its shaders. (Double-clicking the `.exe` works, because Windows runs a
-program from its own folder.)
-
-Saves are not in there. They live in a per-user folder —
-`%APPDATA%\ErebusCradle` on Windows, `~/Library/Application Support/ErebusCradle`
-on macOS, `~/.local/share/erebus-cradle` on Linux, or `EREBUS_DATA_DIR` if set —
-so deleting `build` never costs anyone their progress. Earlier builds wrote
-them as a bare `save1.dat` in the working directory, which with the recipe above
-meant *inside* `build`, which the recommended update deleted. The game now carries
-any such file over into the per-user folder the first time it runs, and leaves
-the original alone.
+executable, and the executable looks for both relative to its own path. That
+is why the Windows recipe changes into `build\Release` before running: launch
+it from somewhere else and it will not find its shaders.
 
 ### Running a specific mission
 
@@ -223,8 +212,7 @@ rm -rf build          # Windows: rmdir /s /q build
 ## Controls
 
 The game opens on the **save slot screen**: three records, each its own
-file (`save1.dat` … `save3.dat`) in your per-user save folder (see
-*Compiling*, above).
+file (`save1.dat` … `save3.dat`) next to the executable.
 
 | Input | Action |
 |---|---|
@@ -633,8 +621,7 @@ see `Content::loadAll` in `src/Content.cpp`.
   sidearm and twelve rounds — nothing else. Your doctrine's weapon is not
   issued at a desk, it is on the armoury bench in Block D, and walking over
   it is what puts it in your inventory. Three **save slots**
-  (`save1.dat` … `save3.dat`, in the per-user folder from
-  `ProfileStore::dataDir`) are picked on the startup screen, which shows
+  (`save1.dat` … `save3.dat`) are picked on the startup screen, which shows
   each record's chits, missions cleared and equipped weapon, or EMPTY.
   `ProfileStore::exists` backs that distinction, since `load()` deliberately
   can't tell you — it hands back a playable profile either way.

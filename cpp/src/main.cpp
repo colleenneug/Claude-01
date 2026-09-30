@@ -144,21 +144,7 @@ int main(int argc, char** argv) {
   // slot headlessly instead.
   const char* savePathEnv = std::getenv("EREBUS_SAVE_PATH");
   const char* slotEnv = std::getenv("EREBUS_SLOT");
-  // Saves live in a per-user folder, not next to wherever the game happens to
-  // be run from — see ProfileStore::dataDir for why that mattered. A save an
-  // older build left in the working directory is carried over the first time
-  // this build runs, so nobody's record is stranded by the move.
-  std::string slotPaths[3];
-  for (int i = 0; i < 3; i++) {
-    slotPaths[i] = ProfileStore::slotPath(i);
-    if (!savePathEnv) {
-      const std::string from = ProfileStore::migrateLegacySlot(i, ".");
-      if (!from.empty()) {
-        std::printf("[Profile] carried save slot %d over from %s to %s\n", i + 1, from.c_str(),
-                    slotPaths[i].c_str());
-      }
-    }
-  }
+  std::string slotPaths[3] = {"save1.dat", "save2.dat", "save3.dat"};
   int slotIndex = 0;
   bool slotChosen = false;
 
