@@ -94,6 +94,29 @@ int settleRank(Profile& p, const Content& content, std::string* promotedTo,
   return now;
 }
 
+bool trackCleared(const Profile& p, const Content& content, const std::string& track) {
+  const std::vector<std::string> ids = content.campaignIds(track);
+  if (ids.empty()) return true;   // no such track in this content tree
+
+  bool all = true;
+  for (const std::string& id : ids) {
+    if (!p.hasCompleted(id)) { all = false; break; }
+  }
+  if (all) return true;
+
+  // The grandfather clause. Anything cleared on a track that comes after this
+  // one means the record predates this track being in front of it.
+  const std::vector<std::string> tracks = content.campaignTracks();
+  size_t here = 0;
+  while (here < tracks.size() && tracks[here] != track) here++;
+  for (size_t t = here + 1; t < tracks.size(); t++) {
+    for (const std::string& id : content.campaignIds(tracks[t])) {
+      if (p.hasCompleted(id)) return true;
+    }
+  }
+  return false;
+}
+
 Profile ProfileStore::load(const std::string& path) {
   std::ifstream f(path);
   if (!f) {

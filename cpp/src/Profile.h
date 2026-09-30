@@ -88,6 +88,17 @@ struct Profile {
 int settleRank(Profile& p, const Content& content, std::string* promotedTo = nullptr,
                int* stipendPaid = nullptr);
 
+// Whether every mission on `track` has been cleared — with one deliberate
+// exception. A record that has already cleared missions on a *later* track
+// was playing before this one existed, and is not sent back to school for it.
+//
+// Without that, adding the Earth programme to a game whose saves were all
+// mid-ark would have taken every one of those records, put them back on the
+// ground at Kourou and locked the route they were halfway down. The same
+// reasoning as the tutorial's original "has cleared nothing at all" test: a
+// record is not punished for having played earlier.
+bool trackCleared(const Profile& p, const Content& content, const std::string& track);
+
 class ProfileStore {
 public:
   // Loads from `path`; if the file doesn't exist (a first run), returns a

@@ -32,15 +32,30 @@ void Hub::init(const Content& content, Profile& profile) {
   std::sort(side.begin(), side.end());
   missionIds_.insert(missionIds_.end(), side.begin(), side.end());
 
-  // Open on the furthest sector actually reachable rather than on mission one
-  // again every time you dock. Across two tracks that means the furthest
-  // *unfinished* one: walking in and finding the list parked on a mission you
-  // cleared six deployments ago is a list that has stopped being useful.
-  missionIndex_ = 0;
+  // Open on where the record actually is: the first unfinished sector *after*
+  // the last one it cleared. Scanning from the top for the first unfinished
+  // mission is almost the same thing and wrong in one case that matters — a
+  // record halfway down the ark has never played the Earth programme, so the
+  // first unfinished mission in the combined list is BLOCK D, and it would
+  // open its route parked on a tutorial it skipped years ago.
+  int lastCleared = -1;
   for (int i = 0; i < campaignCount_; i++) {
-    if (missionLocked(i)) continue;
+    if (profile.hasCompleted(missionIds_[(size_t)i])) lastCleared = i;
+  }
+  missionIndex_ = 0;
+  bool parked = false;
+  for (int i = lastCleared + 1; i < campaignCount_; i++) {
+    if (missionLocked(i) || profile.hasCompleted(missionIds_[(size_t)i])) continue;
     missionIndex_ = i;
-    if (!profile.hasCompleted(missionIds_[(size_t)i])) break;
+    parked = true;
+    break;
+  }
+  if (!parked) {
+    // Everything past the last clear is locked or done. Fall back to the
+    // furthest thing that can actually be flown.
+    for (int i = 0; i < campaignCount_; i++) {
+      if (!missionLocked(i)) missionIndex_ = i;
+    }
   }
 
   // Open the hub on whatever's actually equipped/last-played rather than
@@ -149,10 +164,7 @@ bool Hub::missionLocked(int index) const {
     size_t here = 0;
     while (here < tracks.size() && tracks[here] != m->campaign) here++;
     if (here == 0 || here >= tracks.size()) return false;    // the first track is always open
-    for (const std::string& id : content_->campaignIds(tracks[here - 1])) {
-      if (!profile_->hasCompleted(id)) return true;
-    }
-    return false;
+    return !trackCleared(*profile_, *content_, tracks[here - 1]);
   }
 
   return !profile_->hasCompleted(missionIds_[(size_t)index - 1]);

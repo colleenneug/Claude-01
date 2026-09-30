@@ -268,6 +268,36 @@ run "$OUT/range.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1
 check "the range qualification clears" "$OUT/range.json" \
       "s['missionState'] == 'complete'"
 
+# UPGRADING AN EXISTING SAVE. A record that was already flying the ark before
+# the Earth programme was written must not be sent back to school for it: it
+# keeps its ship, and its route stays open. Without the grandfather clause in
+# trackCleared this save woke up on the ground at Kourou with the whole ark
+# locked, which is the worst thing an update can do to somebody's record.
+cat > "$OUT/save-legacy.txt" <<'SEED'
+name = Operative
+chits = 900
+class = bulwark
+equipped_weapon = maul_12
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon maul_12
+owned_armor patrol_vest
+owned_cosmetic default
+completed breach
+completed spine
+completed junction
+SEED
+run "$OUT/legacy.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
+check "a record already flying the ark keeps its ship" "$OUT/legacy.json" \
+      "s['appState'] == 'space'"
+
+# ...and its route list opens where it actually is, not on the tutorial it
+# never played.
+cp "$OUT/save-legacy.txt" "$OUT/save-legacyhub.txt"
+run "$OUT/legacyhub.json" EREBUS_SKIP_SPACE=1 EREBUS_MAX_FRAMES=30 EREBUS_SKIP_TUTORIAL=
+check "an existing record opens its route where it left off" "$OUT/legacyhub.json" \
+      "s['selectedMission'] == 'counter'"
+
 # THE KIT SCREEN. G opens it over a mission, and the whole point is that it
 # writes to the record from there: a menu you can only reach from a counter is
 # the hub, which already existed.

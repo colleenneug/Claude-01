@@ -58,12 +58,7 @@ constexpr const char* kTutorialMission = "tutorial_earth";
 // drop that adds a seventh Earth qualification keeps records on the ground
 // until they have flown it.
 bool earthProgrammeDone(const Content& content, const Profile& profile) {
-  const std::vector<std::string> track = content.campaignIds("earth");
-  if (track.empty()) return true;   // no Earth campaign in this content tree
-  for (const std::string& id : track) {
-    if (!profile.hasCompleted(id)) return false;
-  }
-  return true;
+  return trackCleared(profile, content, "earth");
 }
 
 int main(int argc, char** argv) {
