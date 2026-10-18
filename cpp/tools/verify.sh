@@ -547,13 +547,15 @@ checkfile "experience holds below second class until the campaign is done" "$OUT
            breach spine junction counter aft promenade sunset greenhouse medbay ward reactor \
            coolant choir deeper threshold conductor; do echo "completed $m"; done
 } > "$OUT/save-done.txt"
+# One sector short of the end, taken before the run below writes a ship into
+# the finished record.
+grep -v '^completed conductor$' "$OUT/save-done.txt" > "$OUT/save-almost.txt"
 run "$OUT/done.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
 check "the end of the campaign issues a ship" "$OUT/done.json" "s['appState'] == 'space'"
 checkfile "...the KITE" "$OUT/save-done.txt" "^owned_ship kite$"
 checkfile "...and second class" "$OUT/save-done.txt" "^xp = 4500$"
 
 # A record one sector short of the end has no ship, and the airlock is sealed.
-grep -v '^completed conductor$' "$OUT/save-done.txt" > "$OUT/save-almost.txt"
 run "$OUT/almost.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
 check "one sector short of the end is still on foot" "$OUT/almost.json" \
       "s['appState'] == 'station' and s['layout'] == 'cradle'"
