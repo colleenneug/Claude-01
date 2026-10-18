@@ -430,7 +430,7 @@ check "a record halfway down the ark is on foot at the Cradle" "$OUT/legacy.json
 cp "$OUT/save-legacy.txt" "$OUT/save-legacyhub.txt"
 run "$OUT/legacyhub.json" EREBUS_SKIP_SPACE=1 EREBUS_MAX_FRAMES=30 EREBUS_SKIP_TUTORIAL=
 check "an existing record opens its route where it left off" "$OUT/legacyhub.json" \
-      "s['selectedMission'] == 'counter'"
+      "s['selectedMission'] == 'hold'"
 
 # THE KIT SCREEN. G opens it over a mission, and the whole point is that it
 # writes to the record from there: a menu you can only reach from a counter is
@@ -609,7 +609,7 @@ check "a side contract cannot be launched before the campaign" "$OUT/sidelock.js
 check "at Kourou the arrow points at the pad" "$OUT/ground.json" \
       "s['next'].startswith('NEXT: THE RANGE') and 'PAD' in s['next']"
 check "on the ark it points at Kaur" "$OUT/legacy.json" \
-      "s['next'].startswith('NEXT: COUNTER') and 'KAUR' in s['next']"
+      "s['next'].startswith('NEXT: THE HOLD') and 'KAUR' in s['next']"
 
 # Once the campaign is done, Earth is a flight away: landing on it puts you on
 # foot at Kourou.
