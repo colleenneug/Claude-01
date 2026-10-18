@@ -619,8 +619,11 @@ check "on the ark it points at Kaur" "$OUT/legacy.json" \
 cp "$OUT/save-kite.txt" "$OUT/save-earth.txt"
 run "$OUT/earth.json" EREBUS_SPACE_AUTOPILOT=earth EREBUS_FORCE_FORWARD=1 \
     EREBUS_FORCE_ENGAGE=1 EREBUS_MAX_FRAMES=600 EREBUS_SKIP_TUTORIAL=
+# The scripted E keeps pressing after the landing, so the run can end at
+# somebody's desk at Kourou rather than standing in the shed; either is down.
 check "a ship can take you back down to Kourou" "$OUT/earth.json" \
-      "s['appState'] == 'station' and s['layout'] == 'kourou'"
+      "(s['appState'] == 'station' and s['layout'] == 'kourou') or \
+       (s['appState'] == 'post' and s['host'] in ('teal', 'marcheva', 'hale', 'ondo', 'bright'))"
 
 # LEAVING A MISSION. Escape, then Y: back on foot where you launched from,
 # the mission not cleared and still there to fly.
