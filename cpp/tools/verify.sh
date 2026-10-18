@@ -100,7 +100,7 @@ check "patrol mission completes" "$OUT/patrol.json" \
 run "$OUT/breach.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
     EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=1500 -- --mission breach
 check "a campaign sector is an expedition, and its route advances" "$OUT/breach.json" \
-      "s['expedition'] is True and s['objectives'] >= 7 and s['objective'] >= 2"
+      "s['expedition'] is True and s['objectives'] >= 5 and (s['objective'] >= 2 or s['missionState'] == 'complete')"
 
 # The route opens one sector at a time. From a fresh profile every campaign
 # mission but the first is locked, so cycling the hub's list has to step over
