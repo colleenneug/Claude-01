@@ -335,3 +335,85 @@ bool buyOrFlyShip(Profile& p, const Content& c, const std::string& id, std::stri
   if (note) *note = upper(d->name) + " - BOUGHT, AND YOURS TO FLY";
   return true;
 }
+
+// ---------------------------------------------------------------- weapons
+
+std::string weaponSourceLabel(const WeaponDef& w, const Content& c) {
+  if (w.source == "shop") {
+    const CrewDef* who = w.soldBy.empty() ? nullptr : c.crew(w.soldBy);
+    return who ? "SOLD BY " + who->name : "ON SALE";
+  }
+  if (w.source == "drop") return "DROPPED IN THE FIELD";
+  if (w.source == "rook") return "THE ROOK - BLACK MARKET";
+  if (w.source == "issue") return "ISSUED";
+  if (w.source == "mission") {
+    for (const std::string& id : c.missionIds()) {
+      const MissionDef* m = c.mission(id);
+      if (m && m->rewardWeapon == w.id) return "FIRST CLEAR OF " + upper(m->name);
+    }
+    return "A MISSION REWARD";
+  }
+  if (w.source == "rank") {
+    for (const RankDef& r : c.ranks()) {
+      if (r.grantWeapon == w.id) return "PROMOTION TO " + r.name;
+    }
+    return "A PROMOTION";
+  }
+  if (w.source == "bounty") {
+    for (const std::string& id : c.bountyIds()) {
+      const BountyDef* b = c.bounty(id);
+      if (b && b->rewardItem == "weapon:" + w.id) {
+        const CrewDef* who = c.crew(b->giver);
+        return "BOUNTY: " + upper(b->name) + (who ? " (" + who->name + ")" : "");
+      }
+    }
+    return "A BOUNTY REWARD";
+  }
+  return "";
+}
+
+bool buyWeapon(Profile& p, const Content& c, const std::string& id, std::string* note) {
+  const WeaponDef* w = c.weapon(id);
+  if (!w) return false;
+  if (p.ownsWeapon(id)) {
+    if (note) *note = "ALREADY IN YOUR KIT";
+    return false;
+  }
+  if (!w->classRequired.empty() && w->classRequired != p.classId) {
+    if (note) *note = "ISSUED TO ANOTHER DOCTRINE";
+    return false;
+  }
+  if (!c.rankReached(w->rankRequired, p.xp)) {
+    const RankDef* r = c.rank(w->rankRequired);
+    if (note) *note = "NOT AT YOUR RANK - " + (r ? r->name : std::string("LOCKED"));
+    return false;
+  }
+  if (p.chits < w->cost) {
+    if (note) *note = "NOT ENOUGH CHITS";
+    return false;
+  }
+  p.chits -= w->cost;
+  p.ownedWeapons.push_back(id);
+  if (note) *note = upper(w->name) + " - BOUGHT. G TO EQUIP IT";
+  return true;
+}
+
+std::vector<std::string> blackMarket(const Content& c) {
+  std::vector<const WeaponDef*> all;
+  for (const std::string& id : c.weaponIds()) {
+    const WeaponDef* w = c.weapon(id);
+    if (w && w->source == "rook") all.push_back(w);
+  }
+  std::sort(all.begin(), all.end(), [](const WeaponDef* a, const WeaponDef* b) {
+    return a->cost != b->cost ? a->cost < b->cost : a->id < b->id;
+  });
+  std::vector<std::string> out;
+  for (const WeaponDef* w : all) out.push_back(w->id);
+  return out;
+}
+
+int weaponsOwned(const Profile& p, const Content& c) {
+  int n = 0;
+  for (const std::string& id : p.ownedWeapons) if (c.weapon(id)) n++;
+  return n;
+}

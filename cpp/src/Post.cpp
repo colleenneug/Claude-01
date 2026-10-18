@@ -39,6 +39,7 @@ void Post::rebuild() {
   upgradeIds_.clear();
   appraisals_.clear();
   shipIds_.clear();
+  marketIds_.clear();
   if (!content_ || !host_) return;
 
   // The board: what is ready, then what you are working on, then what you
@@ -52,7 +53,10 @@ void Post::rebuild() {
   }
 
   if (host_->shop == CrewShop::Upgrades) upgradeIds_ = content_->upgradeIds(host_->id);
-  if (host_->shop == CrewShop::Appraisal) appraisals_ = appraisable(*profile_, *content_);
+  if (host_->shop == CrewShop::Appraisal) {
+    appraisals_ = appraisable(*profile_, *content_);
+    marketIds_ = ::blackMarket(*content_);
+  }
   if (host_->shop == CrewShop::Shipyard) shipIds_ = content_->shipIds();
 
   for (int t = 0; t < (int)Tab::Count; t++) {
@@ -74,7 +78,9 @@ int Post::serviceRows() const {
   if (host_->shop == CrewShop::Shipyard) return (int)shipIds_.size();
   // The Rook's tab is there even with nothing to sell, so that "nothing on
   // you I would take" is something the screen says rather than a missing tab.
-  if (host_->shop == CrewShop::Appraisal) return std::max(1, (int)appraisals_.size());
+  if (host_->shop == CrewShop::Appraisal) {
+    return (int)marketIds_.size() + std::max(1, (int)appraisals_.size());
+  }
   return 0;
 }
 
@@ -139,10 +145,14 @@ Post::Result Post::act() {
   } else if (host_->shop == CrewShop::Shipyard && !shipIds_.empty()) {
     buyOrFlyShip(*profile_, *content_, shipIds_[(size_t)rows_[(int)Tab::Service]], &note);
   } else if (host_->shop == CrewShop::Appraisal) {
-    if (appraisals_.empty()) {
+    const int r = rows_[(int)Tab::Service];
+    if (r < (int)marketIds_.size()) {
+      buyWeapon(*profile_, *content_, marketIds_[(size_t)r], &note);
+    } else if (appraisals_.empty()) {
       note = "NOTHING ON YOU I WOULD TAKE";
     } else {
-      sellToAppraiser(*profile_, *content_, appraisals_[(size_t)rows_[(int)Tab::Service]], &note);
+      sellToAppraiser(*profile_, *content_,
+                      appraisals_[(size_t)(r - (int)marketIds_.size())], &note);
     }
   }
   setNotice(note);

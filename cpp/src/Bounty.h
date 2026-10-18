@@ -99,3 +99,21 @@ bool sellToAppraiser(Profile& p, const Content& c, const Appraisal& a, std::stri
 enum class ShipStatus { Flying, Owned, Affordable, TooPoor, RankLocked, NotRated };
 ShipStatus shipStatus(const Profile& p, const Content& c, const std::string& id);
 bool buyOrFlyShip(Profile& p, const Content& c, const std::string& id, std::string* note = nullptr);
+
+// WEAPONS AND WHERE THEY COME FROM (WeaponDef::source). Only `shop` weapons
+// are sold over a counter or from the kit screen; everything else is listed
+// once you own it, and not before — finding a weapon is the point of a drop.
+inline bool weaponOnSale(const WeaponDef& w) { return w.source == "shop"; }
+inline bool weaponListed(const Profile& p, const WeaponDef& w) {
+  return p.ownsWeapon(w.id) || weaponOnSale(w);
+}
+// "SOLD BY ONDO", "DROPPED IN THE FIELD", "REWARD: HARD DOCK"... one line
+// saying how this weapon comes to you.
+std::string weaponSourceLabel(const WeaponDef& w, const Content& c);
+// Buys a weapon outright: doctrine, rank, then chits. Used by the Rook's
+// black market; the counters keep their own buy paths.
+bool buyWeapon(Profile& p, const Content& c, const std::string& id, std::string* note = nullptr);
+// The Rook's black market, cheapest first.
+std::vector<std::string> blackMarket(const Content& c);
+// How many weapons a record owns, out of how many exist.
+int weaponsOwned(const Profile& p, const Content& c);

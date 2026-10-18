@@ -262,6 +262,7 @@ int main(int argc, char** argv) {
     }
     gameEverStarted = true;
     camera.position = game.player().eyePosition();
+    if (game.expedition()) { camera.yaw = game.spawnYaw(); camera.pitch = 0.0f; }
   }
 
   glfwSetWindowUserPointer(window, &renderer);
@@ -286,6 +287,7 @@ int main(int argc, char** argv) {
   bool forceForward = envFlag("EREBUS_FORCE_FORWARD");
   bool forceFire = envFlag("EREBUS_FORCE_FIRE");
   bool debugAutoaim = envFlag("EREBUS_DEBUG_AUTOAIM");
+  if (envFlag("EREBUS_LOOT_ALWAYS")) game.setLootAlways(true);
   // EREBUS_TUTORIAL_AUTO=1 walks the ground site's steps by feeding each
   // one the input it is asking for. Verification aid only.
   bool tutorialAuto = envFlag("EREBUS_TUTORIAL_AUTO");
@@ -400,6 +402,12 @@ int main(int argc, char** argv) {
   // not need one entry point per state to arrive from.
   Loadout loadout;
   bool prevKitKey = false;
+  // The "leave the mission?" question, and the key edge that asks it.
+  // EREBUS_LEAVE_AT=<frame> presses Escape at that frame and Y twenty frames
+  // later, so a headless run can prove leaving keeps what was earned.
+  bool leaveConfirm = false, prevLeaveEsc = false;
+  int leaveAtFrame = 0;
+  if (const char* la = std::getenv("EREBUS_LEAVE_AT")) leaveAtFrame = std::atoi(la);
   // The last promotion, and how long it stays on screen. Shown wherever you
   // land after the mission that earned it — a promotion that flashes past on
   // the debrief you are already dismissing is a promotion nobody sees.
@@ -466,7 +474,7 @@ int main(int argc, char** argv) {
   // line, a contracts board — narrowed to what that one person carries.
   auto openCounter = [&](const CrewDef* def) {
     hub.init(hubContent, profile);
-    hub.restrictStock(def->stock);
+    hub.restrictStock(def->stock, def->id);
     // Shaw keeps the side work; Kaur keeps the ark. Opening the hub on the
     // right part of the list is the whole difference between "talk to the
     // right person" and "read the whole board again".
@@ -537,6 +545,7 @@ int main(int argc, char** argv) {
       gameEverStarted = true;
       launchedFromStation = false;
       camera.position = game.player().eyePosition();
+      if (game.expedition()) { camera.yaw = game.spawnYaw(); camera.pitch = 0.0f; }
       state = AppState::Mission;
       glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
       mouseCaptured = true;
@@ -975,6 +984,7 @@ int main(int argc, char** argv) {
             launchedFromStation = false;   // you dropped from orbit, not off the flight deck
             lastBodyId = target->id;
             camera.position = game.player().eyePosition();
+            if (game.expedition()) { camera.yaw = game.spawnYaw(); camera.pitch = 0.0f; }
             state = AppState::Mission;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             mouseCaptured = true;
@@ -1252,6 +1262,7 @@ int main(int argc, char** argv) {
         if (game.init(contentDir, hub.selectedMission(), profile)) {
           gameEverStarted = true;
           camera.position = game.player().eyePosition();
+          if (game.expedition()) { camera.yaw = game.spawnYaw(); camera.pitch = 0.0f; }
           state = AppState::Mission;
           glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
           mouseCaptured = true;
@@ -1305,6 +1316,7 @@ int main(int argc, char** argv) {
         }
       }
     } else {
+      bool autoWalk = false;
       if (debugAutoaim) {
         // Verification aid: point the camera at a live hostile so firing can
         // be exercised without a real mouse. Prefers the nearest one it can
@@ -1315,8 +1327,10 @@ int main(int argc, char** argv) {
         glm::vec3 eye = camera.position;
         float bestVisible = 1e9f, bestAny = 1e9f;
         glm::vec3 dirVisible(0, 0, -1), dirAny(0, 0, -1);
-        for (const Hostile& h : game.hostiles()) {
+        for (size_t hi = 0; hi < game.hostiles().size(); hi++) {
+          const Hostile& h = game.hostiles()[hi];
           if (!h.blocksShots()) continue;
+          if (game.expedition() && !game.inCurrentEncounter(hi)) continue;
           glm::vec3 target = h.headCentre();
           float d = glm::length(target - eye);
           if (d < bestAny) { bestAny = d; dirAny = glm::normalize(target - eye); }
@@ -1326,6 +1340,28 @@ int main(int argc, char** argv) {
           }
         }
         glm::vec3 bestDir = bestVisible < 1e8f ? dirVisible : dirAny;
+        // On an expedition the aid also walks the route: toward the arrow
+        // when there is nothing worth shooting in sight, and straight at the
+        // encounter when it is out of sight or out of reach. Without it a
+        // headless run stands in the first room of a mission that is now a
+        // few hundred metres long.
+        if (frame % 300 == 0) std::fprintf(stderr, "[autoplay] f%d exp=%d state=%d vis=%.1f\n", frame, (int)game.expedition(), (int)game.missionState(), bestVisible);
+        if (game.expedition()) {
+          glm::vec3 at;
+          std::string label;
+          bool place = false;
+          if (game.waypoint(at, label, place)) {
+            glm::vec3 to = at - game.player().position;
+            to.y = 0.0f;
+            const bool engage = !place && bestVisible < 30.0f;
+            if (frame % 300 == 0) std::fprintf(stderr, "[autoplay] f%d wp=%s place=%d at=%.1f,%.1f vis=%.1f any=%.1f pos=%.1f,%.1f\n", frame, label.c_str(), (int)place, at.x, at.z, bestVisible, bestAny, game.player().position.x, game.player().position.z);
+            if (!engage && glm::length(to) > 0.5f) {
+              to = glm::normalize(to);
+              bestDir = glm::normalize(glm::vec3(to.x, -0.05f, to.z));
+              autoWalk = true;
+            }
+          }
+        }
         camera.yaw = glm::degrees(std::atan2(bestDir.z, bestDir.x));
         camera.pitch = glm::degrees(std::asin(std::clamp(bestDir.y, -1.0f, 1.0f)));
       }
@@ -1392,7 +1428,7 @@ int main(int argc, char** argv) {
       // idea as EREBUS_DEBUG_AUTOAIM — it exists so the sequence can be
       // proved end to end, and it is never on by default.
       ScriptedInput playerInput;
-      playerInput.forward = forceForward || tutorialAuto;
+      playerInput.forward = forceForward || tutorialAuto || autoWalk;
       bool autoAbility = false;
       bool autoReload = false;
       if (tutorialAuto) {
@@ -1526,7 +1562,7 @@ int main(int argc, char** argv) {
             "\"playerPos\":[%.2f,%.2f,%.2f],\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,"
             "\"bossAlive\":%s,\"chits\":%d,\"inCutscene\":%s,\"harness\":%d,"
             "\"xp\":%d,\"careerXp\":%d,\"rank\":\"%s\","
-            "\"slot\":%d,\"primary\":\"%s\",\"sidearm\":\"%s\"}\n",
+            "\"slot\":%d,\"primary\":\"%s\",\"sidearm\":\"%s\",\"loot\":%d,\"owned\":%d}\n",
             frame + 1,
             game.missionState() == MissionState::Complete ? "complete"
               : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
@@ -1541,8 +1577,50 @@ int main(int argc, char** argv) {
                 ? hubContent.ranks()[(size_t)hubContent.rankIndexForXp(profile.xp + game.xpUnbanked())].name.c_str()
                 : "",
             game.slot(), game.holster(Game::SlotPrimary).name.c_str(),
-            game.holster(Game::SlotSidearm).name.c_str());
+            game.holster(Game::SlotSidearm).name.c_str(), game.lootDropped(),
+            (int)profile.ownedWeapons.size());
           std::fclose(f);
+        }
+      }
+
+      // ---- leaving early. Escape asks; Y leaves, N or Escape again stays.
+      // Leaving is not failing: what you earned comes with you — experience,
+      // bounty progress, any weapon you picked up — and the mission is still
+      // there to fly from the same counter. The world does not stop while
+      // the question is up, the same as the kit screen; the keys it uses are
+      // ones nothing in a fight is bound to.
+      bool leaveNow = false;
+      {
+        const bool escDown = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS ||
+                             (leaveAtFrame > 0 && frame == leaveAtFrame);
+        const bool canLeave = game.missionState() == MissionState::InProgress &&
+                              !game.cutscenePlaying();
+        const bool escPressed = escDown && !prevLeaveEsc;
+        if (!canLeave) {
+          leaveConfirm = false;
+        } else if (!leaveConfirm) {
+          if (escPressed) leaveConfirm = true;
+        } else {
+          const bool yes = glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS ||
+                           (leaveAtFrame > 0 && frame == leaveAtFrame + 20);
+          const bool no = glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS || escPressed;
+          if (yes) {
+            leaveNow = true;
+            leaveConfirm = false;
+          } else if (no) {
+            leaveConfirm = false;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
+          }
+        }
+        prevLeaveEsc = escDown;
+        if (leaveConfirm) {
+          // Block D before it has ever been cleared has nothing behind it to
+          // go back to; leaving it starts it again, and the question says so.
+          const bool restarts = game.missionId() == kTutorialMission &&
+                                !profile.hasCompleted(kTutorialMission);
+          hud.drawLeaveConfirm(width, height, restarts);
         }
       }
 
@@ -1550,7 +1628,7 @@ int main(int argc, char** argv) {
       // commit to going back rather than snapping to the Hub the instant
       // the last hostile dies — same reason the old build left the
       // complete/fail HUD tint on screen instead of quitting outright.
-      if (game.missionState() != MissionState::InProgress) {
+      if (game.missionState() != MissionState::InProgress || leaveNow) {
         // forceEngage is the scripted "press the contextual action key", so
         // it covers this confirm too — otherwise a headless run can prove
         // you can fly out and land but never that you get back to the ship.
@@ -1562,7 +1640,7 @@ int main(int argc, char** argv) {
         // it, or the press that skipped the last shot would dismiss the
         // debrief in the very next frame.
         bool wantReturn = keyReturn && !game.cutscenePlaying();
-        if (wantReturn && !prevReturnKey) {
+        if ((wantReturn && !prevReturnKey) || leaveNow) {
           bool justFinishedTutorial = game.missionState() == MissionState::Complete &&
                                       earthProgrammeDone(hubContent, profile);
           // You do not own a ship until the Cradle sends one down for you.
@@ -1624,6 +1702,7 @@ int main(int argc, char** argv) {
               gameEverStarted = true;
               launchedFromStation = false;
               camera.position = game.player().eyePosition();
+              if (game.expedition()) { camera.yaw = game.spawnYaw(); camera.pitch = 0.0f; }
               state = AppState::Mission;
               glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
               mouseCaptured = true;

@@ -85,6 +85,10 @@ int settleRank(Profile& p, const Content& content, std::string* promotedTo,
   for (int i = p.rankPaid + 1; i <= now; i++) {
     p.chits += ladder[i].stipend;
     paid += ladder[i].stipend;
+    // ...and the rung's weapon, if it hands one over.
+    if (!ladder[i].grantWeapon.empty() && content.weapon(ladder[i].grantWeapon)) {
+      addUnique(p.ownedWeapons, ladder[i].grantWeapon);
+    }
   }
   if (now > p.rankPaid) {
     if (promotedTo) *promotedTo = ladder[now].name;

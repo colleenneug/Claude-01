@@ -64,6 +64,13 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   xpBanked_ = 0;
   tally_ = MissionTally{};
   tally_.missionId = missionId;
+  dropped_.clear();
+  // Seeded off the mission and the record, so the same run of the same
+  // mission drops the same thing (and a check can rely on it), but a record
+  // that has moved on since does not find the same rifle again.
+  lootRng_ = 2166136261u;
+  for (char ch : missionId) lootRng_ = (lootRng_ ^ (uint8_t)ch) * 16777619u;
+  lootRng_ ^= (uint32_t)profile.xp * 2654435761u + (uint32_t)profile.ownedWeapons.size();
   for (bool& fired : triggerFired_) fired = false;
   bossName_.clear();
   pickups_.clear();
@@ -85,9 +92,19 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   objectiveHint_.clear();
   triggerFiredById_.clear();
   hostileWakeOn_.clear();
+  hostileGroup_.clear();
   cutscene_.stop();
 
-  if (!mission_.layout.empty()) {
+  // Every campaign mission without a hand-built site of its own is an
+  // expedition: the same mission, as a long route through a place instead
+  // of one walled field. Side contracts stay arenas — a contract is a job,
+  // not a journey.
+  if (mission_.layout.empty() && mission_.campaignIndex > 0 && mission_.expedition) {
+    buildExpedition(mission_, site_);
+    usingSite_ = true;
+    level_.buildFromParts(site_.parts, site_.floorY);
+    triggerFiredById_.assign(site_.triggers.size(), false);
+  } else if (!mission_.layout.empty()) {
     if (!buildSite(mission_.layout, site_)) {
       std::fprintf(stderr, "[Game] mission '%s' wants layout '%s', which does not exist\n",
                    missionId.c_str(), mission_.layout.c_str());
@@ -232,6 +249,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
       if (!sp.wakeOn.empty()) h.stunT = 1e9f;
       hostiles_.push_back(h);
       hostileWakeOn_.push_back(sp.wakeOn);
+      hostileGroup_.push_back(sp.group);
     }
     for (const Site::WeaponDrop& d : site_.drops) {
       Pickup p;
@@ -258,6 +276,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // own radius; the boss (if this mission has one) waits until every
   // regular hostile is Gone — see spawnBossIfReady().
   for (auto& w : mission_.waves) {
+    if (usingSite_ && site_.consumesWaves) break;   // already placed, area by area
     const EnemyType* t = content_.enemy(w.enemyId);
     if (!t) {
       std::fprintf(stderr, "[Game] mission '%s' references unknown enemy '%s', skipping wave\n",
@@ -547,10 +566,16 @@ void Game::updateSite(float dt) {
   while (objectiveIndex_ < site_.objectives.size()) {
     const Site::Objective& o = site_.objectives[objectiveIndex_];
     bool done = false;
-    if (o.needsClear) {
-      done = std::all_of(hostiles_.begin(), hostiles_.end(), [](const Hostile& h) {
-        return h.state == HostileState::Gone;
-      });
+    if (o.needsBoss) {
+      done = !bossPending_ && bossIndex_ >= 0 && hostiles_[(size_t)bossIndex_].state == HostileState::Gone;
+    } else if (o.needsClear) {
+      done = true;
+      for (size_t i = 0; i < hostiles_.size(); i++) {
+        if (hostiles_[i].state == HostileState::Gone) continue;
+        if (!o.clearGroup.empty() && (i >= hostileGroup_.size() || hostileGroup_[i] != o.clearGroup)) continue;
+        done = false;
+        break;
+      }
     } else if (!o.trigger.empty()) {
       for (size_t i = 0; i < site_.triggers.size(); i++) {
         if (site_.triggers[i].id == o.trigger && triggerFiredById_[i]) { done = true; break; }
@@ -826,6 +851,50 @@ void Game::dropPickup(const glm::vec3& at, int killIndex) {
   pickups_.push_back(p);
 }
 
+void Game::maybeDropWeapon(const Hostile& h) {
+  if (!profile_ || !h.type) return;
+  // The odds: a boss always drops something, a heavy frame often, the rank
+  // and file rarely. Rare enough that a find is an event, common enough that
+  // every few missions has one.
+  const std::string& kind = h.type->id;
+  const float chance = h.isBoss                                 ? 1.0f
+                     : (kind == "warden" || kind == "colossus") ? 0.22f
+                     : kind == "marauder"                       ? 0.08f
+                                                                : 0.045f;
+  auto roll = [&]() {
+    lootRng_ = lootRng_ * 1664525u + 1013904223u;
+    return (float)(lootRng_ >> 8) / 16777216.0f;
+  };
+  if (roll() >= chance && !lootAlways_) return;
+
+  // What can drop: the field weapons up to the tier your rank has reached,
+  // one higher off a boss, and nothing you already own or that is already
+  // lying somewhere in this mission.
+  const int rankIdx = std::max(0, content_.rankIndexForXp(profile_->xp));
+  const int tierCap = 1 + rankIdx / 2 + (h.isBoss ? 1 : 0);
+  std::vector<const WeaponDef*> pool;
+  for (const std::string& id : content_.weaponIds()) {
+    const WeaponDef* w = content_.weapon(id);
+    if (!w || w->source != "drop" || w->tier > tierCap) continue;
+    if (profile_->ownsWeapon(id)) continue;
+    if (std::find(dropped_.begin(), dropped_.end(), id) != dropped_.end()) continue;
+    pool.push_back(w);
+  }
+  if (pool.empty()) return;
+  std::sort(pool.begin(), pool.end(), [](const WeaponDef* a, const WeaponDef* b) { return a->id < b->id; });
+  const WeaponDef* w = pool[(size_t)(roll() * (float)pool.size()) % pool.size()];
+
+  Pickup p;
+  p.pos = h.pos + glm::vec3(0.6f, 0.0f, 0.4f);
+  p.pos.y = level_.floorY() + 0.55f;
+  p.kind = PickupKind::Weapon;
+  p.weaponId = w->id;
+  p.loot = true;
+  p.note = "NEW WEAPON - " + w->name + " - G TO EQUIP";
+  pickups_.push_back(p);
+  dropped_.push_back(w->id);
+}
+
 void Game::updatePickups(float dt) {
   pickupNoteT_ = std::max(0.0f, pickupNoteT_ - dt);
   if (pickupNoteT_ <= 0.0f) pickupNote_.clear();
@@ -846,8 +915,12 @@ void Game::updatePickups(float dt) {
     // A pickup that would add nothing (full reserve, full health) is left on
     // the ground for later rather than silently consumed, so the gain is
     // worked out before anything is applied.
-    char note[48];
-    if (p.kind == PickupKind::Weapon) {
+    char note[96];
+    if (p.kind == PickupKind::Weapon && p.loot) {
+      // Into the kit, not into your hands.
+      if (profile_ && !profile_->ownsWeapon(p.weaponId)) profile_->ownedWeapons.push_back(p.weaponId);
+      std::snprintf(note, sizeof(note), "%s", p.note.c_str());
+    } else if (p.kind == PickupKind::Weapon) {
       // A weapon on the floor is taken whatever you are already holding: the
       // armoury rack is meant to replace the sidearm you found in a bunk.
       equipWeaponById(p.weaponId);
@@ -902,11 +975,21 @@ void Game::spawnBossIfReady() {
   bool clear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                            [](const Hostile& h) { return h.state == HostileState::Gone; });
   if (!clear) return;
+  // An expedition's boss waits in its own arena until you walk into it.
+  if (usingSite_ && !site_.bossWaitsOn.empty()) {
+    bool arrived = false;
+    for (size_t i = 0; i < site_.triggers.size(); i++) {
+      if (site_.triggers[i].id == site_.bossWaitsOn && triggerFiredById_[i]) arrived = true;
+    }
+    if (!arrived) return;
+  }
 
   const EnemyType* t = content_.enemy(mission_.bossId);
   Hostile boss;
-  boss.spawn(t, glm::vec3(0.0f, level_.floorY(), -level_.arenaHalf() * 0.5f),
-             /*isBoss=*/true, mission_.bossHpMultiplier);
+  const glm::vec3 at = (usingSite_ && site_.hasBossSpawn)
+                           ? glm::vec3(site_.bossSpawn.x, level_.floorY(), site_.bossSpawn.z)
+                           : glm::vec3(0.0f, level_.floorY(), -level_.arenaHalf() * 0.5f);
+  boss.spawn(t, at, /*isBoss=*/true, mission_.bossHpMultiplier);
   bossIndex_ = (int)hostiles_.size();
   hostiles_.push_back(boss);
   bossPending_ = false;
@@ -1033,6 +1116,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
         // rather than nothing.
         xpEarned_ += (int)std::lround(h.type->xp * upgrades_.xpMul);
         dropPickup(h.pos, killCount_++);
+        maybeDropWeapon(h);
         // ...and the bounties. Counted by archetype and by the silhouette of
         // what was in your hands, which is what the boards ask for.
         tally_.kills++;
@@ -1184,7 +1268,16 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
                                   : tutorialStep_ == TutorialStep::Clear);
     if (wavesClear && lessonDone && !bossPending_ && bossClear) {
       if (profile_ && !rewardApplied_) {
+        const bool firstClear = !profile_->hasCompleted(mission_.id);
         profile_->recordMissionComplete(mission_.id, mission_.rewardChits);
+        // The first clear can hand over a weapon of its own.
+        if (firstClear && !mission_.rewardWeapon.empty() && !profile_->ownsWeapon(mission_.rewardWeapon)) {
+          if (const WeaponDef* rw = content_.weapon(mission_.rewardWeapon)) {
+            profile_->ownedWeapons.push_back(rw->id);
+            pickupNote_ = "REWARD - " + rw->name + " - IN YOUR KIT";
+            pickupNoteT_ = 7.0f;
+          }
+        }
         // The clearance bonus, on top of what the fight itself paid. Paid
         // every time, unlike the chits: replaying a mission you have already
         // cleared is still work, and rank is the record of work done.
@@ -1193,6 +1286,23 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
         tally_.cleared = true;
       }
       missionState_ = MissionState::Complete;
+      // Whatever dropped and is still on the floor comes with you: a boss's
+      // weapon falls the moment the mission ends, and walking over to it
+      // should not be the thing standing between you and your reward.
+      if (profile_) {
+        int swept = 0;
+        for (Pickup& p : pickups_) {
+          if (p.taken || !p.loot) continue;
+          if (!profile_->ownsWeapon(p.weaponId)) profile_->ownedWeapons.push_back(p.weaponId);
+          p.taken = true;
+          swept++;
+        }
+        if (swept > 0 && pickupNote_.rfind("REWARD", 0) != 0) {
+          pickupNote_ = swept == 1 ? "A WEAPON DROPPED - IT IS IN YOUR KIT"
+                                   : std::to_string(swept) + " WEAPONS DROPPED - IN YOUR KIT";
+          pickupNoteT_ = 7.0f;
+        }
+      }
       fireComms(CommsTrigger::Complete);
       // ...and the mission's closing scene, if it wrote one. Block D's is
       // the lift: you do not own a ship, so the way off Earth is somebody
@@ -1444,28 +1554,59 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
   }
 }
 
+bool Game::inCurrentEncounter(size_t i) const {
+  if (i >= hostiles_.size()) return false;
+  const Hostile& h = hostiles_[i];
+  if (h.isBoss || h.stunT < 1e8f) return true;   // awake (or only briefly stunned)
+  if (!usingSite_ || objectiveIndex_ >= site_.objectives.size()) return true;
+  const std::string& g = site_.objectives[objectiveIndex_].clearGroup;
+  return !g.empty() && i < hostileGroup_.size() && hostileGroup_[i] == g;
+}
+
 bool Game::waypoint(glm::vec3& at, std::string& label, bool& isPlace) const {
   if (!loaded_ || missionState_ != MissionState::InProgress) return false;
 
   // A site's objective that ends on walking into a box: that box.
+  std::string group;
   if (usingSite_ && objectiveIndex_ < site_.objectives.size()) {
     const Site::Objective& o = site_.objectives[objectiveIndex_];
     if (!o.trigger.empty() && !o.needsClear) {
       for (const Site::Trigger& t : site_.triggers) {
         if (t.id != o.trigger) continue;
-        at = glm::vec3((t.min.x + t.max.x) * 0.5f, t.min.y, (t.min.z + t.max.z) * 0.5f);
+        at = glm::vec3((t.min.x + t.max.x) * 0.5f, 0.0f, (t.min.z + t.max.z) * 0.5f);
         label = "OBJECTIVE";
+        // On an expedition the next area is through a door, round a corner:
+        // while you are still inside an area, the arrow stands in its way
+        // out rather than pointing through the wall at where you are going.
+        for (const Site::Area& a : site_.areas) {
+          const glm::vec3& p = player_.position;
+          const bool inside = p.x > a.min.x && p.x < a.max.x && p.z > a.min.z && p.z < a.max.z;
+          if (!inside || !a.hasExit) continue;
+          const bool targetInside = at.x > a.min.x && at.x < a.max.x && at.z > a.min.z && at.z < a.max.z;
+          if (targetInside) break;
+          // In the doorway already: from here the way on is straight ahead.
+          glm::vec3 d = a.exit - p;
+          d.y = 0.0f;
+          if (glm::length(d) < 3.0f) break;
+          at = a.exit;
+          label = "THE WAY ON";
+          break;
+        }
         isPlace = true;
         return true;
       }
     }
+    group = o.clearGroup;
   }
 
-  // Otherwise the fight: the boss if it is up, else the nearest hostile.
+  // Otherwise the fight: the boss if it is up, else the nearest hostile of
+  // the encounter you are clearing.
   const Hostile* best = nullptr;
   float bestD = 1e9f;
-  for (const Hostile& h : hostiles_) {
+  for (size_t i = 0; i < hostiles_.size(); i++) {
+    const Hostile& h = hostiles_[i];
     if (!h.blocksShots()) continue;
+    if (!group.empty() && !h.isBoss && (i >= hostileGroup_.size() || hostileGroup_[i] != group)) continue;
     if (h.isBoss) { best = &h; break; }
     const float d = glm::length(h.pos - player_.position);
     if (d < bestD) { bestD = d; best = &h; }
@@ -1528,8 +1669,17 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
       // cube resupply uses, so you can tell across a room whether the thing
       // in the rack is a gun or a box of rounds.
       it.model = glm::scale(it.model, glm::vec3(0.16f, 0.13f, 0.72f));
-      it.tint = glm::vec3(0.62f, 0.86f, 1.0f);
-      it.emissiveIntensity = 2.4f;
+      it.tint = p.loot ? glm::vec3(1.0f, 0.78f, 0.28f) : glm::vec3(0.62f, 0.86f, 1.0f);
+      it.emissiveIntensity = p.loot ? 3.4f : 2.4f;
+      if (p.loot) {
+        // A drop gets a beam of light straight up off it, so a weapon that
+        // fell behind cover in the middle of a fight can still be found.
+        DrawItem beam = it;
+        beam.model = glm::scale(glm::translate(glm::mat4(1.0f), p.pos + glm::vec3(0.0f, 2.2f, 0.0f)),
+                                glm::vec3(0.07f, 4.4f, 0.07f));
+        beam.emissiveIntensity = 2.2f;
+        out.push_back(beam);
+      }
     } else {
       bool ammo = p.kind == PickupKind::Ammo;
       it.model = glm::scale(it.model, glm::vec3(0.34f, 0.34f, 0.34f));

@@ -169,6 +169,9 @@ struct MissionDef {
   // work, and rank is the record of work done rather than of ground covered
   // once.
   int rewardXp = 120;
+  // A weapon handed over the first time this mission is cleared, as a weapon
+  // id. One of the ways a weapon comes to you (WeaponDef::source = mission).
+  std::string rewardWeapon;
   std::vector<CommsBeat> comms;
   // Position in the campaign route down the ark, 1..N, or 0 for a mission
   // that is not part of it (a planet's patrol, a debug fixture). The route is
@@ -200,6 +203,9 @@ struct MissionDef {
   // with doors between them are not something a scatter of cover on a walled
   // field can express, and the opening of this game is rooms.
   std::string layout;
+  // Campaign missions are expeditions unless this says otherwise
+  // (`expedition = false` keeps the old single arena).
+  bool expedition = true;
 
   // Start with empty hands. You wake up: whatever you would have been issued
   // is in the armoury, on the other side of the building.
@@ -254,6 +260,8 @@ struct RankDef {
   // first; until it is, experience stops one point short of this rung and
   // finishing the campaign puts the record on it. See creditXp in Profile.h.
   std::string gate;
+  // A weapon handed over on reaching this rung (WeaponDef::source = rank).
+  std::string grantWeapon;
 };
 
 // content/ships/<id>.cfg — something to fly. A record has none until the
@@ -318,6 +326,24 @@ struct WeaponDef {
   // shelf is free for a Wraith too, which makes picking a doctrine a
   // suggestion rather than a decision.
   std::string classRequired;
+
+  // HOW YOU GET IT. A hundred weapons sold over one counter is a catalogue;
+  // the same hundred spread over the ways a weapon can come to you is a
+  // reason to go and do each of those things.
+  //   shop     bought — from the kit screen, or the counter of `sold_by`
+  //   drop     found: hostiles drop it, bosses always drop something
+  //   mission  the first-clear reward of a mission (MissionDef::rewardWeapon)
+  //   rank     handed over on promotion (RankDef::grantWeapon)
+  //   bounty   a bounty's reward_item
+  //   rook     the Rook's black market, for chits, at the appraisal desk
+  //   issue    a doctrine's weapon or the starter, never sold
+  // Only `shop` weapons are offered for sale anywhere but the Rook's. The
+  // rest are listed in your kit once you have them.
+  std::string source = "shop";
+  std::string soldBy;   // crew id whose counter carries it (shop only)
+  int tier = 1;         // 1..5, how far up the ladder it belongs
+  std::string maker;    // KOUROU ARMS, CRADLE WORKS... flavour, and a family
+  std::string blurb;
 };
 
 // content/classes/<id>.cfg — a doctrine. Each one is its issued weapon, its

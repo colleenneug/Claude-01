@@ -27,6 +27,9 @@ struct Site {
     // the building does not empty itself into the corridor behind you while
     // you are still looking for a weapon. Empty means awake from the start.
     std::string wakeOn;
+    // Which encounter it belongs to, for an objective that ends when that
+    // encounter is down rather than when everything in the site is.
+    std::string group;
   };
 
   // A weapon lying where somebody left it. Walking over it picks it up.
@@ -45,6 +48,21 @@ struct Site {
     std::string hint;      // "W A S D TO MOVE"
     std::string trigger;   // the box that ends it, or empty
     bool needsClear = false;
+    // With needsClear: only this group has to be down (Spawn::group). Empty
+    // means everything.
+    std::string clearGroup;
+    // Ends when the mission's boss has been spawned and killed.
+    bool needsBoss = false;
+  };
+
+  // An expedition's areas, in route order: where each one is, and the
+  // doorways in and out of it. The waypoint walks you through the doors
+  // instead of pointing straight through a wall at the next room.
+  struct Area {
+    std::string name;
+    glm::vec3 min{0.0f}, max{0.0f};
+    glm::vec3 entry{0.0f}, exit{0.0f};
+    bool hasEntry = false, hasExit = false;
   };
 
   std::vector<Level::Part> parts;
@@ -55,9 +73,27 @@ struct Site {
   std::vector<Spawn> hostiles;
   std::vector<WeaponDrop> drops;
   std::vector<Objective> objectives;
+  std::vector<Area> areas;
+
+  // An expedition carries the mission's own waves, placed in its areas, so
+  // Game does not spawn them again on a ring round the origin.
+  bool consumesWaves = false;
+  // Where the boss appears, and the trigger it waits on: you walk into its
+  // arena and then it comes, rather than it standing in an empty room at
+  // the far end of the map from the moment the last guard falls.
+  bool hasBossSpawn = false;
+  glm::vec3 bossSpawn{0.0f};
+  std::string bossWaitsOn;
 };
 
 // Builds the named site. Returns false for an unknown name, so a mission
 // with a typo in its `layout` fails to load rather than dropping the player
 // into an empty world.
 bool buildSite(const std::string& name, Site& out);
+
+// A campaign mission's expedition: the long way through a place, area by area.
+// Built from the mission's own data — its waves become the encounters, its
+// size sets the scale, its boss the last room — so every campaign mission is
+// one without a hand-built map each. See the definition for the shape.
+struct MissionDef;
+void buildExpedition(const MissionDef& mission, Site& out);

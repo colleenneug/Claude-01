@@ -220,12 +220,12 @@ owned_armor patrol_vest
 owned_cosmetic default
 completed tutorial_earth
 bounty teal_busy_week 0
-bounty shaw_by_the_head 0
+bounty voss_parts_run 0
 SEED
 run "$OUT/tally.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
-    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission breach
+    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission debug_single
 checkfile "a mission's kills count towards a bounty" "$OUT/save-tally.txt" "^bounty teal_busy_week [1-9][0-9]*$"
-checkfile "...and only the kills it asks for" "$OUT/save-tally.txt" "^bounty shaw_by_the_head 0$"
+checkfile "...and only the kills it asks for" "$OUT/save-tally.txt" "^bounty voss_parts_run 0$"
 
 # ...and paid by the person who posted it. A ready bounty opens their desk on
 # the board instead of their service, and the scripted E turns it in.
@@ -343,7 +343,7 @@ owned_armor patrol_vest
 owned_cosmetic default
 SEED
 run "$OUT/promo.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
-    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission breach
+    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission debug_single
 checkfile "a promotion is recorded once" "$OUT/save-promo.txt" "^rank_paid = 1$"
 checkfile "a promotion pays its stipend" "$OUT/save-promo.txt" "^chits = 2[0-9][0-9]$"
 
@@ -536,7 +536,7 @@ owned_cosmetic default
 completed tutorial_earth
 SEED
 run "$OUT/cap.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
-    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission breach
+    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission debug_single
 checkfile "experience holds below second class until the campaign is done" "$OUT/save-cap.txt" "^xp = 4499$"
 
 # ...and finishing it, Block D to THE CONDUCTOR, makes the record a Strider
@@ -611,6 +611,62 @@ run "$OUT/earth.json" EREBUS_SPACE_AUTOPILOT=earth EREBUS_FORCE_FORWARD=1 \
 check "a ship can take you back down to Kourou" "$OUT/earth.json" \
       "s['appState'] == 'station' and s['layout'] == 'kourou'"
 
+# LEAVING A MISSION. Escape, then Y: back on foot where you launched from,
+# the mission not cleared and still there to fly.
+cp "$OUT/save-ground.txt" "$OUT/save-leave.txt"
+run "$OUT/leave.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_LEAVE_AT=400 \
+    EREBUS_MAX_FRAMES=480 -- --mission earth_perimeter
+check "a mission can be left part way through" "$OUT/leave.json" \
+      "s['appState'] == 'station' and s['layout'] == 'kourou'"
+checkabsent "...and is not cleared by it" "$OUT/save-leave.txt" "^completed earth_perimeter$"
+
+# A HUNDRED WEAPONS, AND THE WAYS THEY COME. A first clear can hand one over...
+checkfile "HARD DOCK's first clear hands over a weapon" "$OUT/save-breach.txt" "^owned_weapon hal_wren$"
+# ...so can a promotion...
+checkfile "a promotion hands over a weapon" "$OUT/save-promo.txt" "^owned_weapon ves_finch$"
+# ...a kill can drop one (a boss always does; the switch here makes every
+# kill drop, since a scripted player standing still cannot win a boss fight),
+# and whatever is on the floor when the mission clears comes with you...
+cat > "$OUT/save-bossloot.txt" <<'SEED'
+name = Operative
+chits = 100
+xp = 3000
+rank_paid = 4
+class = bulwark
+equipped_weapon = maul_12
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_weapon maul_12
+owned_armor patrol_vest
+owned_cosmetic default
+completed tutorial_earth
+SEED
+run "$OUT/bossloot.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_LOOT_ALWAYS=1 EREBUS_MAX_FRAMES=900 -- --mission debug_single
+check "a kill drops a weapon, and it comes with you when the mission clears" "$OUT/bossloot.json" \
+      "s['missionState'] == 'complete' and s['loot'] >= 1 and s['owned'] >= 3"
+# ...and the Rook sells what nobody else will.
+cat > "$OUT/save-market.txt" <<'SEED'
+name = Operative
+chits = 2000
+xp = 3200
+rank_paid = 4
+class = wraith
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_armor patrol_vest
+owned_cosmetic default
+SEED
+run "$OUT/market.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=-8,0,-13 EREBUS_STATION_YAW=-90 EREBUS_POST_SCRIPT=use \
+    EREBUS_MAX_FRAMES=200
+checkfile "the Rook's black market sells a weapon" "$OUT/save-market.txt" "^owned_weapon hal_sparrow$"
+checkfile "...for its price" "$OUT/save-market.txt" "^chits = 1410$"
+
 # No GL errors anywhere — in particular after a mission, back on the
 # concourse. Ending a mission used to free the meshes the station's crew are
 # built from, and the stations drew motes they do not have; both were a
@@ -620,7 +676,7 @@ cp "$OUT/save-tally.txt" "$OUT/save-glclean.txt"
 xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 EREBUS_CLASS=bulwark \
   EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 \
   EREBUS_SAVE_PATH="$OUT/save-glclean.txt" EREBUS_LOG_STATE="$OUT/glclean.json" \
-  EREBUS_MAX_FRAMES=1100 "$BIN" --mission breach > "$OUT/glclean.log" 2>&1
+  EREBUS_MAX_FRAMES=1100 "$BIN" --mission debug_single > "$OUT/glclean.log" 2>&1
 check "back on the concourse after a mission" "$OUT/glclean.json" "s['appState'] == 'station'"
 checkabsent "...with no GL errors on the way" "$OUT/glclean.log" "GL ERROR"
 

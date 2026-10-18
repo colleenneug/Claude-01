@@ -1,4 +1,5 @@
 #include "Site.h"
+#include "Content.h"
 #include <algorithm>
 #include <cmath>
 
@@ -412,4 +413,296 @@ bool buildSite(const std::string& name, Site& out) {
     return true;
   }
   return false;
+}
+
+// ============================================================
+// EXPEDITIONS — every campaign mission, the long way.
+//
+// A campaign mission used to be one walled field and its waves. An
+// expedition is the same mission as a place you cross: five or six areas in
+// a row, joined by walled corridors that zig-zag so the whole route covers a
+// few hundred metres, each area holding one encounter that wakes when you
+// walk in. You push on, clear, push on, clear, and the last area is the
+// mission's own — its boss, if it has one, waiting for you to arrive.
+//
+// Everything comes from the mission file, so a new campaign mission is an
+// expedition without anybody drawing a map:
+//   waves        each wave is an area's encounter, scaled up, with a light
+//                skirmish first and a last stand of everything at the end
+//   arena        sets the size of the areas
+//   cover        how much is in them to hide behind
+//   zone         what the areas are called (and the track, for Earth)
+//   boss         a final arena, and the boss waits for you in it
+//
+// The route ends at the origin. That is not tidiness: a mission's closing
+// cutscene is framed round the origin, as it was in the arena, and the lift
+// at the end of the Earth programme still has to happen where it is shot.
+// ============================================================
+
+namespace {
+
+struct Rng {
+  uint32_t s;
+  float next() {
+    s = s * 1664525u + 1013904223u;
+    return (float)(s >> 8) / 16777216.0f;
+  }
+  float range(float a, float b) { return a + (b - a) * next(); }
+};
+
+std::vector<std::string> areaNames(const MissionDef& m) {
+  const std::string& z = m.zone;
+  if (m.campaign == "earth")
+    return {"THE SERVICE ROAD", "THE CRAWLER WAY", "THE WATER TOWER", "THE LOADING YARD",
+            "THE SHEDS", "THE BLAST WALL", "THE FUEL DEPOT"};
+  if (z == "dock") return {"THE COLLAR", "LOCK TWO", "THE MANIFEST BAY", "THE TRANSFER DECK", "CUSTOMS", "THE GANTRY"};
+  if (z == "spine1" || z == "spine2")
+    return {"THE FORWARD SPINE", "THE MAINTENANCE RUN", "BULKHEAD NINE", "THE CABLE TRUNK", "THE KEEL", "THE STRUT GALLERY"};
+  if (z == "junction") return {"THE NORTH DOOR", "THE CROSSING", "THE SWITCHBACK", "THE INTERCHANGE", "THE SIGNAL ROOM", "THE WEST DOOR"};
+  if (z == "promenade") return {"THE BOULEVARD", "THE BANDSTAND", "THE ARCADE", "FOUNTAIN COURT", "THE OBSERVATION RAIL", "CAFE ROW"};
+  if (z == "greenhouse") return {"THE SEED VAULT", "IRRIGATION", "THE CANOPY WALK", "THE ROOT CELLAR", "THE GROW HALL", "THE PUMP HOUSE"};
+  if (z == "medbay") return {"TRIAGE", "RECOVERY", "THE PHARMACY", "SURGERY", "ISOLATION", "THE MORGUE"};
+  if (z == "reactor") return {"THE INTAKE", "THE COOLANT GALLERY", "THE TURBINE HALL", "THE CONTROL ROOM", "THE CORE WALK", "THE VENT STACK"};
+  if (z == "choir") return {"THE LISTENING POST", "THE NAVE", "THE CHANNEL ROOM", "THE ECHO CHAMBER", "THE ANTENNA FIELD", "THE LOFT"};
+  if (z == "deckzero") return {"THE LOWER RING", "THE SUMP", "THE DARK DECK", "BALLAST", "THE PRESSURE DOOR", "THE DAIS"};
+  return {"SECTOR A", "SECTOR B", "SECTOR C", "SECTOR D", "SECTOR E", "SECTOR F"};
+}
+
+std::string upperName(std::string s) {
+  for (char& ch : s) ch = (char)std::toupper((unsigned char)ch);
+  return s;
+}
+
+}  // namespace
+
+void buildExpedition(const MissionDef& m, Site& s) {
+  s = Site{};
+  s.consumesWaves = true;
+  Builder b;
+  uint32_t seed = 2166136261u;
+  for (char ch : m.id) seed = (seed ^ (uint8_t)ch) * 16777619u;
+  Rng rng{seed};
+
+  // ---- the encounters, from the mission's waves
+  struct Foe { std::string id; int n; };
+  std::vector<std::vector<Foe>> enc;
+  const auto& W = m.waves;
+  if (W.empty()) {
+    // A mission that is only its boss gets a road to it.
+    enc.push_back({{"thrall", 5}});
+    enc.push_back({{"drone", 5}, {"thrall", 3}});
+    enc.push_back({{"warden", 2}, {"thrall", 5}});
+  } else {
+    enc.push_back({{W[0].enemyId, std::max(2, (W[0].count + 1) / 2)}});
+    for (size_t i = 0; i < W.size(); i++) {
+      std::vector<Foe> e{{W[i].enemyId, (int)std::ceil(W[i].count * 1.3f)}};
+      if (i > 0) e.push_back({W[i - 1].enemyId, std::max(1, (int)std::ceil(W[i - 1].count * 0.4f))});
+      enc.push_back(e);
+    }
+    std::vector<Foe> last;
+    for (const WaveSpawn& w : W) last.push_back({w.enemyId, std::max(1, (int)std::ceil(w.count * 0.6f))});
+    enc.push_back(last);
+  }
+  while (enc.size() > 6) enc.erase(enc.begin() + 1);
+  const bool boss = !m.bossId.empty();
+  const int areaCount = (int)enc.size() + (boss ? 1 : 0);
+
+  // ---- where the areas go: a zig-zag north, ending at the origin
+  const float baseL = std::clamp(m.arenaSize * 0.42f, 38.0f, 64.0f);
+  std::vector<float> L(areaCount), C(areaCount);
+  std::vector<glm::vec3> dir(areaCount), centre(areaCount);
+  for (int i = 0; i < areaCount; i++) {
+    L[i] = baseL * rng.range(0.88f, 1.12f);
+    if (boss && i == areaCount - 1) L[i] = baseL * 1.25f;
+    C[i] = rng.range(22.0f, 34.0f);
+    dir[i] = (i % 2 == 0) ? glm::vec3(0, 0, 1) : (i % 4 == 1 ? glm::vec3(1, 0, 0) : glm::vec3(-1, 0, 0));
+  }
+  centre[0] = glm::vec3(0.0f);
+  for (int i = 0; i + 1 < areaCount; i++) {
+    centre[i + 1] = centre[i] + dir[i] * (L[i] * 0.5f + C[i] + L[i + 1] * 0.5f);
+  }
+  const glm::vec3 shift = centre[areaCount - 1];
+  for (glm::vec3& c : centre) c -= shift;
+
+  const glm::vec3 floorTint = m.floorColour;
+  const glm::vec3 wallTint = glm::mix(m.floorColour, glm::vec3(0.36f, 0.38f, 0.42f), 0.55f);
+  const glm::vec3 trimTint = glm::mix(m.floorColour, glm::vec3(0.18f, 0.19f, 0.22f), 0.6f);
+  const glm::vec3 lampTint = m.campaign == "earth" ? glm::vec3(1.0f, 0.82f, 0.55f)
+                           : glm::mix(glm::vec3(0.55f, 0.85f, 1.0f), m.sunColour, 0.35f);
+  const float H = 7.0f, T = 0.6f, DOOR = 3.2f;   // wall height, thickness, half a doorway
+
+  // One side of an area's wall, with a doorway in it if `door`.
+  auto side = [&](glm::vec3 c, float half, glm::vec3 n, bool door) {
+    // n is the outward normal of the side; t runs along it.
+    glm::vec3 t(-n.z, 0.0f, n.x);
+    glm::vec3 mid = c + n * (half + T * 0.5f);
+    auto seg = [&](float a0, float a1) {
+      glm::vec3 p0 = mid + t * a0 - n * (T * 0.5f), p1 = mid + t * a1 + n * (T * 0.5f);
+      b.box(p0.x, p1.x, -0.4f, H, p0.z, p1.z, wallTint, true, 0.3f, 0.7f);
+    };
+    if (!door) { seg(-half - T, half + T); return; }
+    seg(-half - T, -DOOR);
+    seg(DOOR, half + T);
+    // a lit frame round the doorway, so the way on reads from across a room
+    for (float a : {-DOOR, DOOR}) {
+      glm::vec3 p = mid + t * a;
+      b.lit(p.x - 0.18f, p.x + 0.18f, 0.0f, 4.2f, p.z - 0.18f, p.z + 0.18f, lampTint, 2.6f);
+    }
+  };
+
+  std::vector<std::string> names = areaNames(m);
+  for (int i = 0; i < areaCount; i++) {
+    const glm::vec3 c = centre[i];
+    const float half = L[i] * 0.5f;
+    const bool hasEntry = i > 0, hasExit = i + 1 < areaCount;
+    const glm::vec3 inDir = hasEntry ? dir[i - 1] : glm::vec3(0, 0, 1);
+    const glm::vec3 outDir = dir[i];
+
+    // floor, and a darker trim band round its edge
+    b.box(c.x - half - T, c.x + half + T, -0.4f, 0.0f, c.z - half - T, c.z + half + T, floorTint, true, 0.2f, 0.85f);
+    // walls: a doorway on the side you come in by and the side you leave by
+    for (glm::vec3 n : {glm::vec3(0, 0, 1), glm::vec3(0, 0, -1), glm::vec3(1, 0, 0), glm::vec3(-1, 0, 0)}) {
+      const bool door = (hasExit && n == outDir) || (hasEntry && n == -inDir);
+      side(c, half, n, door);
+    }
+    // lamps on the corners and halfway along the walls, so a place this big
+    // still has light in it and its corners read as corners
+    for (float sx : {-1.0f, 0.0f, 1.0f}) {
+      for (float sz : {-1.0f, 0.0f, 1.0f}) {
+        if (sx == 0.0f && sz == 0.0f) continue;
+        glm::vec3 p = c + glm::vec3(sx * (half - 0.4f), 0.0f, sz * (half - 0.4f));
+        b.lit(p.x - 0.25f, p.x + 0.25f, H - 1.2f, H - 0.4f, p.z - 0.25f, p.z + 0.25f, lampTint, 2.2f);
+      }
+    }
+
+    const glm::vec3 entry = hasEntry ? c - inDir * half : c - glm::vec3(0, 0, 1) * (half - 4.0f);
+    const glm::vec3 exit = hasExit ? c + outDir * half : c;
+    Site::Area area;
+    area.name = (i == areaCount - 1) ? upperName(m.name) : names[(size_t)i % names.size()];
+    area.min = c - glm::vec3(half, 0.0f, half);
+    area.max = c + glm::vec3(half, H, half);
+    area.entry = entry;
+    area.exit = exit;
+    area.hasEntry = hasEntry;
+    area.hasExit = hasExit;
+    s.areas.push_back(area);
+
+    // ---- cover: crates, low walls and the odd pillar, kept off the lane
+    // between the doors (the route through a room should not need a map)
+    // and off the middle, where a boss stands and a closing shot looks.
+    auto laneDist = [&](glm::vec3 p) {
+      auto segDist = [](glm::vec3 p, glm::vec3 a, glm::vec3 q) {
+        glm::vec3 ab = q - a;
+        float t = glm::dot(p - a, ab) / std::max(1e-4f, glm::dot(ab, ab));
+        t = std::clamp(t, 0.0f, 1.0f);
+        glm::vec3 d = p - (a + ab * t);
+        d.y = 0.0f;
+        return glm::length(d);
+      };
+      return std::min(segDist(p, entry, c), segDist(p, c, exit));
+    };
+    const int cover = (int)std::round(L[i] * L[i] / 170.0f * std::max(0.3f, m.coverDensity));
+    for (int k = 0, tries = 0; k < cover && tries < cover * 8; tries++) {
+      glm::vec3 p = c + glm::vec3(rng.range(-half + 4, half - 4), 0.0f, rng.range(-half + 4, half - 4));
+      if (laneDist(p) < 3.8f) continue;
+      if (glm::length(glm::vec2(p.x - c.x, p.z - c.z)) < 6.0f) continue;
+      const float r = rng.next();
+      float w = rng.range(1.2f, 3.2f), d = rng.range(1.2f, 3.2f), h = rng.range(1.1f, 2.3f);
+      if (r < 0.12f) { w = d = rng.range(1.4f, 2.0f); h = rng.range(4.0f, 6.5f); }   // a pillar
+      else if (r < 0.3f) { w = rng.range(4.0f, 7.0f); d = 0.8f; h = 1.3f; }          // a low wall
+      if (rng.next() < 0.5f) std::swap(w, d);
+      b.box(p.x - w * 0.5f, p.x + w * 0.5f, 0.0f, h, p.z - d * 0.5f, p.z + d * 0.5f,
+            rng.next() < 0.5f ? trimTint : wallTint * 0.85f, true, 0.35f, 0.65f);
+      k++;
+    }
+
+    // ---- the corridor on to the next area
+    if (hasExit) {
+      const glm::vec3 p0 = exit, p1 = centre[i + 1] - outDir * (L[i + 1] * 0.5f);
+      const glm::vec3 t(-outDir.z, 0.0f, outDir.x);
+      const float hw = DOOR;
+      glm::vec3 a = p0 - t * (hw + T), q = p1 + t * (hw + T);
+      b.box(std::min(a.x, q.x), std::max(a.x, q.x), -0.4f, 0.0f, std::min(a.z, q.z), std::max(a.z, q.z),
+            trimTint, true, 0.25f, 0.8f);
+      for (float sgn : {-1.0f, 1.0f}) {
+        glm::vec3 w0 = p0 + t * sgn * hw, w1 = p1 + t * sgn * (hw + T);
+        b.box(std::min(w0.x, w1.x), std::max(w0.x, w1.x), -0.4f, H, std::min(w0.z, w1.z), std::max(w0.z, w1.z),
+              wallTint, true, 0.3f, 0.7f);
+        // a lit strip along the top of each wall, the length of the run
+        glm::vec3 l0 = p0 + t * sgn * (hw - 0.1f), l1 = p1 + t * sgn * (hw - 0.3f);
+        b.lit(std::min(l0.x, l1.x), std::max(l0.x, l1.x), H - 0.5f, H - 0.3f,
+              std::min(l0.z, l1.z), std::max(l0.z, l1.z), lampTint, 1.8f);
+      }
+    }
+
+    // ---- who is here, and what wakes them
+    const std::string gid = "area" + std::to_string(i);
+    Site::Trigger trig;
+    trig.id = gid;
+    if (hasEntry) {
+      glm::vec3 p = entry + inDir * 2.5f;
+      glm::vec3 t(-inDir.z, 0.0f, inDir.x);
+      glm::vec3 a = p - t * (DOOR + 1.0f) - inDir * 2.5f, q = p + t * (DOOR + 1.0f) + inDir * 2.5f;
+      trig.min = glm::vec3(std::min(a.x, q.x), -1.0f, std::min(a.z, q.z));
+      trig.max = glm::vec3(std::max(a.x, q.x), 5.0f, std::max(a.z, q.z));
+    } else {
+      // the first area wakes a few steps in from where you start
+      glm::vec3 p = entry + glm::vec3(0, 0, 1) * 8.0f;
+      trig.min = glm::vec3(c.x - half, -1.0f, p.z - 1.0f);
+      trig.max = glm::vec3(c.x + half, 5.0f, p.z + 1.0f);
+    }
+    s.triggers.push_back(trig);
+
+    const bool bossArea = boss && i == areaCount - 1;
+    int count = 0;
+    if (!bossArea) {
+      for (const Foe& f : enc[(size_t)i]) {
+        for (int n = 0; n < f.n; n++) {
+          Site::Spawn sp;
+          sp.enemyId = f.id;
+          sp.wakeOn = gid;
+          sp.group = gid;
+          // the far two thirds of the room from the door you come in by
+          for (int tries = 0; tries < 12; tries++) {
+            glm::vec3 p = c + glm::vec3(rng.range(-half + 3, half - 3), 0.0f, rng.range(-half + 3, half - 3));
+            if (glm::dot(p - entry, hasEntry ? inDir : glm::vec3(0, 0, 1)) < L[i] * 0.33f) continue;
+            sp.pos = p;
+            break;
+          }
+          if (sp.pos == glm::vec3(0.0f)) sp.pos = c + (hasEntry ? inDir : glm::vec3(0, 0, 1)) * (half * 0.5f);
+          s.hostiles.push_back(sp);
+          count++;
+        }
+      }
+    }
+
+    // ---- what you are doing here
+    if (hasEntry) {
+      Site::Objective go;
+      go.text = "PUSH ON TO " + area.name;
+      go.hint = "FOLLOW THE ARROW";
+      go.trigger = gid;
+      s.objectives.push_back(go);
+    }
+    Site::Objective fight;
+    if (bossArea) {
+      fight.text = "DEFEAT THE " + upperName(m.bossId);
+      fight.hint = "IT IS WHAT THE WHOLE ROUTE WAS FOR";
+      fight.needsBoss = true;
+      s.hasBossSpawn = true;
+      s.bossSpawn = c + outDir * (half * 0.35f);
+      s.bossWaitsOn = gid;
+    } else {
+      fight.text = "CLEAR " + area.name;
+      fight.hint = std::to_string(count) + (count == 1 ? " HOSTILE" : " HOSTILES");
+      fight.needsClear = true;
+      fight.clearGroup = gid;
+    }
+    s.objectives.push_back(fight);
+  }
+
+  s.parts = std::move(b.parts);
+  s.floorY = 0.0f;
+  s.playerSpawn = s.areas.front().entry;
+  s.playerYaw = 90.0f;   // facing +Z, the way the route starts
 }

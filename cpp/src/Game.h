@@ -34,6 +34,10 @@ struct Pickup {
   // the site — you wake up with nothing.
   std::string weaponId;
   std::string note;
+  // A drop off a hostile rather than a weapon set down in a site: it goes in
+  // your kit and leaves what you are holding alone. Swapping guns because you
+  // walked over one in the middle of a firefight is not a reward.
+  bool loot = false;
 };
 
 // Owns everything the C++ game actually simulates — content, the level, the
@@ -185,6 +189,22 @@ public:
   // What this mission did, for the bounties on the record. Read once, at the
   // mission-exit point, by the same code that banks experience.
   const MissionTally& tally() const { return tally_; }
+  const std::string& missionId() const { return mission_.id; }
+  // Weapons that dropped this run, picked up or not.
+  int lootDropped() const { return (int)dropped_.size(); }
+  // Whether this mission is an expedition — the long way, area by area —
+  // rather than one arena. Every campaign mission is one; see buildExpedition.
+  bool expedition() const { return usingSite_ && !site_.areas.empty(); }
+  // Which way you are facing when it starts: down the route.
+  float spawnYaw() const { return usingSite_ ? site_.playerYaw : -90.0f; }
+  // Whether hostile `i` is part of what you are fighting right now: awake, or
+  // in the encounter the current objective is clearing. Asleep in a room you
+  // have not reached is not.
+  bool inCurrentEncounter(size_t i) const;
+  // Verification aid (EREBUS_LOOT_ALWAYS): every kill drops a weapon, so a
+  // check can prove the drop-to-kit pipeline without a boss fight a scripted
+  // player standing still cannot win.
+  void setLootAlways(bool on) { lootAlways_ = on; }
 
   // Where to go next in this mission: the box the current objective is
   // waiting on, or failing that the nearest thing still standing. False once
@@ -269,6 +289,8 @@ private:
   void fireComms(CommsTrigger trigger);
   void updateComms(float dt);
   void dropPickup(const glm::vec3& at, int killIndex);
+  // Maybe a weapon, off this kill (see the definition for the odds).
+  void maybeDropWeapon(const Hostile& h);
   void updatePickups(float dt);
   void updateTutorial(float dt);
   void updateSite(float dt);
@@ -319,6 +341,9 @@ private:
   int xpEarned_ = 0, xpBanked_ = 0;
   int harnessMax_ = 3, harnessLeft_ = 3;
   MissionTally tally_;
+  uint32_t lootRng_ = 1;                 // a small LCG: drops vary, tests repeat
+  bool lootAlways_ = false;
+  std::vector<std::string> dropped_;     // weapons already on the floor this run
   // The record's upgrades, summed once at init. Every place a weapon is
   // loaded from its def goes through applyDef with these, so a drill bought
   // from Bright applies to a rifle picked up off the floor as well as to the
@@ -407,6 +432,7 @@ private:
   // Hostiles asleep until their room's trigger fires, indexed alongside
   // hostiles_ so waking one is a flag rather than a spawn.
   std::vector<std::string> hostileWakeOn_;
+  std::vector<std::string> hostileGroup_;   // Site::Spawn::group, per hostile
   Cutscene cutscene_;
 
   void collectViewmodel(std::vector<DrawItem>& out) const;

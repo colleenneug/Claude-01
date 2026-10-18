@@ -224,6 +224,8 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
         else if (k == "reward_xp") { try { m.rewardXp = std::stoi(v); } catch (...) {} }
+        else if (k == "reward_weapon") m.rewardWeapon = v;
+        else if (k == "expedition") m.expedition = (v == "true" || v == "1");
       }
     }
   }
@@ -257,6 +259,11 @@ WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
       else if (k == "shape") w.shape = v;
       else if (k == "rank_required") w.rankRequired = v;
       else if (k == "class_required") w.classRequired = v;
+      else if (k == "source") w.source = v;
+      else if (k == "sold_by") w.soldBy = v;
+      else if (k == "tier") w.tier = std::max(1, std::stoi(v));
+      else if (k == "maker") w.maker = v;
+      else if (k == "blurb") w.blurb = v;
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());
@@ -467,6 +474,7 @@ RankDef parseRank(const std::string& id, const fs::path& path) {
       else if (k == "blurb") r.blurb = v;
       else if (k == "unlock") r.unlock = v;
       else if (k == "gate") r.gate = v;
+      else if (k == "grant_weapon") r.grantWeapon = v;
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());

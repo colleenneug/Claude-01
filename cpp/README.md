@@ -14,9 +14,10 @@ A persistent profile — chits (currency), owned and equipped gear, completed
 missions — lives in one of three save slots and carries across runs.
 
 The story is the browser build's story. The Cradle is the ark *Erebus
-Cradle*, and docking at it opens the **sixteen-mission campaign** the
-browser build runs (`../src/js/fps/campaign.js`): one route from the docking
-collar to Deck Zero, against the husk drones, choir thralls and warden
+Cradle*, and docking at it opens the **twenty-two-sector campaign** — the sixteen the
+browser build runs (`../src/js/fps/campaign.js`), with six more of this
+build's own between them (THE HOLD, THE BUNKS, THE ARCHIVE, THE FOUNDRY, THE
+RELAY, THE VAULT): one route from the docking collar to Deck Zero, against the husk drones, choir thralls and warden
 frames, ending on the Conductor. Same objectives, same briefings, same
 CRADLE/DIVISION/VOSS comms thread, transcribed into `content/missions/`. It
 opens one sector at a time — a sector is locked until the one before it is
@@ -26,7 +27,7 @@ six, the reactor runs hot and orange, Deck Zero is nearly black. The
 planets stay alongside it as side destinations you can fly to at any time.
 
 A brand-new record starts **on Earth**, and stays there. The first campaign
-is the **Strider programme**: six qualifications at Kourou, run out of a
+is the **Strider programme**: eight qualifications at Kourou, run out of a
 ground station you walk around between them, with people to talk to, a
 quartermaster whose shelves are released against your rank, a dispatch board
 of side work, and a flight officer who will not put you on the lift until the
@@ -55,7 +56,7 @@ transport parked on the far pan during Block D is Division's, lit and
 ramp-down from the moment you walk outside, and it is not yours — it is there
 for what they brought back. Clearing the pad gets you walked the other way
 instead, across the pan to the ground station, and that is where the next
-five qualifications are taken from:
+seven qualifications are taken from:
 
 | | | |
 |---|---|---|
@@ -63,8 +64,10 @@ five qualifications are taken from:
 | 02 | **THE RANGE** | Qualify on your weapon. Nothing here shoots back |
 | 03 | **HANGAR THREE** | Structures — and the first one that does |
 | 04 | **THE ASSEMBLY BUILDING** | Vertical work, on the gantries |
-| 05 | **THE PERIMETER** | Night and coastal fog, forty metres of visibility |
-| 06 | **LAUNCH WINDOW** | Hold the pan for nineteen minutes of fuelling |
+| 05 | **THE CAUSEWAY** | Escort the launch fuel convoy down the coast road at dusk |
+| 06 | **THE PERIMETER** | Night and coastal fog, forty metres of visibility |
+| 07 | **THE FUEL FARM** | Clear forty tanks of hydrolox without shooting one |
+| 08 | **LAUNCH WINDOW** | Hold the pan for nineteen minutes of fuelling |
 
 The lift lives at the end of that, not at the end of the first morning: five
 held shots ending on altitude, and eleven minutes to the Cradle. Until it
@@ -76,10 +79,24 @@ so herself.
 ### The campaign, in order
 
 The campaign is **one route, flown in order, with no skipping**: Block D, the
-five Earth qualifications, the lift, then all sixteen sectors of the ark from
+seven Earth qualifications, the lift, then all twenty-two sectors of the ark from
 HARD DOCK to **THE CONDUCTOR**. Every sector is locked until the one before it
 is cleared, and a locked sector cannot be launched from any counter — it is on
 the list so you can see what is ahead, and that is all.
+
+**Every campaign mission is an expedition.** Not one walled field any more:
+the long way through a place, five or six areas in a row joined by lit,
+walled corridors that zig-zag across a few hundred metres. Each area holds
+its own encounter, asleep until you walk in — *PUSH ON TO THE INTERCHANGE*,
+then *CLEAR THE INTERCHANGE* — with cover to fight from, a lit doorway on the
+way out, and the gold arrow standing in the doorway until you are through it.
+The last area is the mission's own; if it has a boss, the boss is waiting in
+its arena for you to arrive. Built from each mission's own file (its waves
+become the encounters, its size the scale, its zone the area names — THE
+TURBINE HALL, THE ROOT CELLAR, THE NAVE), so a new campaign mission is an
+expedition without anyone drawing a map; `expedition = false` in a mission
+file keeps the old single arena. Block D keeps its hand-built building, and
+side contracts stay arenas — a contract is a job, not a journey.
 
 **Until it is done, it is the only thing to fly.** Shaw's and Teal's
 contract boards are shut (*AFTER THE CAMPAIGN*), and every side mission on
@@ -155,7 +172,7 @@ tabs:
 | ONDO | Kourou | **Ground armoury** — her own rack (marksman carbine, Storm SMG, KESTREL, scout rig, ranger weave, heavy plate) |
 | VOSS | Cradle | **Orbital armoury** — a different rack (ANVIL, LONGSHORE, field plate, DEEPWATER) |
 | HALE | Kourou | **The lift** — the Earth programme route, and she refuses until you are rated |
-| KAUR | Cradle | **The ark route** — the sixteen sectors and nothing else |
+| KAUR | Cradle | **The ark route** — the twenty-two sectors and nothing else |
 | TEAL | Kourou | **Earth contracts** — three new missions on this continent: the Salt Pan, Fence Rats, the Tracking Station |
 | SHAW | Cradle | **Off-ark contracts** — the Dust Shelf, the Dig Site, Glacius, Karrash |
 | BRIGHT | Kourou | **Drills** — permanent faster reloads, a tighter cone, more reserve ammo |
@@ -167,6 +184,30 @@ tabs:
 Upgrades are permanent, apply to every weapon you pick up, and come in tiers
 (the second drill needs the first). The G kit screen still sells everything
 from anywhere; the counters are where each person's own stock is.
+
+### A hundred weapons, and where they come from
+
+There are **100 weapons**: seven kinds (rifle, carbine, SMG, marksman,
+shotgun, sidearm, induction), five tiers, and seven makers who each bend the
+numbers their own way — KOUROU ARMS is reliable, CRADLE WORKS rebuilt, HALCYON
+precise, BRANDT heavy, VESPER fast, ARK SALVAGE goes through things, and CHOIR
+nobody will talk about. The kit screen (G) counts how many you have
+(`WEAPONS 14 / 100`), and the stat line under any weapon says how it came to
+you. They come to you six ways:
+
+| Way | How many | Where |
+|---|---|---|
+| **Bought** | 35 | Ondo's rack at Kourou (Kourou Arms), Voss's on the Cradle (Cradle Works), or the kit screen |
+| **Dropped** | 28 | Hostiles drop them — rarely from the rank and file, often from wardens, always from a boss. A drop is a gold weapon with a beam of light over it; walk over it and it goes in your kit without swapping what you are holding. Whatever is still on the floor when you clear the mission comes with you |
+| **Mission rewards** | 12 | The first clear of twelve campaign missions — HANGAR THREE, THE CAUSEWAY, LAUNCH WINDOW, HARD DOCK, THE HOLD, THE FALSE SKY, THE GARDEN, THE ARCHIVE, THE FOUNDRY, THE RELAY, THE VAULT and THE CONDUCTOR |
+| **Promotions** | 8 | One handed over on each rung from Probationary Strider to Lead Strider |
+| **Bounties** | 6+ | Paid by Bright, Ondo, Hale, Kaur, Odil and the Rook (plus the KESTREL and LONGSHORE bounties) |
+| **The black market** | 6 | The Rook sells them at the appraisal desk, above the list of things the Rook will buy |
+
+Only bought weapons are listed for sale; the rest appear in your kit once you
+have them, because a drop you can read off a menu first is a shopping list.
+The ninety new ones are written by `tools/make_weapons.py` (archetype × tier ×
+maker); change a number there and run it again to re-balance the armoury.
 
 Campaigns are **tracks** (`track = earth` in a mission file), not one long
 list. Each track unlocks one step at a time within itself, so adding a
@@ -190,12 +231,12 @@ front rank into whatever stood behind it, and can stun a room with an EMP.
 A Wraith carries the suppressed WHISPER, triples headshot damage, and phase
 steps out of trouble with the next round primed.
 
-**Scope, honestly stated:** three doctrines, ten weapons carried two at a
-time, five armour pieces, five cosmetics, eight enemy archetypes, an
+**Scope, honestly stated:** three doctrines, a hundred weapons carried two
+at a time, five armour pieces, five cosmetics, eight enemy archetypes, an
 eleven-rung rank ladder, eleven crew across two walkable hubs, each with
 their own bounty board and service (thirty-one bounties, sixteen upgrades),
-four ships, thirty-one missions (a six-mission Earth programme, the
-sixteen-sector ark campaign, and nine side contracts), five destinations —
+four ships, thirty-nine missions (an eight-mission Earth programme, the
+twenty-two-sector ark campaign, and nine side contracts), six destinations —
 including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
 text files, not a code change (see *Content* below). What's still not here:
@@ -394,7 +435,7 @@ In a mission:
 | **G** | **The kit screen — change your gear, from anywhere** |
 | Q or E | Your doctrine's field ability — barrier, EMP or phase step |
 | Right mouse, held | Aim — narrows the FOV and brings depth of field in on the background |
-| Escape | Release the mouse; left click re-captures it |
+| Escape | Release the mouse, and ask **LEAVE THE MISSION?** — Y leaves (you keep the experience, bounty progress and any weapons found; the mission stays open to fly again), N or Escape stays. Left click re-captures the mouse |
 | Enter or Space, once the mission has ended | Return to the Hub (saves your profile) |
 
 Those are the browser build's bindings and the browser build's numbers —

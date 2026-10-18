@@ -173,6 +173,11 @@ bool Hostile::update(float dt, const glm::vec3& playerPos, const Level& level) {
 
 bool Hostile::takeDamage(float amount) {
   if (state == HostileState::Dying || state == HostileState::Gone) return false;
+  // Asleep is a stun with no end (see Game::init's site spawns). Being shot
+  // ends it — and has to, or a sleeper killed in its sleep stays frozen in
+  // its first frame of dying, never reaches Gone, and the room it is in can
+  // never be cleared.
+  if (stunT > 1e8f) stunT = 0.0f;
   hp -= amount;
   hitFlash = 1.0f;
   if (hp <= 0.0f) {

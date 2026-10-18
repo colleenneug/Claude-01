@@ -794,6 +794,14 @@ void Hud::drawLoadout(int screenW, int screenH, const Content& content,
   // ---- masthead
   text(48, 40, "KIT", 4.0f, bright);
   text(48, 78, "CHANGE WHAT YOU ARE CARRYING", 1.8f, dim);
+  {
+    // The collection: how many of the weapons that exist this record has.
+    // Most of them are not on sale anywhere, and this is the line that says
+    // there is more out there.
+    std::snprintf(buf, sizeof(buf), "WEAPONS %d / %d", weaponsOwned(profile, content),
+                  (int)content.weaponIds().size());
+    text(48 + textWidth("KIT", 4.0f) + 28, 48, buf, 1.8f, gold);
+  }
 
   std::snprintf(buf, sizeof(buf), "%d CHITS", profile.chits);
   float chitsW = textWidth(buf, 2.6f);
@@ -823,8 +831,18 @@ void Hud::drawLoadout(int screenW, int screenH, const Content& content,
 
     // The active column is lit and backed; the others are dimmed but still
     // readable, because half the reason to open this is to compare.
+    // Long columns scroll: as many rows as fit above the stat line, with the
+    // caret kept in the middle of the window.
+    const int fit = std::max(4, (int)((screenH - 154.0f - 150.0f) / rowH));
+    const int sel = loadout.row(col);
+    int first = 0;
+    if ((int)list.size() > fit) {
+      first = std::clamp(sel - fit / 2, 0, (int)list.size() - fit);
+    }
+    const int lastRow = std::min((int)list.size(), first + fit);
     if (active) {
-      rect(x - 8, 116, span - 6.0f, 34.0f + rowH * (float)std::max<size_t>(list.size(), 1),
+      rect(x - 8, 116, span - 6.0f,
+           34.0f + rowH * (float)std::max(1, lastRow - first),
            glm::vec4(0.10f, 0.14f, 0.20f, 0.85f));
     }
     const float fade = active ? 1.0f : 0.45f;
@@ -834,7 +852,8 @@ void Hud::drawLoadout(int screenW, int screenH, const Content& content,
     text(x, 126, headings[c], 1.9f, head);
 
     float y = 154.0f;
-    for (size_t i = 0; i < list.size(); i++) {
+    if (first > 0) text(colRight - textWidth("MORE", 1.3f), 128, "MORE", 1.3f, dim);
+    for (size_t i = (size_t)first; i < (size_t)lastRow; i++) {
       const std::string& id = list[i];
       const Loadout::Availability a = loadout.availability(col, id);
 
@@ -875,6 +894,7 @@ void Hud::drawLoadout(int screenW, int screenH, const Content& content,
       }
       y += rowH;
     }
+    if (lastRow < (int)list.size()) text(colRight - textWidth("MORE", 1.3f), y, "MORE", 1.3f, dim);
   }
 
   // ---- the stat line for whatever the caret is on. Numbers, because
@@ -894,6 +914,9 @@ void Hud::drawLoadout(int screenW, int screenH, const Content& content,
                         d->headshotMultiplier, d->magSize, d->reserveAmmo, d->range, d->fireInterval);
           line = buf;
           if (d->pierce) line += "   PIERCES";
+          if (!d->maker.empty()) line = d->maker + "   " + line;
+          const std::string from = weaponSourceLabel(*d, content);
+          if (!from.empty()) line += "   " + from;
         }
       } else if (col == Loadout::Column::Armour) {
         if (const ArmorDef* d = content.armor(id)) {
@@ -1024,7 +1047,7 @@ void Hud::drawPost(int screenW, int screenH, const Content& content,
           else if (const CosmeticDef* c = content.cosmetic(id)) name = c->name + " SHADER";
           else if (const MissionDef* m = content.mission(id)) name = m->name;
           else if (id == "track:earth") name = "THE STRIDER PROGRAMME";
-          else if (id == "track:cradle") name = "THE ARK, ALL SIXTEEN SECTORS";
+          else if (id == "track:cradle") name = "THE ARK, ALL TWENTY-TWO SECTORS";
           else if (id.rfind("track:", 0) == 0) name = id.substr(6) + " ROUTE";
           else continue;
           line += (line.empty() ? "" : "   ") + name;
@@ -1108,27 +1131,53 @@ void Hud::drawPost(int screenW, int screenH, const Content& content,
         y += rowH;
       }
     } else if (host->shop == CrewShop::Appraisal) {
+      // One list, two halves: the black market first (the Rook selling to
+      // you), then the appraisal (you selling to the Rook). Scrolled, since
+      // a record with a lot of spare gear can have more of it than fits.
+      const std::vector<std::string>& market = post.blackMarket();
       const std::vector<Appraisal>& list = post.appraisals();
-      if (list.empty()) {
-        text(left, top, "NOTHING ON YOU I WOULD TAKE", 2.4f, grey);
-        wrapped(left, top + 34, right - left,
-                "Issue gear is worth nothing to anybody, and I do not buy what you are "
-                "wearing. Buy something, stop using it, and bring it to me.", 1.7f, dim, 22.0f);
-      } else {
-        float y = top;
-        for (size_t i = 0; i < list.size(); i++) {
-          const Appraisal& a = list[i];
-          caret(y, (int)i == post.row());
-          const char* kind = a.kind == Appraisal::Kind::Weapon   ? "WEAPON"
-                           : a.kind == Appraisal::Kind::Armour   ? "ARMOUR"
-                                                                 : "SHADER";
+      const int total = post.serviceRows();
+      const int fit = std::max(3, (int)((screenH - 160.0f - top) / rowH));
+      const int first = total > fit ? std::clamp(post.row() - fit / 2, 0, total - fit) : 0;
+      const int last = std::min(total, first + fit);
+      float y = top;
+      for (int r = first; r < last; r++) {
+        caret(y, r == post.row());
+        if (r < (int)market.size()) {
+          const WeaponDef* w = content.weapon(market[(size_t)r]);
+          if (!w) { y += rowH; continue; }
+          const bool owned = profile.ownsWeapon(w->id);
+          const bool rankOk = content.rankReached(w->rankRequired, profile.xp);
+          const bool docOk = w->classRequired.empty() || w->classRequired == profile.classId;
+          const bool rich = profile.chits >= w->cost;
+          glm::vec4 col = owned ? green : (!rankOk || !docOk) ? grey : rich ? bright : red;
+          text(left + 18, y, w->name, 2.0f, col);
+          std::snprintf(buf, sizeof(buf), "BLACK MARKET - %s - TIER %d", w->maker.empty() ? "UNMARKED" : w->maker.c_str(), w->tier);
+          text(left + 18, y + 20, buf, 1.5f, glm::vec4(0.82f, 0.62f, 1.0f, 0.8f));
+          std::string tag;
+          glm::vec4 tagCol = gold;
+          if (owned) { tag = "IN YOUR KIT"; tagCol = green; }
+          else if (!docOk) { tag = "NOT YOUR DOCTRINE"; tagCol = grey; }
+          else if (!rankOk) { const RankDef* rk = content.rank(w->rankRequired); tag = rk ? rk->name : "LOCKED"; tagCol = violet; }
+          else { tag = "BUY " + std::to_string(w->cost) + " CHITS"; tagCol = rich ? gold : red; }
+          text(right - textWidth(tag, 1.7f), y + 4, tag, 1.7f, tagCol);
+          if (r == post.row()) footBlurb = w->blurb.empty() ? "Nobody asks where it came from. That is the price." : w->blurb;
+        } else if (list.empty()) {
+          text(left + 18, y, "NOTHING ON YOU I WOULD TAKE", 2.0f, grey);
+          text(left + 18, y + 20, "BUY SOMETHING, STOP USING IT, AND BRING IT TO ME", 1.5f, dim);
+          if (r == post.row()) footBlurb = "Issue gear is worth nothing to anybody, and I do not buy what you are wearing.";
+        } else {
+          const Appraisal& a = list[(size_t)(r - (int)market.size())];
+          const char* kind = a.kind == Appraisal::Kind::Weapon   ? "SELL - WEAPON"
+                           : a.kind == Appraisal::Kind::Armour   ? "SELL - ARMOUR"
+                                                                 : "SELL - SHADER";
           text(left + 18, y, a.name, 2.0f, bright);
           text(left + 18, y + 20, kind, 1.5f, dim);
           std::snprintf(buf, sizeof(buf), "SELL FOR %d CHITS", a.value);
           text(right - textWidth(buf, 1.7f), y + 4, buf, 1.7f, gold);
-          y += rowH;
+          if (r == post.row()) footBlurb = "Half what you paid. You can buy it back, at full price, from whoever sold it to you.";
         }
-        footBlurb = "Half what you paid. You can buy it back, at full price, from whoever sold it to you.";
+        y += rowH;
       }
     }
   } else {
@@ -1632,4 +1681,25 @@ void Hud::drawWaypoint(const glm::mat4& viewProj, const glm::vec3& eye, const Wa
   float ly = std::clamp(lp.y - 8.0f, 96.0f, H - 70.0f);
   rect(lx - 6, ly - 4, tw + 12, 20, shade);
   text(lx, ly, buf, 1.6f, gold);
+}
+
+// ------------------------------------------------------------ leave mission
+
+void Hud::drawLeaveConfirm(int screenW, int screenH, bool restarts) {
+  begin(screenW, screenH);
+  const float cx = screenW * 0.5f, cy = screenH * 0.5f;
+  const glm::vec4 gold(1.0f, 0.82f, 0.30f, 0.98f);
+  const glm::vec4 dim(0.72f, 0.78f, 0.86f, 0.95f);
+  const float w = std::min(760.0f, screenW - 64.0f), h = 190.0f;
+  rect(cx - w * 0.5f, cy - h * 0.5f, w, h, glm::vec4(0.03f, 0.04f, 0.06f, 0.9f));
+  rect(cx - w * 0.5f, cy - h * 0.5f, w, 3, gold);
+  textCentered(cx, cy - h * 0.5f + 24, restarts ? "START BLOCK D AGAIN?" : "LEAVE THE MISSION?", 3.0f, gold);
+  wrappedCentered(cx, cy - h * 0.5f + 70, w - 60,
+                  restarts ? "There is nowhere to go back to yet - this is the first morning. "
+                             "Leaving starts Block D from the top."
+                           : "You keep the experience, bounty progress and any weapons you found. "
+                             "It is not cleared, and it stays open to fly again from the same counter.",
+                  1.7f, dim, 22.0f);
+  textCentered(cx, cy + h * 0.5f - 36, "Y  LEAVE        N OR ESC  STAY", 2.0f, gold);
+  end();
 }

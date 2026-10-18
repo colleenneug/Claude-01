@@ -60,6 +60,9 @@ public:
   [[nodiscard]] const std::vector<std::string>& upgrades() const { return upgradeIds_; }
   [[nodiscard]] const std::vector<Appraisal>& appraisals() const { return appraisals_; }
   [[nodiscard]] const std::vector<std::string>& ships() const { return shipIds_; }
+  // The Rook's black market: weapons for sale above the things the Rook
+  // will buy off you, on the same list.
+  [[nodiscard]] const std::vector<std::string>& blackMarket() const { return marketIds_; }
   // How many rows the service tab has. A counter service has one: the door.
   [[nodiscard]] int serviceRows() const;
   // The heading of the service tab: DRILLS, APPRAISAL, ARMOURY...
@@ -83,7 +86,7 @@ private:
 
   Tab tab_ = Tab::Service;
   int rows_[(int)Tab::Count] = {0, 0};
-  std::vector<std::string> bountyIds_, upgradeIds_, shipIds_;
+  std::vector<std::string> bountyIds_, upgradeIds_, shipIds_, marketIds_;
   std::vector<Appraisal> appraisals_;
 
   std::string notice_;

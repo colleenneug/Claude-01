@@ -65,7 +65,9 @@ public:
   // the route and a contracts board does not empty the rack. What you have
   // equipped stays listed either way: a counter that cannot show you what
   // you are holding reads as having taken it off you.
-  void restrictStock(const std::vector<std::string>& stock);
+  // `hostId` also stocks every weapon whose `sold_by` names them, so a new
+  // gun on Ondo's rack is one line in the weapon's file, not a list to edit.
+  void restrictStock(const std::vector<std::string>& stock, const std::string& hostId = "");
 
   const std::vector<std::string>& weaponIds() const { return weaponIds_; }
   const std::vector<std::string>& armorIds() const { return armorIds_; }

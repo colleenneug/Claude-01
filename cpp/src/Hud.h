@@ -185,6 +185,11 @@ public:
   void drawLoadout(int screenW, int screenH, const Content& content,
                    const Profile& profile, const Loadout& loadout);
 
+  // "Leave the mission?" over a running one: what leaving keeps, and the two
+  // keys. `restarts` is Block D's first morning, where there is nowhere yet
+  // to go back to and leaving starts it again.
+  void drawLeaveConfirm(int screenW, int screenH, bool restarts);
+
   // A crew member's post: their service on one tab and their bounties on
   // the other, over the station they are standing in.
   void drawPost(int screenW, int screenH, const Content& content,

@@ -1,4 +1,5 @@
 #include "Loadout.h"
+#include "Bounty.h"
 
 #include <algorithm>
 #include <cstring>
@@ -50,6 +51,10 @@ void Loadout::rebuild() {
   std::sort(weapons.begin(), weapons.end());
   for (const std::string& id : weapons) {
     const WeaponDef* d = content_->weapon(id);
+    // What you own, and what is for sale. A weapon that is only ever found
+    // is not listed until it has been: a drop you can read off a menu first
+    // is a shopping list, not a find.
+    if (!d || !profile_ || !weaponListed(*profile_, *d)) continue;
     ids_[(int)(isSidearmShape(d) ? Column::Sidearm : Column::Primary)].push_back(id);
   }
 

@@ -1,4 +1,5 @@
 #include "Hub.h"
+#include "Bounty.h"
 #include <algorithm>
 #include <cstring>
 
@@ -12,7 +13,11 @@ int indexOf(const std::vector<std::string>& ids, const std::string& id) {
 void Hub::init(const Content& content, Profile& profile) {
   content_ = &content;
   profile_ = &profile;
-  weaponIds_ = content.weaponIds();
+  weaponIds_.clear();
+  for (const std::string& id : content.weaponIds()) {
+    const WeaponDef* w = content.weapon(id);
+    if (w && weaponListed(profile, *w)) weaponIds_.push_back(id);
+  }
   armorIds_ = content.armorIds();
   cosmeticIds_ = content.cosmeticIds();
   std::sort(weaponIds_.begin(), weaponIds_.end());
@@ -70,10 +75,12 @@ void Hub::park() {
   cosmeticIndex_ = indexOf(cosmeticIds_, profile.equippedCosmetic);
 }
 
-void Hub::restrictStock(const std::vector<std::string>& stock) {
+void Hub::restrictStock(const std::vector<std::string>& stock, const std::string& hostId) {
   if (stock.empty() || !content_ || !profile_) return;
   auto stocked = [&](const std::string& id) {
-    return std::find(stock.begin(), stock.end(), id) != stock.end();
+    if (std::find(stock.begin(), stock.end(), id) != stock.end()) return true;
+    const WeaponDef* w = content_->weapon(id);
+    return w && !hostId.empty() && w->soldBy == hostId;
   };
   auto equipped = [&](const std::string& id) {
     return id == profile_->equippedWeapon || id == profile_->equippedSidearm ||
