@@ -584,6 +584,19 @@ checkfile "the shipwright sells a second ship" "$OUT/save-yard.txt" "^owned_ship
 checkfile "...and you fly it" "$OUT/save-yard.txt" "^equipped_ship = heron$"
 checkfile "...for its price" "$OUT/save-yard.txt" "^chits = 100$"
 
+# No GL errors anywhere — in particular after a mission, back on the
+# concourse. Ending a mission used to free the meshes the station's crew are
+# built from, and the stations drew motes they do not have; both were a
+# GL_INVALID_OPERATION every frame, which some drivers print to the console
+# thousands of times and some drivers draw nothing for.
+cp "$OUT/save-tally.txt" "$OUT/save-glclean.txt"
+xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 EREBUS_CLASS=bulwark \
+  EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 \
+  EREBUS_SAVE_PATH="$OUT/save-glclean.txt" EREBUS_LOG_STATE="$OUT/glclean.json" \
+  EREBUS_MAX_FRAMES=1100 "$BIN" --mission breach > "$OUT/glclean.log" 2>&1
+check "back on the concourse after a mission" "$OUT/glclean.json" "s['appState'] == 'station'"
+checkabsent "...with no GL errors on the way" "$OUT/glclean.log" "GL ERROR"
+
 # Space renders without blowing up at either end of the quality ladder. The
 # proof is that the run got where it was flying: the tier switches shadow
 # cascades, bloom and DoF on and off, and a tier that fails to build its

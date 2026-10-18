@@ -1584,6 +1584,8 @@ int main(int argc, char** argv) {
 
   ProfileStore::save(profile, savePath);
   if (gameEverStarted) game.destroy();
+  station.destroy();
+  HostileGeometry::destroyShared();   // shared by the missions and both stations' crew
   hud.destroy();
   renderer.destroy();
   glfwDestroyWindow(window);

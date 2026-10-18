@@ -884,7 +884,12 @@ float Game::commsAlpha() const {
 
 void Game::destroy() {
   level_.destroy();
-  HostileGeometry::destroyShared();
+  // Not HostileGeometry::destroyShared(): those meshes are not the mission's.
+  // The crew in both stations are built from the same boxes and spheres, and
+  // freeing them here left every person on the concourse drawing from a
+  // deleted vertex array after the first mission — invisible on most drivers
+  // and a GL_INVALID_OPERATION every frame on all of them. They live until
+  // the program exits (see the end of main).
   if (moteVbo_) glDeleteBuffers(1, &moteVbo_);
   if (moteVao_) glDeleteVertexArrays(1, &moteVao_);
   moteVbo_ = moteVao_ = 0;   // so a later init() (Hub -> another mission) rebuilds them

@@ -168,6 +168,13 @@ void Renderer::renderSceneToHdr(const SceneSource& scene, const Camera& camera) 
 // ------------------------------------------------------------------ motes
 
 void Renderer::renderMotes(const SceneSource& scene, const Camera& camera, float time) {
+  // A scene with no motes (both stations) has no vertex array for them, and
+  // a draw with none bound is GL_INVALID_OPERATION in a core profile even at
+  // a count of zero — one per frame, every frame, for as long as you stood in
+  // the Cradle.
+  const int moteCount = std::max(0, (int)(scene.moteCount() * motesFraction_));
+  if (scene.moteVao() == 0 || moteCount == 0) return;
+
   sceneHdr_.bind();  // still bound from the scene pass, but explicit is cheap
   glDepthMask(GL_FALSE);
   glEnable(GL_BLEND);
@@ -187,7 +194,6 @@ void Renderer::renderMotes(const SceneSource& scene, const Camera& camera, float
   motesShader_.set("uOpacity", scene.moteOpacity());
 
   glBindVertexArray(scene.moteVao());
-  int moteCount = std::max(0, (int)(scene.moteCount() * motesFraction_));
   glDrawArrays(GL_POINTS, 0, moteCount);
 
   glDisable(GL_PROGRAM_POINT_SIZE);
