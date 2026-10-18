@@ -551,9 +551,12 @@ checkfile "experience holds below second class until the campaign is done" "$OUT
 # Second Class and issues its first ship, which puts it in space.
 {
   sed -n '1,/^owned_cosmetic/p' "$OUT/save-cap.txt" | sed 's/^xp = .*/xp = 3200/'
-  for m in tutorial_earth earth_range earth_hangar earth_assembly earth_perimeter earth_launch \
-           breach spine junction counter aft promenade sunset greenhouse medbay ward reactor \
-           coolant choir deeper threshold conductor; do echo "completed $m"; done
+  for m in tutorial_earth earth_range earth_hangar earth_assembly earth_causeway earth_perimeter \
+           earth_fuel_farm earth_launch \
+           breach spine junction hold counter aft promenade barracks sunset greenhouse medbay \
+           archive ward reactor foundry coolant choir relay deeper threshold vault conductor; do
+    echo "completed $m"
+  done
 } > "$OUT/save-done.txt"
 # One sector short of the end, taken before the run below writes a ship into
 # the finished record.
