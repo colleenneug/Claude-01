@@ -516,6 +516,11 @@ void Hud::draw(int screenW, int screenH, const State& s) {
     }
   }
 
+  // ---- where to go. Hidden in a cutscene, which has its own framing, and
+  // once the mission is over and there is nowhere left to be.
+  if (!s.inCutscene && !s.missionComplete && !s.missionFailed && !s.downed) {
+    drawWaypoint(s.viewProj, s.eye, s.waypoint);
+  }
   end();
 }
 
@@ -754,6 +759,15 @@ void Hud::drawStation(int screenW, int screenH, const StationState& s) {
                                   : "WASD MOVE   SHIFT SPRINT   SPACE JUMP   E USE")
                    : "E CONTINUE   ESC LEAVE",
                1.9f, dim);
+  // ---- where to go next. Not while somebody is talking to you: the arrow is
+  // for walking, and the conversation is the thing you walked to.
+  if (s.talkingTo.empty()) {
+    drawWaypoint(s.viewProj, s.eye, s.waypoint);
+    if (!s.nextStep.empty()) {
+      const glm::vec4 gold(1.0f, 0.82f, 0.30f, 0.95f);
+      text(28, 92, s.nextStep, 1.7f, gold);
+    }
+  }
   end();
 }
 
@@ -988,10 +1002,8 @@ void Hud::drawPost(int screenW, int screenH, const Content& content,
       // A counter: their own stock in the hub. What is on it is listed here
       // so it is clear before you open it that Ondo's rack is not Voss's.
       if (post.refused()) {
-        text(left, top, "RATED OPERATIVES ONLY", 2.6f, red);
-        wrapped(left, top + 34, right - left,
-                "Finish the Strider programme at Kourou and the flight line opens. "
-                "Until then the lift does not take candidates.", 1.7f, dim, 22.0f);
+        text(left, top, post.refusal().heading, 2.6f, red);
+        wrapped(left, top + 34, right - left, post.refusal().why, 1.7f, dim, 22.0f);
       } else {
         caret(top, true);
         const std::string door = host->shop == CrewShop::Gear      ? "BROWSE THE RACK"
@@ -1499,7 +1511,8 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
     }
     text(rx + 42, ry, label, 1.9f, col);
 
-    std::string right = locked ? "LOCKED" : (completed ? "CLEARED" : "OPEN");
+    std::string right = locked ? (i >= hub.campaignCount() ? "AFTER THE CAMPAIGN" : "LOCKED")
+                               : (completed ? "CLEARED" : "OPEN");
     float rww = textWidth(right, 1.6f);
     text(screenW - 58 - rww, ry + 2, right, 1.6f,
          locked ? glm::vec4(0.5f, 0.5f, 0.54f, 0.8f) : (completed ? equippedCol : gold));
@@ -1533,4 +1546,90 @@ void Hud::drawHub(int screenW, int screenH, const Content& content, const Hub& h
                "1 2 3 CYCLE GEAR   TAB CYCLE ROUTE   ENTER DEPLOY   Q UNDOCK", 2.0f, dim);
 
   end();
+}
+
+// ---------------------------------------------------------------- waypoints
+
+void Hud::triangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, glm::vec4 colour) {
+  // Sort by y, then fill two-pixel rows between the long edge and the two
+  // short ones. Coarse, and the HUD is already a grid of square pixels.
+  if (a.y > b.y) std::swap(a, b);
+  if (b.y > c.y) std::swap(b, c);
+  if (a.y > b.y) std::swap(a, b);
+  const float step = 2.0f;
+  auto lerpX = [](glm::vec2 p, glm::vec2 q, float y) {
+    if (std::fabs(q.y - p.y) < 1e-3f) return p.x;
+    return p.x + (q.x - p.x) * (y - p.y) / (q.y - p.y);
+  };
+  for (float y = a.y; y <= c.y; y += step) {
+    float x0 = lerpX(a, c, y);
+    float x1 = y < b.y ? lerpX(a, b, y) : lerpX(b, c, y);
+    if (x0 > x1) std::swap(x0, x1);
+    rect(x0, y, std::max(1.0f, x1 - x0), step, colour);
+  }
+}
+
+void Hud::drawWaypoint(const glm::mat4& viewProj, const glm::vec3& eye, const Waypoint& w) {
+  if (!w.on) return;
+  const float W = (float)screenW_, H = (float)screenH_;
+  const glm::vec4 gold(1.0f, 0.82f, 0.30f, 0.96f);
+  const glm::vec4 shade(0.03f, 0.03f, 0.02f, 0.62f);
+  const float dist = glm::length(w.at - eye);
+  char buf[96];
+  std::snprintf(buf, sizeof(buf), "%s  %dM", w.label.c_str(), (int)std::lround(dist));
+
+  const glm::vec4 clip = viewProj * glm::vec4(w.at, 1.0f);
+  const bool behind = clip.w <= 0.05f;
+  // Dividing by |w| rather than w keeps the side right for a point behind
+  // the camera: one behind and to the right still comes out on the right.
+  const float iw = 1.0f / std::max(std::fabs(clip.w), 0.05f);
+  glm::vec2 ndc(clip.x * iw, clip.y * iw);
+  const bool onScreen = !behind && std::fabs(ndc.x) < 0.92f && std::fabs(ndc.y) < 0.88f;
+
+  if (onScreen) {
+    if (dist < w.minDistance) return;
+    const glm::vec2 p((ndc.x * 0.5f + 0.5f) * W, (1.0f - (ndc.y * 0.5f + 0.5f)) * H);
+    // A small arrow pointing down at it, and the label above.
+    const float y = p.y - 34.0f;
+    triangle({p.x - 9.0f, y}, {p.x + 9.0f, y}, {p.x, y + 13.0f}, gold);
+    const float tw = textWidth(buf, 1.7f);
+    rect(p.x - tw * 0.5f - 6, y - 24, tw + 12, 20, shade);
+    textCentered(p.x, y - 20, buf, 1.7f, gold);
+    return;
+  }
+
+  // Off screen: an arrow on the edge, pointing the way to turn.
+  glm::vec2 d(ndc.x, -ndc.y);
+  const glm::vec2 c(W * 0.5f, H * 0.5f);
+  const float mx = W * 0.5f - 70.0f, my = H * 0.5f - 90.0f;
+  glm::vec2 p;
+  if (behind) {
+    // Behind you: a flat arrow on the side to turn to, low on the screen.
+    // Straight behind has no side, so it picks one rather than sit dead
+    // centre pointing at your feet, which reads as "down" rather than "turn".
+    const float side = d.x < -0.02f ? -1.0f : 1.0f;
+    d = glm::vec2(side, 0.0f);
+    p = glm::vec2(c.x + side * mx, H * 0.68f);
+  } else {
+    if (glm::length(d) < 1e-4f) d = glm::vec2(1.0f, 0.0f);
+    d = glm::normalize(d);
+    const float t = std::min(std::fabs(d.x) > 1e-4f ? mx / std::fabs(d.x) : 1e9f,
+                             std::fabs(d.y) > 1e-4f ? my / std::fabs(d.y) : 1e9f);
+    p = c + d * t;
+  }
+  const glm::vec2 n(-d.y, d.x);
+  // Long and narrow, so its direction is never in doubt. A shadow first, so a
+  // gold arrow over a bright floor still has an edge.
+  const glm::vec2 tip = p + d * 30.0f, b0 = p - d * 12.0f + n * 14.0f, b1 = p - d * 12.0f - n * 14.0f;
+  const glm::vec2 o(2.0f, 2.0f);
+  triangle(tip + o, b0 + o, b1 + o, shade);
+  triangle(tip, b0, b1, gold);
+  const float tw = textWidth(buf, 1.6f);
+  // The label sits on the inward side of the arrow, far enough in that its
+  // own width clears the arrow whichever edge it is on.
+  const glm::vec2 lp = p - d * (26.0f + std::fabs(d.x) * tw * 0.5f + std::fabs(d.y) * 14.0f);
+  float lx = std::clamp(lp.x - tw * 0.5f, 10.0f, W - tw - 10.0f);
+  float ly = std::clamp(lp.y - 8.0f, 96.0f, H - 70.0f);
+  rect(lx - 6, ly - 4, tw + 12, 20, shade);
+  text(lx, ly, buf, 1.6f, gold);
 }

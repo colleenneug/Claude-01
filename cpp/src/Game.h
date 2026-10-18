@@ -186,6 +186,13 @@ public:
   // mission-exit point, by the same code that banks experience.
   const MissionTally& tally() const { return tally_; }
 
+  // Where to go next in this mission: the box the current objective is
+  // waiting on, or failing that the nearest thing still standing. False once
+  // the mission is over, or when there is nothing left to point at. `isPlace`
+  // says which: a place gets the arrow standing on it; a hostile gets only
+  // the HUD marker, because an arrow over every target is a cursor.
+  bool waypoint(glm::vec3& at, std::string& label, bool& isPlace) const;
+
   int harnessLeft() const { return harnessLeft_; }
   int harnessMax() const { return harnessMax_; }
   // Seconds left on the ground before you are back up, or 0 when you are up.

@@ -334,6 +334,7 @@ PlanetDef parsePlanet(const std::string& id, const fs::path& path) {
       else if (k == "cap") p.capExtent = std::stof(v);
       else if (k == "mission") p.missionId = v;
       else if (k == "station") p.station = (v == "true" || v == "1");
+      else if (k == "hub") p.hub = v;
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());

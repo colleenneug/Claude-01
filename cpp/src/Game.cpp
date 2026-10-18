@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "Waypoint.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -1443,9 +1444,47 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
   }
 }
 
+bool Game::waypoint(glm::vec3& at, std::string& label, bool& isPlace) const {
+  if (!loaded_ || missionState_ != MissionState::InProgress) return false;
+
+  // A site's objective that ends on walking into a box: that box.
+  if (usingSite_ && objectiveIndex_ < site_.objectives.size()) {
+    const Site::Objective& o = site_.objectives[objectiveIndex_];
+    if (!o.trigger.empty() && !o.needsClear) {
+      for (const Site::Trigger& t : site_.triggers) {
+        if (t.id != o.trigger) continue;
+        at = glm::vec3((t.min.x + t.max.x) * 0.5f, t.min.y, (t.min.z + t.max.z) * 0.5f);
+        label = "OBJECTIVE";
+        isPlace = true;
+        return true;
+      }
+    }
+  }
+
+  // Otherwise the fight: the boss if it is up, else the nearest hostile.
+  const Hostile* best = nullptr;
+  float bestD = 1e9f;
+  for (const Hostile& h : hostiles_) {
+    if (!h.blocksShots()) continue;
+    if (h.isBoss) { best = &h; break; }
+    const float d = glm::length(h.pos - player_.position);
+    if (d < bestD) { bestD = d; best = &h; }
+  }
+  if (!best) return false;
+  at = best->bodyCentre();
+  label = best->isBoss ? (bossName_.empty() ? std::string("TARGET") : bossName_) : "HOSTILE";
+  isPlace = false;
+  return true;
+}
+
 void Game::collect(float time, std::vector<DrawItem>& out) const {
-  (void)time;   // hostiles animate off their own accumulated bob, not wall time
   level_.collect(out);
+  {
+    glm::vec3 at;
+    std::string label;
+    bool place = false;
+    if (waypoint(at, label, place) && place) collectWaypointArrow(out, at, time);
+  }
   for (auto& h : hostiles_) h.collect(out);
   collectViewmodel(out);
 

@@ -376,6 +376,10 @@ struct PlanetDef {
   float capExtent = 0.0f;
   std::string missionId;
   bool station = false;
+  // A world you land on and walk around rather than fight on: `hub = kourou`
+  // puts you on foot in that station. Earth is one — once you have a ship,
+  // Kourou and everyone in it are a flight away instead of a memory.
+  std::string hub;
 };
 
 class Content {

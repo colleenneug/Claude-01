@@ -584,6 +584,33 @@ checkfile "the shipwright sells a second ship" "$OUT/save-yard.txt" "^owned_ship
 checkfile "...and you fly it" "$OUT/save-yard.txt" "^equipped_ship = heron$"
 checkfile "...for its price" "$OUT/save-yard.txt" "^chits = 100$"
 
+# THE CAMPAIGN IS THE ONLY THING TO FLY UNTIL IT IS DONE. Shaw's board is
+# shut to a record that has not finished it, and says why...
+run "$OUT/shawshut.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=9,0,-13 EREBUS_STATION_YAW=-90 EREBUS_MAX_FRAMES=200
+check "the contract board is shut until the campaign is done" "$OUT/shawshut.json" \
+      "s['appState'] == 'post' and s['host'] == 'shaw' and s['notice'] == 'AFTER THE CAMPAIGN'"
+
+# ...and a side mission cannot even be picked: asking for one by name opens
+# the hub on the route instead.
+run "$OUT/sidelock.json" EREBUS_SKIP_SPACE=1 EREBUS_MAX_FRAMES=30 -- --mission patrol_dust_shelf
+check "a side contract cannot be launched before the campaign" "$OUT/sidelock.json" \
+      "s['appState'] == 'hub' and s['selectedMission'] != 'patrol_dust_shelf'"
+
+# The arrow knows where you are going: the pad at Kourou, Kaur on the ark.
+check "at Kourou the arrow points at the pad" "$OUT/ground.json" \
+      "s['next'].startswith('NEXT: THE RANGE') and 'PAD' in s['next']"
+check "on the ark it points at Kaur" "$OUT/legacy.json" \
+      "s['next'].startswith('NEXT: COUNTER') and 'KAUR' in s['next']"
+
+# Once the campaign is done, Earth is a flight away: landing on it puts you on
+# foot at Kourou.
+cp "$OUT/save-kite.txt" "$OUT/save-earth.txt"
+run "$OUT/earth.json" EREBUS_SPACE_AUTOPILOT=earth EREBUS_FORCE_FORWARD=1 \
+    EREBUS_FORCE_ENGAGE=1 EREBUS_MAX_FRAMES=600 EREBUS_SKIP_TUTORIAL=
+check "a ship can take you back down to Kourou" "$OUT/earth.json" \
+      "s['appState'] == 'station' and s['layout'] == 'kourou'"
+
 # No GL errors anywhere — in particular after a mission, back on the
 # concourse. Ending a mission used to free the meshes the station's crew are
 # built from, and the stations drew motes they do not have; both were a

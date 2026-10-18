@@ -3,11 +3,12 @@
 #include <algorithm>
 #include <cstring>
 
-void Post::open(const Content& content, Profile& profile, const CrewDef& host, bool refused) {
+void Post::open(const Content& content, Profile& profile, const CrewDef& host,
+                const Refusal& refusal) {
   content_ = &content;
   profile_ = &profile;
   host_ = &host;
-  refused_ = refused;
+  refusal_ = refusal;
   open_ = true;
   notice_.clear();
   noticeT_ = 99.0f;
@@ -124,8 +125,8 @@ Post::Result Post::act() {
 
   // ---- service
   if (serviceIsCounter()) {
-    if (refused_) {
-      setNotice("RATED OPERATIVES ONLY - FINISH THE PROGRAMME");
+    if (refusal_.refused()) {
+      setNotice(refusal_.heading);
       return Result::None;
     }
     open_ = false;

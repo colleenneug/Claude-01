@@ -57,6 +57,16 @@ public:
   // Everything the mission HUD reads, in one struct rather than twenty
   // positional arguments — it grew past the point where a call site was
   // readable once names, counts and comms lines joined the bars.
+  // A target to point at: see drawWaypoint.
+  struct Waypoint {
+    bool on = false;
+    glm::vec3 at{0.0f};
+    std::string label;
+    // Only show the on-screen marker past this distance. A hostile right in
+    // front of you does not need a label saying so.
+    float minDistance = 0.0f;
+  };
+
   struct State {
     float hp = 100.0f, maxHp = 100.0f;
     int ammoInMag = 0, magSize = 0, reserveAmmo = 0;
@@ -142,12 +152,24 @@ public:
     // bar's low/critical tiers stay fixed amber/red regardless — that's a
     // warning colour, not a fashion choice.
     glm::vec3 accent{0.85f, 0.95f, 1.0f};
+
+    // Where to go next, and the matrices to put it on screen with.
+    Waypoint waypoint;
+    glm::mat4 viewProj{1.0f};
+    glm::vec3 eye{0.0f};
   };
 
   // The mission HUD: health bar and readout, ammo pips and counts, reload
   // sweep, a crosshair with a hit-marker flash, wave progress, a boss bar
   // when one is alive, comms lines, and the end-of-mission banner.
   void draw(int screenW, int screenH, const State& s);
+
+  // Where to go: a gold marker with a name and a distance over the target
+  // while it is on screen, and an arrow on the edge of the screen pointing
+  // at it while it is not — including when it is behind you, which is the
+  // case a marker that only projects the point gets wrong. Must be called
+  // between begin() and end(); drawStation and draw call it themselves.
+  void drawWaypoint(const glm::mat4& viewProj, const glm::vec3& eye, const Waypoint& w);
 
   // The hub screen: a chits bar, then one row of swatches per gear
   // category (green = equipped, blue = owned, dim grey = affordable but
@@ -223,6 +245,10 @@ public:
     glm::vec3 talkColour{0.8f, 0.9f, 1.0f};
     // Whether the last line hands you on to their desk rather than ending.
     bool talkOpensPost = false;
+
+    // Where the campaign wants you next, and one line saying what it is.
+    Waypoint waypoint;
+    std::string nextStep;   // "NEXT: HARD DOCK - TALK TO KAUR"
   };
   void drawStation(int screenW, int screenH, const StationState& s);
 
@@ -266,6 +292,9 @@ public:
 
 private:
   void flushText();
+  // A filled triangle, as rows of rects: this HUD has nothing but
+  // axis-aligned quads, and an arrow is not one.
+  void triangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, glm::vec4 colour);
 
   Shader shader_;
   GLuint vao_ = 0, vbo_ = 0;

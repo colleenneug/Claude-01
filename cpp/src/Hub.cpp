@@ -205,7 +205,10 @@ void Hub::cycleCosmetic() {
 
 bool Hub::missionLocked(int index) const {
   if (!content_ || !profile_) return false;
-  if (index < 0 || index >= campaignCount_) return false;   // side content
+  if (index < 0) return false;
+  // Side content waits on the campaign. The route is the game until it is
+  // done: Block D to THE CONDUCTOR, in order, and nothing off to the side.
+  if (index >= campaignCount_) return !campaignComplete(*profile_, *content_);
   const MissionDef* m = content_->mission(missionIds_[(size_t)index]);
   if (!m) return false;
 

@@ -31,6 +31,7 @@ public:
     float capExtent = 0.0f;
     std::string missionId;
     bool isStation = false;
+    std::string hub;   // a station you land in on foot (PlanetDef::hub)
   };
 
   bool init(const Content& content);

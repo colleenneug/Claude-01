@@ -81,6 +81,21 @@ HARD DOCK to **THE CONDUCTOR**. Every sector is locked until the one before it
 is cleared, and a locked sector cannot be launched from any counter — it is on
 the list so you can see what is ahead, and that is all.
 
+**Until it is done, it is the only thing to fly.** Shaw's and Teal's
+contract boards are shut (*AFTER THE CAMPAIGN*), and every side mission on
+every counter is listed but locked. Bounties still count while you fly the
+route, and every desk's service — gear, drills, training, appraisal — stays
+open.
+
+**Gold arrows show you where to go.** In a station, a gold arrow stands over
+the next step — the PAD at Kourou for the Earth programme, KAUR on the
+Cradle's deck A for the ark, the airlock once you have a ship — with a line
+under the station name saying what it is (`NEXT: HARD DOCK - TALK TO KAUR`).
+Turn away and the arrow moves to the edge of the screen, pointing the way to
+turn, with the distance. In a mission the arrow stands on the current
+objective, and once the objective is the fight it points you at the nearest
+hostile (or the boss) when it is far enough off to lose.
+
 **You have no ship for any of it.** On Earth you deploy off Kourou's pad; on
 the ark you deploy off Kaur's flight deck on the Cradle's transport, and the
 airlock on deck A is sealed. Clearing THE CONDUCTOR is what changes that: the
@@ -107,7 +122,9 @@ it has; nothing takes experience away.
 deck A of the Cradle. Each ship flies differently — cruise speed, boost,
 handling — and has a **reach**: how far from the Cradle it can make a drop.
 A KITE reaches the Dust Shelf, Glacius and the Dig Site, and flies right up
-to Karrash and says **OUT OF REACH FOR THIS SHIP**. Ships are
+to Karrash and says **OUT OF REACH FOR THIS SHIP**. **Earth** is on the map
+too: land on it and you are on foot at Kourou again, with everyone there and
+Teal's board open; Q takes you back up. Ships are
 `content/ships/*.cfg`, so a content drop that puts a world further out only
 needs a ship with the reach for it:
 

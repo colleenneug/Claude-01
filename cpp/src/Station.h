@@ -70,6 +70,14 @@ public:
   // what anyone meant. The crew keep walking their routes.
   void setInputFrozen(bool frozen) { inputFrozen_ = frozen; }
 
+  // Where the arrow stands: over whoever or whatever the campaign wants you
+  // at next. Set by main.cpp every frame, because what "next" is depends on
+  // the record, which the station knows nothing about.
+  void setWaypoint(bool on, glm::vec3 at = glm::vec3(0.0f)) {
+    waypointOn_ = on;
+    waypoint_ = at;
+  }
+
   // Puts the player at the arrivals end, facing down the concourse. Called
   // every time you dock.
   void enter(Camera& camera);
@@ -124,6 +132,8 @@ private:
   Player player_;
   Crew crew_;
   std::vector<Terminal> terminals_;
+  bool waypointOn_ = false;
+  glm::vec3 waypoint_{0.0f};
   std::string layout_ = "cradle";
   std::string title_ = "THE CRADLE";
   std::string subtitle_;

@@ -22,6 +22,7 @@ bool Space::init(const Content& content) {
     b.capExtent = d->capExtent;
     b.missionId = d->missionId;
     b.isStation = d->station;
+    b.hub = d->hub;
     bodies_.push_back(b);
   }
 

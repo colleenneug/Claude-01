@@ -65,6 +65,18 @@ bool earthProgrammeDone(const Content& content, const Profile& profile) {
   return trackCleared(profile, content, "earth");
 }
 
+// The first mission the campaign is waiting on, in route order, or empty
+// once it is done. What the station's arrow points at.
+std::string nextCampaignMission(const Content& content, const Profile& profile) {
+  for (const std::string& track : content.campaignTracks()) {
+    if (trackCleared(profile, content, track)) continue;
+    for (const std::string& id : content.campaignIds(track)) {
+      if (!profile.hasCompleted(id)) return id;
+    }
+  }
+  return "";
+}
+
 int main(int argc, char** argv) {
   // --mission <id> both names the mission EREBUS_SKIP_HUB boots straight
   // into and preselects it in the hub. The fallback is only for the
@@ -413,6 +425,13 @@ int main(int argc, char** argv) {
   // it is the headless suite's "a record that is past all that", and most of
   // the suite is about flying.
   auto canFly = [&]() { return profile.hasShip() || skipTutorial; };
+  // Whether Q takes you out of the station you are standing in. The Cradle's
+  // airlock opens once there is a ship; Kourou has none of its own, so only
+  // a record that flew there — one with the campaign behind it — leaves by Q.
+  auto canUndockHere = [&]() {
+    if (!canFly()) return false;
+    return station.layout() != "kourou" || campaignComplete(profile, hubContent);
+  };
   // Whether a crew member has a desk at all: a service, or a board.
   auto hasPost = [&](const CrewDef* def) {
     return def && (def->shop != CrewShop::None || !hubContent.bountyIds(def->id).empty());
@@ -463,13 +482,28 @@ int main(int argc, char** argv) {
 
   // The flight line will not open for an unrated record. Hale says so in
   // her own lines; this is the half that means it.
-  auto refusesRoute = [&](const CrewDef* def) {
-    return def->shop == CrewShop::Route && station.layout() == "kourou" &&
-           !earthProgrammeDone(hubContent, profile);
+  // ...and the contract boards wait on the whole campaign: until THE
+  // CONDUCTOR is down, the route is the only thing to fly.
+  auto counterRefusal = [&](const CrewDef* def) {
+    Post::Refusal r;
+    if (def->shop == CrewShop::Route && station.layout() == "kourou" &&
+        !earthProgrammeDone(hubContent, profile)) {
+      r.heading = "RATED OPERATIVES ONLY";
+      r.why = "Finish the Strider programme here at Kourou and the lift opens. Until then it "
+              "does not take candidates. Deploy from THE PAD by the doorway.";
+    } else if (def->shop == CrewShop::Contracts && !campaignComplete(profile, hubContent)) {
+      r.heading = "AFTER THE CAMPAIGN";
+      r.why = station.layout() == "kourou"
+                  ? "The board is for rated operatives with time on their hands. Finish the "
+                    "programme and the ark first - deploy from THE PAD by the doorway."
+                  : "Off-ark work is for after the ark. Kaur has the route on this deck, by the "
+                    "airlock end - fly it to THE CONDUCTOR and the board is yours.";
+    }
+    return r;
   };
 
   auto openPost = [&](const CrewDef* def) {
-    post.open(hubContent, profile, *def, refusesRoute(def));
+    post.open(hubContent, profile, *def, counterRefusal(def));
     station.setInputFrozen(true);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     mouseCaptured = false;
@@ -929,6 +963,12 @@ int main(int argc, char** argv) {
             mouseCaptured = true;
             firstMouse = true;
           }
+        } else if (!target->hub.empty()) {
+          // A world you walk around: Earth puts you down at Kourou.
+          ProfileStore::save(profile, savePath);
+          lastBodyId = target->id;
+          enterStation(target->hub);
+          prevEngageKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
         } else if (!target->missionId.empty() && space.withinReach(*target)) {
           if (game.init(contentDir, target->missionId, profile)) {
             gameEverStarted = true;
@@ -1058,13 +1098,13 @@ int main(int argc, char** argv) {
         talkingTo = nullptr;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         mouseCaptured = false;
-      } else if (((ePressed && term && term->id == "airlock") || qPressed) &&
-                 station.layout() != "kourou" && canFly()) {
-        // Undocking is a thing you do from orbit. On the ground Q does
-        // nothing, because there is nothing parked outside with your name on
-        // it until the programme is finished.
+      } else if (((ePressed && term && term->id == "airlock") || qPressed) && canUndockHere()) {
+        // Undocking is a thing you do with a ship. On the ground Q does
+        // nothing until the campaign has given you one; after that it is the
+        // way back up off Earth, and you come out over it rather than at the
+        // Cradle.
         ProfileStore::save(profile, savePath);
-        space.placeNear("");
+        space.placeNear(station.layout() == "kourou" ? "earth" : "");
         state = AppState::Space;
         talkingTo = nullptr;
         prevEngageKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
@@ -1081,7 +1121,7 @@ int main(int argc, char** argv) {
       Hud::StationState ss;
       float py = station.player().position.y;
       ss.title = station.title();
-      ss.canUndock = station.layout() != "kourou" && canFly();
+      ss.canUndock = canUndockHere();
       if (station.layout() == "kourou") {
         ss.deck = py > 3.5f ? "GALLERY - BRIEFING AND STORES"
                             : station.subtitle();
@@ -1122,6 +1162,48 @@ int main(int argc, char** argv) {
       // Nameplates need the same matrices the scene was drawn with, so they
       // sit on the people rather than near them.
       ss.viewProj = renderer.lastViewProj();
+      // ---- where the campaign wants you. The pad at Kourou for the Earth
+      // programme, Kaur's flight deck for the ark, and the airlock once there
+      // is a ship through it.
+      {
+        const std::string next = nextCampaignMission(hubContent, profile);
+        const MissionDef* nm = next.empty() ? nullptr : hubContent.mission(next);
+        bool have = false;
+        glm::vec3 at(0.0f);
+        std::string who;
+        if (nm && station.layout() == "kourou" && nm->campaign == "earth") {
+          for (const Station::Terminal& t : station.terminals()) {
+            if (t.id != "pad") continue;
+            at = t.pos + glm::vec3(0.0f, 1.9f, 0.0f);
+            have = true;
+          }
+          who = "DEPLOY FROM THE PAD";
+        } else if (nm && station.layout() == "cradle") {
+          for (const Crew::Person& c : station.crew().people()) {
+            if (!c.def || c.def->shop != CrewShop::Route) continue;
+            at = c.pos + glm::vec3(0.0f, 2.8f, 0.0f);
+            have = true;
+            who = "TALK TO " + c.def->name;
+          }
+        } else if (!nm && station.layout() == "cradle" && profile.hasShip()) {
+          for (const Station::Terminal& t : station.terminals()) {
+            if (t.id != "airlock") continue;
+            at = t.pos + glm::vec3(0.0f, 1.9f, 0.0f);
+            have = true;
+          }
+          who = "YOUR SHIP IS THROUGH THE AIRLOCK";
+        }
+        station.setWaypoint(have, at);
+        if (have) {
+          ss.waypoint.on = true;
+          ss.waypoint.at = at;
+          ss.waypoint.label = nm ? nm->name : std::string("AIRLOCK");
+          for (char& ch : ss.waypoint.label) ch = (char)std::toupper((unsigned char)ch);
+          // Close up, the arrow and their nameplate say it already.
+          ss.waypoint.minDistance = 9.0f;
+          ss.nextStep = nm ? "NEXT: " + ss.waypoint.label + " - " + who : who;
+        }
+      }
       ss.eye = camera.position;
       for (const Crew::Person& c : station.crew().people()) {
         if (!c.def) continue;
@@ -1152,9 +1234,9 @@ int main(int argc, char** argv) {
           glm::vec3 p = station.player().position;
           std::fprintf(f,
                        "{\"appState\":\"station\",\"frame\":%d,\"pos\":[%.1f,%.1f,%.1f],"
-                       "\"terminal\":\"%s\",\"layout\":\"%s\"}\n",
+                       "\"terminal\":\"%s\",\"layout\":\"%s\",\"next\":\"%s\"}\n",
                        frame + 1, p.x, p.y, p.z, term ? term->id.c_str() : "",
-                       station.layout().c_str());
+                       station.layout().c_str(), ss.nextStep.c_str());
           std::fclose(f);
         }
       }
@@ -1352,6 +1434,15 @@ int main(int argc, char** argv) {
       hs.tutorialPrompt = game.tutorialPrompt();
       hs.objective = game.objectiveText();
       hs.objectiveHint = game.objectiveHint();
+      {
+        bool place = false;
+        hs.waypoint.on = game.waypoint(hs.waypoint.at, hs.waypoint.label, place);
+        // A place is marked at any distance; a hostile only once it is far
+        // enough off that you might have lost it.
+        hs.waypoint.minDistance = place ? 0.0f : 22.0f;
+        hs.viewProj = renderer.lastViewProj();
+        hs.eye = camera.position;
+      }
       hs.armed = game.armed();
       hs.xpEarned = game.xpEarned();
       hs.slot = game.slot();
@@ -1542,7 +1633,13 @@ int main(int argc, char** argv) {
             // You launched off a flight deck, so you come back to it. Which
             // deck depends on whether the programme is behind you: until it
             // is, every mission ends at Kourou.
-            enterStation(earthProgrammeDone(hubContent, profile) ? "cradle" : "kourou");
+            // Back to the deck you launched from: Kourou for the programme,
+            // the Cradle for the ark, and Kourou again for Teal's contracts
+            // once a ship has taken you back down to it.
+            enterStation(!earthProgrammeDone(hubContent, profile) ? "kourou"
+                         : (station.layout() == "kourou" && campaignComplete(profile, hubContent))
+                               ? "kourou"
+                               : "cradle");
             state = AppState::Station;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             mouseCaptured = true;

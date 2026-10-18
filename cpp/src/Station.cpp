@@ -1,4 +1,5 @@
 #include "Station.h"
+#include "Waypoint.h"
 #include <algorithm>
 #include <cmath>
 
@@ -619,7 +620,7 @@ const Station::Terminal* Station::nearestTerminal() const {
 }
 
 void Station::collect(float time, std::vector<DrawItem>& out) const {
-  (void)time;
   level_.collect(out);
   crew_.collect(out);
+  if (waypointOn_) collectWaypointArrow(out, waypoint_, time);
 }

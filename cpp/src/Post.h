@@ -30,9 +30,16 @@ public:
   // What the caller has to do after a frame.
   enum class Result { None, Closed, OpenCounter };
 
-  // `refused` is the flight line's rule: Hale will not open the route to an
-  // unrated record, and her service says so instead of opening it.
-  void open(const Content& content, Profile& profile, const CrewDef& host, bool refused);
+  // A counter can be shut: Hale will not open the route to an unrated
+  // record, and the contract boards stay shut until the campaign is done.
+  // `refusal` is the heading and `refusalWhy` the line under it; an empty
+  // heading means the counter is open.
+  struct Refusal {
+    std::string heading, why;
+    [[nodiscard]] bool refused() const { return !heading.empty(); }
+  };
+  void open(const Content& content, Profile& profile, const CrewDef& host,
+            const Refusal& refusal = Refusal{});
   void close() { open_ = false; }
   [[nodiscard]] bool isOpen() const { return open_; }
 
@@ -47,7 +54,8 @@ public:
   [[nodiscard]] Tab tab() const { return tab_; }
   [[nodiscard]] int row() const { return rows_[(int)tab_]; }
   [[nodiscard]] int row(Tab t) const { return rows_[(int)t]; }
-  [[nodiscard]] bool refused() const { return refused_; }
+  [[nodiscard]] bool refused() const { return refusal_.refused(); }
+  [[nodiscard]] const Refusal& refusal() const { return refusal_; }
   [[nodiscard]] const std::vector<std::string>& bounties() const { return bountyIds_; }
   [[nodiscard]] const std::vector<std::string>& upgrades() const { return upgradeIds_; }
   [[nodiscard]] const std::vector<Appraisal>& appraisals() const { return appraisals_; }
@@ -71,7 +79,7 @@ private:
   Profile* profile_ = nullptr;
   const CrewDef* host_ = nullptr;
   bool open_ = false;
-  bool refused_ = false;
+  Refusal refusal_;
 
   Tab tab_ = Tab::Service;
   int rows_[(int)Tab::Count] = {0, 0};
