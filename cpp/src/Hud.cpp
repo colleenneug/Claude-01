@@ -3,6 +3,7 @@
 #include "Font.h"
 #include "Hub.h"
 #include "Loadout.h"
+#include "Post.h"
 #include "Profile.h"
 #include <algorithm>
 #include <cmath>
@@ -583,12 +584,22 @@ void Hud::drawSpace(int screenW, int screenH, const SpaceState& s) {
   }
 
   // Engage prompt.
-  if (s.inRange) {
+  if (s.inRange && s.outOfReach) {
+    // Said, rather than the prompt simply not appearing: a world you can fly
+    // right up to and not land on is either a bug or a reason to buy a ship,
+    // and the screen should say which.
+    const char* verb = "OUT OF REACH FOR THIS SHIP";
+    float w = textWidth(verb, 2.6f);
+    rect(cx - w * 0.5f - 18, cy + 92, w + 36, 70, glm::vec4(0, 0, 0, 0.55f));
+    textCentered(cx, cy + 104, verb, 2.6f, glm::vec4(0.98f, 0.55f, 0.40f, 0.98f));
+    textCentered(cx, cy + 136, s.reachNeeded, 1.7f, dim);
+  } else if (s.inRange) {
     const char* verb = s.isStation ? "PRESS E TO DOCK AT THE CRADLE" : "PRESS E TO LAND";
     float w = textWidth(verb, 2.6f);
     rect(cx - w * 0.5f - 18, cy + 92, w + 36, 44, glm::vec4(0, 0, 0, 0.5f));
     textCentered(cx, cy + 104, verb, 2.6f, live);
   }
+  if (!s.shipName.empty()) text(bx, by - 44, s.shipName, 2.0f, accent);
 
   textCentered(cx, screenH - 42.0f,
                "W S THRUST   A D STRAFE   SPACE / CTRL UP DOWN   SHIFT BOOST   MOUSE STEER",
@@ -678,6 +689,17 @@ void Hud::drawStation(int screenW, int screenH, const StationState& s) {
     rect(at.x - w * 0.5f - 8, at.y - 6, w + 16, scale > 1.6f ? 42.0f : 34.0f,
          glm::vec4(0.03f, 0.04f, 0.06f, 0.55f * a));
     textCentered(at.x, at.y, n.name, scale, glm::vec4(n.colour, 0.95f * a));
+    if (!n.flag.empty()) {
+      // Never faded as hard as the name: "somebody owes you money" is the
+      // one thing on a nameplate worth reading from across the concourse.
+      const float fa = std::max(a, 0.75f);
+      const glm::vec4 fc = n.flagReady ? glm::vec4(0.98f, 0.84f, 0.30f, 0.98f * fa)
+                                       : glm::vec4(0.55f, 0.85f, 1.0f, 0.85f * fa);
+      const float fw = textWidth(n.flag, scale * 0.8f);
+      rect(at.x - fw * 0.5f - 6, at.y - scale * 13.0f - 4, fw + 12, scale * 9.0f + 6,
+           glm::vec4(0.03f, 0.04f, 0.06f, 0.6f * fa));
+      textCentered(at.x, at.y - scale * 12.0f, n.flag, scale * 0.8f, fc);
+    }
     if (!n.title.empty())
       textCentered(at.x, at.y + scale * 11.0f, n.title, scale * 0.78f,
                    glm::vec4(0.72f, 0.78f, 0.86f, 0.8f * a));
@@ -711,8 +733,19 @@ void Hud::drawStation(int screenW, int screenH, const StationState& s) {
     char buf[48];
     std::snprintf(buf, sizeof(buf), "%d / %d", s.talkIndex + 1, s.talkCount);
     text(screenW - 72 - textWidth(buf, 1.6f), boxTop + 20, buf, 1.6f, dim);
-    std::string more = s.talkIndex + 1 < s.talkCount ? "E CONTINUE   ESC LEAVE" : "E LEAVE";
+    std::string more = s.talkIndex + 1 < s.talkCount ? "E CONTINUE   ESC LEAVE"
+                       : s.talkOpensPost                ? "E TO THE DESK   ESC LEAVE"
+                                                        : "E LEAVE";
     text(screenW - 72 - textWidth(more, 1.7f), boxTop + 104, more, 1.7f, col);
+  }
+
+  // ---- a bounty that came good on the mission you just got back from
+  if (!s.bountyNote.empty() && s.bountyNoteT > 0.0f && s.talkingTo.empty()) {
+    const float a = std::clamp(s.bountyNoteT, 0.0f, 1.0f);
+    const float w = textWidth(s.bountyNote, 2.0f);
+    rect(cx - w * 0.5f - 18, 104, w + 36, 36, glm::vec4(0.06f, 0.05f, 0.02f, 0.8f * a));
+    rect(cx - w * 0.5f - 18, 138, w + 36, 2, glm::vec4(0.98f, 0.84f, 0.30f, 0.9f * a));
+    textCentered(cx, 114, s.bountyNote, 2.0f, glm::vec4(0.98f, 0.86f, 0.40f, 0.98f * a));
   }
 
   textCentered(cx, screenH - 40.0f,
@@ -879,6 +912,302 @@ void Hud::drawLoadout(int screenW, int screenH, const Content& content,
   textCentered(cx, screenH - 22.0f, "THE WORLD KEEPS RUNNING WHILE THIS IS OPEN", 1.4f,
                glm::vec4(0.85f, 0.55f, 0.48f, 0.8f));
 
+  end();
+}
+
+void Hud::drawPost(int screenW, int screenH, const Content& content,
+                   const Profile& profile, const Post& post) {
+  const CrewDef* host = post.host();
+  if (!host) return;
+  begin(screenW, screenH);
+
+  const glm::vec4 dim(0.58f, 0.64f, 0.72f, 0.9f);
+  const glm::vec4 bright(0.90f, 0.95f, 1.0f, 0.98f);
+  const glm::vec4 gold(0.95f, 0.85f, 0.35f, 0.98f);
+  const glm::vec4 green(0.45f, 0.95f, 0.60f, 0.98f);
+  const glm::vec4 blue(0.45f, 0.70f, 1.00f, 0.95f);
+  const glm::vec4 grey(0.55f, 0.58f, 0.62f, 0.85f);
+  const glm::vec4 violet(0.72f, 0.60f, 0.95f, 0.95f);
+  const glm::vec4 red(0.85f, 0.35f, 0.32f, 0.9f);
+  const glm::vec4 accent(host->colour, 0.98f);
+
+  rect(0, 0, (float)screenW, (float)screenH, glm::vec4(0.02f, 0.03f, 0.05f, 0.84f));
+  const float cx = screenW * 0.5f;
+  const float left = 48.0f, right = screenW - 48.0f;
+  char buf[160];
+
+  // ---- masthead: whose desk this is
+  rect(left, 40, 6, 52, accent);
+  text(left + 18, 40, host->name, 4.0f, accent);
+  text(left + 18, 76, host->title, 1.8f, dim);
+
+  std::snprintf(buf, sizeof(buf), "%d CHITS", profile.chits);
+  text(right - textWidth(buf, 2.6f), 42, buf, 2.6f, gold);
+  const int rankIdx = content.rankIndexForXp(profile.xp);
+  if (rankIdx >= 0) {
+    const std::string& rname = content.ranks()[(size_t)rankIdx].name;
+    text(right - textWidth(rname, 1.9f), 72, rname, 1.9f, glm::vec4(0.62f, 0.88f, 1.0f, 0.98f));
+  }
+  rect(left, 104, right - left, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.5f));
+
+  // ---- the two tabs
+  int ready = 0;
+  for (const std::string& id : post.bounties()) {
+    if (bountyStatus(profile, content, id) == BountyStatus::Ready) ready++;
+  }
+  const std::string serviceTab = post.serviceRows() > 0 ? post.serviceName() : "";
+  std::string bountyTab = "BOUNTIES";
+  if (ready > 0) bountyTab += " - " + std::to_string(ready) + " READY";
+  {
+    float x = left;
+    auto tab = [&](const std::string& label, bool active, glm::vec4 lit) {
+      if (label.empty()) return;
+      const float w = textWidth(label, 2.0f) + 28.0f;
+      rect(x, 116, w, 32, active ? glm::vec4(0.12f, 0.17f, 0.24f, 0.95f)
+                                 : glm::vec4(0.06f, 0.08f, 0.11f, 0.7f));
+      if (active) rect(x, 146, w, 2, lit);
+      text(x + 14, 125, label, 2.0f, active ? lit : glm::vec4(lit.r, lit.g, lit.b, 0.5f));
+      x += w + 10.0f;
+    };
+    tab(serviceTab, post.tab() == Post::Tab::Service, accent);
+    tab(bountyTab, post.tab() == Post::Tab::Bounties, ready > 0 ? gold : bright);
+  }
+
+  const float top = 172.0f;
+  const float rowH = 46.0f;
+  std::string footBlurb;
+
+  auto caret = [&](float y, bool on) {
+    if (!on) return;
+    rect(left - 6, y - 8, right - left + 12, rowH - 6, glm::vec4(0.16f, 0.23f, 0.32f, 0.9f));
+    text(left - 2, y, ">", 2.0f, bright);
+  };
+
+  if (post.tab() == Post::Tab::Service) {
+    if (post.serviceIsCounter()) {
+      // A counter: their own stock in the hub. What is on it is listed here
+      // so it is clear before you open it that Ondo's rack is not Voss's.
+      if (post.refused()) {
+        text(left, top, "RATED OPERATIVES ONLY", 2.6f, red);
+        wrapped(left, top + 34, right - left,
+                "Finish the Strider programme at Kourou and the flight line opens. "
+                "Until then the lift does not take candidates.", 1.7f, dim, 22.0f);
+      } else {
+        caret(top, true);
+        const std::string door = host->shop == CrewShop::Gear      ? "BROWSE THE RACK"
+                               : host->shop == CrewShop::Route     ? "OPEN THE ROUTE"
+                                                                   : "READ THE BOARD";
+        text(left + 18, top, door, 2.4f, accent);
+        text(right - textWidth("ENTER", 1.8f), top + 4, "ENTER", 1.8f, gold);
+      }
+      float y = top + 70.0f;
+      if (!host->stock.empty()) {
+        text(left, y, "CARRIES", 1.6f, dim);
+        y += 26.0f;
+        std::string line;
+        for (const std::string& id : host->stock) {
+          std::string name;
+          if (const WeaponDef* w = content.weapon(id)) name = w->name;
+          else if (const ArmorDef* a = content.armor(id)) name = a->name;
+          else if (const CosmeticDef* c = content.cosmetic(id)) name = c->name + " SHADER";
+          else if (const MissionDef* m = content.mission(id)) name = m->name;
+          else if (id == "track:earth") name = "THE STRIDER PROGRAMME";
+          else if (id == "track:cradle") name = "THE ARK, ALL SIXTEEN SECTORS";
+          else if (id.rfind("track:", 0) == 0) name = id.substr(6) + " ROUTE";
+          else continue;
+          line += (line.empty() ? "" : "   ") + name;
+        }
+        wrapped(left, y, right - left, line, 1.7f, glm::vec4(0.78f, 0.85f, 0.93f, 0.92f), 24.0f);
+      }
+    } else if (host->shop == CrewShop::Upgrades) {
+      const std::vector<std::string>& ids = post.upgrades();
+      float y = top;
+      for (size_t i = 0; i < ids.size(); i++) {
+        const UpgradeDef* u = content.upgrade(ids[i]);
+        if (!u) continue;
+        const bool on = (int)i == post.row();
+        caret(y, on);
+        const UpgradeStatus st = upgradeStatus(profile, content, ids[i]);
+        glm::vec4 col = st == UpgradeStatus::Owned      ? green
+                      : st == UpgradeStatus::Affordable ? bright
+                      : st == UpgradeStatus::TooPoor    ? red
+                                                        : grey;
+        text(left + 18, y, u->name, 2.0f, col);
+        text(left + 18, y + 20, upgradeEffectLabel(*u), 1.5f,
+             glm::vec4(col.r, col.g, col.b, col.a * 0.75f));
+        std::string tag;
+        glm::vec4 tagCol = gold;
+        switch (st) {
+          case UpgradeStatus::Owned: tag = "ON YOUR RECORD"; tagCol = green; break;
+          case UpgradeStatus::NeedsPrior: {
+            const UpgradeDef* prior = content.upgrade(u->prerequisite);
+            tag = "AFTER " + (prior ? prior->name : u->prerequisite);
+            tagCol = grey;
+            break;
+          }
+          case UpgradeStatus::RankLocked: {
+            const RankDef* r = content.rank(u->rankRequired);
+            tag = r ? r->name : "LOCKED";
+            tagCol = violet;
+            break;
+          }
+          case UpgradeStatus::TooPoor: tag = std::to_string(u->cost) + " CHITS"; tagCol = red; break;
+          case UpgradeStatus::Affordable: tag = std::to_string(u->cost) + " CHITS"; break;
+        }
+        text(right - textWidth(tag, 1.7f), y + 4, tag, 1.7f, tagCol);
+        if (on) footBlurb = u->blurb;
+        y += rowH;
+      }
+    } else if (host->shop == CrewShop::Shipyard) {
+      const std::vector<std::string>& ids = post.ships();
+      float y = top;
+      for (size_t i = 0; i < ids.size(); i++) {
+        const ShipDef* d = content.ship(ids[i]);
+        if (!d) continue;
+        const bool on = (int)i == post.row();
+        caret(y, on);
+        const ShipStatus st = shipStatus(profile, content, ids[i]);
+        glm::vec4 col = st == ShipStatus::Flying     ? green
+                      : st == ShipStatus::Owned      ? blue
+                      : st == ShipStatus::Affordable ? bright
+                      : st == ShipStatus::TooPoor    ? red
+                                                     : grey;
+        text(left + 18, y, d->name, 2.0f, col);
+        std::snprintf(buf, sizeof(buf), "%d U/S   BOOST X%.1f   HANDLING %.1f   REACH %d",
+                      (int)std::lround(d->speed), d->boost, d->handling, (int)std::lround(d->reach));
+        text(left + 18, y + 20, buf, 1.5f, glm::vec4(col.r, col.g, col.b, col.a * 0.75f));
+        std::string tag;
+        glm::vec4 tagCol = gold;
+        switch (st) {
+          case ShipStatus::Flying: tag = "YOUR SHIP"; tagCol = green; break;
+          case ShipStatus::Owned: tag = "IN THE HANGAR"; tagCol = blue; break;
+          case ShipStatus::NotRated: tag = d->starter ? "ISSUED AFTER THE CAMPAIGN" : "AFTER THE CAMPAIGN"; tagCol = grey; break;
+          case ShipStatus::RankLocked: {
+            const RankDef* r = content.rank(d->rankRequired);
+            tag = r ? r->name : "LOCKED";
+            tagCol = violet;
+            break;
+          }
+          case ShipStatus::TooPoor: tag = std::to_string(d->cost) + " CHITS"; tagCol = red; break;
+          case ShipStatus::Affordable: tag = std::to_string(d->cost) + " CHITS"; break;
+        }
+        text(right - textWidth(tag, 1.7f), y + 4, tag, 1.7f, tagCol);
+        if (on) footBlurb = d->blurb;
+        y += rowH;
+      }
+    } else if (host->shop == CrewShop::Appraisal) {
+      const std::vector<Appraisal>& list = post.appraisals();
+      if (list.empty()) {
+        text(left, top, "NOTHING ON YOU I WOULD TAKE", 2.4f, grey);
+        wrapped(left, top + 34, right - left,
+                "Issue gear is worth nothing to anybody, and I do not buy what you are "
+                "wearing. Buy something, stop using it, and bring it to me.", 1.7f, dim, 22.0f);
+      } else {
+        float y = top;
+        for (size_t i = 0; i < list.size(); i++) {
+          const Appraisal& a = list[i];
+          caret(y, (int)i == post.row());
+          const char* kind = a.kind == Appraisal::Kind::Weapon   ? "WEAPON"
+                           : a.kind == Appraisal::Kind::Armour   ? "ARMOUR"
+                                                                 : "SHADER";
+          text(left + 18, y, a.name, 2.0f, bright);
+          text(left + 18, y + 20, kind, 1.5f, dim);
+          std::snprintf(buf, sizeof(buf), "SELL FOR %d CHITS", a.value);
+          text(right - textWidth(buf, 1.7f), y + 4, buf, 1.7f, gold);
+          y += rowH;
+        }
+        footBlurb = "Half what you paid. You can buy it back, at full price, from whoever sold it to you.";
+      }
+    }
+  } else {
+    const std::vector<std::string>& ids = post.bounties();
+    if (ids.empty()) {
+      text(left, top, "NOTHING ON THE BOARD", 2.4f, grey);
+      text(left, top + 34, "EVERYTHING THEY HAD FOR YOU HAS BEEN PAID", 1.7f, dim);
+    }
+    float y = top;
+    for (size_t i = 0; i < ids.size(); i++) {
+      const BountyDef* b = content.bounty(ids[i]);
+      if (!b) continue;
+      const bool on = (int)i == post.row();
+      caret(y, on);
+      const BountyStatus st = bountyStatus(profile, content, ids[i]);
+      const Profile::ActiveBounty* a = profile.activeBounty(ids[i]);
+      const int have = a ? a->progress : 0;
+
+      glm::vec4 col = st == BountyStatus::Ready      ? gold
+                    : st == BountyStatus::Active     ? blue
+                    : st == BountyStatus::Available  ? bright
+                                                     : grey;
+      text(left + 18, y, b->name, 2.0f, col);
+      std::snprintf(buf, sizeof(buf), "%d %s", b->count, bountyGoalLabel(*b, content).c_str());
+      text(left + 18, y + 20, buf, 1.5f, glm::vec4(col.r, col.g, col.b, col.a * 0.75f));
+
+      // Progress, as a bar: "7 of 12" is a number, but a bar three-quarters
+      // full is a reason to fly one more mission.
+      if (st == BountyStatus::Active || st == BountyStatus::Ready) {
+        const float bw = 160.0f, bx = cx + 40.0f;
+        rect(bx, y + 6, bw, 8, glm::vec4(0.12f, 0.15f, 0.20f, 0.9f));
+        rect(bx, y + 6, bw * std::clamp((float)have / (float)b->count, 0.0f, 1.0f), 8, col);
+        std::snprintf(buf, sizeof(buf), "%d/%d", have, b->count);
+        text(bx + bw + 10, y + 4, buf, 1.5f, col);
+      }
+
+      std::string tag;
+      glm::vec4 tagCol = gold;
+      switch (st) {
+        case BountyStatus::Ready: tag = "TURN IN"; break;
+        case BountyStatus::Active: tag = "TAKEN"; tagCol = blue; break;
+        case BountyStatus::Available: tag = "TAKE"; tagCol = bright; break;
+        case BountyStatus::RankLocked: {
+          const RankDef* r = content.rank(b->rankRequired);
+          tag = r ? r->name : "LOCKED";
+          tagCol = violet;
+          break;
+        }
+        case BountyStatus::Done: tag = "PAID"; tagCol = green; break;
+      }
+      text(right - textWidth(tag, 1.7f), y, tag, 1.7f, tagCol);
+      std::string pay = std::to_string(b->rewardChits) + " CHITS  " +
+                        std::to_string(b->rewardXp) + " XP";
+      if (!b->rewardItem.empty()) pay += "  + GEAR";
+      text(right - textWidth(pay, 1.4f), y + 22, pay, 1.4f, glm::vec4(0.85f, 0.80f, 0.55f, 0.8f));
+
+      if (on) {
+        footBlurb = b->blurb;
+        const size_t colon = b->rewardItem.find(':');
+        if (colon != std::string::npos) {
+          const std::string kind = b->rewardItem.substr(0, colon);
+          const std::string what = b->rewardItem.substr(colon + 1);
+          std::string item;
+          if (kind == "weapon" && content.weapon(what)) item = content.weapon(what)->name;
+          else if (kind == "armor" && content.armor(what)) item = content.armor(what)->name;
+          else if (kind == "cosmetic" && content.cosmetic(what)) item = content.cosmetic(what)->name;
+          if (!item.empty()) footBlurb += "  Pays in gear: " + item + ".";
+        }
+      }
+      y += rowH;
+    }
+  }
+
+  if (!footBlurb.empty()) {
+    rect(left, screenH - 150.0f, right - left, 2, glm::vec4(0.35f, 0.45f, 0.55f, 0.4f));
+    wrapped(left, screenH - 136.0f, right - left, footBlurb, 1.6f,
+            glm::vec4(0.72f, 0.80f, 0.90f, 0.92f), 20.0f);
+  }
+
+  if (!post.notice().empty() && post.noticeAge() < 3.2f) {
+    float a = std::clamp(3.2f - post.noticeAge(), 0.0f, 1.0f);
+    textCentered(cx, screenH - 84.0f, post.notice(), 2.0f,
+                 glm::vec4(0.95f, 0.88f, 0.55f, 0.95f * a));
+  }
+
+  textCentered(cx, screenH - 44.0f,
+               "TAB OR A D  SWITCH    W S  SELECT    E OR ENTER  TAKE / TURN IN / BUY    ESC  LEAVE",
+               1.7f, dim);
+  textCentered(cx, screenH - 22.0f,
+               "BOUNTIES COUNT ACROSS EVERY MISSION YOU FLY - COME BACK HERE TO BE PAID", 1.4f,
+               glm::vec4(0.62f, 0.80f, 0.95f, 0.8f));
   end();
 }
 

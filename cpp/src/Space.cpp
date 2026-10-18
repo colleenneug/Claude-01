@@ -96,6 +96,23 @@ void Space::placeNear(const std::string& bodyId) {
   velocity_ = glm::vec3(0.0f);
 }
 
+void Space::setShip(const ShipDef* ship) {
+  ship_ = ship;
+  maxSpeed_ = ship ? ship->speed : 900.0f;
+  boost_ = ship ? ship->boost : 2.6f;
+  handling_ = ship ? ship->handling : 1.6f;
+  reach_ = ship ? ship->reach : 1e9f;
+}
+
+bool Space::withinReach(const Body& b) const {
+  if (b.isStation) return true;
+  glm::vec3 home(0.0f);
+  for (const Body& o : bodies_) {
+    if (o.isStation) { home = o.pos; break; }
+  }
+  return glm::length(b.pos - home) <= reach_;
+}
+
 void Space::update(GLFWwindow* window, Camera& camera, float dt, bool boost,
                    bool forceThrust) {
   if (!loaded_) return;
@@ -113,14 +130,14 @@ void Space::update(GLFWwindow* window, Camera& camera, float dt, bool boost,
   if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) wish += up;
   if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) wish -= up;
 
-  float topSpeed = maxSpeed_ * (boost ? 2.6f : 1.0f);
+  float topSpeed = maxSpeed_ * (boost ? boost_ : 1.0f);
   if (glm::length(wish) > 1e-4f) {
     wish = glm::normalize(wish);
     // Accelerate toward the wish velocity rather than adding raw impulse:
     // true frictionless flight means every tap is permanent and you spend
     // the session fighting your own momentum.
     glm::vec3 target = wish * topSpeed;
-    velocity_ += (target - velocity_) * std::min(1.0f, dt * 1.6f);
+    velocity_ += (target - velocity_) * std::min(1.0f, dt * handling_);
   } else {
     // Coast to a stop when the stick is centred. Not physical; flyable.
     velocity_ -= velocity_ * std::min(1.0f, dt * 0.8f);

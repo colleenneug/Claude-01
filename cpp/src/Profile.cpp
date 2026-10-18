@@ -117,6 +117,66 @@ bool trackCleared(const Profile& p, const Content& content, const std::string& t
   return false;
 }
 
+bool campaignComplete(const Profile& p, const Content& content) {
+  const std::vector<std::string> tracks = content.campaignTracks();
+  if (tracks.empty()) return false;
+  for (const std::string& t : tracks) {
+    // Every mission on every track, here — not trackCleared's grandfather
+    // clause, which exists so an old record is not sent back to Earth. The
+    // last track has nothing after it to be grandfathered by, so for the ark
+    // the two are the same test; for Earth, a record that finished the ark
+    // has by definition been past it.
+    if (!trackCleared(p, content, t)) return false;
+  }
+  return true;
+}
+
+namespace {
+// The first rung gated on the campaign, or -1.
+int campaignGateIndex(const Content& content) {
+  const std::vector<RankDef>& ladder = content.ranks();
+  for (size_t i = 0; i < ladder.size(); i++) {
+    if (ladder[i].gate == "campaign") return (int)i;
+  }
+  return -1;
+}
+}  // namespace
+
+int creditXp(Profile& p, const Content& content, int amount) {
+  if (amount <= 0) return 0;
+  const int gate = campaignGateIndex(content);
+  if (gate > 0 && !campaignComplete(p, content)) {
+    const int cap = content.ranks()[(size_t)gate].xp - 1;
+    if (p.xp >= cap) return 0;
+    const int room = cap - p.xp;
+    amount = std::min(amount, room);
+  }
+  p.xp += amount;
+  return amount;
+}
+
+bool settleCampaign(Profile& p, const Content& content, std::string* shipName) {
+  if (shipName) shipName->clear();
+  if (!campaignComplete(p, content)) return false;
+
+  const int gate = campaignGateIndex(content);
+  if (gate >= 0) p.xp = std::max(p.xp, content.ranks()[(size_t)gate].xp);
+
+  if (p.hasShip()) {
+    if (p.equippedShip.empty() || !p.ownsShip(p.equippedShip)) p.equippedShip = p.ownedShips.front();
+    return false;
+  }
+  for (const std::string& id : content.shipIds()) {
+    const ShipDef* d = content.ship(id);
+    if (!d || !d->starter) continue;
+    p.ownedShips.push_back(id);
+    p.equippedShip = id;
+    if (shipName) *shipName = d->name;
+    return true;
+  }
+  return false;
+}
+
 Profile ProfileStore::load(const std::string& path) {
   std::ifstream f(path);
   if (!f) {
@@ -138,6 +198,28 @@ Profile ProfileStore::load(const std::string& path) {
     std::istringstream ls(line);
     std::string first;
     ls >> first;
+    if (first == "bounty") {
+      // bounty <id> <progress>
+      Profile::ActiveBounty b;
+      ls >> b.id >> b.progress;
+      if (b.id.empty() || p.activeBounty(b.id)) continue;
+      if (b.progress < 0) b.progress = 0;
+      p.bounties.push_back(b);
+      continue;
+    }
+    if (first == "bounty_done" || first == "upgrade") {
+      std::string id;
+      ls >> id;
+      if (id.empty()) continue;
+      addUnique(first == "upgrade" ? p.upgrades : p.bountiesDone, id);
+      continue;
+    }
+    if (first == "owned_ship") {
+      std::string id;
+      ls >> id;
+      if (!id.empty()) addUnique(p.ownedShips, id);
+      continue;
+    }
     if (first == "owned_weapon" || first == "owned_armor" ||
         first == "owned_cosmetic" || first == "completed") {
       std::string id;
@@ -162,6 +244,7 @@ Profile ProfileStore::load(const std::string& path) {
       else if (k == "equipped_sidearm") p.equippedSidearm = v;
       else if (k == "equipped_armor") p.equippedArmor = v;
       else if (k == "equipped_cosmetic") p.equippedCosmetic = v;
+      else if (k == "equipped_ship") p.equippedShip = v;
     } catch (...) {
       std::fprintf(stderr, "[Profile] %s: bad value for '%s' = '%s', ignored\n",
                    path.c_str(), k.c_str(), v.c_str());
@@ -203,6 +286,11 @@ bool ProfileStore::save(const Profile& p, const std::string& path) {
   for (auto& id : p.ownedArmor) f << "owned_armor " << id << "\n";
   for (auto& id : p.ownedCosmetics) f << "owned_cosmetic " << id << "\n";
   for (auto& id : p.completedMissions) f << "completed " << id << "\n";
+  f << "equipped_ship = " << p.equippedShip << "\n";
+  for (auto& id : p.ownedShips) f << "owned_ship " << id << "\n";
+  for (auto& b : p.bounties) f << "bounty " << b.id << " " << b.progress << "\n";
+  for (auto& id : p.bountiesDone) f << "bounty_done " << id << "\n";
+  for (auto& id : p.upgrades) f << "upgrade " << id << "\n";
 
   return true;
 }

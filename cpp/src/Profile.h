@@ -50,6 +50,40 @@ struct Profile {
 
   std::vector<std::string> completedMissions;
 
+  // Ships. None at all until the campaign is finished — there is nothing in
+  // orbit with a candidate's name on it, and on the ark you fly where Kaur
+  // sends the transport. settleCampaign issues the first; the shipwright
+  // sells the rest.
+  std::vector<std::string> ownedShips;
+  std::string equippedShip;
+  bool hasShip() const { return !ownedShips.empty(); }
+  bool ownsShip(const std::string& id) const { return contains(ownedShips, id); }
+
+  // Work taken from someone, and how far along it is. A bounty is carried
+  // across missions — it is not a mission objective — so the progress has to
+  // live on the record rather than in a Game that is torn down at the debrief.
+  struct ActiveBounty {
+    std::string id;
+    int progress = 0;
+  };
+  std::vector<ActiveBounty> bounties;
+  // Bounties turned in at least once. A one-off never comes back; a
+  // repeatable one goes back on its giver's board the moment it is paid.
+  std::vector<std::string> bountiesDone;
+  // Permanent improvements bought from somebody's post (content/upgrades).
+  std::vector<std::string> upgrades;
+
+  ActiveBounty* activeBounty(const std::string& id) {
+    for (ActiveBounty& b : bounties) if (b.id == id) return &b;
+    return nullptr;
+  }
+  const ActiveBounty* activeBounty(const std::string& id) const {
+    for (const ActiveBounty& b : bounties) if (b.id == id) return &b;
+    return nullptr;
+  }
+  bool hasUpgrade(const std::string& id) const { return contains(upgrades, id); }
+  bool bountyDone(const std::string& id) const { return contains(bountiesDone, id); }
+
   static bool contains(const std::vector<std::string>& v, const std::string& id) {
     return std::find(v.begin(), v.end(), id) != v.end();
   }
@@ -98,6 +132,25 @@ int settleRank(Profile& p, const Content& content, std::string* promotedTo = nul
 // reasoning as the tutorial's original "has cleared nothing at all" test: a
 // record is not punished for having played earlier.
 bool trackCleared(const Profile& p, const Content& content, const std::string& track);
+
+// The whole campaign: every track, in order, from Block D on Earth to THE
+// CONDUCTOR at the end of the ark.
+bool campaignComplete(const Profile& p, const Content& content);
+
+// Adds career experience, holding it below any rank gated on the campaign
+// until the campaign is done (RankDef::gate). Experience already on a record
+// is never taken away — a save that was past the gate before the gate
+// existed keeps its rank — but no new experience carries a record over it.
+// Returns the amount actually added.
+int creditXp(Profile& p, const Content& content, int amount);
+
+// The moment the campaign is behind a record: it is put on the gated rank
+// (Strider Second Class) if it is not already past it, and issued its first
+// ship. Idempotent, and run both at the mission exit and on load, so a save
+// that finished the campaign before this existed is issued its ship the next
+// time it is opened. Returns true on the call that issued the ship, with its
+// name in `shipName`.
+bool settleCampaign(Profile& p, const Content& content, std::string* shipName = nullptr);
 
 class ProfileStore {
 public:

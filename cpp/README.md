@@ -7,8 +7,9 @@ AI (idle → chase → attack → die), and missions loaded from **plain text
 files under `content/`, not compiled in** — adding next month's mission or
 boss is dropping a `.cfg` file into `content/missions/`, not a code change.
 
-Between missions you fly a ship through **open space**: pick a save slot,
-launch from the Cradle, fly to a world and land on it to start its mission.
+Once the campaign is done you fly your own ship through **open space**:
+undock from the Cradle, fly to a world and land on it to start its mission.
+Until then you go where you are sent — see *The campaign, in order* below.
 A persistent profile — chits (currency), owned and equipped gear, completed
 missions — lives in one of three save slots and carries across runs.
 
@@ -72,6 +73,84 @@ out and you wake up in the muster hall, because there is nothing in orbit
 with your name on it to go back to, and Hale on the flight line will tell you
 so herself.
 
+### The campaign, in order
+
+The campaign is **one route, flown in order, with no skipping**: Block D, the
+five Earth qualifications, the lift, then all sixteen sectors of the ark from
+HARD DOCK to **THE CONDUCTOR**. Every sector is locked until the one before it
+is cleared, and a locked sector cannot be launched from any counter — it is on
+the list so you can see what is ahead, and that is all.
+
+**You have no ship for any of it.** On Earth you deploy off Kourou's pad; on
+the ark you deploy off Kaur's flight deck on the Cradle's transport, and the
+airlock on deck A is sealed. Clearing THE CONDUCTOR is what changes that: the
+record is made **STRIDER SECOND CLASS** and issued its **first ship, a
+KITE**, and from then on the airlock opens into space.
+
+Rank grows the whole way, but it cannot get ahead of the route:
+
+| Rank | Experience | Where you earn it |
+|---|---|---|
+| CANDIDATE | 0 | Block D |
+| PROBATIONARY STRIDER | 300 | Earth |
+| STRIDER THIRD CLASS | 900 | Earth, and the lift |
+| HULL WALKER | 1 900 | The ark |
+| SPINE RUNNER | 3 100 | The ark |
+| **STRIDER SECOND CLASS** | **4 500** | **Finishing the campaign** — experience stops at 4 499 until you do |
+| STRIDER FIRST CLASS → DEEP STRIDER | 7 500 → 29 000 | Everything after: bounties, contracts, flying |
+
+The gate is a key in the rank file (`gate = campaign`), so it can be moved. A
+record that was already past second class before the gate existed keeps what
+it has; nothing takes experience away.
+
+**More ships** come from **MERCER, the shipwright**, in the Zvezda side bay on
+deck A of the Cradle. Each ship flies differently — cruise speed, boost,
+handling — and has a **reach**: how far from the Cradle it can make a drop.
+A KITE reaches the Dust Shelf, Glacius and the Dig Site, and flies right up
+to Karrash and says **OUT OF REACH FOR THIS SHIP**. Ships are
+`content/ships/*.cfg`, so a content drop that puts a world further out only
+needs a ship with the reach for it:
+
+| Ship | Cost | Rank | Speed | Reach |
+|---|---|---|---|---|
+| KITE | issued | end of the campaign | 900 | 4 500 |
+| HERON | 900 | Strider Second Class | 1 150 | 6 000 |
+| MARLIN | 1 800 | Strider First Class | 1 450 | 9 000 |
+| LONG REACH | 3 600 | Lead Strider | 1 750 | 20 000 |
+
+### People, bounties, and their own thing
+
+**Everyone you can talk to has a desk.** Hear them out once and E puts you at
+it; after that, walking up and pressing E goes straight there. A desk has two
+tabs:
+
+- **BOUNTIES** — that person's own jobs. You take one at their desk, it counts
+  across *every mission you fly* (kills of one archetype, headshots, kills
+  with a sidearm or a marksman rifle, ability uses, clearing a particular
+  mission, clearing without going down), and you go **back to them** to be
+  paid in chits, experience, and sometimes gear. Nameplates say **BOUNTY
+  READY** in gold when someone owes you, and **NEW WORK** when their board has
+  something you have never taken.
+- **Their service** — the thing only they do:
+
+| Who | Where | Their own thing |
+|---|---|---|
+| ONDO | Kourou | **Ground armoury** — her own rack (marksman carbine, Storm SMG, KESTREL, scout rig, ranger weave, heavy plate) |
+| VOSS | Cradle | **Orbital armoury** — a different rack (ANVIL, LONGSHORE, field plate, DEEPWATER) |
+| HALE | Kourou | **The lift** — the Earth programme route, and she refuses until you are rated |
+| KAUR | Cradle | **The ark route** — the sixteen sectors and nothing else |
+| TEAL | Kourou | **Earth contracts** — three new missions on this continent: the Salt Pan, Fence Rats, the Tracking Station |
+| SHAW | Cradle | **Off-ark contracts** — the Dust Shelf, the Dig Site, Glacius, Karrash |
+| BRIGHT | Kourou | **Drills** — permanent faster reloads, a tighter cone, more reserve ammo |
+| MARCHEVA | Kourou | **Commendations** — more experience per mission, a fourth harness charge |
+| ODIL | Cradle | **Muster training** — more health, a shorter ability cooldown, an extra harness charge |
+| THE ROOK | Cradle | **Appraisal** — buys back gear you own and are not using, for half what you paid |
+| MERCER | Cradle | **The shipyard** — see above |
+
+Upgrades are permanent, apply to every weapon you pick up, and come in tiers
+(the second drill needs the first). The G kit screen still sells everything
+from anywhere; the counters are where each person's own stock is.
+
 Campaigns are **tracks** (`track = earth` in a mission file), not one long
 list. Each track unlocks one step at a time within itself, so adding a
 seventh Earth qualification keeps records on the ground until they have flown
@@ -94,17 +173,17 @@ front rank into whatever stood behind it, and can stun a room with an EMP.
 A Wraith carries the suppressed WHISPER, triples headshot damage, and phase
 steps out of trouble with the next round primed.
 
-**Scope, honestly stated:** three doctrines, seven weapons carried two at a
-time, three armour pieces, three cosmetics, eight enemy archetypes, an
-eight-rung rank ladder, ten crew across two walkable hubs, twenty-eight
-missions (a six-mission Earth programme, the sixteen-sector ark campaign, and
-six side contracts), five destinations —
+**Scope, honestly stated:** three doctrines, ten weapons carried two at a
+time, five armour pieces, five cosmetics, eight enemy archetypes, an
+eleven-rung rank ladder, eleven crew across two walkable hubs, each with
+their own bounty board and service (thirty-one bounties, sixteen upgrades),
+four ships, thirty-one missions (a six-mission Earth programme, the
+sixteen-sector ark campaign, and nine side contracts), five destinations —
 including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
 text files, not a code change (see *Content* below). What's still not here:
 co-op/netcode (see the note at the bottom of *Roadmap*), the browser
-build's class abilities beyond the phase step, its gear rolls, bounties,
-chests, crew and dossier screens, and packaging as an actual installable
+build's gear rolls, chests and dossier screens, and packaging as an actual installable
 build. Everything that exists here is real, compiled, and was verified by
 actually running it and reading back live game state — not eyeballed
 (`tools/verify.sh`).
@@ -231,7 +310,8 @@ a campaign with no weapon, no ability and no perk.
 | Enter | Confirm — you get a service sidearm and twelve rounds, and nothing else |
 | Escape | Back to the slots |
 
-Then you're in **open space**, in your ship:
+Once the campaign is behind you and you have a ship, the airlock puts you
+in **open space**:
 
 | Input | Action |
 |---|---|
@@ -240,11 +320,11 @@ Then you're in **open space**, in your ship:
 | A / D | Strafe |
 | Space / Left Ctrl | Rise / drop |
 | Left Shift | Boost |
-| E | Land on the world you're near, or dock at the Cradle |
+| E | Land on the world you're near (if your ship can reach it), or dock at the Cradle |
 
-There are **people in it**. Five have posts you can walk up to — VOSS the
+There are **people in it**. Six have posts you can walk up to — VOSS the
 quartermaster, KAUR the flight officer, SHAW on contracts, THE ROOK
-appraising, ODIL on muster — and the rest are crew, walking routes across
+appraising, ODIL on muster, MERCER in the shipyard — and the rest are crew, walking routes across
 the three decks or leaning on a gallery rail watching the Earth go past. The
 walkers are not decoration for its own sake: people you have to walk around
 are what make a room feel used rather than like a lobby.
@@ -258,18 +338,21 @@ heights:
 |---|---|
 | WASD / mouse | Walk around (the mission movement, minus the gun) |
 | E | Use whatever you are standing at |
-| Q | Airlock — back to the ship |
+| Q | Airlock — back to the ship, once you have one |
 
 Walk up to someone and press E to talk; E again for the next line, Escape to
-leave. Hearing **Voss** out opens the armoury and **Kaur** the route —
-they are the same Hub screen, with their name on it and the half you did not
-come for dimmed (both stay usable: walking back down three decks for a rifle
-you forgot would be a punishment, not a hub). **Shaw** opens it on the side
-contracts. The Rook and Odil are conversations and nothing else, and say so
-in as many words — this build has no duplicate gear to break down and no
-second seat to muster, and a screen that did nothing would be worse than an
-honest answer. Q, or the airlock at the end of the concourse, backs out to
-the ship:
+leave. The last line puts you at **their desk**:
+
+| Input | Action |
+|---|---|
+| Tab, A / D, or Left / Right | Switch between their service and their bounties |
+| W / S, or Up / Down | Select |
+| E, Enter or F | Take a bounty / turn it in / buy an upgrade / sell to the Rook / buy or fly a ship / open their counter |
+| Escape or Backspace | Leave the desk |
+
+A counter — Voss's or Ondo's rack, Kaur's or Hale's route, Shaw's or Teal's
+board — opens the Hub screen with their name on it, narrowed to their own
+stock:
 
 | Input | Action |
 |---|---|
@@ -513,7 +596,11 @@ line = Gear, parts, and the bench.
 colour = 1.00, 0.71, 0.33
 position = -37, 7, 2
 facing = -90                  # degrees; a figure's front is local -Z
-shop = gear                   # gear | route | contracts | none
+shop = gear                   # gear | route | contracts | upgrades | appraisal | shipyard | none
+service = ORBITAL ARMOURY     # the heading of their service tab
+stock = anvil, longshore, field_plate, deepwater, verdant
+                              # what their counter carries: gear ids, mission
+                              # ids, or track:<name> for a whole campaign track
 desk = true                   # a lit post to stand behind
 # board = true                # ...and a wall of lit slates, for contracts
 # station = kourou            # which hub they stand in: cradle or kourou
@@ -521,9 +608,56 @@ say | You want something that will still be working when the shooting stops.
 say | Everything on this bench came off something that stopped working.
 ```
 
-`shop` is what separates a vendor from a conversation. `none` means talking
-to them is the whole interaction, which is the honest answer for the posts
-whose screens this build does not have.
+`shop` is their service. `upgrades` sells the lines in `content/upgrades/`
+that name them as `giver`; `appraisal` buys back unused gear; `shipyard`
+sells `content/ships/`. Their bounties are whatever `content/bounties/`
+files name them as `giver` — no list to keep in the crew file.
+
+**`content/bounties/<id>.cfg`** — a job one person gives you:
+
+```
+name = Fence Line
+giver = hale
+goal = kills_of       # kills | kills_of | headshots | weapon_kills | ability | clear | flawless
+target = thrall       # an enemy id, a weapon shape (pistol, shotgun...), or a mission id
+count = 25
+reward_chits = 160
+reward_xp = 240
+# reward_item = weapon:kestrel    # or armor:<id> / cosmetic:<id>, owned outright
+# rank_required = strider_3
+# repeatable = true               # back on the board the moment it is paid
+blurb = Twenty-five thralls. Every one of them was walking towards the pad.
+```
+
+**`content/upgrades/<id>.cfg`** — a permanent improvement, sold by one person:
+
+```
+name = RELOAD DRILL II
+giver = bright
+stat = reload          # reload | spread | reserve | hp | harness | xp | ability_cooldown
+amount = 0.08          # a fraction for the multiplicative stats, flat for hp / harness
+cost = 320
+requires = bright_reload_1
+rank_required = strider_3
+```
+
+**`content/ships/<id>.cfg`** — something to fly:
+
+```
+name = HERON
+cost = 900
+rank_required = strider_2
+speed = 1150           # cruise, units per second
+boost = 2.8            # multiplier on Shift
+handling = 2.0         # how fast the velocity follows the stick
+reach = 6000           # how far from the Cradle it can make a drop
+# starter = true       # the one issued when the campaign is finished
+```
+
+Every cross-reference — a bounty's giver and target, an upgrade's `requires`,
+a crew member's `stock` — is checked when content loads, and a broken one is
+printed to the console rather than silently becoming a job nobody can give
+you.
 
 **`content/classes/<id>.cfg`** — a doctrine:
 

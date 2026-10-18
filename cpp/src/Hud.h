@@ -7,6 +7,7 @@
 class Content;
 class Hub;
 class Loadout;
+class Post;
 struct Profile;
 
 // An ortho 2D overlay: solid-colour rectangles plus text drawn from the
@@ -162,6 +163,11 @@ public:
   void drawLoadout(int screenW, int screenH, const Content& content,
                    const Profile& profile, const Loadout& loadout);
 
+  // A crew member's post: their service on one tab and their bounties on
+  // the other, over the station they are standing in.
+  void drawPost(int screenW, int screenH, const Content& content,
+                const Profile& profile, const Post& post);
+
   // A promotion, over whatever is already on screen. Drawn wherever you
   // happen to land after the mission that earned it rather than on the
   // debrief you are in the middle of dismissing — a promotion nobody sees
@@ -195,15 +201,28 @@ public:
       glm::vec3 worldPos{0.0f};
       std::string name, title;
       glm::vec3 colour{0.8f, 0.9f, 1.0f};
+      // A third line over the name when they have something for you:
+      // BOUNTY READY in gold, or NEW WORK when the board has something you
+      // have never taken. Empty most of the time, which is what makes it
+      // worth reading when it is not.
+      std::string flag;
+      bool flagReady = false;
     };
     std::vector<Nameplate> nameplates;
     glm::mat4 viewProj{1.0f};
     glm::vec3 eye{0.0f};
 
     // One line of conversation, shown while you are talking to someone.
+    // A bounty that crossed its count on the mission you just came back
+    // from, and who to see about it. Fades on the same clock as a promotion.
+    std::string bountyNote;
+    float bountyNoteT = 0.0f;
+
     std::string talkingTo, talkTitle, talkLine;
     int talkIndex = 0, talkCount = 0;
     glm::vec3 talkColour{0.8f, 0.9f, 1.0f};
+    // Whether the last line hands you on to their desk rather than ending.
+    bool talkOpensPost = false;
   };
   void drawStation(int screenW, int screenH, const StationState& s);
 
@@ -237,6 +256,10 @@ public:
     bool isStation = false;      // changes LAND to DOCK
     bool missionCleared = false; // nearest world already completed once
     float speed = 0.0f, maxSpeed = 1.0f;
+    // The ship, and whether the nearest world is past what it can reach.
+    std::string shipName;
+    bool outOfReach = false;
+    std::string reachNeeded;   // "NEEDS 4750 REACH - YOURS IS 4500"
     glm::vec3 accent{0.85f, 0.95f, 1.0f};
   };
   void drawSpace(int screenW, int screenH, const SpaceState& s);

@@ -7,17 +7,20 @@
 // Loads a def into the live Weapon. Split out because init, the floor
 // pickups and the slot switch all need exactly this and had grown three
 // nearly-identical copies of it.
-static void applyDef(Weapon& w, const WeaponDef* def) {
+//
+// `u` is the record's upgrades: reload, reserve and cone are scaled here, at
+// the one point a def becomes a live weapon, rather than at each use.
+static void applyDef(Weapon& w, const WeaponDef* def, const UpgradeTotals& u) {
   if (!def) return;
   w.magSize = def->magSize;
   w.ammoInMag = def->magSize;
-  w.reserveAmmo = def->reserveAmmo;
+  w.reserveAmmo = (int)std::lround((float)def->reserveAmmo * u.reserveMul);
   w.damage = def->damage;
   w.headshotMultiplier = def->headshotMultiplier;
   w.fireInterval = def->fireInterval;
-  w.reloadTime = def->reloadTime;
+  w.reloadTime = def->reloadTime * u.reloadMul;
   w.pellets = def->pellets;
-  w.spread = def->spread;
+  w.spread = def->spread * u.spreadMul;
   w.pierce = def->pierce;
   w.range = def->range;
   w.reloading = false;
@@ -58,6 +61,8 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   commsClock_ = 0.0f;
   xpEarned_ = 0;
   xpBanked_ = 0;
+  tally_ = MissionTally{};
+  tally_.missionId = missionId;
   for (bool& fired : triggerFired_) fired = false;
   bossName_.clear();
   pickups_.clear();
@@ -104,11 +109,12 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // has no doctrine, and falls back to the old flat baseline rather than
   // refusing to load.
   class_ = content_.playerClass(profile.classId);
+  upgrades_ = upgradeTotals(profile, content_);
   const float baseHp = class_ ? class_->hp : 100.0f;
   const float baseDr = class_ ? class_->damageReduction : 0.0f;
 
   const ArmorDef* armor = content_.armor(profile.equippedArmor);
-  player_.maxHp = baseHp + (armor ? armor->hpBonus : 0.0f);
+  player_.maxHp = baseHp + (armor ? armor->hpBonus : 0.0f) + upgrades_.hpAdd;
   // Two reductions stack multiplicatively, not additively: 22% doctrine plus
   // an eventual 80% armour piece would otherwise reach immunity, and each
   // layer should shave a share of what got through the last one anyway.
@@ -120,7 +126,8 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // Three charges, and none at all in a boss fight — the browser build's
   // rule, and the reason its last mission reads differently from the
   // fifteen before it.
-  harnessMax_ = mission_.bossId.empty() ? 3 : 0;
+  // Commendations add to the three; they do not add to the none.
+  harnessMax_ = mission_.bossId.empty() ? 3 + upgrades_.harnessAdd : 0;
   harnessLeft_ = harnessMax_;
   downT_ = 0.0f;
   abilityCool_ = 0.0f;
@@ -145,7 +152,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
     (void)s;
     slots_[actual].def = d;
     slots_[actual].name = d->name;
-    applyDef(slots_[actual].state, d);
+    applyDef(slots_[actual].state, d, upgrades_);
     slots_[actual].filled = true;
   };
 
@@ -426,7 +433,7 @@ void Game::applyLoadout(const Profile& profile) {
     if (slots_[s].def == d) return;    // unchanged: keep its magazine
     slots_[s].def = d;
     slots_[s].name = d->name;
-    applyDef(slots_[s].state, d);
+    applyDef(slots_[s].state, d, upgrades_);
     slots_[s].filled = true;
   };
 
@@ -466,7 +473,7 @@ void Game::applyLoadout(const Profile& profile) {
   // heal, and swapping out of it should not kill you.
   const ArmorDef* armour = content_.armor(profile.equippedArmor);
   const float baseHp = class_ ? class_->hp : 100.0f;
-  const float newMax = baseHp + (armour ? armour->hpBonus : 0.0f);
+  const float newMax = baseHp + (armour ? armour->hpBonus : 0.0f) + upgrades_.hpAdd;
   if (newMax > 0.0f && player_.maxHp > 0.0f) {
     const float frac = std::clamp(player_.hp / player_.maxHp, 0.0f, 1.0f);
     player_.maxHp = newMax;
@@ -484,21 +491,7 @@ void Game::applyLoadout(const Profile& profile) {
 void Game::equipWeaponById(const std::string& id) {
   const WeaponDef* def = content_.weapon(id);
   if (!def) return;
-  weapon_.magSize = def->magSize;
-  weapon_.ammoInMag = def->magSize;
-  weapon_.reserveAmmo = def->reserveAmmo;
-  weapon_.damage = def->damage;
-  weapon_.headshotMultiplier = def->headshotMultiplier;
-  weapon_.fireInterval = def->fireInterval;
-  weapon_.reloadTime = def->reloadTime;
-  weapon_.pellets = def->pellets;
-  weapon_.spread = def->spread;
-  weapon_.pierce = def->pierce;
-  weapon_.range = def->range;
-  weapon_.reloading = false;
-  weapon_.reloadT = 0.0f;
-  weapon_.cooldown = 0.0f;
-  weapon_.primed = false;
+  applyDef(weapon_, def, upgrades_);
   weaponDef_ = def;
   weaponName_ = def->name;
   armed_ = true;
@@ -815,6 +808,7 @@ bool Game::useAbility() {
 
   pickupNoteT_ = 1.4f;
   tutorialUsedAbility_ = true;
+  tally_.abilityUses++;
   return true;
 }
 
@@ -1031,8 +1025,14 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
         // reads it. Banked in the mission and handed to the record when the
         // mission ends, so a run you walk out of pays what you actually did
         // rather than nothing.
-        xpEarned_ += (int)h.type->xp;
+        xpEarned_ += (int)std::lround(h.type->xp * upgrades_.xpMul);
         dropPickup(h.pos, killCount_++);
+        // ...and the bounties. Counted by archetype and by the silhouette of
+        // what was in your hands, which is what the boards ask for.
+        tally_.kills++;
+        tally_.killsOf[h.type->id]++;
+        if (shot.headshot) tally_.headshots++;
+        if (weaponDef_) tally_.killsWith[weaponDef_->shape]++;
       }
     }
     // Kick the viewmodel back on every trigger pull, whether or not it hit.
@@ -1144,6 +1144,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   if (!player_.alive() && !downed()) {
     // Down, not out — if the harness has a charge left. A boss is issued
     // none (see init), so dying to one means taking the fight from the top.
+    tally_.downs++;
     if (harnessLeft_ > 0) {
       harnessLeft_--;
       downT_ = kDownSeconds;
@@ -1181,8 +1182,9 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
         // The clearance bonus, on top of what the fight itself paid. Paid
         // every time, unlike the chits: replaying a mission you have already
         // cleared is still work, and rank is the record of work done.
-        xpEarned_ += mission_.rewardXp;
+        xpEarned_ += (int)std::lround(mission_.rewardXp * upgrades_.xpMul);
         rewardApplied_ = true;
+        tally_.cleared = true;
       }
       missionState_ = MissionState::Complete;
       fireComms(CommsTrigger::Complete);

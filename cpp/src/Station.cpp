@@ -160,8 +160,31 @@ void buildCradle(Builder& b, std::vector<Station::Terminal>& terminals) {
 
   // ---------- the hull around it all
   const float WALL = 1.2f;
-  b.box(-30 - WALL, -30, DECK_A - 1, CEIL, -36, 36, HULL, true, 0.55f, 0.45f);
-  b.box(30, 30 + WALL, DECK_A - 1, CEIL, -36, 36, HULL, true, 0.55f, 0.45f);
+  // The two long walls have doorways where the side bays and the lab arms
+  // meet them. They used to be single slabs, which sealed COLUMBUS, KIBO and
+  // the ZVEZDA bay off behind the hull — with Voss and Odil standing in two of
+  // them, visible by nameplate through the wall and impossible to reach.
+  for (float side : {-1.0f, 1.0f}) {
+    const float x0 = side > 0 ? 30.0f : -30.0f - WALL;
+    const float x1 = side > 0 ? 30.0f + WALL : -30.0f;
+    auto slab = [&](float y0, float y1, float z0, float z1) {
+      b.box(x0, x1, y0, y1, z0, z1, HULL, true, 0.55f, 0.45f);
+    };
+    // deck A: only the starboard side has a bay (ZVEZDA, z -10..14)
+    if (side > 0) {
+      slab(DECK_A - 1, DECK_B, -36, -8);
+      slab(DECK_A - 1, DECK_B, 12, 36);
+      slab(DECK_A + 6.0f, DECK_B, -8, 12);
+    } else {
+      slab(DECK_A - 1, DECK_B, -36, 36);
+    }
+    // deck B: an arm on each side (COLUMBUS to port, KIBO to starboard)
+    slab(DECK_B, DECK_C, -36, -6);
+    slab(DECK_B, DECK_C, 10, 36);
+    slab(DECK_B + 5.5f, DECK_C, -6, 10);
+    // deck C and up: solid
+    slab(DECK_C, CEIL, -36, 36);
+  }
   b.box(-30, -10, DECK_A - 1, CEIL, 36, 36 + WALL, HULL, true, 0.55f, 0.45f);
   b.box(10, 30, DECK_A - 1, CEIL, 36, 36 + WALL, HULL, true, 0.55f, 0.45f);
   b.box(-10, 10, 7.0f, CEIL, 36, 36 + WALL, HULL, true, 0.55f, 0.45f);

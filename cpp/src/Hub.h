@@ -58,6 +58,15 @@ public:
   // campaign — the side work, which is what the contracts post deals in.
   void preselectFirstSideContract();
 
+  // Narrow the counter to one person's stock (CrewDef::stock). Gear ids
+  // filter the three gear rows; mission ids, or `track:<name>` for a whole
+  // campaign track, filter the mission row. A list that names nothing of a
+  // kind leaves that kind alone, so a quartermaster's stock does not empty
+  // the route and a contracts board does not empty the rack. What you have
+  // equipped stays listed either way: a counter that cannot show you what
+  // you are holding reads as having taken it off you.
+  void restrictStock(const std::vector<std::string>& stock);
+
   const std::vector<std::string>& weaponIds() const { return weaponIds_; }
   const std::vector<std::string>& armorIds() const { return armorIds_; }
   const std::vector<std::string>& cosmeticIds() const { return cosmeticIds_; }
@@ -73,6 +82,7 @@ public:
   void preselectMission(const std::string& id);
 
 private:
+  void park();
   void cycleWeapon();
   void cycleArmor();
   void cycleCosmetic();

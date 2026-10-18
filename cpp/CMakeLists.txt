@@ -47,6 +47,8 @@ add_executable(erebus_native
     src/Sites.cpp
     src/Cutscene.cpp
     src/Loadout.cpp
+    src/Bounty.cpp
+    src/Post.cpp
   src/Game.cpp
   src/Renderer.cpp
 )
@@ -88,8 +90,15 @@ endif()
 # is also exactly how a monthly content drop reaches players: replace or
 # add files under content/, rebuild (or, once packaged, just ship the
 # updated content/ folder on its own — nothing in it requires recompiling).
-add_custom_command(TARGET erebus_native POST_BUILD
+#
+# A target of its own rather than a post-build step, so it runs on every
+# build: as a post-build step it only ran when the executable relinked, and a
+# pull that changed nothing but content/ built "successfully" and then played
+# last week's files.
+add_custom_target(erebus_data ALL
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:erebus_native>/shaders
   COMMAND ${CMAKE_COMMAND} -E copy_directory
-          ${CMAKE_SOURCE_DIR}/content $<TARGET_FILE_DIR:erebus_native>/content)
+          ${CMAKE_SOURCE_DIR}/content $<TARGET_FILE_DIR:erebus_native>/content
+  COMMENT "Copying shaders and content next to the executable")
+add_dependencies(erebus_data erebus_native)

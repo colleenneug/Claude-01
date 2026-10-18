@@ -32,6 +32,11 @@ void Hub::init(const Content& content, Profile& profile) {
   std::sort(side.begin(), side.end());
   missionIds_.insert(missionIds_.end(), side.begin(), side.end());
 
+  park();
+}
+
+void Hub::park() {
+  const Profile& profile = *profile_;
   // Open on where the record actually is: the first unfinished sector *after*
   // the last one it cleared. Scanning from the top for the first unfinished
   // mission is almost the same thing and wrong in one case that matters — a
@@ -63,6 +68,59 @@ void Hub::init(const Content& content, Profile& profile) {
   weaponIndex_ = indexOf(weaponIds_, profile.equippedWeapon);
   armorIndex_ = indexOf(armorIds_, profile.equippedArmor);
   cosmeticIndex_ = indexOf(cosmeticIds_, profile.equippedCosmetic);
+}
+
+void Hub::restrictStock(const std::vector<std::string>& stock) {
+  if (stock.empty() || !content_ || !profile_) return;
+  auto stocked = [&](const std::string& id) {
+    return std::find(stock.begin(), stock.end(), id) != stock.end();
+  };
+  auto equipped = [&](const std::string& id) {
+    return id == profile_->equippedWeapon || id == profile_->equippedSidearm ||
+           id == profile_->equippedArmor || id == profile_->equippedCosmetic;
+  };
+
+  bool namesGear = false, namesMissions = false;
+  for (const std::string& id : stock) {
+    if (content_->weapon(id) || content_->armor(id) || content_->cosmetic(id)) namesGear = true;
+    if (content_->mission(id) || id.rfind("track:", 0) == 0) namesMissions = true;
+  }
+
+  if (namesGear) {
+    auto narrow = [&](std::vector<std::string>& ids) {
+      std::vector<std::string> kept;
+      for (const std::string& id : ids) if (stocked(id) || equipped(id)) kept.push_back(id);
+      // A row with nothing in it at all would have nothing to cycle through
+      // and nothing to show; leave it as it was.
+      if (!kept.empty()) ids.swap(kept);
+    };
+    narrow(weaponIds_);
+    narrow(armorIds_);
+    narrow(cosmeticIds_);
+    weaponIndex_ = indexOf(weaponIds_, profile_->equippedWeapon);
+    armorIndex_ = indexOf(armorIds_, profile_->equippedArmor);
+    cosmeticIndex_ = indexOf(cosmeticIds_, profile_->equippedCosmetic);
+  }
+
+  if (namesMissions) {
+    std::vector<std::string> route, side;
+    for (int i = 0; i < (int)missionIds_.size(); i++) {
+      const std::string& id = missionIds_[(size_t)i];
+      const MissionDef* m = content_->mission(id);
+      const bool campaign = i < campaignCount_;
+      const bool keep = stocked(id) || (campaign && m && stocked("track:" + m->campaign));
+      if (keep) (campaign ? route : side).push_back(id);
+    }
+    if (!route.empty() || !side.empty()) {
+      campaignCount_ = (int)route.size();
+      missionIds_ = route;
+      missionIds_.insert(missionIds_.end(), side.begin(), side.end());
+      // Locking still reads the track order from content, not positions in
+      // this list, so the ark's first sector stays shut to a candidate even
+      // when it is the first thing on Kaur's board.
+      park();
+    }
+  }
 }
 
 void Hub::preselectMission(const std::string& id) {
@@ -187,7 +245,7 @@ bool Hub::update(GLFWwindow* window, const char* scriptedKey) {
     else if (std::strcmp(scriptedKey, "2") == 0) cycleArmor();
     else if (std::strcmp(scriptedKey, "3") == 0) cycleCosmetic();
     else if (std::strcmp(scriptedKey, "mission") == 0) cycleMission();
-    else if (std::strcmp(scriptedKey, "launch") == 0) return true;
+    else if (std::strcmp(scriptedKey, "launch") == 0) return !missionLocked(missionIndex_);
     return false;
   }
 
@@ -204,5 +262,8 @@ bool Hub::update(GLFWwindow* window, const char* scriptedKey) {
   if (edge(GLFW_KEY_TAB, prevTab_)) cycleMission();
   bool enter = edge(GLFW_KEY_ENTER, prevEnter_);
   bool space = edge(GLFW_KEY_SPACE, prevSpace_);
+  // The route is flown in order. A locked sector is on the list so you can
+  // see what is ahead, and that is all it is for.
+  if (missionLocked(missionIndex_)) return false;
   return enter || space;
 }

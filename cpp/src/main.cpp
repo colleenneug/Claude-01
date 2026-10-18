@@ -14,13 +14,17 @@
 #include "Hud.h"
 #include "Hub.h"
 #include "Loadout.h"
+#include "Post.h"
+#include "Bounty.h"
 #include "Space.h"
 #include "Station.h"
 #include "Profile.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <set>
 #include <vector>
 
 namespace {
@@ -297,6 +301,21 @@ int main(int argc, char** argv) {
     }
   }
   size_t kitScriptPos = 0;
+  // EREBUS_POST_SCRIPT="right,use,close" drives a crew member's post the
+  // same way — one token every ten frames once it is open.
+  std::vector<std::string> postScriptTokens;
+  if (const char* ps = std::getenv("EREBUS_POST_SCRIPT")) {
+    std::string all = ps;
+    size_t start = 0;
+    while (start <= all.size()) {
+      size_t comma = all.find(',', start);
+      std::string tok = all.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+      if (!tok.empty()) postScriptTokens.push_back(tok);
+      if (comma == std::string::npos) break;
+      start = comma + 1;
+    }
+  }
+  size_t postScriptPos = 0;
 
   int swapAtFrame = 0;
   if (const char* sw = std::getenv("EREBUS_SWAP_AT")) swapAtFrame = std::atoi(sw);
@@ -380,6 +399,24 @@ int main(int argc, char** argv) {
   // Points into Station's own crew list, which outlives every frame.
   const Crew::Person* talkingTo = nullptr;
   int talkIndex = 0;
+  // A crew member's desk: their bounties and their own service. Another
+  // overlay, like the kit screen, opened when a conversation ends.
+  Post post;
+  // Who you have already heard out this session. Walking up to them again
+  // goes straight to the desk — the third time through Voss's speech about
+  // plating is not characterisation, it is a queue.
+  std::set<std::string> heardOut;
+  // A bounty that came good on the last mission, said wherever you land.
+  std::string bountyNote;
+  float bountyNoteT = 0.0f;
+  // Whether there is a ship to fly. EREBUS_SKIP_TUTORIAL stands in for one:
+  // it is the headless suite's "a record that is past all that", and most of
+  // the suite is about flying.
+  auto canFly = [&]() { return profile.hasShip() || skipTutorial; };
+  // Whether a crew member has a desk at all: a service, or a board.
+  auto hasPost = [&](const CrewDef* def) {
+    return def && (def->shop != CrewShop::None || !hubContent.bountyIds(def->id).empty());
+  };
 
   // Arriving at a hub. Rebuilding the level is not free, so it only happens
   // when the place actually changes — which, over a record's life, is twice:
@@ -392,10 +429,50 @@ int main(int argc, char** argv) {
     }
     stationLayout = layout;
     station.enter(camera);
+    // EREBUS_STATION_AT places you on arrival here too, not only on docking:
+    // Kourou is reached by resuming a record, not by flying to it.
+    if (stationAt) {
+      float ax = 0.0f, ay = 0.0f, az = 0.0f;
+      if (std::sscanf(stationAt, "%f,%f,%f", &ax, &ay, &az) == 3) {
+        station.placeAt(camera, glm::vec3(ax, ay, az), stationYaw);
+      }
+    }
     state = AppState::Station;
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     mouseCaptured = true;
     firstMouse = true;
+  };
+
+  // Somebody's counter in the hub: the quartermaster's rack, the flight
+  // line, a contracts board — narrowed to what that one person carries.
+  auto openCounter = [&](const CrewDef* def) {
+    hub.init(hubContent, profile);
+    hub.restrictStock(def->stock);
+    // Shaw keeps the side work; Kaur keeps the ark. Opening the hub on the
+    // right part of the list is the whole difference between "talk to the
+    // right person" and "read the whole board again".
+    if (def->shop == CrewShop::Contracts) hub.preselectFirstSideContract();
+    else if (missionIdGiven) hub.preselectMission(missionId);
+    hub.setFocus(def->shop == CrewShop::Gear ? Hub::Focus::Gear : Hub::Focus::Route);
+    hub.setHost(def->name, def->title, def->colour);
+    launchedFromStation = true;
+    state = AppState::Hub;
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    mouseCaptured = false;
+  };
+
+  // The flight line will not open for an unrated record. Hale says so in
+  // her own lines; this is the half that means it.
+  auto refusesRoute = [&](const CrewDef* def) {
+    return def->shop == CrewShop::Route && station.layout() == "kourou" &&
+           !earthProgrammeDone(hubContent, profile);
+  };
+
+  auto openPost = [&](const CrewDef* def) {
+    post.open(hubContent, profile, *def, refusesRoute(def));
+    station.setInputFrozen(true);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    mouseCaptured = false;
   };
 
   // Everything that has to happen once a record is settled on, whether it
@@ -403,6 +480,16 @@ int main(int argc, char** argv) {
   // being written twice, because the two paths diverging is exactly how a
   // freshly created record would end up in space with no gear.
   auto enterAfterSlot = [&]() {
+    // A record that finished the campaign before ships were issued for it
+    // is issued one now, rather than never.
+    {
+      std::string issued;
+      if (settleCampaign(profile, hubContent, &issued)) {
+        ProfileStore::save(profile, savePath);
+        bountyNote = "SHIP ISSUED - " + issued + " - THE AIRLOCK ON DECK A IS OPEN";
+        bountyNoteT = 8.0f;
+      }
+    }
     hub.init(hubContent, profile);
     if (missionIdGiven) hub.preselectMission(missionId);
 
@@ -429,6 +516,13 @@ int main(int argc, char** argv) {
     // mission-exit path enforces.
     if (!skipSpace && !skipHub && !skipTutorial && !earthProgrammeDone(hubContent, profile)) {
       enterStation("kourou");
+      return;
+    }
+
+    // Off Earth but not yet rated for a ship: the ark is flown from Kaur's
+    // flight deck, on the Cradle's transport, and you start on your feet.
+    if (!skipSpace && !skipHub && !skipTutorial && !profile.hasShip()) {
+      enterStation("cradle");
       return;
     }
 
@@ -584,6 +678,82 @@ int main(int argc, char** argv) {
       continue;
     }
 
+    // ---- somebody's desk. Opened from the station when a conversation ends,
+    // and the station keeps running under it with its input frozen.
+    if (post.isOpen() && state == AppState::Station) {
+      const char* postScript = nullptr;
+      if (postScriptPos < postScriptTokens.size() && frame % 10 == 0) {
+        postScript = postScriptTokens[postScriptPos++].c_str();
+      }
+      // The scripted E keeps pulsing at the desk only when no script is
+      // driving it; a run that writes its own keys should get only those.
+      const bool pulse = forceEngage && postScriptTokens.empty() && (frame % 16 < 8);
+      const Post::Result r = post.update(window, postScript, pulse);
+
+      glfwGetFramebufferSize(window, &width, &height);
+      station.setInputFrozen(true);
+      station.update(window, camera, dt, ScriptedInput{});
+      renderer.renderFrame(station, camera, (float)now, dt);
+      hud.drawPost(width, height, hubContent, profile, post);
+
+      if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
+        FILE* f = std::fopen(logStatePath, "w");
+        if (f) {
+          std::string active;
+          for (const Profile::ActiveBounty& b : profile.bounties) {
+            if (!active.empty()) active += ",";
+            active += "\"" + b.id + "\":" + std::to_string(b.progress);
+          }
+          std::fprintf(f,
+                       "{\"appState\":\"post\",\"frame\":%d,\"host\":\"%s\",\"tab\":\"%s\","
+                       "\"chits\":%d,\"xp\":%d,\"bounties\":{%s},\"rows\":%d,"
+                       "\"upgrades\":%d,\"notice\":\"%s\"}\n",
+                       frame + 1, post.host() ? post.host()->id.c_str() : "",
+                       post.tab() == Post::Tab::Service ? "service" : "bounties",
+                       profile.chits, profile.xp, active.c_str(),
+                       post.tab() == Post::Tab::Service ? post.serviceRows()
+                                                        : (int)post.bounties().size(),
+                       (int)profile.upgrades.size(), post.notice().c_str());
+          std::fclose(f);
+        }
+      }
+
+      if (r != Post::Result::None) {
+        // A bounty pays experience, and experience can be a promotion. Settled
+        // on leaving the desk so it is announced where you are standing,
+        // rather than after a mission you have not flown yet.
+        {
+          std::string promo;
+          int paid = 0;
+          const int nowRank = settleRank(profile, hubContent, &promo, &paid);
+          if (!promo.empty() && nowRank >= 0) {
+            promotedTo = promo;
+            promotedRank = &hubContent.ranks()[(size_t)nowRank];
+            stipendPaid = paid;
+            promotionT = 6.0f;
+          }
+        }
+        ProfileStore::save(profile, savePath);
+        station.setInputFrozen(false);
+        // The key that closed it is still down, and the station reads E and
+        // Escape on their own edges.
+        prevEngageKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS || pulse;
+        prevTalkEsc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+        if (r == Post::Result::OpenCounter && post.host()) {
+          openCounter(post.host());
+        } else {
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+          mouseCaptured = true;
+          firstMouse = true;
+        }
+      }
+
+      frame++;
+      if (finishFrame()) break;
+      glfwSwapBuffers(window);
+      continue;
+    }
+
     if (state == AppState::SlotSelect) {
       auto edge = [&](int key, bool& prev) {
         bool down = glfwGetKey(window, key) == GLFW_PRESS;
@@ -712,6 +882,10 @@ int main(int argc, char** argv) {
         }
       }
 
+      // Whatever is on the pad with your name on it. Read every frame rather
+      // than at undock, because the shipwright can change it from inside the
+      // Cradle and docking is not the only way back out here.
+      space.setShip(hubContent.ship(profile.equippedShip));
       bool boost = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
       space.update(window, camera, dt, boost, forceForward);
 
@@ -755,7 +929,7 @@ int main(int argc, char** argv) {
             mouseCaptured = true;
             firstMouse = true;
           }
-        } else if (!target->missionId.empty()) {
+        } else if (!target->missionId.empty() && space.withinReach(*target)) {
           if (game.init(contentDir, target->missionId, profile)) {
             gameEverStarted = true;
             launchedFromStation = false;   // you dropped from orbit, not off the flight deck
@@ -779,7 +953,17 @@ int main(int argc, char** argv) {
         ss.nearestName = near->name;
         ss.isStation = near->isStation;
         ss.missionCleared = !near->missionId.empty() && profile.hasCompleted(near->missionId);
+        if (!space.withinReach(*near)) {
+          ss.outOfReach = true;
+          const Space::Body* home = nullptr;
+          for (const Space::Body& b : space.bodies()) if (b.isStation) home = &b;
+          const int need = (int)std::lround(glm::length(near->pos - (home ? home->pos : glm::vec3(0.0f))));
+          ss.reachNeeded = "NEEDS " + std::to_string(need) + " REACH - YOURS IS " +
+                           std::to_string(space.ship() ? (int)std::lround(space.ship()->reach) : 0) +
+                           " - SEE THE SHIPWRIGHT";
+        }
       }
+      if (space.ship()) ss.shipName = space.ship()->name;
       ss.nearestDistance = space.nearestDistance();
       ss.inRange = space.inEngageRange();
       ss.speed = space.speed();
@@ -845,25 +1029,9 @@ int main(int argc, char** argv) {
           if (talkIndex >= (int)talkingTo->def->say.size()) {
             const CrewDef* def = talkingTo->def;
             talkingTo = nullptr;
-            // The flight line will not open for an unrated record. She says
-            // so in her own lines; this is the half that means it.
-            const bool refuses = def->shop == CrewShop::Route &&
-                                 station.layout() == "kourou" &&
-                                 !earthProgrammeDone(hubContent, profile);
-            if (def->shop != CrewShop::None && !refuses) {
-              hub.init(hubContent, profile);
-              // Shaw keeps the side work; Kaur keeps the ark. Opening the hub
-              // on the right part of the list is the whole difference between
-              // "talk to the right person" and "read the whole board again".
-              if (def->shop == CrewShop::Contracts) hub.preselectFirstSideContract();
-              else if (missionIdGiven) hub.preselectMission(missionId);
-              hub.setFocus(def->shop == CrewShop::Gear ? Hub::Focus::Gear : Hub::Focus::Route);
-              hub.setHost(def->name, def->title, def->colour);
-              launchedFromStation = true;
-              state = AppState::Hub;
-              glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-              mouseCaptured = false;
-            }
+            heardOut.insert(def->id);
+            // The end of the conversation is the front of their desk.
+            if (hasPost(def)) openPost(def);
           }
         }
       } else if (ePressed && term && term->id == "pad") {
@@ -872,6 +1040,17 @@ int main(int argc, char** argv) {
         // which on the ground is the only way out there is.
         ProfileStore::save(profile, savePath);
         hub.init(hubContent, profile);
+        // The pad flies what Kourou flies: the programme, and Dispatch's
+        // contracts on this continent. Not the ark, and not another world.
+        {
+          std::vector<std::string> padStock;
+          for (const char* who : {"hale", "teal"}) {
+            if (const CrewDef* c = hubContent.crew(who)) {
+              padStock.insert(padStock.end(), c->stock.begin(), c->stock.end());
+            }
+          }
+          hub.restrictStock(padStock);
+        }
         hub.setFocus(Hub::Focus::Route);
         hub.setHost("THE PAD", "FLIGHT LINE - SELECT A DEPLOYMENT", term->colour);
         launchedFromStation = true;
@@ -880,7 +1059,7 @@ int main(int argc, char** argv) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         mouseCaptured = false;
       } else if (((ePressed && term && term->id == "airlock") || qPressed) &&
-                 station.layout() != "kourou") {
+                 station.layout() != "kourou" && canFly()) {
         // Undocking is a thing you do from orbit. On the ground Q does
         // nothing, because there is nothing parked outside with your name on
         // it until the programme is finished.
@@ -889,16 +1068,20 @@ int main(int argc, char** argv) {
         state = AppState::Space;
         talkingTo = nullptr;
         prevEngageKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
+      } else if (ePressed && person && heardOut.count(person->def->id) && hasPost(person->def)) {
+        openPost(person->def);
       } else if (ePressed && person && !person->def->say.empty()) {
         talkingTo = person;
         talkIndex = 0;
+      } else if (ePressed && person && hasPost(person->def)) {
+        openPost(person->def);
       }
 
       glfwGetFramebufferSize(window, &width, &height);
       Hud::StationState ss;
       float py = station.player().position.y;
       ss.title = station.title();
-      ss.canUndock = station.layout() != "kourou";
+      ss.canUndock = station.layout() != "kourou" && canFly();
       if (station.layout() == "kourou") {
         ss.deck = py > 3.5f ? "GALLERY - BRIEFING AND STORES"
                             : station.subtitle();
@@ -913,6 +1096,11 @@ int main(int argc, char** argv) {
         ss.terminalColour = term->colour;
         ss.terminalAction = term->id == "airlock" ? "UNDOCK"
                            : term->id == "pad" ? "DEPLOY" : "USE";
+        if (term->id == "airlock" && !canFly()) {
+          // Nothing on the other side of it with your name on it yet.
+          ss.terminalLine = "No ship issued. Finish the campaign - THE CONDUCTOR - and one will be.";
+          ss.terminalAction = "NOTHING. IT IS SEALED";
+        }
       } else if (person) {
         ss.terminalName = person->def->name;
         ss.terminalLine = person->def->line;
@@ -926,7 +1114,11 @@ int main(int argc, char** argv) {
         ss.talkIndex = talkIndex;
         ss.talkCount = (int)talkingTo->def->say.size();
         ss.talkColour = talkingTo->def->colour;
+        ss.talkOpensPost = hasPost(talkingTo->def);
       }
+      ss.bountyNote = bountyNote;
+      ss.bountyNoteT = bountyNoteT;
+      bountyNoteT = std::max(0.0f, bountyNoteT - dt);
       // Nameplates need the same matrices the scene was drawn with, so they
       // sit on the people rather than near them.
       ss.viewProj = renderer.lastViewProj();
@@ -938,6 +1130,12 @@ int main(int argc, char** argv) {
         np.name = c.def->name;
         np.title = c.def->title;
         np.colour = c.def->colour;
+        if (giverHasReady(profile, hubContent, c.def->id)) {
+          np.flag = "BOUNTY READY";
+          np.flagReady = true;
+        } else if (giverHasNew(profile, hubContent, c.def->id)) {
+          np.flag = "NEW WORK";
+        }
         ss.nameplates.push_back(np);
       }
       hud.drawStation(width, height, ss);
@@ -1007,10 +1205,20 @@ int main(int argc, char** argv) {
       if (logStatePath && frame + 1 == maxFrames && maxFrames > 0) {
         FILE* f = std::fopen(logStatePath, "w");
         if (f) {
+          // What the counter is carrying, so a check can tell Ondo's rack
+          // from Voss's and Kaur's route from Hale's.
+          auto joined = [](const std::vector<std::string>& v) {
+            std::string out;
+            for (const std::string& id : v) out += (out.empty() ? "\"" : ",\"") + id + "\"";
+            return out;
+          };
           std::fprintf(f, "{\"appState\":\"hub\",\"frame\":%d,\"chits\":%d,\"equippedWeapon\":\"%s\","
-                          "\"equippedArmor\":\"%s\",\"equippedCosmetic\":\"%s\",\"selectedMission\":\"%s\"}\n",
+                          "\"equippedArmor\":\"%s\",\"equippedCosmetic\":\"%s\",\"selectedMission\":\"%s\","
+                          "\"weapons\":[%s],\"missions\":[%s],\"host\":\"%s\"}\n",
                        frame + 1, profile.chits, profile.equippedWeapon.c_str(), profile.equippedArmor.c_str(),
-                       profile.equippedCosmetic.c_str(), hub.selectedMission().c_str());
+                       profile.equippedCosmetic.c_str(), hub.selectedMission().c_str(),
+                       joined(hub.weaponIds()).c_str(), joined(hub.missionIds()).c_str(),
+                       hub.hostName().c_str());
           std::fclose(f);
         }
       }
@@ -1276,13 +1484,37 @@ int main(int argc, char** argv) {
           // carried the record past two rungs is promoted twice and paid for
           // both. Done here, at the one point every mission leaves through,
           // so quitting a debrief pays exactly what finishing it does.
-          profile.addXp(game.xpUnbanked());
+          creditXp(profile, hubContent, game.xpUnbanked());
           game.bankXp();
+          // The end of the campaign: Strider Second Class, and a ship. Settled
+          // before the ladder so the promotion it causes is announced and paid
+          // like any other.
+          std::string shipIssued;
+          const bool issuedShip = settleCampaign(profile, hubContent, &shipIssued);
           int nowRank = settleRank(profile, hubContent, &promotedTo, &stipendPaid);
           promotedRank = (!promotedTo.empty() && nowRank >= 0)
                              ? &hubContent.ranks()[(size_t)nowRank]
                              : nullptr;
           promotionT = promotedTo.empty() ? 0.0f : 6.0f;
+          // ...and the bounties, from the same one exit, for the same reason.
+          {
+            const std::vector<std::string> done = applyTally(profile, hubContent, game.tally());
+            if (!done.empty()) {
+              const BountyDef* b = hubContent.bounty(done.front());
+              const CrewDef* giver = b ? hubContent.crew(b->giver) : nullptr;
+              std::string who = giver ? giver->name : std::string("THEM");
+              bountyNote = done.size() == 1
+                               ? "BOUNTY DONE - " + (b ? b->name : done.front()) + " - SEE " + who
+                               : std::to_string(done.size()) + " BOUNTIES DONE - CHECK THE NAMEPLATES";
+              for (char& ch : bountyNote) ch = (char)std::toupper((unsigned char)ch);
+              bountyNoteT = 7.0f;
+            }
+            if (issuedShip) {
+              bountyNote = "SHIP ISSUED - " + shipIssued + " - THE AIRLOCK ON DECK A IS OPEN";
+              for (char& ch : bountyNote) ch = (char)std::toupper((unsigned char)ch);
+              bountyNoteT = 9.0f;
+            }
+          }
           ProfileStore::save(profile, savePath);
           game.destroy();
           hub.init(hubContent, profile);   // refresh: reward chits / new completion just landed
@@ -1306,7 +1538,7 @@ int main(int argc, char** argv) {
               mouseCaptured = true;
               firstMouse = true;
             }
-          } else if (launchedFromStation || justFinishedTutorial) {
+          } else if (launchedFromStation || justFinishedTutorial || !canFly()) {
             // You launched off a flight deck, so you come back to it. Which
             // deck depends on whether the programme is behind you: until it
             // is, every mission ends at Kourou.

@@ -7,6 +7,7 @@
 #include "Hostile.h"
 #include "Camera.h"
 #include "Profile.h"
+#include "Bounty.h"
 #include "Site.h"
 #include "Cutscene.h"
 #include "Scene.h"
@@ -181,6 +182,10 @@ public:
   int xpUnbanked() const { return xpEarned_ - xpBanked_; }
   void bankXp() { xpBanked_ = xpEarned_; }
 
+  // What this mission did, for the bounties on the record. Read once, at the
+  // mission-exit point, by the same code that banks experience.
+  const MissionTally& tally() const { return tally_; }
+
   int harnessLeft() const { return harnessLeft_; }
   int harnessMax() const { return harnessMax_; }
   // Seconds left on the ground before you are back up, or 0 when you are up.
@@ -200,7 +205,9 @@ public:
   // is what the ability is for.
   bool useAbility();
   float abilityCooldown() const { return abilityCool_; }
-  float abilityCooldownMax() const { return class_ ? class_->abilityCooldown : kAbilityCooldown; }
+  float abilityCooldownMax() const {
+    return (class_ ? class_->abilityCooldown : kAbilityCooldown) * upgrades_.abilityMul;
+  }
   // What to call it on the HUD, and the doctrine behind it. Null when the
   // record predates classes.
   const ClassDef* playerClass() const { return class_; }
@@ -304,6 +311,12 @@ private:
   bool inputFrozen_ = false;
   int xpEarned_ = 0, xpBanked_ = 0;
   int harnessMax_ = 3, harnessLeft_ = 3;
+  MissionTally tally_;
+  // The record's upgrades, summed once at init. Every place a weapon is
+  // loaded from its def goes through applyDef with these, so a drill bought
+  // from Bright applies to a rifle picked up off the floor as well as to the
+  // one you deployed with.
+  UpgradeTotals upgrades_;
   float downT_ = 0.0f;              // counts down while you are on the ground
   glm::vec3 fellAt_{0.0f};          // where you went down
   TutorialStep tutorialStep_ = TutorialStep::Move;

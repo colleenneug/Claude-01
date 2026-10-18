@@ -59,7 +59,13 @@ struct CutsceneShot {
 // whose screens this build does not have: the appraiser has nothing to break
 // down and the muster officer has nobody to muster, and they say so rather
 // than opening something that would do nothing.
-enum class CrewShop { None, Gear, Route, Contracts };
+// What a crew member's post does beyond talking. The first four open the hub
+// on the relevant half; the last two are services only that person offers:
+//   Upgrades  — permanent improvements to your record, sold from their own
+//               line (content/upgrades/*.cfg with `giver = <them>`)
+//   Appraisal — buys back gear you own and are not using, for chits
+//   Shipyard  — ships, from content/ships, once there is a ship to be had
+enum class CrewShop { None, Gear, Route, Contracts, Upgrades, Appraisal, Shipyard };
 
 struct CrewDef {
   std::string id, name, title, line;
@@ -73,6 +79,65 @@ struct CrewDef {
   bool desk = true;     // a lit post to stand behind, so they read as a station
   bool board = false;   // ...and a wall of lit slates behind it, for the contracts post
   std::vector<std::string> say;
+
+  // What their own counter carries, as content ids. Empty means everything,
+  // which is what the hub showed when there was one quartermaster. With two
+  // quartermasters and two contract boards, "everything" made them the same
+  // person twice; a stock list is what makes Ondo's rack Ondo's.
+  std::vector<std::string> stock;
+  // The heading of their service on the post screen — DRILLS, APPRAISAL,
+  // ARMOURY. Defaults from the shop kind when left out.
+  std::string serviceName;
+};
+
+// content/bounties/<id>.cfg — a job one particular person gives you.
+//
+// Bounties are carried across missions, not completed inside one: you take it
+// from whoever posted it, the work accumulates from every mission you fly,
+// and you go back to *them* to be paid. That last part is the point. It is
+// what turns a hub full of people into a hub full of reasons to walk over to
+// somebody.
+//
+// `goal` says what counts, and `target` narrows it:
+//   kills         any hostile                    (target unused)
+//   kills_of      one archetype                  target = thrall
+//   headshots     kills that were headshots      (target unused)
+//   weapon_kills  kills with one silhouette      target = shotgun | pistol | ...
+//   ability       field ability uses             (target unused)
+//   clear         missions cleared               target = a mission id, or empty for any
+//   flawless      cleared without going down     target = a mission id, or empty for any
+enum class BountyGoal { Kills, KillsOf, Headshots, WeaponKills, Ability, Clear, Flawless };
+
+struct BountyDef {
+  std::string id, name, giver, blurb;
+  BountyGoal goal = BountyGoal::Kills;
+  std::string target;
+  int count = 10;
+  int rewardChits = 100;
+  int rewardXp = 200;
+  // Optional: "weapon:<id>", "armor:<id>" or "cosmetic:<id>". Granted as
+  // owned on turn-in, rank gate or not — a bounty that pays in gear is how a
+  // record gets something early by earning it rather than by waiting.
+  std::string rewardItem;
+  std::string rankRequired;
+  bool repeatable = false;
+};
+
+// content/upgrades/<id>.cfg — a permanent improvement to a record, sold by one
+// person. Lines are tiered with `requires`: the second drill needs the first.
+//
+// `amount` means a fraction for the multiplicative stats (reload is 0.08 =
+// 8% faster) and a flat number for the additive ones (hp is +15, harness is
+// +1 charge).
+enum class UpgradeStat { Reload, Reserve, Spread, Hp, Harness, Xp, AbilityCooldown };
+
+struct UpgradeDef {
+  std::string id, name, giver, blurb;
+  UpgradeStat stat = UpgradeStat::Reload;
+  float amount = 0.1f;
+  int cost = 200;
+  std::string rankRequired;
+  std::string prerequisite;   // an upgrade id that must be owned first (`requires =`)
 };
 
 // When a comms beat fires. The browser build stages its story the same way
@@ -184,6 +249,31 @@ struct RankDef {
   int stipend = 0;      // chits paid once, on promotion
   std::string blurb;    // one line of who you are at this rank
   std::string unlock;   // one line of what it opens up
+  // A rank that experience alone cannot reach. `gate = campaign` means the
+  // whole campaign, Block D to THE CONDUCTOR, has to be behind the record
+  // first; until it is, experience stops one point short of this rung and
+  // finishing the campaign puts the record on it. See creditXp in Profile.h.
+  std::string gate;
+};
+
+// content/ships/<id>.cfg — something to fly. A record has none until the
+// campaign is done; then the one marked `starter = true` is issued, and the
+// rest are bought from the shipwright at the Cradle.
+//
+// `reach` is how far from the Cradle the ship can make a drop, in the same
+// units as the planets' positions. It is what makes a second ship more than
+// a faster first one: the far worlds, and whatever an expansion puts further
+// out, are only reachable in something that can get there.
+struct ShipDef {
+  std::string id, name, blurb;
+  int cost = 0;
+  std::string rankRequired;
+  bool starter = false;
+  float speed = 900.0f;      // cruise, units per second
+  float boost = 2.6f;        // multiplier while Shift is held
+  float handling = 1.6f;     // how quickly velocity turns to the stick
+  float reach = 4500.0f;
+  glm::vec3 colour{0.6f, 0.85f, 1.0f};   // the flight HUD's accent
 };
 
 // content/weapons/<id>.cfg — equipping one (see Game::equipWeapon) sets
@@ -306,6 +396,15 @@ public:
   const ClassDef* playerClass(const std::string& id) const;
   const CrewDef* crew(const std::string& id) const;
   const RankDef* rank(const std::string& id) const;
+  const ShipDef* ship(const std::string& id) const;
+  // Every ship, cheapest first, so the shipyard reads as a ladder.
+  std::vector<std::string> shipIds() const;
+  const BountyDef* bounty(const std::string& id) const;
+  const UpgradeDef* upgrade(const std::string& id) const;
+  // A person's bounties or upgrades, in file-name order so a board reads the
+  // same every visit. Empty `giver` returns everyone's.
+  std::vector<std::string> bountyIds(const std::string& giver = "") const;
+  std::vector<std::string> upgradeIds(const std::string& giver = "") const;
 
   // The ladder, lowest first. Sorted by xp, so the order is a property of
   // the content rather than of the filesystem.
@@ -346,4 +445,7 @@ private:
   std::unordered_map<std::string, ClassDef> classes_;
   std::unordered_map<std::string, CrewDef> crew_;
   std::vector<RankDef> rankLadder_;   // sorted by xp, lowest first
+  std::unordered_map<std::string, BountyDef> bounties_;
+  std::unordered_map<std::string, ShipDef> ships_;
+  std::unordered_map<std::string, UpgradeDef> upgrades_;
 };

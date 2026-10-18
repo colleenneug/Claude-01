@@ -105,6 +105,15 @@ public:
   }
   const Body* engageTarget() const { return inEngageRange() ? &bodies_[nearest_] : nullptr; }
 
+  // The ship you are flying (content/ships). Null flies the old defaults,
+  // which is what a headless run with no record behind it gets.
+  void setShip(const ShipDef* ship);
+  const ShipDef* ship() const { return ship_; }
+  // Whether the ship can make a drop on `b`: its distance from the Cradle,
+  // against the ship's reach. The Cradle itself is always in reach — it is
+  // where every ship comes home to.
+  bool withinReach(const Body& b) const;
+
   float speed() const { return glm::length(velocity_); }
   float maxSpeed() const { return maxSpeed_; }
   const glm::vec3& shipPosition() const { return position_; }
@@ -124,6 +133,10 @@ private:
   glm::vec3 sunDirection_{glm::normalize(glm::vec3(-0.45f, -0.25f, -0.86f))};
 
   float maxSpeed_ = 900.0f;
+  float boost_ = 2.6f;
+  float handling_ = 1.6f;
+  float reach_ = 1e9f;
+  const ShipDef* ship_ = nullptr;
   int nearest_ = -1;
   float nearestDist_ = 0.0f;
 

@@ -31,6 +31,13 @@ std::vector<std::string> splitWs(const std::string& s) {
   return out;
 }
 
+// "a, b, c" or "a b c" — content lists are written either way.
+std::vector<std::string> splitList(const std::string& s) {
+  std::string spaced = s;
+  for (char& ch : spaced) if (ch == ',') ch = ' ';
+  return splitWs(spaced);
+}
+
 glm::vec3 parseVec3(const std::string& s, glm::vec3 fallback) {
   auto parts = splitWs(s);
   // also accept comma-separated "r,g,b"
@@ -414,10 +421,15 @@ CrewDef parseCrew(const std::string& id, const fs::path& path) {
       else if (k == "station") c.station = v;
       else if (k == "desk") c.desk = (v == "true" || v == "1");
       else if (k == "board") c.board = (v == "true" || v == "1");
+      else if (k == "stock") c.stock = splitList(v);
+      else if (k == "service") c.serviceName = v;
       else if (k == "shop") {
         if (v == "gear") c.shop = CrewShop::Gear;
         else if (v == "route") c.shop = CrewShop::Route;
         else if (v == "contracts") c.shop = CrewShop::Contracts;
+        else if (v == "upgrades") c.shop = CrewShop::Upgrades;
+        else if (v == "appraisal") c.shop = CrewShop::Appraisal;
+        else if (v == "shipyard") c.shop = CrewShop::Shipyard;
         else if (v == "none") c.shop = CrewShop::None;
         else {
           std::fprintf(stderr, "[Content] %s: unknown shop '%s', treated as none\n",
@@ -453,12 +465,126 @@ RankDef parseRank(const std::string& id, const fs::path& path) {
       else if (k == "stipend") r.stipend = std::stoi(v);
       else if (k == "blurb") r.blurb = v;
       else if (k == "unlock") r.unlock = v;
+      else if (k == "gate") r.gate = v;
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());
     }
   }
   return r;
+}
+
+BountyDef parseBounty(const std::string& id, const fs::path& path) {
+  BountyDef b;
+  b.id = id;
+  b.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") b.name = v;
+      else if (k == "giver") b.giver = v;
+      else if (k == "blurb") b.blurb = v;
+      else if (k == "target") b.target = v;
+      else if (k == "count") b.count = std::max(1, std::stoi(v));
+      else if (k == "reward_chits") b.rewardChits = std::stoi(v);
+      else if (k == "reward_xp") b.rewardXp = std::stoi(v);
+      else if (k == "reward_item") b.rewardItem = v;
+      else if (k == "rank_required") b.rankRequired = v;
+      else if (k == "repeatable") b.repeatable = (v == "true" || v == "1");
+      else if (k == "goal") {
+        if (v == "kills") b.goal = BountyGoal::Kills;
+        else if (v == "kills_of") b.goal = BountyGoal::KillsOf;
+        else if (v == "headshots") b.goal = BountyGoal::Headshots;
+        else if (v == "weapon_kills") b.goal = BountyGoal::WeaponKills;
+        else if (v == "ability") b.goal = BountyGoal::Ability;
+        else if (v == "clear") b.goal = BountyGoal::Clear;
+        else if (v == "flawless") b.goal = BountyGoal::Flawless;
+        else {
+          std::fprintf(stderr, "[Content] %s: unknown goal '%s', treated as kills\n",
+                       path.string().c_str(), v.c_str());
+        }
+      }
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return b;
+}
+
+ShipDef parseShip(const std::string& id, const fs::path& path) {
+  ShipDef d;
+  d.id = id;
+  d.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") d.name = v;
+      else if (k == "blurb") d.blurb = v;
+      else if (k == "cost") d.cost = std::stoi(v);
+      else if (k == "rank_required") d.rankRequired = v;
+      else if (k == "starter") d.starter = (v == "true" || v == "1");
+      else if (k == "speed") d.speed = std::stof(v);
+      else if (k == "boost") d.boost = std::stof(v);
+      else if (k == "handling") d.handling = std::stof(v);
+      else if (k == "reach") d.reach = std::stof(v);
+      else if (k == "colour" || k == "color") d.colour = parseVec3(v, d.colour);
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return d;
+}
+
+UpgradeDef parseUpgrade(const std::string& id, const fs::path& path) {
+  UpgradeDef u;
+  u.id = id;
+  u.name = id;
+  std::ifstream f(path);
+  std::string raw;
+  while (std::getline(f, raw)) {
+    std::string line = stripComment(raw);
+    if (line.empty()) continue;
+    std::string k, v;
+    if (!keyValue(line, k, v)) continue;
+    try {
+      if (k == "name") u.name = v;
+      else if (k == "giver") u.giver = v;
+      else if (k == "blurb") u.blurb = v;
+      else if (k == "amount") u.amount = std::stof(v);
+      else if (k == "cost") u.cost = std::stoi(v);
+      else if (k == "rank_required") u.rankRequired = v;
+      else if (k == "requires") u.prerequisite = v;
+      else if (k == "stat") {
+        if (v == "reload") u.stat = UpgradeStat::Reload;
+        else if (v == "reserve") u.stat = UpgradeStat::Reserve;
+        else if (v == "spread") u.stat = UpgradeStat::Spread;
+        else if (v == "hp") u.stat = UpgradeStat::Hp;
+        else if (v == "harness") u.stat = UpgradeStat::Harness;
+        else if (v == "xp") u.stat = UpgradeStat::Xp;
+        else if (v == "ability_cooldown") u.stat = UpgradeStat::AbilityCooldown;
+        else {
+          std::fprintf(stderr, "[Content] %s: unknown stat '%s', treated as reload\n",
+                       path.string().c_str(), v.c_str());
+        }
+      }
+    } catch (...) {
+      std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
+                   path.string().c_str(), k.c_str(), v.c_str());
+    }
+  }
+  return u;
 }
 
 }  // namespace
@@ -555,18 +681,130 @@ bool Content::loadAll(const std::string& dir) {
               [](const RankDef& a, const RankDef& b) { return a.xp < b.xp; });
   }
 
+  fs::path bountyDir = root / "bounties";
+  if (fs::exists(bountyDir)) {
+    for (auto& entry : fs::directory_iterator(bountyDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      bounties_[id] = parseBounty(id, entry.path());
+    }
+  }
+
+  fs::path shipDir = root / "ships";
+  if (fs::exists(shipDir)) {
+    for (auto& entry : fs::directory_iterator(shipDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      ships_[id] = parseShip(id, entry.path());
+    }
+  }
+
+  fs::path upgradeDir = root / "upgrades";
+  if (fs::exists(upgradeDir)) {
+    for (auto& entry : fs::directory_iterator(upgradeDir)) {
+      if (entry.path().extension() != ".cfg") continue;
+      std::string id = entry.path().stem().string();
+      upgrades_[id] = parseUpgrade(id, entry.path());
+    }
+  }
+
+  // Cross-references, checked once at load. A bounty whose giver was renamed
+  // is a bounty nobody can ever hand you, and the only symptom in play is an
+  // absence — so say it here, where somebody editing content will see it.
+  for (auto& kv : bounties_) {
+    const BountyDef& b = kv.second;
+    if (!crew_.count(b.giver)) {
+      std::fprintf(stderr, "[Content] bounty '%s': giver '%s' is not a crew member\n",
+                   b.id.c_str(), b.giver.c_str());
+    }
+    if (b.goal == BountyGoal::KillsOf && !enemies_.count(b.target)) {
+      std::fprintf(stderr, "[Content] bounty '%s': no enemy '%s'\n", b.id.c_str(), b.target.c_str());
+    }
+    if ((b.goal == BountyGoal::Clear || b.goal == BountyGoal::Flawless) && !b.target.empty() &&
+        !missions_.count(b.target)) {
+      std::fprintf(stderr, "[Content] bounty '%s': no mission '%s'\n", b.id.c_str(), b.target.c_str());
+    }
+  }
+  for (auto& kv : upgrades_) {
+    const UpgradeDef& u = kv.second;
+    if (!crew_.count(u.giver)) {
+      std::fprintf(stderr, "[Content] upgrade '%s': giver '%s' is not a crew member\n",
+                   u.id.c_str(), u.giver.c_str());
+    }
+    if (!u.prerequisite.empty() && !upgrades_.count(u.prerequisite)) {
+      std::fprintf(stderr, "[Content] upgrade '%s': requires unknown upgrade '%s'\n",
+                   u.id.c_str(), u.prerequisite.c_str());
+    }
+  }
+  for (auto& kv : crew_) {
+    for (const std::string& id : kv.second.stock) {
+      const bool known = weapons_.count(id) || armor_.count(id) || cosmetics_.count(id) ||
+                         missions_.count(id) || id.rfind("track:", 0) == 0;
+      if (!known) {
+        std::fprintf(stderr, "[Content] crew '%s': stock names unknown id '%s'\n",
+                     kv.first.c_str(), id.c_str());
+      }
+    }
+  }
+
   std::printf("[Content] loaded %zu enemy type(s), %zu mission(s), %zu weapon(s), "
               "%zu armor piece(s), %zu cosmetic(s), %zu planet(s), %zu class(es), "
-              "%zu crew, %zu rank(s) from %s\n",
+              "%zu crew, %zu rank(s), %zu bount(ies), %zu upgrade(s), %zu ship(s) from %s\n",
               enemies_.size(), missions_.size(), weapons_.size(), armor_.size(),
               cosmetics_.size(), planets_.size(), classes_.size(), crew_.size(),
-              rankLadder_.size(), dir.c_str());
+              rankLadder_.size(), bounties_.size(), upgrades_.size(), ships_.size(), dir.c_str());
   return true;
 }
 
 const RankDef* Content::rank(const std::string& id) const {
   for (const RankDef& r : rankLadder_) if (r.id == id) return &r;
   return nullptr;
+}
+
+const ShipDef* Content::ship(const std::string& id) const {
+  auto it = ships_.find(id);
+  return it == ships_.end() ? nullptr : &it->second;
+}
+
+std::vector<std::string> Content::shipIds() const {
+  std::vector<const ShipDef*> all;
+  for (auto& kv : ships_) all.push_back(&kv.second);
+  std::sort(all.begin(), all.end(), [](const ShipDef* a, const ShipDef* b) {
+    return a->cost != b->cost ? a->cost < b->cost : a->id < b->id;
+  });
+  std::vector<std::string> out;
+  for (const ShipDef* d : all) out.push_back(d->id);
+  return out;
+}
+
+const BountyDef* Content::bounty(const std::string& id) const {
+  auto it = bounties_.find(id);
+  return it == bounties_.end() ? nullptr : &it->second;
+}
+
+const UpgradeDef* Content::upgrade(const std::string& id) const {
+  auto it = upgrades_.find(id);
+  return it == upgrades_.end() ? nullptr : &it->second;
+}
+
+std::vector<std::string> Content::bountyIds(const std::string& giver) const {
+  std::vector<std::string> out;
+  for (auto& kv : bounties_) {
+    if (!giver.empty() && kv.second.giver != giver) continue;
+    out.push_back(kv.first);
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+std::vector<std::string> Content::upgradeIds(const std::string& giver) const {
+  std::vector<std::string> out;
+  for (auto& kv : upgrades_) {
+    if (!giver.empty() && kv.second.giver != giver) continue;
+    out.push_back(kv.first);
+  }
+  std::sort(out.begin(), out.end());
+  return out;
 }
 
 int Content::rankIndexForXp(int xp) const {

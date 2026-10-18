@@ -57,6 +57,16 @@ checkfile() {  # checkfile <name> <file> <grep -E pattern>
   fi
 }
 
+checkabsent() {  # checkabsent <name> <file> <grep -E pattern>
+  local name="$1" file="$2" pattern="$3"
+  if [ -f "$file" ] && ! grep -Eq "$pattern" "$file"; then
+    echo "  PASS $name"; PASS=$((PASS+1))
+  else
+    echo "  FAIL $name  ('$pattern' found in $(basename "$file"))"
+    FAIL=$((FAIL+1))
+  fi
+}
+
 # Flying to a world and landing on it drops you into that world's mission.
 # Keep the frame budget just past the landing: run it long enough and the
 # mission itself ends (the scripted pilot doesn't shoot back) and drops you
@@ -163,13 +173,126 @@ run "$OUT/voss.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
 check "the quartermaster opens the armoury" "$OUT/voss.json" \
       "s['appState'] == 'hub'"
 
-# ...and the ones with nothing to sell are a conversation and nothing else.
-# The Rook has no shop, so talking all the way through leaves you standing in
-# the concourse rather than opening a screen that would do nothing.
+# ...and everyone else has a desk of their own. The Rook's is appraisal: a
+# fresh record owns nothing worth buying back, and the screen says so rather
+# than offering to buy your service sidearm.
 run "$OUT/rook.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
     EREBUS_STATION_AT=-8,0,-13 EREBUS_STATION_YAW=-90 EREBUS_MAX_FRAMES=160
-check "a post with no shop is only a conversation" "$OUT/rook.json" \
-      "s['appState'] == 'station'"
+check "the appraiser's desk opens after the conversation" "$OUT/rook.json" \
+      "s['appState'] == 'post' and s['host'] == 'rook' and s['tab'] == 'service' and s['chits'] == 100"
+
+# Each counter carries its own stock. Voss's rack is not Ondo's, and Kaur's
+# route is the ark and nothing else.
+check "the orbital quartermaster carries his own rack" "$OUT/voss.json" \
+      "s['host'] == 'VOSS' and 'anvil' in s['weapons'] and 'kestrel' not in s['weapons']"
+check "the flight officer flies the ark and only the ark" "$OUT/kaur.json" \
+      "s['host'] == 'KAUR' and 'breach' in s['missions'] and 'earth_range' not in s['missions'] \
+       and 'patrol_dust_shelf' not in s['missions']"
+
+# THE ROUTE IS FLOWN IN ORDER. A fresh record standing at Kaur's counter can
+# see HARD DOCK and cannot launch it: the Earth programme comes first.
+run "$OUT/kaurlock.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=0,0,31 EREBUS_STATION_YAW=90 EREBUS_HUB_SCRIPT=launch,launch,launch \
+    EREBUS_MAX_FRAMES=170
+check "a locked sector cannot be launched" "$OUT/kaurlock.json" \
+      "s['appState'] == 'hub' and s['selectedMission'] == 'breach'"
+
+# BOUNTIES. Taken at the desk of whoever posted them...
+run "$OUT/odil.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=34.5,7,2 EREBUS_STATION_YAW=0 EREBUS_POST_SCRIPT=right,use \
+    EREBUS_MAX_FRAMES=200
+checkfile "a bounty is taken at its giver's desk" "$OUT/save-odil.txt" "^bounty odil_use_your_kit 0$"
+
+# ...counted across a mission...
+cat > "$OUT/save-tally.txt" <<'SEED'
+name = Operative
+chits = 100
+xp = 600
+rank_paid = 1
+class = bulwark
+equipped_weapon = maul_12
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_weapon maul_12
+owned_armor patrol_vest
+owned_cosmetic default
+completed tutorial_earth
+bounty teal_busy_week 0
+bounty shaw_by_the_head 0
+SEED
+run "$OUT/tally.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
+    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission breach
+checkfile "a mission's kills count towards a bounty" "$OUT/save-tally.txt" "^bounty teal_busy_week [1-9][0-9]*$"
+checkfile "...and only the kills it asks for" "$OUT/save-tally.txt" "^bounty shaw_by_the_head 0$"
+
+# ...and paid by the person who posted it. A ready bounty opens their desk on
+# the board instead of their service, and the scripted E turns it in.
+cat > "$OUT/save-turnin.txt" <<'SEED'
+name = Operative
+chits = 100
+xp = 600
+rank_paid = 1
+class = wraith
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_armor patrol_vest
+owned_cosmetic default
+bounty odil_use_your_kit 15
+SEED
+run "$OUT/turnin.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=34.5,7,2 EREBUS_STATION_YAW=0 EREBUS_MAX_FRAMES=200
+check "a finished bounty is paid at its giver's desk" "$OUT/turnin.json" \
+      "s['appState'] == 'post' and s['tab'] == 'bounties' and s['chits'] == 250 and s['xp'] == 820"
+checkfile "...once" "$OUT/save-turnin.txt" "^bounty_done odil_use_your_kit$"
+
+# Their own thing. Odil sells muster training, bought off the record's chits.
+cat > "$OUT/save-train.txt" <<'SEED'
+name = Operative
+chits = 1000
+xp = 600
+rank_paid = 1
+class = wraith
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_armor patrol_vest
+owned_cosmetic default
+SEED
+run "$OUT/train.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=34.5,7,2 EREBUS_STATION_YAW=0 EREBUS_POST_SCRIPT=use \
+    EREBUS_MAX_FRAMES=200
+checkfile "an upgrade is bought at its giver's desk" "$OUT/save-train.txt" "^upgrade odil_ability_1$"
+checkfile "...for its price" "$OUT/save-train.txt" "^chits = 600$"
+
+# ...and an upgrade does what it says in the field: CONDITIONING adds health.
+cat > "$OUT/save-hp.txt" <<'SEED'
+name = Operative
+chits = 100
+class = bulwark
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_armor patrol_vest
+owned_cosmetic default
+upgrade odil_hp_1
+SEED
+cp "$OUT/save-hp.txt" "$OUT/save-nohp.txt"
+sed -i '/^upgrade/d' "$OUT/save-nohp.txt"
+run "$OUT/hp.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_MAX_FRAMES=30 -- --mission patrol_dust_shelf
+run "$OUT/nohp.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_MAX_FRAMES=30 -- --mission patrol_dust_shelf
+if python3 -c "
+import json; a=json.load(open('$OUT/hp.json')); b=json.load(open('$OUT/nohp.json'))
+raise SystemExit(0 if abs(a['maxHp'] - b['maxHp'] - 15) < 0.01 else 1)"; then
+  echo "  PASS an upgrade applies in the field"; PASS=$((PASS+1))
+else
+  echo "  FAIL an upgrade applies in the field"; FAIL=$((FAIL+1))
+fi
 
 # A brand-new record starts on Earth, at the ground site, and is walked
 # through its kit. A record that has cleared anything at all goes straight up.
@@ -200,7 +323,7 @@ check "you start unarmed and end up issued" "$OUT/tutorial.json" \
 # ladder resolves that into a rung. Asserted on the run that already walked
 # the whole building rather than on one of its own.
 check "the block pays experience and a rank" "$OUT/tutorial.json" \
-      "s['xp'] >= 400 and s['careerXp'] >= 400 and s['rank'] == 'STRIDER THIRD CLASS'"
+      "s['xp'] >= 300 and s['careerXp'] >= 300 and s['rank'] in ('PROBATIONARY STRIDER', 'STRIDER THIRD CLASS')"
 
 # ...and a promotion pays its stipend, once. Seeded just under the second
 # rung — run() points at a save file per check and does not delete it, so
@@ -288,8 +411,11 @@ completed spine
 completed junction
 SEED
 run "$OUT/legacy.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
-check "a record already flying the ark keeps its ship" "$OUT/legacy.json" \
-      "s['appState'] == 'space'"
+# ...but it does not keep a ship it was never issued. Ships come at the end
+# of the campaign now, so a record halfway down the ark resumes on foot at
+# the Cradle, with Kaur's route still open where it left off.
+check "a record halfway down the ark is on foot at the Cradle" "$OUT/legacy.json" \
+      "s['appState'] == 'station' and s['layout'] == 'cradle'"
 
 # ...and its route list opens where it actually is, not on the tutorial it
 # never played.
@@ -390,6 +516,71 @@ run "$OUT/harness.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FORW
     EREBUS_MAX_FRAMES=2200 -- --mission tutorial_earth
 check "the harness stands you back up where you fell" "$OUT/harness.json" \
       "s['harness'] < 3 and s['playerHp'] > 0 and s['missionState'] == 'in_progress'"
+
+# THE END OF THE CAMPAIGN. Until it is done, experience stops one point short
+# of STRIDER SECOND CLASS however much a mission pays...
+cat > "$OUT/save-cap.txt" <<'SEED'
+name = Operative
+chits = 100
+xp = 4490
+rank_paid = 4
+class = bulwark
+equipped_weapon = maul_12
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon sidearm
+owned_weapon maul_12
+owned_armor patrol_vest
+owned_cosmetic default
+completed tutorial_earth
+SEED
+run "$OUT/cap.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
+    EREBUS_FORCE_ENGAGE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission breach
+checkfile "experience holds below second class until the campaign is done" "$OUT/save-cap.txt" "^xp = 4499$"
+
+# ...and finishing it, Block D to THE CONDUCTOR, makes the record a Strider
+# Second Class and issues its first ship, which puts it in space.
+{
+  sed -n '1,/^owned_cosmetic/p' "$OUT/save-cap.txt" | sed 's/^xp = .*/xp = 3200/'
+  for m in tutorial_earth earth_range earth_hangar earth_assembly earth_perimeter earth_launch \
+           breach spine junction counter aft promenade sunset greenhouse medbay ward reactor \
+           coolant choir deeper threshold conductor; do echo "completed $m"; done
+} > "$OUT/save-done.txt"
+run "$OUT/done.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
+check "the end of the campaign issues a ship" "$OUT/done.json" "s['appState'] == 'space'"
+checkfile "...the KITE" "$OUT/save-done.txt" "^owned_ship kite$"
+checkfile "...and second class" "$OUT/save-done.txt" "^xp = 4500$"
+
+# A record one sector short of the end has no ship, and the airlock is sealed.
+grep -v '^completed conductor$' "$OUT/save-done.txt" > "$OUT/save-almost.txt"
+run "$OUT/almost.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
+check "one sector short of the end is still on foot" "$OUT/almost.json" \
+      "s['appState'] == 'station' and s['layout'] == 'cradle'"
+checkabsent "...with no ship" "$OUT/save-almost.txt" "^owned_ship"
+
+# More ships, from the shipwright. A KITE cannot reach Karrash...
+sed -e 's/^xp = .*/xp = 4500/' -e 's/^chits = .*/chits = 1000/' "$OUT/save-done.txt" > "$OUT/save-kite.txt"
+echo "owned_ship kite" >> "$OUT/save-kite.txt"
+echo "equipped_ship = kite" >> "$OUT/save-kite.txt"
+cp "$OUT/save-kite.txt" "$OUT/save-kitefar.txt"
+run "$OUT/kitefar.json" EREBUS_SPACE_AUTOPILOT=karrash EREBUS_FORCE_FORWARD=1 \
+    EREBUS_FORCE_ENGAGE=1 EREBUS_MAX_FRAMES=600 EREBUS_SKIP_TUTORIAL=
+check "a KITE cannot make the drop on Karrash" "$OUT/kitefar.json" \
+      "s['appState'] == 'space' and s['nearest'].startswith('Karrash') and s['inRange']"
+cp "$OUT/save-kite.txt" "$OUT/save-kitenear.txt"
+run "$OUT/kitenear.json" EREBUS_SPACE_AUTOPILOT=glacius EREBUS_FORCE_FORWARD=1 \
+    EREBUS_FORCE_ENGAGE=1 EREBUS_MAX_FRAMES=600 EREBUS_SKIP_TUTORIAL=
+check "...but can make it on Glacius" "$OUT/kitenear.json" "s['appState'] == 'mission'"
+
+# ...and Mercer sells the next one up.
+cp "$OUT/save-kite.txt" "$OUT/save-yard.txt"
+run "$OUT/yard.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
+    EREBUS_STATION_AT=35.5,0,2 EREBUS_STATION_YAW=0 EREBUS_POST_SCRIPT=down,use \
+    EREBUS_MAX_FRAMES=200 EREBUS_SKIP_TUTORIAL=
+checkfile "the shipwright sells a second ship" "$OUT/save-yard.txt" "^owned_ship heron$"
+checkfile "...and you fly it" "$OUT/save-yard.txt" "^equipped_ship = heron$"
+checkfile "...for its price" "$OUT/save-yard.txt" "^chits = 100$"
 
 # Space renders without blowing up at either end of the quality ladder. The
 # proof is that the run got where it was flying: the tier switches shadow
