@@ -1345,7 +1345,6 @@ int main(int argc, char** argv) {
         // encounter when it is out of sight or out of reach. Without it a
         // headless run stands in the first room of a mission that is now a
         // few hundred metres long.
-        if (frame % 300 == 0) std::fprintf(stderr, "[autoplay] f%d exp=%d state=%d vis=%.1f\n", frame, (int)game.expedition(), (int)game.missionState(), bestVisible);
         if (game.expedition()) {
           glm::vec3 at;
           std::string label;
@@ -1354,7 +1353,6 @@ int main(int argc, char** argv) {
             glm::vec3 to = at - game.player().position;
             to.y = 0.0f;
             const bool engage = !place && bestVisible < 30.0f;
-            if (frame % 300 == 0) std::fprintf(stderr, "[autoplay] f%d wp=%s place=%d at=%.1f,%.1f vis=%.1f any=%.1f pos=%.1f,%.1f\n", frame, label.c_str(), (int)place, at.x, at.z, bestVisible, bestAny, game.player().position.x, game.player().position.z);
             if (!engage && glm::length(to) > 0.5f) {
               to = glm::normalize(to);
               bestDir = glm::normalize(glm::vec3(to.x, -0.05f, to.z));
@@ -1562,7 +1560,7 @@ int main(int argc, char** argv) {
             "\"playerPos\":[%.2f,%.2f,%.2f],\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,"
             "\"bossAlive\":%s,\"chits\":%d,\"inCutscene\":%s,\"harness\":%d,"
             "\"xp\":%d,\"careerXp\":%d,\"rank\":\"%s\","
-            "\"slot\":%d,\"primary\":\"%s\",\"sidearm\":\"%s\",\"loot\":%d,\"owned\":%d}\n",
+            "\"slot\":%d,\"primary\":\"%s\",\"sidearm\":\"%s\",\"loot\":%d,\"owned\":%d,\"objective\":%d,\"objectives\":%d,\"expedition\":%s}\n",
             frame + 1,
             game.missionState() == MissionState::Complete ? "complete"
               : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
@@ -1578,7 +1576,8 @@ int main(int argc, char** argv) {
                 : "",
             game.slot(), game.holster(Game::SlotPrimary).name.c_str(),
             game.holster(Game::SlotSidearm).name.c_str(), game.lootDropped(),
-            (int)profile.ownedWeapons.size());
+            (int)profile.ownedWeapons.size(), game.objectiveIndex(), game.objectiveCount(),
+            game.expedition() ? "true" : "false");
           std::fclose(f);
         }
       }

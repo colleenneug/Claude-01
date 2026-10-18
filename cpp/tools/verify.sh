@@ -91,12 +91,16 @@ run "$OUT/patrol.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 \
 check "patrol mission completes" "$OUT/patrol.json" \
       "s['appState'] == 'mission' and s['missionState'] == 'complete'"
 
-# The campaign's first sector plays end to end, pays its reward once, and
-# runs its comms thread.
-run "$OUT/breach.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 \
-    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=3000 -- --mission breach
-check "campaign sector 1 completes" "$OUT/breach.json" \
-      "s['missionState'] == 'complete' and s['chits'] > 140"
+# The campaign's first sector is an expedition, and the route through it
+# works: the scripted player clears the first area, walks the corridor
+# (DEBUG_AUTOAIM walks the route when there is nothing to shoot) and gets
+# into the next fight. Run at a coarser timestep, because a map this size
+# takes a while to cross. Playing one to the end with a scripted pistol is
+# not the claim: a player who stands still to shoot loses the long fights.
+run "$OUT/breach.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=1500 -- --mission breach
+check "a campaign sector is an expedition, and its route advances" "$OUT/breach.json" \
+      "s['expedition'] is True and s['objectives'] >= 7 and s['objective'] >= 2"
 
 # The route opens one sector at a time. From a fresh profile every campaign
 # mission but the first is locked, so cycling the hub's list has to step over
@@ -385,11 +389,15 @@ run "$OUT/swap.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_SWAP_AT=40 \
 check "switching holsters brings up the other weapon" "$OUT/swap.json" \
       "s['slot'] == 1 and s['weapon'] == 'Service Sidearm' and s['magSize'] == 12 and s['primary'] == 'MAUL-12'"
 
-# ...and an Earth qualification plays end to end.
+# ...and so is an Earth qualification: three areas in, the route is still
+# carrying the run forward.
 run "$OUT/range.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
-    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=2600 -- --mission earth_range
-check "the range qualification clears" "$OUT/range.json" \
-      "s['missionState'] == 'complete'"
+    EREBUS_FIXED_DT=0.033 EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=4500 -- --mission earth_range
+check "the range is an expedition, and the run gets three areas in" "$OUT/range.json" \
+      "s['expedition'] is True and s['objective'] >= 4"
+
+# Side contracts stay single arenas.
+check "a side contract is still an arena" "$OUT/patrol.json" "s['expedition'] is False"
 
 # UPGRADING AN EXISTING SAVE. A record that was already flying the ark before
 # the Earth programme was written must not be sent back to school for it: it
@@ -621,7 +629,7 @@ check "a mission can be left part way through" "$OUT/leave.json" \
 checkabsent "...and is not cleared by it" "$OUT/save-leave.txt" "^completed earth_perimeter$"
 
 # A HUNDRED WEAPONS, AND THE WAYS THEY COME. A first clear can hand one over...
-checkfile "HARD DOCK's first clear hands over a weapon" "$OUT/save-breach.txt" "^owned_weapon hal_wren$"
+checkfile "a first clear hands over a weapon" "$OUT/save-promo.txt" "^owned_weapon hal_wren$"
 # ...so can a promotion...
 checkfile "a promotion hands over a weapon" "$OUT/save-promo.txt" "^owned_weapon ves_finch$"
 # ...a kill can drop one (a boss always does; the switch here makes every

@@ -380,27 +380,27 @@ void buildKourouBlockD(Site& s) {
   // anything gets a shot at you — and each room's own wakes when you enter
   // it, so the building does not empty itself into the corridor behind you.
   s.hostiles = {
-    {"drone", {-1.6f, 0.0f, -14.0f}, "locker"},
-    {"drone", {1.8f, 0.0f, -9.0f}, "locker"},
-    {"drone", {-5.5f, 0.0f, 1.0f}, "corridor"},
-    {"thrall", {5.0f, 0.0f, 4.5f}, "corridor"},
-    {"drone", {-8.0f, 0.0f, 19.0f}, "armoury"},
-    {"thrall", {7.5f, 0.0f, 22.0f}, "armoury"},
-    {"thrall", {0.0f, 0.0f, 26.0f}, "armoury"},
-    {"drone", {-14.0f, 0.0f, 48.0f}, "muster"},
-    {"drone", {16.0f, 0.0f, 52.0f}, "muster"},
-    {"thrall", {-4.0f, 0.0f, 58.0f}, "muster"},
-    {"thrall", {9.0f, 0.0f, 62.0f}, "muster"},
-    {"warden", {0.0f, 0.0f, 70.0f}, "outside"},
+    {"drone", {-1.6f, 0.0f, -14.0f}, "locker", ""},
+    {"drone", {1.8f, 0.0f, -9.0f}, "locker", ""},
+    {"drone", {-5.5f, 0.0f, 1.0f}, "corridor", ""},
+    {"thrall", {5.0f, 0.0f, 4.5f}, "corridor", ""},
+    {"drone", {-8.0f, 0.0f, 19.0f}, "armoury", ""},
+    {"thrall", {7.5f, 0.0f, 22.0f}, "armoury", ""},
+    {"thrall", {0.0f, 0.0f, 26.0f}, "armoury", ""},
+    {"drone", {-14.0f, 0.0f, 48.0f}, "muster", ""},
+    {"drone", {16.0f, 0.0f, 52.0f}, "muster", ""},
+    {"thrall", {-4.0f, 0.0f, 58.0f}, "muster", ""},
+    {"thrall", {9.0f, 0.0f, 62.0f}, "muster", ""},
+    {"warden", {0.0f, 0.0f, 70.0f}, "outside", ""},
   };
 
   s.objectives = {
-    {"GET UP", "W A S D OR THE ARROW KEYS TO MOVE", "locker", false},
-    {"GET OUT OF THE BLOCK", "SHIFT SPRINTS. CTRL OR C CROUCHES - AT SPEED THAT IS A SLIDE.", "corridor", false},
-    {"REACH THE ARMOURY", "LEFT MOUSE FIRES. R RELOADS.", "armoury", false},
-    {"CROSS THE MUSTER HALL", "Q OR E IS YOUR FIELD ABILITY.", "muster", false},
-    {"GET TO THE PAD", "RIGHT MOUSE AIMS.", "outside", false},
-    {"CLEAR THE PAD", "", "", true},
+    {"GET UP", "W A S D OR THE ARROW KEYS TO MOVE", "locker", false, "", false},
+    {"GET OUT OF THE BLOCK", "SHIFT SPRINTS. CTRL OR C CROUCHES - AT SPEED THAT IS A SLIDE.", "corridor", false, "", false},
+    {"REACH THE ARMOURY", "LEFT MOUSE FIRES. R RELOADS.", "armoury", false, "", false},
+    {"CROSS THE MUSTER HALL", "Q OR E IS YOUR FIELD ABILITY.", "muster", false, "", false},
+    {"GET TO THE PAD", "RIGHT MOUSE AIMS.", "outside", false, "", false},
+    {"CLEAR THE PAD", "", "", true, "", false},
   };
 }
 
@@ -633,6 +633,18 @@ void buildExpedition(const MissionDef& m, Site& s) {
         b.lit(std::min(l0.x, l1.x), std::max(l0.x, l1.x), H - 0.5f, H - 0.3f,
               std::min(l0.z, l1.z), std::max(l0.z, l1.z), lampTint, 1.8f);
       }
+    }
+
+    // ---- resupply at the way in
+    {
+      const glm::vec3 fwd = hasEntry ? inDir : glm::vec3(0, 0, 1);
+      const glm::vec3 t(-fwd.z, 0.0f, fwd.x);
+      const glm::vec3 base = entry + fwd * 3.0f;
+      // In the doorway itself, where everyone walks, so nobody arrives at a
+      // fight with an empty magazine because the crate was off to one side.
+      s.ammoCaches.push_back(base);
+      s.ammoCaches.push_back(base + fwd * 2.2f);
+      s.medkits.push_back(base + fwd * 4.4f);
     }
 
     // ---- who is here, and what wakes them

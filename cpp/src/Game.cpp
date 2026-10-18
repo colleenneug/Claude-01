@@ -266,6 +266,18 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
       p.note = d.note;
       pickups_.push_back(p);
     }
+    for (const glm::vec3& at : site_.ammoCaches) {
+      Pickup p;
+      p.kind = PickupKind::Ammo;
+      p.pos = glm::vec3(at.x, site_.floorY + 0.55f, at.z);
+      pickups_.push_back(p);
+    }
+    for (const glm::vec3& at : site_.medkits) {
+      Pickup p;
+      p.kind = PickupKind::Health;
+      p.pos = glm::vec3(at.x, site_.floorY + 0.55f, at.z);
+      pickups_.push_back(p);
+    }
     if (!site_.objectives.empty()) {
       objectiveText_ = site_.objectives[0].text;
       objectiveHint_ = site_.objectives[0].hint;

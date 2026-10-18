@@ -192,6 +192,9 @@ public:
   const std::string& missionId() const { return mission_.id; }
   // Weapons that dropped this run, picked up or not.
   int lootDropped() const { return (int)dropped_.size(); }
+  // How far through a site's objectives this run has got.
+  int objectiveIndex() const { return (int)objectiveIndex_; }
+  int objectiveCount() const { return usingSite_ ? (int)site_.objectives.size() : 0; }
   // Whether this mission is an expedition — the long way, area by area —
   // rather than one arena. Every campaign mission is one; see buildExpedition.
   bool expedition() const { return usingSite_ && !site_.areas.empty(); }

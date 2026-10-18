@@ -74,6 +74,11 @@ struct Site {
   std::vector<WeaponDrop> drops;
   std::vector<Objective> objectives;
   std::vector<Area> areas;
+  // Resupply set down along a route: rounds and a medkit at the way into
+  // each area. A route a few hundred metres long is not survivable on what
+  // you walked in with, and a resupply that only drops off kills runs dry
+  // in exactly the fight that needed it.
+  std::vector<glm::vec3> ammoCaches, medkits;
 
   // An expedition carries the mission's own waves, placed in its areas, so
   // Game does not spawn them again on a ring round the origin.
