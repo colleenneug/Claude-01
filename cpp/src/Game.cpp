@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "Audio.h"
 #include "Waypoint.h"
 #include <algorithm>
 #include <cmath>
@@ -88,6 +89,9 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   usingSite_ = false;
   site_ = Site{};
   objectiveIndex_ = 0;
+  objectiveClock_ = 0.0f;
+  reinforceT_ = 4.0f;
+  reinforcementsLeft_ = 0;
   objectiveText_.clear();
   objectiveHint_.clear();
   triggerFiredById_.clear();
@@ -272,6 +276,13 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
       p.pos = glm::vec3(at.x, site_.floorY + 0.55f, at.z);
       pickups_.push_back(p);
     }
+    for (const Site::Core& core : site_.cores) {
+      Pickup p;
+      p.kind = PickupKind::Core;
+      p.pos = glm::vec3(core.pos.x, site_.floorY + 0.8f, core.pos.z);
+      p.group = core.group;
+      pickups_.push_back(p);
+    }
     for (const glm::vec3& at : site_.medkits) {
       Pickup p;
       p.kind = PickupKind::Health;
@@ -381,6 +392,37 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
 
 // ------------------------------------------------------------------ comms
 
+// What a hostile sounds like when it attacks, and when it goes down.
+static Sfx attackSound(const Hostile& h) {
+  const std::string& id = h.type ? h.type->id : std::string();
+  if (id == "conductor") return Sfx::ConductorChord;
+  if (id == "colossus") return Sfx::ColossusSlam;
+  if (id == "warden") return Sfx::WardenShot;
+  if (id == "marauder") return Sfx::MarauderShot;
+  if (id == "scarab") return Sfx::ScarabSkitter;
+  if (id == "thrall") return Sfx::ThrallShriek;
+  return Sfx::DroneShot;
+}
+
+static Sfx deathSound(const Hostile& h) {
+  if (h.isBoss) return Sfx::BossDeath;
+  if (h.type && h.type->structure) return Sfx::StructureDown;
+  const std::string& id = h.type ? h.type->id : std::string();
+  if (id == "thrall" || id == "scarab" || id == "marauder") return Sfx::DeathOrganic;
+  return Sfx::DeathMech;
+}
+
+static Sfx fireSound(const WeaponDef* w) {
+  const std::string shape = w ? w->shape : std::string();
+  if (shape == "pistol") return Sfx::FirePistol;
+  if (shape == "carbine") return Sfx::FireCarbine;
+  if (shape == "smg") return Sfx::FireSmg;
+  if (shape == "shotgun") return Sfx::FireShotgun;
+  if (shape == "marksman") return Sfx::FireMarksman;
+  if (shape == "induction") return Sfx::FireInduction;
+  return Sfx::FireRifle;
+}
+
 void Game::fireComms(CommsTrigger trigger) {
   int idx = (int)trigger;
   if (idx < 0 || idx >= 6 || triggerFired_[idx]) return;
@@ -411,6 +453,7 @@ void Game::updateComms(float dt) {
     const CommsBeat* beat = commsQueue_[i].beat;
     commsSpeaker_ = beat->speaker;
     commsLine_ = beat->line;
+    audio::play(Sfx::Comms);
     commsT_ = 0.0f;
     // Long lines stay up longer — roughly reading speed, with a floor so a
     // two-word callout doesn't blink past.
@@ -445,6 +488,7 @@ bool Game::selectSlot(int s) {
   // second weapon has.
   swapT_ = kSwapSeconds;
   swapTo_ = want;
+  audio::play(Sfx::WeaponSwap);
   return true;
 }
 
@@ -549,17 +593,55 @@ void Game::equipWeaponById(const std::string& id) {
 
 void Game::fireTrigger(const std::string& id) {
   // Wake whatever was waiting on it.
+  bool woke = false;
   for (size_t i = 0; i < hostiles_.size() && i < hostileWakeOn_.size(); i++) {
     if (hostileWakeOn_[i] != id) continue;
     hostileWakeOn_[i].clear();
     hostiles_[i].stunT = 0.0f;
+    // One cry from the room, not one per body in it.
+    if (!woke && hostiles_[i].type && !hostiles_[i].type->structure) {
+      audio::playAt(Sfx::HostileWake, hostiles_[i].pos, 0.8f);
+      woke = true;
+    }
   }
   // ...and roll the scene of the same name, if the mission wrote one.
   cutscene_.play(mission_.scenes, id);
 }
 
+void Game::spawnReinforcements(const Site::Objective& o) {
+  if (o.reinforce.empty()) return;
+  // From the walls of the area, out of sight lines where it can manage it,
+  // and never on top of you: two at a time, a pause, two more.
+  // One at a time early in the route, two once it gets serious.
+  const int count = mission_.campaignIndex >= 9 ? 2 : 1;
+  for (int k = 0; k < count; k++) {
+    const EnemyType* t = content_.enemy(o.reinforce[(size_t)(lootRng_ >> 7) % o.reinforce.size()]);
+    lootRng_ = lootRng_ * 1664525u + 1013904223u;
+    if (!t || t->structure) continue;
+    glm::vec3 at(0.0f);
+    for (int tries = 0; tries < 10; tries++) {
+      lootRng_ = lootRng_ * 1664525u + 1013904223u;
+      const float u = (float)(lootRng_ >> 8) / 16777216.0f;
+      const int side = (int)(lootRng_ & 3u);
+      const glm::vec3 lo = o.areaMin + glm::vec3(2.0f, 0, 2.0f), hi = o.areaMax - glm::vec3(2.0f, 0, 2.0f);
+      at = side == 0 ? glm::vec3(lo.x + (hi.x - lo.x) * u, 0, lo.z)
+         : side == 1 ? glm::vec3(lo.x + (hi.x - lo.x) * u, 0, hi.z)
+         : side == 2 ? glm::vec3(lo.x, 0, lo.z + (hi.z - lo.z) * u)
+                     : glm::vec3(hi.x, 0, lo.z + (hi.z - lo.z) * u);
+      if (glm::length(glm::vec2(at.x - player_.position.x, at.z - player_.position.z)) > 14.0f) break;
+    }
+    at.y = level_.floorY();
+    level_.resolve(at, t->radius, t->height);
+    Hostile h;
+    h.spawn(t, at);
+    h.state = HostileState::Chase;
+    hostiles_.push_back(h);
+    hostileWakeOn_.push_back("");
+    hostileGroup_.push_back(o.reinforceGroup);
+  }
+}
+
 void Game::updateSite(float dt) {
-  (void)dt;
   if (!usingSite_) return;
 
   const glm::vec3 p = player_.position;
@@ -588,13 +670,78 @@ void Game::updateSite(float dt) {
         done = false;
         break;
       }
+    } else if (o.timed != Site::Objective::Timed::None) {
+      // The clock only runs while you are in the zone. Reinforcements keep
+      // coming either way — leaving the ring does not make them stop.
+      glm::vec3 d = player_.position - o.zone;
+      d.y = 0.0f;
+      const bool inside = glm::length(d) <= o.zoneRadius && player_.alive() && !downed();
+      if (inside) {
+        // The last five seconds count down out loud.
+        const float before = o.seconds - objectiveClock_;
+        objectiveClock_ += dt;
+        const float after = o.seconds - objectiveClock_;
+        if (before <= 5.5f && after > 0.0f && std::ceil(before) != std::ceil(after)) audio::play(Sfx::HoldTick);
+      }
+      if (o.timed == Site::Objective::Timed::Uplink) {
+        audio::setLoop(Loop::Uplink, inside ? 0.55f : 0.18f,
+                       0.8f + 0.5f * std::min(1.0f, objectiveClock_ / o.seconds));
+      }
+      reinforceT_ -= dt;
+      int awake = 0;
+      for (size_t i = 0; i < hostiles_.size() && i < hostileGroup_.size(); i++) {
+        if (hostileGroup_[i] == o.reinforceGroup && hostiles_[i].blocksShots()) awake++;
+      }
+      if (reinforceT_ <= 0.0f && awake < 6) {
+        spawnReinforcements(o);
+        reinforceT_ = o.timed == Site::Objective::Timed::Hold ? 7.0f : 8.5f;
+      }
+      const float left = std::max(0.0f, o.seconds - objectiveClock_);
+      char buf[80];
+      if (o.timed == Site::Objective::Timed::Uplink) {
+        std::snprintf(buf, sizeof(buf), "%s - UPLINK %d%%", inside ? "STAY ON THE UPLINK" : "GET BACK ON THE UPLINK",
+                      (int)std::lround(100.0f * std::min(1.0f, objectiveClock_ / o.seconds)));
+      } else {
+        std::snprintf(buf, sizeof(buf), "%s - %d SECONDS", inside ? "HOLD THE RING" : "GET BACK IN THE RING",
+                      (int)std::ceil(left));
+      }
+      objectiveHint_ = buf;
+      done = objectiveClock_ >= o.seconds;
+    } else if (!o.collectGroup.empty()) {
+      int total = 0, taken = 0;
+      for (const Pickup& q : pickups_) {
+        if (q.kind != PickupKind::Core || q.group != o.collectGroup) continue;
+        total++;
+        if (q.taken) taken++;
+      }
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "CORES %d OF %d", taken, total);
+      objectiveHint_ = buf;
+      done = taken >= total;
     } else if (!o.trigger.empty()) {
       for (size_t i = 0; i < site_.triggers.size(); i++) {
         if (site_.triggers[i].id == o.trigger && triggerFiredById_[i]) { done = true; break; }
       }
     }
+    if (o.needsClear && !o.clearGroup.empty() && o.clearGroup.size() > 8 &&
+        o.clearGroup.compare(o.clearGroup.size() - 8, 8, "_targets") == 0) {
+      int total = 0, down = 0;
+      for (size_t i = 0; i < hostiles_.size() && i < hostileGroup_.size(); i++) {
+        if (hostileGroup_[i] != o.clearGroup) continue;
+        total++;
+        if (!hostiles_[i].blocksShots()) down++;
+      }
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "TARGETS DOWN %d OF %d", down, total);
+      objectiveHint_ = buf;
+    }
     if (!done) break;
+    // The first objective is "get here", met the moment you land: nothing
+    // to celebrate. Every one after it gets the chime.
+    if (missionT_ > 1.0f) audio::play(Sfx::ObjectiveDone);
     objectiveIndex_++;
+    objectiveClock_ = 0.0f;
+    reinforceT_ = 3.0f;
     if (objectiveIndex_ < site_.objectives.size()) {
       objectiveText_ = site_.objectives[objectiveIndex_].text;
       objectiveHint_ = site_.objectives[objectiveIndex_].hint;
@@ -774,6 +921,7 @@ void Game::reviveAtFallPoint() {
 
   damageFlashT = 0.6f;
   pickupNote_ = "HARNESS ENGAGED";
+  audio::play(Sfx::Revive);
   pickupNoteT_ = 1.6f;
 }
 
@@ -795,6 +943,7 @@ bool Game::useAbility() {
       player_.overshieldMax = 60.0f;
       player_.overshield = 60.0f;
       pickupNote_ = "AEGIS BARRIER";
+      audio::play(Sfx::AbilityBarrier);
       break;
     }
     case AbilityKind::Breach: {
@@ -813,6 +962,7 @@ bool Game::useAbility() {
       char buf[48];
       std::snprintf(buf, sizeof(buf), "SYSTEMS BREACH - %d STUNNED", caught);
       pickupNote_ = buf;
+      audio::play(Sfx::AbilityBreach);
       break;
     }
     case AbilityKind::Phase: {
@@ -840,6 +990,7 @@ bool Game::useAbility() {
       player_.position = probe;
       weapon_.primed = true;      // ...and the next round lands as a headshot
       pickupNote_ = "PHASE STEP - NEXT SHOT PRIMED";
+      audio::play(Sfx::AbilityPhase);
       break;
     }
   }
@@ -905,6 +1056,7 @@ void Game::maybeDropWeapon(const Hostile& h) {
   p.note = "NEW WEAPON - " + w->name + " - G TO EQUIP";
   pickups_.push_back(p);
   dropped_.push_back(w->id);
+  audio::playAt(Sfx::LootDrop, p.pos);
 }
 
 void Game::updatePickups(float dt) {
@@ -928,7 +1080,15 @@ void Game::updatePickups(float dt) {
     // the ground for later rather than silently consumed, so the gain is
     // worked out before anything is applied.
     char note[96];
-    if (p.kind == PickupKind::Weapon && p.loot) {
+    if (p.kind == PickupKind::Core) {
+      int left = 0, total = 0;
+      for (const Pickup& q : pickups_) {
+        if (q.kind != PickupKind::Core || q.group != p.group) continue;
+        total++;
+        if (!q.taken && &q != &p) left++;
+      }
+      std::snprintf(note, sizeof(note), "CORE RECOVERED - %d OF %d", total - left, total);
+    } else if (p.kind == PickupKind::Weapon && p.loot) {
       // Into the kit, not into your hands.
       if (profile_ && !profile_->ownsWeapon(p.weaponId)) profile_->ownedWeapons.push_back(p.weaponId);
       std::snprintf(note, sizeof(note), "%s", p.note.c_str());
@@ -953,10 +1113,16 @@ void Game::updatePickups(float dt) {
     p.taken = true;
     pickupNote_ = note;
     pickupNoteT_ = 1.6f;
+    audio::play(p.kind == PickupKind::Core     ? Sfx::PickupCore
+                : p.kind == PickupKind::Weapon ? Sfx::PickupWeapon
+                : p.kind == PickupKind::Ammo   ? Sfx::PickupAmmo
+                                               : Sfx::PickupHealth);
   }
 
   pickups_.erase(std::remove_if(pickups_.begin(), pickups_.end(),
-                                [](const Pickup& p) { return p.taken; }),
+                                // A recovered core stays in the list, taken: the
+                                // collect objective counts them off it.
+                                [](const Pickup& p) { return p.taken && p.kind != PickupKind::Core; }),
                  pickups_.end());
 }
 
@@ -986,6 +1152,9 @@ void Game::spawnBossIfReady() {
   if (!bossPending_) return;
   bool clear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                            [](const Hostile& h) { return h.state == HostileState::Gone; });
+  // On an expedition the boss waits for you to walk into its arena, not for
+  // every last thing on the route to be dead.
+  if (usingSite_ && !site_.bossWaitsOn.empty()) clear = true;
   if (!clear) return;
   // An expedition's boss waits in its own arena until you walk into it.
   if (usingSite_ && !site_.bossWaitsOn.empty()) {
@@ -1004,7 +1173,14 @@ void Game::spawnBossIfReady() {
   boss.spawn(t, at, /*isBoss=*/true, mission_.bossHpMultiplier);
   bossIndex_ = (int)hostiles_.size();
   hostiles_.push_back(boss);
+  // Keep the per-hostile site lists in step, or the reinforcements that
+  // arrive after the boss would read the wrong group.
+  if (usingSite_ && hostileGroup_.size() + 1 == hostiles_.size()) {
+    hostileWakeOn_.push_back("");
+    hostileGroup_.push_back("");
+  }
   bossPending_ = false;
+  audio::play(Sfx::BossSpawn);
   fireComms(CommsTrigger::BossSpawn);
 }
 
@@ -1034,7 +1210,11 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     return;
   }
 
-  abilityCool_ = std::max(0.0f, abilityCool_ - dt);
+  {
+    const bool cooling = abilityCool_ > 0.0f;
+    abilityCool_ = std::max(0.0f, abilityCool_ - dt);
+    if (cooling && abilityCool_ <= 0.0f) audio::play(Sfx::AbilityReady);
+  }
   // Kept for useAbility() and the viewmodel, both of which are called from
   // places that have no camera of their own to ask.
   lookDir_ = camera.forward();
@@ -1056,8 +1236,30 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     player_.eyeHeight += (0.42f - player_.eyeHeight) * std::min(1.0f, 6.0f * dt);
   }
   camera.position = player_.eyePosition();
+  audio::setListener(camera.position, camera.forward());
 
-  weapon_.update(dt);
+  // Feet. A step every half stride of the view bob, a thump on landing, a
+  // push off on the jump, a scrape for the slide.
+  {
+    const bool grounded = player_.grounded;
+    if (wasGrounded_ && !grounded && player_.velocity.y > 1.0f) audio::play(Sfx::Jump);
+    if (!wasGrounded_ && grounded && airT_ > 0.25f) audio::play(Sfx::Land, std::min(1.0f, 0.5f + airT_));
+    airT_ = grounded ? 0.0f : airT_ + dt;
+    wasGrounded_ = grounded;
+    if (player_.sliding && !wasSliding_) audio::play(Sfx::Slide);
+    wasSliding_ = player_.sliding;
+    const float stride = std::floor((bobT_ + dt * player_.planarSpeed() * 1.5f) / 3.14159f);
+    if (grounded && !player_.sliding && player_.planarSpeed() > 1.0f && stride != lastStride_) {
+      audio::play(Sfx::Footstep, 0.7f, 0.9f + 0.2f * (float)((int)stride & 1));
+    }
+    lastStride_ = stride;
+  }
+
+  {
+    const bool reloadingBefore = weapon_.reloading;
+    weapon_.update(dt);
+    if (reloadingBefore && !weapon_.reloading) audio::play(Sfx::ReloadIn);
+  }
 
   // The swap. The change of weapon happens at the halfway point, while the
   // viewmodel is below the bottom of the frame, so the two guns are never
@@ -1082,7 +1284,17 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   }
   bool wasReloading = weapon_.reloading;
   if (armed_ && swapT_ <= 0.0f && reloadHeld) weapon_.startReload();
-  if (!wasReloading && weapon_.reloading) tutorialReloaded_ = true;
+  if (!wasReloading && weapon_.reloading) {
+    tutorialReloaded_ = true;
+    audio::play(Sfx::ReloadOut);
+  }
+  // A dry trigger clicks — once per pull, not once a frame.
+  dryT_ = std::max(0.0f, dryT_ - dt);
+  if (armed_ && !onTheGround && !inputFrozen_ && swapT_ <= 0.0f && firePressed &&
+      !weapon_.canFire() && weapon_.ammoInMag <= 0 && !weapon_.reloading && dryT_ <= 0.0f) {
+    audio::play(Sfx::DryFire);
+    dryT_ = 0.35f;
+  }
 
   if (armed_ && !onTheGround && !inputFrozen_ && swapT_ <= 0.0f && firePressed &&
       weapon_.canFire()) {
@@ -1090,6 +1302,10 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     // a pair of thralls, or an induction bolt through the front rank into the
     // one behind it — so this is a list, not a single hit.
     weapon_.fire(camera.position, camera.forward(), level_, hostiles_, shotBuffer_);
+    {
+      lootRng_ = lootRng_ * 1664525u + 1013904223u;
+      audio::play(fireSound(weaponDef_), 1.0f, 0.96f + 0.08f * (float)(lootRng_ >> 8) / 16777216.0f);
+    }
 
     // The flash, and the kick the view takes. Scaled by the round's weight
     // against a rifle's, so a breaching shell throws the sights off the
@@ -1115,6 +1331,14 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       Hostile& h = hostiles_[shot.hostileIndex];
       bool killed = h.takeDamage(shot.damage);
       hitMarkerT = 0.14f;
+      if (killed) {
+        audio::play(Sfx::Kill);
+        audio::playAt(deathSound(h), h.pos);
+      } else if (h.type && h.type->structure) {
+        audio::playAt(Sfx::HitMetal, shot.point, 0.8f);
+      } else {
+        audio::play(shot.headshot ? Sfx::Headshot : Sfx::Hit);
+      }
       // Chits are paid out once per mission clear (see the reward-payout
       // block below), not per kill — a per-kill bounty economy is a
       // reasonable future addition but wasn't asked for. A kill does drop
@@ -1217,6 +1441,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   for (auto& h : hostiles_) {
     if (!h.alive()) continue;
     bool didAttack = h.update(dt, player_.position, level_);
+    if (didAttack) audio::playAt(attackSound(h), h.pos, h.isBoss ? 1.2f : 0.85f);
     // Nothing lands while a cutscene is running either. The world keeps
     // simulating through one on purpose — the alarm keeps sounding, nothing
     // walks into a frozen room — but you cannot move, and thirteen seconds
@@ -1224,8 +1449,11 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     // cutscene, it is a punishment for having reached one.
     if (didAttack && !graced && !onTheGround && !cutscene_.playing()) {
       float dmg = h.type->damage * (1.0f - player_.damageReduction);
+      const bool hadShield = player_.overshield > 0.0f;
       player_.takeDamage(dmg);
       player_.hp = std::max(0.0f, player_.hp);
+      audio::play(Sfx::Hurt, std::min(1.0f, 0.5f + dmg * 0.03f));
+      if (hadShield && player_.overshield <= 0.0f) audio::play(Sfx::ShieldBreak);
       damageFlashT = 0.4f;
       // Being hit moves the camera. A red vignette on its own reads as a
       // notification; the shake is what makes it a hit.
@@ -1233,6 +1461,17 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     }
   }
   updateSite(dt);
+  // The continuous layer: the room tone of the place, your heart when you
+  // are nearly dead, and the uplink hum only while there is an uplink to run.
+  {
+    const bool uplink = usingSite_ && objectiveIndex_ < site_.objectives.size() &&
+                        site_.objectives[objectiveIndex_].timed == Site::Objective::Timed::Uplink;
+    if (!uplink) audio::setLoop(Loop::Uplink, 0.0f);
+    audio::setLoop(Loop::MissionAmbience, 0.35f);
+    const float hpFrac = player_.maxHp > 0.0f ? player_.hp / player_.maxHp : 1.0f;
+    audio::setLoop(Loop::Heartbeat, (hpFrac < 0.3f || downed()) ? 0.7f : 0.0f,
+                   downed() ? 0.8f : 1.0f + (0.3f - std::min(0.3f, hpFrac)) * 1.5f);
+  }
   updateTutorial(dt);
   spawnBossIfReady();
 
@@ -1251,8 +1490,11 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       harnessLeft_--;
       downT_ = kDownSeconds;
       fellAt_ = player_.position;
+      audio::play(Sfx::Downed);
     } else {
       missionState_ = MissionState::Failed;
+      audio::play(Sfx::MissionFailed);
+      audio::stopLoops();
       fireComms(CommsTrigger::Failed);
     }
   }
@@ -1278,6 +1520,13 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     bool lessonDone = !mission_.tutorial ||
                       (usingSite_ ? objectiveIndex_ + 1 >= site_.objectives.size()
                                   : tutorialStep_ == TutorialStep::Clear);
+    // An expedition is done when its route is: every objective met, boss
+    // included. Whatever is still awake in a room you held or uplinked in is
+    // not standing between you and the end of the mission.
+    if (expedition()) {
+      wavesClear = objectiveIndex_ >= site_.objectives.size();
+      lessonDone = true;
+    }
     if (wavesClear && lessonDone && !bossPending_ && bossClear) {
       if (profile_ && !rewardApplied_) {
         const bool firstClear = !profile_->hasCompleted(mission_.id);
@@ -1298,6 +1547,8 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
         tally_.cleared = true;
       }
       missionState_ = MissionState::Complete;
+      audio::play(Sfx::MissionComplete);
+      audio::stopLoops();
       // Whatever dropped and is still on the floor comes with you: a boss's
       // weapon falls the moment the mission ends, and walking over to it
       // should not be the thing standing between you and your reward.
@@ -1578,35 +1829,58 @@ bool Game::inCurrentEncounter(size_t i) const {
 bool Game::waypoint(glm::vec3& at, std::string& label, bool& isPlace) const {
   if (!loaded_ || missionState_ != MissionState::InProgress) return false;
 
-  // A site's objective that ends on walking into a box: that box.
+  // A site's objective that is a place: the box to walk into, the ring to
+  // hold, the nearest core still on the floor.
   std::string group;
   if (usingSite_ && objectiveIndex_ < site_.objectives.size()) {
     const Site::Objective& o = site_.objectives[objectiveIndex_];
-    if (!o.trigger.empty() && !o.needsClear) {
+    bool place = false;
+    if (o.timed != Site::Objective::Timed::None) {
+      at = glm::vec3(o.zone.x, 0.0f, o.zone.z);
+      label = o.timed == Site::Objective::Timed::Uplink ? "UPLINK" : "HOLD";
+      place = true;
+      // Standing in it: the arrow has nothing to say. Pointing at whatever
+      // came through the wall would only walk you out of the ring.
+      glm::vec3 d = player_.position - o.zone;
+      d.y = 0.0f;
+      if (glm::length(d) < o.zoneRadius * 0.6f) return false;
+    } else if (!o.collectGroup.empty()) {
+      float bestD = 1e9f;
+      for (const Pickup& q : pickups_) {
+        if (q.kind != PickupKind::Core || q.taken || q.group != o.collectGroup) continue;
+        const float d = glm::length(q.pos - player_.position);
+        if (d < bestD) { bestD = d; at = glm::vec3(q.pos.x, 0.0f, q.pos.z); place = true; }
+      }
+      label = "CORE";
+    } else if (!o.trigger.empty() && !o.needsClear) {
       for (const Site::Trigger& t : site_.triggers) {
         if (t.id != o.trigger) continue;
         at = glm::vec3((t.min.x + t.max.x) * 0.5f, 0.0f, (t.min.z + t.max.z) * 0.5f);
         label = "OBJECTIVE";
-        // On an expedition the next area is through a door, round a corner:
-        // while you are still inside an area, the arrow stands in its way
-        // out rather than pointing through the wall at where you are going.
-        for (const Site::Area& a : site_.areas) {
-          const glm::vec3& p = player_.position;
-          const bool inside = p.x > a.min.x && p.x < a.max.x && p.z > a.min.z && p.z < a.max.z;
-          if (!inside || !a.hasExit) continue;
-          const bool targetInside = at.x > a.min.x && at.x < a.max.x && at.z > a.min.z && at.z < a.max.z;
-          if (targetInside) break;
-          // In the doorway already: from here the way on is straight ahead.
-          glm::vec3 d = a.exit - p;
-          d.y = 0.0f;
-          if (glm::length(d) < 3.0f) break;
-          at = a.exit;
-          label = "THE WAY ON";
-          break;
-        }
-        isPlace = true;
-        return true;
+        place = true;
+        break;
       }
+    }
+    if (place) {
+      // On an expedition the next area is through a door, round a corner:
+      // while you are still inside an area, the arrow stands in its way
+      // out rather than pointing through the wall at where you are going.
+      for (const Site::Area& a : site_.areas) {
+        const glm::vec3& p = player_.position;
+        const bool inside = p.x > a.min.x && p.x < a.max.x && p.z > a.min.z && p.z < a.max.z;
+        if (!inside || !a.hasExit) continue;
+        const bool targetInside = at.x > a.min.x && at.x < a.max.x && at.z > a.min.z && at.z < a.max.z;
+        if (targetInside) break;
+        // In the doorway already: from here the way on is straight ahead.
+        glm::vec3 d = a.exit - p;
+        d.y = 0.0f;
+        if (glm::length(d) < 3.0f) break;
+        at = a.exit;
+        label = "THE WAY ON";
+        break;
+      }
+      isPlace = true;
+      return true;
     }
     group = o.clearGroup;
   }
@@ -1664,6 +1938,24 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
     }
   }
 
+  // Objective markers: the ring you hold, the mast you uplink at. Lit while
+  // they are the objective, a dim outline before and after.
+  if (usingSite_) {
+    for (const Site::Marker& m : site_.markers) {
+      const bool live = objectiveIndex_ == m.objective;
+      DrawItem it;
+      it.mesh = &HostileGeometry::unitBox();
+      it.material = MaterialType::Emissive;
+      const glm::vec3 c = (m.min + m.max) * 0.5f;
+      it.model = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(c.x, site_.floorY + c.y, c.z)),
+                            m.max - m.min);
+      it.tint = it.emissive = m.colour * (live ? 1.0f : 0.25f);
+      it.emissiveIntensity = live ? 2.6f + 0.6f * std::sin(missionT_ * 4.0f) : 0.6f;
+      it.castShadow = false;
+      out.push_back(it);
+    }
+  }
+
   // Pickups: a small emissive box, bobbing and slowly spinning so it reads
   // as an item rather than scenery, on the shared unit box every hostile
   // part also uses.
@@ -1692,6 +1984,19 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
         beam.emissiveIntensity = 2.2f;
         out.push_back(beam);
       }
+    } else if (p.kind == PickupKind::Core) {
+      // A data core: a cyan octahedron-ish spinning block with a tall beam,
+      // because it is the reason you are in the room.
+      it.model = glm::scale(it.model, glm::vec3(0.3f, 0.48f, 0.3f));
+      it.tint = glm::vec3(0.35f, 0.95f, 1.0f);
+      it.emissiveIntensity = 3.8f;
+      DrawItem beam = it;
+      beam.model = glm::scale(glm::translate(glm::mat4(1.0f), p.pos + glm::vec3(0.0f, 3.0f, 0.0f)),
+                              glm::vec3(0.06f, 6.0f, 0.06f));
+      beam.emissive = beam.tint;
+      beam.emissiveIntensity = 1.8f;
+      beam.castShadow = false;
+      out.push_back(beam);
     } else {
       bool ammo = p.kind == PickupKind::Ammo;
       it.model = glm::scale(it.model, glm::vec3(0.34f, 0.34f, 0.34f));

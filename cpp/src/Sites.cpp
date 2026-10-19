@@ -394,14 +394,23 @@ void buildKourouBlockD(Site& s) {
     {"warden", {0.0f, 0.0f, 70.0f}, "outside", ""},
   };
 
-  s.objectives = {
-    {"GET UP", "W A S D OR THE ARROW KEYS TO MOVE", "locker", false, "", false},
-    {"GET OUT OF THE BLOCK", "SHIFT SPRINTS. CTRL OR C CROUCHES - AT SPEED THAT IS A SLIDE.", "corridor", false, "", false},
-    {"REACH THE ARMOURY", "LEFT MOUSE FIRES. R RELOADS.", "armoury", false, "", false},
-    {"CROSS THE MUSTER HALL", "Q OR E IS YOUR FIELD ABILITY.", "muster", false, "", false},
-    {"GET TO THE PAD", "RIGHT MOUSE AIMS.", "outside", false, "", false},
-    {"CLEAR THE PAD", "", "", true, "", false},
+  auto obj = [](const char* text, const char* hint, const char* trigger, bool clear) {
+    Site::Objective o;
+    o.text = text;
+    o.hint = hint;
+    o.trigger = trigger;
+    o.needsClear = clear;
+    return o;
   };
+  s.objectives = {
+    obj("GET UP", "W A S D OR THE ARROW KEYS TO MOVE", "locker", false),
+    obj("GET OUT OF THE BLOCK", "SHIFT SPRINTS. CTRL OR C CROUCHES - AT SPEED THAT IS A SLIDE.", "corridor", false),
+    obj("REACH THE ARMOURY", "LEFT MOUSE FIRES. R RELOADS.", "armoury", false),
+    obj("CROSS THE MUSTER HALL", "Q OR E IS YOUR FIELD ABILITY.", "muster", false),
+    obj("GET TO THE PAD", "RIGHT MOUSE AIMS.", "outside", false),
+    obj("CLEAR THE PAD", "", "", true),
+  };
+
 }
 
 }  // namespace
@@ -503,9 +512,39 @@ void buildExpedition(const MissionDef& m, Site& s) {
     for (const WaveSpawn& w : W) last.push_back({w.enemyId, std::max(1, (int)std::ceil(w.count * 0.6f))});
     enc.push_back(last);
   }
-  while (enc.size() > 6) enc.erase(enc.begin() + 1);
+  // ---- the legs of the route. A mission that writes its own stages gets
+  // exactly those; one that does not gets an area to clear per encounter
+  // and its boss at the end.
   const bool boss = !m.bossId.empty();
-  const int areaCount = (int)enc.size() + (boss ? 1 : 0);
+  std::vector<MissionStage> plan;
+  for (const MissionStage& st : m.stages) {
+    if (st.kind == "boss" && !boss) continue;   // no boss to fight
+    plan.push_back(st);
+  }
+  if (plan.empty()) {
+    while (enc.size() > 6) enc.erase(enc.begin() + 1);
+    for (size_t i = 0; i < enc.size(); i++) plan.push_back(MissionStage{});
+  }
+  const bool planHasBoss = std::any_of(plan.begin(), plan.end(),
+                                       [](const MissionStage& st) { return st.kind == "boss"; });
+  if (boss && !planHasBoss) {
+    MissionStage b;
+    b.kind = "boss";
+    plan.push_back(b);
+  }
+  // A boss stage goes last: it is the last room by definition.
+  std::stable_partition(plan.begin(), plan.end(), [](const MissionStage& st) { return st.kind != "boss"; });
+  const int areaCount = (int)plan.size();
+  // Spread the encounters over however many fighting legs there are.
+  const int fights = (int)std::count_if(plan.begin(), plan.end(),
+                                        [](const MissionStage& st) { return st.kind != "boss"; });
+  std::vector<std::vector<Foe>> legEnc;
+  for (int k = 0; k < fights; k++) {
+    const int src = fights <= 1 ? (int)enc.size() - 1
+                                : (int)std::lround((float)k * (float)(enc.size() - 1) / (float)(fights - 1));
+    legEnc.push_back(enc[(size_t)std::clamp(src, 0, (int)enc.size() - 1)]);
+  }
+  const std::string structureId = m.campaign == "earth" ? "relay_mast" : "resonance_tap";
 
   // ---- where the areas go: a zig-zag north, ending at the origin
   const float baseL = std::clamp(m.arenaSize * 0.42f, 38.0f, 64.0f);
@@ -513,7 +552,7 @@ void buildExpedition(const MissionDef& m, Site& s) {
   std::vector<glm::vec3> dir(areaCount), centre(areaCount);
   for (int i = 0; i < areaCount; i++) {
     L[i] = baseL * rng.range(0.88f, 1.12f);
-    if (boss && i == areaCount - 1) L[i] = baseL * 1.25f;
+    if (plan[(size_t)i].kind == "boss") L[i] = baseL * 1.25f;
     C[i] = rng.range(22.0f, 34.0f);
     dir[i] = (i % 2 == 0) ? glm::vec3(0, 0, 1) : (i % 4 == 1 ? glm::vec3(1, 0, 0) : glm::vec3(-1, 0, 0));
   }
@@ -665,26 +704,36 @@ void buildExpedition(const MissionDef& m, Site& s) {
     }
     s.triggers.push_back(trig);
 
-    const bool bossArea = boss && i == areaCount - 1;
+    const MissionStage& stage = plan[(size_t)i];
+    const bool bossArea = stage.kind == "boss";
+    // Which encounter this leg fights: the i-th fighting leg's.
+    int legIndex = 0;
+    for (int k = 0; k < i; k++) if (plan[(size_t)k].kind != "boss") legIndex++;
+    const std::vector<Foe> foes =
+        bossArea ? std::vector<Foe>{} : legEnc[(size_t)std::min(legIndex, std::max(0, fights - 1))];
+    // Guards are thinner where the leg is not a straight fight: the work is
+    // the uplink, the hold or the targets, and reinforcements make up the rest.
+    const float guardScale = (stage.kind == "clear") ? 1.0f : 0.6f;
+    const glm::vec3 farDir = hasEntry ? inDir : glm::vec3(0, 0, 1);
+    auto farPoint = [&](float minFrac) {
+      for (int tries = 0; tries < 16; tries++) {
+        glm::vec3 p = c + glm::vec3(rng.range(-half + 3, half - 3), 0.0f, rng.range(-half + 3, half - 3));
+        if (glm::dot(p - entry, farDir) < L[i] * minFrac) continue;
+        return p;
+      }
+      return c + farDir * (half * 0.5f);
+    };
     int count = 0;
-    if (!bossArea) {
-      for (const Foe& f : enc[(size_t)i]) {
-        for (int n = 0; n < f.n; n++) {
-          Site::Spawn sp;
-          sp.enemyId = f.id;
-          sp.wakeOn = gid;
-          sp.group = gid;
-          // the far two thirds of the room from the door you come in by
-          for (int tries = 0; tries < 12; tries++) {
-            glm::vec3 p = c + glm::vec3(rng.range(-half + 3, half - 3), 0.0f, rng.range(-half + 3, half - 3));
-            if (glm::dot(p - entry, hasEntry ? inDir : glm::vec3(0, 0, 1)) < L[i] * 0.33f) continue;
-            sp.pos = p;
-            break;
-          }
-          if (sp.pos == glm::vec3(0.0f)) sp.pos = c + (hasEntry ? inDir : glm::vec3(0, 0, 1)) * (half * 0.5f);
-          s.hostiles.push_back(sp);
-          count++;
-        }
+    for (const Foe& f : foes) {
+      const int n = std::max(1, (int)std::round((float)f.n * guardScale));
+      for (int k = 0; k < n; k++) {
+        Site::Spawn sp;
+        sp.enemyId = f.id;
+        sp.wakeOn = gid;
+        sp.group = gid;
+        sp.pos = farPoint(0.33f);
+        s.hostiles.push_back(sp);
+        count++;
       }
     }
 
@@ -696,21 +745,90 @@ void buildExpedition(const MissionDef& m, Site& s) {
       go.trigger = gid;
       s.objectives.push_back(go);
     }
-    Site::Objective fight;
+    const size_t objIndex = s.objectives.size();
+    Site::Objective work;
+    auto said = [&](const std::string& fallback) {
+      return stage.text.empty() ? fallback : upperName(stage.text);
+    };
+    std::vector<std::string> reinforceTypes;
+    for (const Foe& f : foes) reinforceTypes.push_back(f.id);
+    auto ring = [&](glm::vec3 centre, float radius, glm::vec3 colour) {
+      for (int k = 0; k < 16; k++) {
+        const float a = (float)k / 16.0f * 6.2831853f;
+        glm::vec3 p = centre + glm::vec3(std::cos(a), 0.0f, std::sin(a)) * radius;
+        Site::Marker mk;
+        mk.min = p - glm::vec3(0.35f, 0.0f, 0.35f);
+        mk.max = p + glm::vec3(0.35f, 0.08f, 0.35f);
+        mk.colour = colour;
+        mk.objective = objIndex;
+        s.markers.push_back(mk);
+      }
+    };
     if (bossArea) {
-      fight.text = "DEFEAT THE " + upperName(m.bossId);
-      fight.hint = "IT IS WHAT THE WHOLE ROUTE WAS FOR";
-      fight.needsBoss = true;
+      work.text = said("DEFEAT THE " + upperName(m.bossId));
+      work.hint = "IT IS WHAT THE WHOLE ROUTE WAS FOR";
+      work.needsBoss = true;
       s.hasBossSpawn = true;
       s.bossSpawn = c + outDir * (half * 0.35f);
       s.bossWaitsOn = gid;
+    } else if (stage.kind == "destroy") {
+      const int n = std::max(1, stage.n);
+      for (int k = 0; k < n; k++) {
+        Site::Spawn sp;
+        sp.enemyId = structureId;
+        sp.group = gid + "_targets";
+        sp.pos = farPoint(0.25f);
+        s.hostiles.push_back(sp);
+      }
+      work.text = said("DESTROY THE TARGETS IN " + area.name);
+      work.needsClear = true;
+      work.clearGroup = gid + "_targets";
+    } else if (stage.kind == "collect") {
+      const int n = std::max(1, stage.n);
+      for (int k = 0; k < n; k++) {
+        Site::Core core;
+        core.pos = farPoint(0.15f);
+        core.group = gid;
+        s.cores.push_back(core);
+      }
+      work.text = said("RECOVER THE CORES IN " + area.name);
+      work.collectGroup = gid;
+    } else if (stage.kind == "hold" || stage.kind == "uplink") {
+      const bool uplink = stage.kind == "uplink";
+      work.timed = uplink ? Site::Objective::Timed::Uplink : Site::Objective::Timed::Hold;
+      work.seconds = (float)std::max(10, stage.n > 0 ? stage.n : 30);
+      work.zone = c;
+      work.zoneRadius = uplink ? 4.0f : 10.0f;
+      work.reinforce = reinforceTypes;
+      work.areaMin = area.min;
+      work.areaMax = area.max;
+      work.reinforceGroup = gid + "_waves";
+      const glm::vec3 col = uplink ? glm::vec3(0.45f, 0.9f, 1.0f) : glm::vec3(1.0f, 0.75f, 0.3f);
+      ring(c, work.zoneRadius, col);
+      // Resupply inside the ring: a hold is a fight you are not allowed to
+      // walk away from, so what it takes to win it is where you stand.
+      const float r = work.zoneRadius * 0.55f;
+      s.ammoCaches.push_back(c + glm::vec3(r, 0.0f, 0.0f));
+      s.ammoCaches.push_back(c + glm::vec3(-r, 0.0f, 0.0f));
+      s.ammoCaches.push_back(c + glm::vec3(0.0f, 0.0f, r));
+      s.medkits.push_back(c + glm::vec3(0.0f, 0.0f, -r));
+      if (uplink) {
+        // the uplink itself: a lit mast in the middle of the room
+        Site::Marker mast;
+        mast.min = c + glm::vec3(-0.3f, 0.0f, -0.3f);
+        mast.max = c + glm::vec3(0.3f, 4.5f, 0.3f);
+        mast.colour = col;
+        mast.objective = objIndex;
+        s.markers.push_back(mast);
+      }
+      work.text = said(uplink ? "RUN THE UPLINK IN " + area.name : "HOLD " + area.name);
     } else {
-      fight.text = "CLEAR " + area.name;
-      fight.hint = std::to_string(count) + (count == 1 ? " HOSTILE" : " HOSTILES");
-      fight.needsClear = true;
-      fight.clearGroup = gid;
+      work.text = said("CLEAR " + area.name);
+      work.hint = std::to_string(count) + (count == 1 ? " HOSTILE" : " HOSTILES");
+      work.needsClear = true;
+      work.clearGroup = gid;
     }
-    s.objectives.push_back(fight);
+    s.objectives.push_back(work);
   }
 
   s.parts = std::move(b.parts);

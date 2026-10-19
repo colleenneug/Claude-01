@@ -19,6 +19,7 @@
 #include "Space.h"
 #include "Station.h"
 #include "Profile.h"
+#include "Audio.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -92,6 +93,37 @@ int main(int argc, char** argv) {
     }
   }
 
+  // --routes: build every campaign expedition and print its objectives, one
+  // mission a line, then exit. No window — it is how the test suite checks
+  // that no two missions are the same route.
+  for (int i = 1; i < argc; i++) {
+    if (std::strcmp(argv[i], "--routes") != 0) continue;
+    const char* dirEnv = std::getenv("EREBUS_CONTENT_DIR");
+    Content c;
+    if (!c.loadAll(dirEnv ? dirEnv : "content")) return 1;
+    for (const std::string& track : c.campaignTracks()) {
+      for (const std::string& id : c.campaignIds(track)) {
+        const MissionDef* m = c.mission(id);
+        if (!m || !m->layout.empty() || !m->expedition) continue;
+        Site site;
+        buildExpedition(*m, site);
+        std::printf("%s|%zu|%s", id.c_str(), site.areas.size(), m->bossId.empty() ? "-" : m->bossId.c_str());
+        for (const Site::Objective& o : site.objectives) {
+          const char* kind = o.needsBoss ? "boss"
+                           : o.timed == Site::Objective::Timed::Hold ? "hold"
+                           : o.timed == Site::Objective::Timed::Uplink ? "uplink"
+                           : !o.collectGroup.empty() ? "collect"
+                           : (o.needsClear && o.clearGroup.size() > 8 &&
+                              o.clearGroup.compare(o.clearGroup.size() - 8, 8, "_targets") == 0) ? "destroy"
+                           : o.needsClear ? "clear" : "reach";
+          std::printf("|%s:%s", kind, o.text.c_str());
+        }
+        std::printf("\n");
+      }
+    }
+    return 0;
+  }
+
   if (!glfwInit()) {
     std::fprintf(stderr, "glfwInit failed\n");
     return 1;
@@ -123,6 +155,9 @@ int main(int argc, char** argv) {
   }
   std::printf("GL_VERSION:  %s\n", glGetString(GL_VERSION));
   std::printf("GL_RENDERER: %s\n", glGetString(GL_RENDERER));
+  // Sound comes up after the window: a machine with no output device, or a
+  // run with EREBUS_MUTE set, carries on silent.
+  audio::init();
 
   Camera camera;
   Renderer renderer;
@@ -406,6 +441,10 @@ int main(int argc, char** argv) {
   // EREBUS_LEAVE_AT=<frame> presses Escape at that frame and Y twenty frames
   // later, so a headless run can prove leaving keeps what was earned.
   bool leaveConfirm = false, prevLeaveEsc = false;
+  // What the sound last heard, so a change of state or a new banner plays once.
+  AppState heardState = AppState::SlotSelect;
+  bool prevBoostSound = false;
+  float stationStride = 0.0f, heardPromotionT = 0.0f, heardBountyNoteT = 0.0f;
   int leaveAtFrame = 0;
   if (const char* la = std::getenv("EREBUS_LEAVE_AT")) leaveAtFrame = std::atoi(la);
   // The last promotion, and how long it stays on screen. Shown wherever you
@@ -1317,6 +1356,9 @@ int main(int argc, char** argv) {
       }
     } else {
       bool autoWalk = false;
+      bool autoSeesTarget = true;   // the aid holds its fire on an expedition with nothing in sight
+      static glm::vec3 autoLastPos(0.0f);
+      static float autoStuckT = 0.0f, autoDetourT = 0.0f, autoDetourSide = 1.0f;
       if (debugAutoaim) {
         // Verification aid: point the camera at a live hostile so firing can
         // be exercised without a real mouse. Prefers the nearest one it can
@@ -1340,6 +1382,7 @@ int main(int argc, char** argv) {
           }
         }
         glm::vec3 bestDir = bestVisible < 1e8f ? dirVisible : dirAny;
+        autoSeesTarget = !game.expedition() || bestVisible < 60.0f;
         // On an expedition the aid also walks the route: toward the arrow
         // when there is nothing worth shooting in sight, and straight at the
         // encounter when it is out of sight or out of reach. Without it a
@@ -1349,12 +1392,41 @@ int main(int argc, char** argv) {
           glm::vec3 at;
           std::string label;
           bool place = false;
-          if (game.waypoint(at, label, place)) {
+          bool have = game.waypoint(at, label, place);
+          // Running dry: the nearest box of rounds first, whatever the arrow
+          // says. A player would; a bot that does not loses every hold.
+          {
+            const Weapon& wpn = game.weapon();
+            if (wpn.ammoInMag + wpn.reserveAmmo < wpn.magSize * 2) {
+              float best = 25.0f;
+              for (const Pickup& pk : game.pickups()) {
+                if (pk.taken || pk.kind != PickupKind::Ammo) continue;
+                // Only what it can walk straight to: it does not path round cover.
+                if (!game.level().lineOfSight(camera.position, pk.pos + glm::vec3(0.0f, 0.3f, 0.0f))) continue;
+                const float d = glm::length(pk.pos - game.player().position);
+                if (d < best) { best = d; at = glm::vec3(pk.pos.x, 0.0f, pk.pos.z); place = true; have = true; }
+              }
+            }
+          }
+          if (have) {
             glm::vec3 to = at - game.player().position;
             to.y = 0.0f;
             const bool engage = !place && bestVisible < 30.0f;
             if (!engage && glm::length(to) > 0.5f) {
               to = glm::normalize(to);
+              // It walks in straight lines, so cover in the way stops it
+              // dead. Not getting anywhere for a second and a half: turn
+              // off to one side for a moment, then try the line again.
+              glm::vec3 moved = game.player().position - autoLastPos;
+              moved.y = 0.0f;
+              if (glm::length(moved) > 0.6f) { autoLastPos = game.player().position; autoStuckT = 0.0f; }
+              else autoStuckT += dt;
+              if (autoStuckT > 1.5f) { autoDetourT = 1.3f; autoStuckT = 0.0f; autoDetourSide = -autoDetourSide; }
+              if (autoDetourT > 0.0f) {
+                autoDetourT -= dt;
+                const float a = glm::radians(75.0f) * autoDetourSide;
+                to = glm::vec3(to.x * std::cos(a) - to.z * std::sin(a), 0.0f, to.x * std::sin(a) + to.z * std::cos(a));
+              }
               bestDir = glm::normalize(glm::vec3(to.x, -0.05f, to.z));
               autoWalk = true;
             }
@@ -1380,7 +1452,10 @@ int main(int argc, char** argv) {
                         glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
                         glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
         const bool nowPlaying = game.cutscenePlaying();
-        if (nowPlaying && !wasCutscenePlaying) prevSkipKey = skipDown;
+        if (nowPlaying && !wasCutscenePlaying) {
+          prevSkipKey = skipDown;
+          audio::play(Sfx::Cutscene);
+        }
         if (nowPlaying) {
           if (skipDown && !prevSkipKey) game.skipCutscene();
           prevSkipKey = skipDown;
@@ -1413,7 +1488,7 @@ int main(int argc, char** argv) {
       float targetAim = aiming ? 1.0f : 0.0f;
       camera.aim += (targetAim - camera.aim) * std::min(1.0f, dt * 10.0f);
 
-      bool firePressed = forceFire || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+      bool firePressed = (forceFire && autoSeesTarget) || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
       // forceFire used to hold the reload key too, which kept the weapon
       // permanently mid-reload and let it fire only a handful of rounds over
       // a whole run — fine for the one-hostile fixture it was written
@@ -1560,7 +1635,8 @@ int main(int argc, char** argv) {
             "\"playerPos\":[%.2f,%.2f,%.2f],\"ammoInMag\":%d,\"reserveAmmo\":%d,\"waveProgress\":%.3f,"
             "\"bossAlive\":%s,\"chits\":%d,\"inCutscene\":%s,\"harness\":%d,"
             "\"xp\":%d,\"careerXp\":%d,\"rank\":\"%s\","
-            "\"slot\":%d,\"primary\":\"%s\",\"sidearm\":\"%s\",\"loot\":%d,\"owned\":%d,\"objective\":%d,\"objectives\":%d,\"expedition\":%s}\n",
+            "\"slot\":%d,\"primary\":\"%s\",\"sidearm\":\"%s\",\"loot\":%d,\"owned\":%d,\"objective\":%d,\"objectives\":%d,\"expedition\":%s,"
+            "\"objectiveText\":\"%s\",\"objectiveHint\":\"%s\",\"sounds\":%d,\"sfxKinds\":%d}\n",
             frame + 1,
             game.missionState() == MissionState::Complete ? "complete"
               : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
@@ -1577,7 +1653,8 @@ int main(int argc, char** argv) {
             game.slot(), game.holster(Game::SlotPrimary).name.c_str(),
             game.holster(Game::SlotSidearm).name.c_str(), game.lootDropped(),
             (int)profile.ownedWeapons.size(), game.objectiveIndex(), game.objectiveCount(),
-            game.expedition() ? "true" : "false");
+            game.expedition() ? "true" : "false", game.objectiveText().c_str(), game.objectiveHint().c_str(),
+            audio::playCount(), audio::soundCount());
           std::fclose(f);
         }
       }
@@ -1598,7 +1675,10 @@ int main(int argc, char** argv) {
         if (!canLeave) {
           leaveConfirm = false;
         } else if (!leaveConfirm) {
-          if (escPressed) leaveConfirm = true;
+          if (escPressed) {
+            leaveConfirm = true;
+            audio::play(Sfx::UiMove);
+          }
         } else {
           const bool yes = glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS ||
                            (leaveAtFrame > 0 && frame == leaveAtFrame + 20);
@@ -1606,8 +1686,11 @@ int main(int argc, char** argv) {
           if (yes) {
             leaveNow = true;
             leaveConfirm = false;
+            audio::play(Sfx::UiBack);
+            audio::stopLoops();
           } else if (no) {
             leaveConfirm = false;
+            audio::play(Sfx::UiSelect);
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             mouseCaptured = true;
             firstMouse = true;
@@ -1752,6 +1835,45 @@ int main(int argc, char** argv) {
 
     frame++;
 
+    // ---- the sound of where you are. Transitions are heard on the frame
+    // the state changes; the loops are steered every frame from the state.
+    {
+      if (state != heardState) {
+        const AppState from = heardState;
+        heardState = state;
+        if (state == AppState::Mission) audio::play(Sfx::Warp);
+        else if (from == AppState::Space && (state == AppState::Station || state == AppState::Hub)) audio::play(Sfx::Dock);
+        else if (state == AppState::Space && (from == AppState::Station || from == AppState::Hub)) audio::play(Sfx::Undock);
+        else if (state == AppState::Station || state == AppState::Hub) audio::play(Sfx::Door);
+        else audio::play(Sfx::UiSelect);
+      }
+      const bool inSpace = state == AppState::Space;
+      const float speed = inSpace ? space.speed() : 0.0f;
+      audio::setLoop(Loop::Engine, inSpace ? 0.22f + std::min(0.4f, speed * 0.012f) : 0.0f,
+                     0.75f + std::min(0.9f, speed * 0.018f));
+      const bool boostDown = inSpace && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+      if (boostDown && !prevBoostSound) audio::play(Sfx::Boost);
+      prevBoostSound = boostDown;
+      audio::setLoop(Loop::StationHum, (state == AppState::Station || state == AppState::Hub) ? 0.28f : 0.0f);
+      if (state != AppState::Mission) {
+        audio::setLoop(Loop::MissionAmbience, 0.0f);
+        audio::setLoop(Loop::Heartbeat, 0.0f);
+        audio::setLoop(Loop::Uplink, 0.0f);
+      }
+      // Your own feet on the station deck.
+      if (state == AppState::Station) {
+        const Player& sp = station.player();
+        stationStride += dt * sp.planarSpeed() * 1.5f;
+        if (sp.planarSpeed() > 1.0f && std::floor(stationStride / 3.14159f) != std::floor((stationStride - dt * sp.planarSpeed() * 1.5f) / 3.14159f)) {
+          audio::play(Sfx::Footstep, 0.6f, 0.95f);
+        }
+      }
+      if (promotionT > heardPromotionT + 0.5f) audio::play(Sfx::Promotion);
+      heardPromotionT = promotionT;
+      if (bountyNoteT > heardBountyNoteT + 0.5f) audio::play(Sfx::BountyDone);
+      heardBountyNoteT = bountyNoteT;
+    }
+
     if (finishFrame()) break;
 
     glfwSwapBuffers(window);
@@ -1763,6 +1885,7 @@ int main(int argc, char** argv) {
   HostileGeometry::destroyShared();   // shared by the missions and both stations' crew
   hud.destroy();
   renderer.destroy();
+  audio::shutdown();
   glfwDestroyWindow(window);
   glfwTerminate();
   return 0;

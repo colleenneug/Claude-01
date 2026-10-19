@@ -1,4 +1,5 @@
 #include "Loadout.h"
+#include "Audio.h"
 #include "Bounty.h"
 
 #include <algorithm>
@@ -248,25 +249,34 @@ bool Loadout::update(GLFWwindow* window, const char* scripted) {
   const int cols = (int)Column::Count;
   if (edge(GLFW_KEY_LEFT, GLFW_KEY_A, prevLeft_, "left")) {
     column_ = (Column)(((int)column_ + cols - 1) % cols);
+    audio::play(Sfx::UiMove);
   }
   if (edge(GLFW_KEY_RIGHT, GLFW_KEY_D, prevRight_, "right")) {
     column_ = (Column)(((int)column_ + 1) % cols);
+    audio::play(Sfx::UiMove);
   }
 
   const int n = (int)ids_[(int)column_].size();
   if (n > 0) {
     if (edge(GLFW_KEY_UP, GLFW_KEY_W, prevUp_, "up")) {
       rows_[(int)column_] = (rows_[(int)column_] + n - 1) % n;
+      audio::play(Sfx::UiMove);
     }
     if (edge(GLFW_KEY_DOWN, GLFW_KEY_S, prevDown_, "down")) {
       rows_[(int)column_] = (rows_[(int)column_] + 1) % n;
+      audio::play(Sfx::UiMove);
     }
   }
 
-  if (edge(GLFW_KEY_ENTER, GLFW_KEY_F, prevEquip_, "equip")) equipSelected();
+  if (edge(GLFW_KEY_ENTER, GLFW_KEY_F, prevEquip_, "equip")) {
+    const int before = profile_ ? profile_->chits : 0;
+    const bool ok = equipSelected();
+    audio::play(!ok ? Sfx::UiDeny : (profile_ && profile_->chits < before) ? Sfx::Buy : Sfx::PickupWeapon);
+  }
 
   if (edge(GLFW_KEY_G, GLFW_KEY_ESCAPE, prevClose_, "close")) {
     open_ = false;
+    audio::play(Sfx::UiBack);
     return true;   // the one frame on which the caller re-reads the profile
   }
   return false;

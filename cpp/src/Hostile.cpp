@@ -70,6 +70,19 @@ void Hostile::spawn(const EnemyType* t, glm::vec3 at, bool boss, float hpMult) {
 bool Hostile::update(float dt, const glm::vec3& playerPos, const Level& level) {
   hitFlash = std::max(0.0f, hitFlash - dt * 4.0f);
 
+  // A structure stands where it was built and never attacks; all it does is
+  // hum, and come down when it has been shot enough.
+  if (type && type->structure) {
+    bob += dt;
+    vel = glm::vec3(0.0f);
+    stunT = std::min(stunT, 0.0f);
+    if (state == HostileState::Dying) {
+      deathT += dt;
+      if (deathT > 1.4f) state = HostileState::Gone;
+    }
+    return false;
+  }
+
   // Stunned: it stands where it is and does not shoot. Its own attack timer
   // keeps running down, so the first thing it does when it comes back is not
   // an instant hit — the window the ability bought would be worth nothing if
@@ -209,6 +222,36 @@ void part(std::vector<DrawItem>& out, const DrawItem& base, const Mesh& mesh,
 
 void Hostile::collect(std::vector<DrawItem>& out) const {
   if (state == HostileState::Gone) return;
+
+  if (type && type->structure) {
+    // A pylon: a dark plinth, a column, a lit core that pulses faster as it
+    // is damaged, and three fins. Going down, it sinks into its plinth.
+    const float h = type->height, r = type->radius;
+    const float sink = state == HostileState::Dying ? std::min(1.0f, deathT / 1.2f) * h * 0.9f : 0.0f;
+    const float health = maxHp > 0.0f ? hp / maxHp : 1.0f;
+    DrawItem base;
+    base.material = MaterialType::Armour;
+    base.tint = type->colour;
+    base.metallic = 0.7f;
+    base.roughness = 0.35f;
+    glm::mat4 root = glm::translate(glm::mat4(1.0f), pos);
+    part(out, base, HostileGeometry::unitBox(), root, {0, 0.2f, 0}, {0, 0, 0}, {r * 2.6f, 0.4f, r * 2.6f});
+    glm::mat4 col = glm::translate(root, glm::vec3(0, -sink, 0));
+    part(out, base, HostileGeometry::unitCylinder(), col, {0, h * 0.5f, 0}, {0, 0, 0}, {r * 1.2f, h, r * 1.2f});
+    for (int f = 0; f < 3; f++) {
+      part(out, base, HostileGeometry::unitBox(), col, {0, h * 0.45f, 0}, {0, bob * 20.0f + f * 120.0f, 0},
+           {r * 2.4f, h * 0.7f, 0.08f});
+    }
+    DrawItem core = base;
+    core.material = MaterialType::Emissive;
+    const float pulse = 0.5f + 0.5f * std::sin(bob * (3.0f + (1.0f - health) * 9.0f));
+    core.tint = glm::mix(type->glow, glm::vec3(1.0f, 0.35f, 0.25f), 1.0f - health);
+    core.emissive = core.tint;
+    core.emissiveIntensity = (state == HostileState::Dying ? 1.0f : 3.0f + pulse * 3.0f + hitFlash * 6.0f);
+    core.castShadow = false;
+    part(out, core, HostileGeometry::unitSphere(), col, {0, h * 0.92f, 0}, {0, 0, 0}, glm::vec3(r * 1.5f));
+    return;
+  }
 
   const float h = type->height * bossScale, r = type->radius * bossScale;
   const float planar = glm::length(glm::vec2(vel.x, vel.z));

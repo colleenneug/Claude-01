@@ -49,6 +49,8 @@ add_executable(erebus_native
     src/Loadout.cpp
     src/Bounty.cpp
     src/Post.cpp
+    src/Audio.cpp
+    src/miniaudio_impl.cpp
   src/Game.cpp
   src/Renderer.cpp
 )
@@ -70,6 +72,22 @@ else()
     m
   )
 endif()
+# Sound: miniaudio, vendored as one public-domain header in third_party/.
+# Only playback is used, so its decoders, encoders and engine are left out.
+target_include_directories(erebus_native PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
+target_compile_definitions(erebus_native PRIVATE
+  MA_NO_DECODING MA_NO_ENCODING MA_NO_GENERATION MA_NO_RESOURCE_MANAGER
+  MA_NO_NODE_GRAPH MA_NO_ENGINE)
+if(MSVC)
+  set_source_files_properties(src/miniaudio_impl.cpp PROPERTIES COMPILE_OPTIONS "/w")
+else()
+  set_source_files_properties(src/miniaudio_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
+  find_package(Threads REQUIRED)
+  # miniaudio finds PulseAudio/ALSA at run time with dlopen, so a machine
+  # without them still starts — silent — rather than refusing to link.
+  target_link_libraries(erebus_native PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+endif()
+
 if(TARGET glm::glm)
   target_link_libraries(erebus_native PRIVATE glm::glm)
 endif()

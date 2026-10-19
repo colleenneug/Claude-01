@@ -1,4 +1,5 @@
 #include "Post.h"
+#include "Audio.h"
 
 #include <algorithm>
 #include <cstring>
@@ -14,6 +15,16 @@ void Post::open(const Content& content, Profile& profile, const CrewDef& host,
   noticeT_ = 99.0f;
   rows_[0] = rows_[1] = 0;
   rebuild();
+
+  // A greeting: everyone with a post has a voice of their own, a pitch that
+  // comes from their name, so Kaur and the Rook do not sound like each other.
+  {
+    unsigned h = 2166136261u;
+    for (char c : host.id) h = (h ^ (unsigned char)c) * 16777619u;
+    const float voice = 0.75f + (float)(h % 1000u) / 1000.0f * 0.7f;
+    audio::play(Sfx::Talk, 1.0f, voice);
+    audio::play(Sfx::UiSelect, 0.6f, voice);
+  }
 
   // Open on whatever is worth your attention: money waiting to be collected
   // first, then their service, and the board when they have nothing else.
@@ -181,13 +192,14 @@ Post::Result Post::update(GLFWwindow* window, const char* scripted, bool engageP
       edge(down(GLFW_KEY_RIGHT, GLFW_KEY_D, "right"), prevRight_) |
       edge(tabKey, prevTab_)) {
     tab_ = tab_ == Tab::Service ? Tab::Bounties : Tab::Service;
+    audio::play(Sfx::UiMove);
   }
 
   const int n = tab_ == Tab::Service ? serviceRows() : (int)bountyIds_.size();
   if (n > 0) {
     int& r = rows_[(int)tab_];
-    if (edge(down(GLFW_KEY_UP, GLFW_KEY_W, "up"), prevUp_)) r = (r + n - 1) % n;
-    if (edge(down(GLFW_KEY_DOWN, GLFW_KEY_S, "down"), prevDown_)) r = (r + 1) % n;
+    if (edge(down(GLFW_KEY_UP, GLFW_KEY_W, "up"), prevUp_)) { r = (r + n - 1) % n; audio::play(Sfx::UiMove); }
+    if (edge(down(GLFW_KEY_DOWN, GLFW_KEY_S, "down"), prevDown_)) { r = (r + 1) % n; audio::play(Sfx::UiMove); }
   }
 
   // Enter, F or E acts. E as well because it is the key you walked up and
@@ -195,7 +207,21 @@ Post::Result Post::update(GLFWwindow* window, const char* scripted, bool engageP
   const bool use = down(GLFW_KEY_ENTER, GLFW_KEY_F, "use") ||
                    (window && glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) || engagePulse;
   if (edge(use, prevUse_)) {
+    // What the press did decides what it sounds like: money out is a
+    // purchase, money in a sale or a paid bounty, a new job taken a
+    // confirm, and nothing changing at all a refusal.
+    const int chitsBefore = profile_ ? profile_->chits : 0;
+    const size_t activeBefore = profile_ ? profile_->bounties.size() : 0;
+    const std::string shipBefore = profile_ ? profile_->equippedShip : std::string();
     const Result r = act();
+    if (profile_) {
+      if (r == Result::OpenCounter) audio::play(Sfx::UiSelect);
+      else if (profile_->chits < chitsBefore) audio::play(Sfx::Buy);
+      else if (profile_->chits > chitsBefore) audio::play(tab_ == Tab::Bounties ? Sfx::BountyDone : Sfx::Sell);
+      else if (profile_->bounties.size() != activeBefore) audio::play(tab_ == Tab::Bounties && profile_->bounties.size() < activeBefore ? Sfx::BountyDone : Sfx::UiSelect);
+      else if (profile_->equippedShip != shipBefore) audio::play(Sfx::UiSelect);
+      else audio::play(Sfx::UiDeny);
+    }
     if (r != Result::None) return r;
   }
 
@@ -204,6 +230,7 @@ Post::Result Post::update(GLFWwindow* window, const char* scripted, bool engageP
   // walking you out of an airlock.
   if (edge(down(GLFW_KEY_ESCAPE, GLFW_KEY_BACKSPACE, "close"), prevClose_)) {
     open_ = false;
+    audio::play(Sfx::UiBack);
     return Result::Closed;
   }
   return Result::None;

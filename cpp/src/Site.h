@@ -53,6 +53,28 @@ struct Site {
     std::string clearGroup;
     // Ends when the mission's boss has been spawned and killed.
     bool needsBoss = false;
+
+    // Timed: a clock that only runs while you are inside the zone. HOLD is
+    // a wide ring you keep against reinforcements; UPLINK is a point you
+    // stand at while a bar fills.
+    enum class Timed { None, Hold, Uplink };
+    Timed timed = Timed::None;
+    float seconds = 0.0f;
+    glm::vec3 zone{0.0f};
+    float zoneRadius = 0.0f;
+    // Collect: every core in this group picked up (Site::cores).
+    std::string collectGroup;
+    // While a timed objective runs, more of these keep coming, from the
+    // edges of this box, into this group.
+    std::vector<std::string> reinforce;
+    glm::vec3 areaMin{0.0f}, areaMax{0.0f};
+    std::string reinforceGroup;
+  };
+
+  // Something to pick up for a collect objective: a data core, a black box.
+  struct Core {
+    glm::vec3 pos{0.0f};
+    std::string group;
   };
 
   // An expedition's areas, in route order: where each one is, and the
@@ -79,6 +101,12 @@ struct Site {
   // you walked in with, and a resupply that only drops off kills runs dry
   // in exactly the fight that needed it.
   std::vector<glm::vec3> ammoCaches, medkits;
+  std::vector<Core> cores;
+  // Lit fixtures for timed objectives — the uplink's beacon, the ring you
+  // hold — drawn but not solid. Kept apart from `parts` so they can be lit
+  // up while the objective is live and dimmed once it is done.
+  struct Marker { glm::vec3 min{0.0f}, max{0.0f}; glm::vec3 colour{1.0f}; size_t objective = 0; };
+  std::vector<Marker> markers;
 
   // An expedition carries the mission's own waves, placed in its areas, so
   // Game does not spawn them again on a ring round the origin.

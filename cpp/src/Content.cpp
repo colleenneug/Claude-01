@@ -88,6 +88,7 @@ EnemyType parseEnemy(const std::string& id, const fs::path& path) {
       else if (k == "glow") e.glow = parseVec3(v, e.glow);
       else if (k == "ranged") e.ranged = (v == "true" || v == "1");
       else if (k == "flying") e.flying = (v == "true" || v == "1");
+      else if (k == "structure") e.structure = (v == "true" || v == "1");
       else if (k == "elite") e.elite = (v == "true" || v == "1");
       else if (k == "xp") e.xp = std::stof(v);
     } catch (...) {
@@ -114,6 +115,26 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
     // e.g.  comms deploy 0.5 VANGUARD | DROP CONFIRMED. THE SHELF IS YOURS.
     // The pipe keeps the speaker's name from having to be quoted, and lets
     // the line itself contain spaces and punctuation without escaping.
+    if (tokens[0] == "stage") {
+      MissionStage st;
+      if (tokens.size() >= 2) st.kind = tokens[1];
+      if (tokens.size() >= 3 && tokens[2] != "|") {
+        try { st.n = std::stoi(tokens[2]); } catch (...) { st.n = 0; }
+      }
+      size_t bar = line.find('|');
+      if (bar != std::string::npos) st.text = trim(line.substr(bar + 1));
+      static const char* known[] = {"clear", "hold", "uplink", "collect", "destroy", "boss"};
+      bool ok = false;
+      for (const char* k : known) ok = ok || st.kind == k;
+      if (!ok) {
+        std::fprintf(stderr, "[Content] %s: unknown stage '%s', treated as clear\n",
+                     path.string().c_str(), st.kind.c_str());
+        st.kind = "clear";
+      }
+      m.stages.push_back(st);
+      continue;
+    }
+
     if (tokens[0] == "comms") {
       size_t bar = line.find('|');
       if (bar == std::string::npos || tokens.size() < 4) {

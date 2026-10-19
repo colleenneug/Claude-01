@@ -32,10 +32,25 @@ struct EnemyType {
   // shoulder cannon instead of a forearm one. It is a content decision, not
   // one to infer from a health number that also moves for balance reasons.
   bool elite = false;
+  // A thing, not a creature: a resonance tap, a generator, a relay mast. It
+  // does not move or attack, it is drawn as a lit pylon, and shooting it is
+  // the objective. See Hostile::update and Hostile::collect.
+  bool structure = false;
   float xp = 20.0f;
 };
 
 struct WaveSpawn { std::string enemyId; int count = 1; float radius = 20.0f; };
+
+// One leg of an expedition, in a mission file:
+//   stage <kind> [n] | <what it says on screen>
+// kinds: clear, hold <seconds>, uplink <seconds>, collect <n>, destroy <n>, boss
+// Each stage is one area of the route, in order. A mission with none gets
+// the default: every area a clear, and the boss (if any) at the end.
+struct MissionStage {
+  std::string kind = "clear";
+  int n = 0;
+  std::string text;
+};
 
 // One beat of a cutscene: where the camera sits, what it looks at, how long
 // it holds, and the line under it. A moving shot is two beats with the same
@@ -161,6 +176,7 @@ struct MissionDef {
   std::string brief;
   float arenaSize = 80.0f;
   std::vector<WaveSpawn> waves;
+  std::vector<MissionStage> stages;
   std::string bossId;       // empty = no boss
   float bossHpMultiplier = 1.0f;
   int rewardChits = 40;     // paid out once, on first completion — see Profile

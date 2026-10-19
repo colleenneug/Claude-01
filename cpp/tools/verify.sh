@@ -100,7 +100,40 @@ check "patrol mission completes" "$OUT/patrol.json" \
 run "$OUT/breach.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
     EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=1500 -- --mission breach
 check "a campaign sector is an expedition, and its route advances" "$OUT/breach.json" \
-      "s['expedition'] is True and s['objectives'] >= 5 and (s['objective'] >= 2 or s['missionState'] == 'complete')"
+      "s['expedition'] is True and s['objectives'] >= 3 and (s['objective'] >= 1 or s['missionState'] == 'complete')"
+# ...and you hear it: every effect synthesised, and the fight asked for
+# sounds (shots, hits, footsteps) whether or not there is a device to play them.
+check "sounds are synthesised and the fight plays them" "$OUT/breach.json" \
+      "s['sfxKinds'] >= 60 and s['sounds'] >= 20"
+
+# Every mission is its own route: no two campaign expeditions share the same
+# sequence of goals, each has at least two different kinds of goal, and the
+# last one, THE CONDUCTOR, ends on the Conductor.
+( cd "$BUILD" && "$BIN" --routes 2>/dev/null ) > "$OUT/routes.txt"
+if python3 - "$OUT/routes.txt" <<'PYCHECK'
+import sys
+rows = [l.strip().split('|') for l in open(sys.argv[1]) if '|' in l]
+seqs = [tuple(k.split(':', 1)[0] for k in r[3:] if not k.startswith('reach:')) for r in rows]
+ok = len(rows) >= 29 and len(set(tuple(r[3:]) for r in rows)) == len(rows)
+ok = ok and all(len(set(q)) >= 2 for q in seqs)
+ok = ok and rows[-1][0] == 'conductor' and rows[-1][-1].startswith('boss:')
+kinds = set(k for q in seqs for k in q)
+ok = ok and {'clear', 'hold', 'uplink', 'collect', 'destroy', 'boss'} <= kinds
+sys.exit(0 if ok else 1)
+PYCHECK
+then echo "  PASS every campaign mission is a different route to the Conductor"; PASS=$((PASS+1))
+else echo "  FAIL every campaign mission is a different route  ($(head -c 400 "$OUT/routes.txt"))"; FAIL=$((FAIL+1)); fi
+
+# The new goals play: an uplink is run (breach ends on one), cores are
+# picked up (spine), taps are broken (junction), a ring is held (counter).
+run "$OUT/spine.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=5000 -- --mission spine
+check "a collect objective is met by picking the cores up" "$OUT/spine.json" \
+      "s['objective'] >= 3 or s['missionState'] == 'complete'"
+run "$OUT/breachdone.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=4000 -- --mission breach
+check "an uplink runs to the end and finishes the mission" "$OUT/breachdone.json" \
+      "s['missionState'] == 'complete'"
 
 # The route opens one sector at a time. From a fresh profile every campaign
 # mission but the first is locked, so cycling the hub's list has to step over

@@ -22,7 +22,9 @@ enum class MissionState { InProgress, Complete, Failed };
 // winnable only if your shooting is efficient enough to clear every wave
 // *and* a 900-HP boss out of one magazine and a fixed reserve, which the
 // dig site measurably is not.
-enum class PickupKind { Ammo, Health, Weapon };
+// Core: a collect objective's data core — taken on contact, counted against
+// its group (Site::Core), and nothing else.
+enum class PickupKind { Ammo, Health, Weapon, Core };
 
 struct Pickup {
   glm::vec3 pos{0.0f};
@@ -38,6 +40,7 @@ struct Pickup {
   // your kit and leaves what you are holding alone. Swapping guns because you
   // walked over one in the middle of a firefight is not a reward.
   bool loot = false;
+  std::string group;   // Core pickups: which collect objective it counts for
 };
 
 // Owns everything the C++ game actually simulates — content, the level, the
@@ -106,6 +109,7 @@ public:
   // finding the nearest emissive item, which stopped meaning "a hostile"
   // the moment rigs grew lit vents and kills started dropping glowing
   // pickups — the aid would happily lock onto an ammo box on the floor.
+  const std::vector<Pickup>& pickups() const { return pickups_; }
   const std::vector<Hostile>& hostiles() const { return hostiles_; }
   const Level& level() const { return level_; }
   const Weapon& weapon() const { return weapon_; }
@@ -430,6 +434,15 @@ private:
   Site site_;
   bool usingSite_ = false;
   size_t objectiveIndex_ = 0;
+  // The live part of a timed objective: how long you have been in the zone,
+  // and the clock to the next wave of reinforcements.
+  float objectiveClock_ = 0.0f, reinforceT_ = 0.0f;
+  // What the sound needs to remember between frames: whether you were on
+  // the ground, how long you were off it, which stride the last step was.
+  bool wasGrounded_ = true, wasSliding_ = false;
+  float airT_ = 0.0f, lastStride_ = 0.0f, dryT_ = 0.0f;
+  int reinforcementsLeft_ = 0;
+  void spawnReinforcements(const Site::Objective& o);
   std::string objectiveText_, objectiveHint_;
   std::vector<bool> triggerFiredById_;
   // Hostiles asleep until their room's trigger fires, indexed alongside

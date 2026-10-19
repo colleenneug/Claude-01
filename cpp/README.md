@@ -85,7 +85,7 @@ is cleared, and a locked sector cannot be launched from any counter — it is on
 the list so you can see what is ahead, and that is all.
 
 **Every campaign mission is an expedition.** Not one walled field any more:
-the long way through a place, five or six areas in a row joined by lit,
+the long way through a place, two to five areas in a row (one per goal) joined by lit,
 walled corridors that zig-zag across a few hundred metres. Each area holds
 its own encounter, asleep until you walk in — *PUSH ON TO THE INTERCHANGE*,
 then *CLEAR THE INTERCHANGE* — with cover to fight from, a lit doorway on the
@@ -97,6 +97,31 @@ TURBINE HALL, THE ROOT CELLAR, THE NAVE), so a new campaign mission is an
 expedition without anyone drawing a map; `expedition = false` in a mission
 file keeps the old single arena. Block D keeps its hand-built building, and
 side contracts stay arenas — a contract is a job, not a journey.
+
+**Every mission is its own job.** No two sectors on the route are the same
+run of goals. Each area of an expedition has one, and there are six kinds:
+
+| Goal | What you do | What you see |
+|---|---|---|
+| **Clear** | kill the encounter in the room | `CLEAR THE CARGO HOLD - 9 HOSTILES` |
+| **Hold** | stay inside the lit amber ring while reinforcements come through the walls; the clock only runs while you are in it | `HOLD THE RING - 23 SECONDS` |
+| **Uplink** | stand at the cyan mast (a smaller ring) until it reaches 100% | `STAY ON THE UPLINK - 64%` |
+| **Collect** | pick up the glowing cyan data cores, each under a beam of light | `CORES 2 OF 4` |
+| **Destroy** | break the pylons (resonance taps on the ark, relay masts on Earth) | `TARGETS DOWN 1 OF 3` |
+| **Boss** | the mission's boss, waiting in the last room | its health bar |
+
+The route builds toward the end: HARD DOCK is a fight and a beacon to light;
+THE HOLD sends you after the manifest cores; COUNTER-ATTACK is a hold, a
+push and a Warden; THE ARCHIVE, THE FOUNDRY, THE THRESHOLD and THE VAULT each
+end on a boss of their own (Wardens and Colossi); and THE CONDUCTOR is all of
+it at once — cut through its choir, break its six resonance taps, hold the
+heart while its shield falls, then silence it. The arrow knows every goal: it
+points at the ring, the mast, the nearest core or the nearest target, and goes
+quiet once you are standing where you need to be. Run
+`./erebus_native --routes` to print every mission's goals in order.
+
+A mission's goals are `stage` lines in its file, in order — see the mission
+format under *Content*.
 
 **Until it is done, it is the only thing to fly.** Shaw's and Teal's
 contract boards are shut (*AFTER THE CAMPAIGN*), and every side mission on
@@ -151,6 +176,28 @@ needs a ship with the reach for it:
 | HERON | 900 | Strider Second Class | 1 150 | 6 000 |
 | MARLIN | 1 800 | Strider First Class | 1 450 | 9 000 |
 | LONG REACH | 3 600 | Lead Strider | 1 750 | 20 000 |
+
+### Sound
+
+Everything makes a noise: every weapon silhouette has its own report
+(pistol, rifle, carbine, SMG, shotgun, marksman, induction), with dry-fire
+clicks, magazine out and in, and the swap; hits, headshots and kills each
+have their own tick; every enemy type has its own attack (a drone's zap, a
+thrall's shriek, a Warden's plasma, a Colossus slamming, the Conductor's
+chord) and its own death, panned and fading with distance; your footsteps,
+jumps, landings and slides; each doctrine's ability; every pickup; objective
+chimes, the last five seconds of a hold counting down, the uplink humming as
+it fills, a heartbeat when you are nearly dead, boss arrivals, the debrief
+fanfare and the failure sting; comms chirps, cutscenes, promotions and paid
+bounties; menus, purchases, refusals, and a greeting in each person's own
+voice; and the ship's engine, boost, docking and undocking, and the station's
+hum.
+
+None of it is a sound file. All 66 effects are synthesised when the game
+starts (`src/Audio.cpp`) and mixed through
+[miniaudio](https://miniaud.io), vendored as one public-domain header in
+`third_party/`. No output device — or `EREBUS_MUTE=1` — and the game plays on
+silently.
 
 ### People, bounties, and their own thing
 
@@ -567,6 +614,14 @@ wave thrall 7 24      # enemy id, count, spawn ring radius (metres)
 wave warden 1 30
 boss conductor 1.0    # optional; spawns once every regular wave is cleared,
                       # with a health multiplier on its enemies/*.cfg stats
+
+# The route, one area per stage, in order (campaign expeditions only):
+#   stage <clear|hold|uplink|collect|destroy|boss> [n] | <objective text>
+# n is seconds for hold/uplink, how many for collect/destroy. A mission with
+# a boss gets a boss stage at the end whether or not it writes one.
+stage uplink 30 | Shut down the false sky projector
+stage collect 3 | Recover the projector lenses
+stage clear | Cross the habitat ring
 
 # Story, staged as comms traffic:
 #   comms <trigger> <delay> <speaker> | <line>

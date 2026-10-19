@@ -1,4 +1,5 @@
 #include "Hub.h"
+#include "Audio.h"
 #include "Bounty.h"
 #include <algorithm>
 #include <cstring>
@@ -266,14 +267,18 @@ bool Hub::update(GLFWwindow* window, const char* scriptedKey) {
     return pressedNow;
   };
 
-  if (edge(GLFW_KEY_1, prev1_)) cycleWeapon();
-  if (edge(GLFW_KEY_2, prev2_)) cycleArmor();
-  if (edge(GLFW_KEY_3, prev3_)) cycleCosmetic();
-  if (edge(GLFW_KEY_TAB, prevTab_)) cycleMission();
+  if (edge(GLFW_KEY_1, prev1_)) { cycleWeapon(); audio::play(Sfx::UiMove); }
+  if (edge(GLFW_KEY_2, prev2_)) { cycleArmor(); audio::play(Sfx::UiMove); }
+  if (edge(GLFW_KEY_3, prev3_)) { cycleCosmetic(); audio::play(Sfx::UiMove); }
+  if (edge(GLFW_KEY_TAB, prevTab_)) { cycleMission(); audio::play(Sfx::UiMove); }
   bool enter = edge(GLFW_KEY_ENTER, prevEnter_);
   bool space = edge(GLFW_KEY_SPACE, prevSpace_);
   // The route is flown in order. A locked sector is on the list so you can
   // see what is ahead, and that is all it is for.
-  if (missionLocked(missionIndex_)) return false;
+  if (missionLocked(missionIndex_)) {
+    if (enter || space) audio::play(Sfx::UiDeny);
+    return false;
+  }
+  if (enter || space) audio::play(Sfx::UiSelect);
   return enter || space;
 }
