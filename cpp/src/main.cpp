@@ -110,6 +110,8 @@ int main(int argc, char** argv) {
         std::printf("%s|%zu|%s", id.c_str(), site.areas.size(), m->bossId.empty() ? "-" : m->bossId.c_str());
         for (const Site::Objective& o : site.objectives) {
           const char* kind = o.needsBoss ? "boss"
+                           : o.champion ? "champion"
+                           : o.sequence ? "sequence"
                            : o.timed == Site::Objective::Timed::Hold ? "hold"
                            : o.timed == Site::Objective::Timed::Uplink ? "uplink"
                            : !o.collectGroup.empty() ? "collect"
@@ -536,15 +538,15 @@ int main(int argc, char** argv) {
     if (def->shop == CrewShop::Route && station.layout() == "kourou" &&
         !earthProgrammeDone(hubContent, profile)) {
       r.heading = "RATED OPERATIVES ONLY";
-      r.why = "Finish the Strider programme here at Kourou and the lift opens. Until then it "
+      r.why = "Finish the Strider programme here at the hideout and the lift opens. Until then it "
               "does not take candidates. Deploy from THE PAD by the doorway.";
     } else if (def->shop == CrewShop::Contracts && !campaignComplete(profile, hubContent)) {
       r.heading = "AFTER THE CAMPAIGN";
       r.why = station.layout() == "kourou"
                   ? "The board is for rated operatives with time on their hands. Finish the "
-                    "programme and the ark first - deploy from THE PAD by the doorway."
-                  : "Off-ark work is for after the ark. Kaur has the route on this deck, by the "
-                    "airlock end - fly it to THE CONDUCTOR and the board is yours.";
+                    "programme and the first attack first - deploy from THE PAD by the doorway."
+                  : "Off-world work is for after the first attack. Kaur has the drops on this deck, by the "
+                    "airlock end - fly them to THE GREAT CAVE and the board is yours.";
     }
     return r;
   };
@@ -1273,7 +1275,7 @@ int main(int argc, char** argv) {
 
       if (frame % 30 == 0) {
         glfwSetWindowTitle(window,
-                           station.layout() == "kourou" ? "Erebus Cradle | Kourou Ground Station"
+                           station.layout() == "kourou" ? "Erebus Cradle | Division Hideout"
                                                         : "Erebus Cradle | The Cradle");
       }
 

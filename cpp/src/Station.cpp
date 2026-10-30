@@ -337,7 +337,11 @@ void buildCradle(Builder& b, std::vector<Station::Terminal>& terminals) {
 }
 
 // ============================================================
-// KOUROU GROUND STATION — where the Strider programme actually happens.
+// THE DIVISION HIDEOUT — where the Strider programme actually happens.
+//
+// (The layout is still called "kourou" in code and saves, so old records
+// land in the right place. It is not at Kourou any more: it is a hidden
+// Division hangar somewhere on Earth, with the burning world outside.)
 //
 // Not a smaller Cradle. The Cradle is a sealed can with strip light and no
 // horizon; this is a shed on a launch site with one wall mostly open to the
@@ -529,8 +533,8 @@ bool Station::init(const Content& content, const std::string& layout) {
   float floorY = DECK_A;
 
   if (layout_ == "kourou") {
-    title_ = "KOUROU GROUND STATION";
-    subtitle_ = "STRIDER PROGRAMME - MUSTER FLOOR";
+    title_ = "DIVISION HIDEOUT";
+    subtitle_ = "SOMEWHERE ON EARTH - STRIDER PROGRAMME";
     buildKourou(b, terminals_);
     // Daylight through a pad door, not strip light in a sealed can. The fill
     // is warm and much stronger than the Cradle's, because the far wall of
@@ -539,14 +543,15 @@ bool Station::init(const Content& content, const std::string& layout) {
     spawn_ = glm::vec3(0.0f, 0.0f, -29.5f);
     spawnYaw_ = 90.0f;
     sunDir_ = glm::normalize(glm::vec3(-0.35f, -0.62f, 0.70f));
-    sunColour_ = glm::vec3(1.00f, 0.96f, 0.88f);
-    sunIntensity_ = 4.4f;
-    fogDensity_ = 0.0022f;
-    fogColour_ = glm::vec3(0.52f, 0.56f, 0.62f);
-    clearColour_ = glm::vec3(0.36f, 0.45f, 0.58f);
+    // The world outside is burning: a low sun through smoke, not a clear sky.
+    sunColour_ = glm::vec3(1.00f, 0.78f, 0.58f);
+    sunIntensity_ = 3.2f;
+    fogDensity_ = 0.0040f;
+    fogColour_ = glm::vec3(0.42f, 0.36f, 0.32f);
+    clearColour_ = glm::vec3(0.30f, 0.26f, 0.24f);
     viewDistance_ = 600.0f;
-    skyZenith_ = glm::vec3(0.16f, 0.30f, 0.62f);
-    skyHorizon_ = glm::vec3(0.72f, 0.80f, 0.92f);
+    skyZenith_ = glm::vec3(0.16f, 0.15f, 0.17f);
+    skyHorizon_ = glm::vec3(0.62f, 0.46f, 0.34f);
     skyIntensity_ = 1.0f;
     iblIntensity_ = 1.0f;
     ambientFill_ = glm::vec3(0.150f, 0.152f, 0.158f);

@@ -62,6 +62,9 @@ struct Hostile {
   // blended into the steering direction until it's making progress again.
   float stuckT = 0.0f;
   float avoidSide = 1.0f;
+  // A tap "singing": a bright pulse the game sets when it is this tap's
+  // turn in the phrase (Game::updateSite), fading on its own.
+  float singT = 0.0f;
 
   void spawn(const EnemyType* t, glm::vec3 at, bool boss = false, float hpMult = 1.0f);
 

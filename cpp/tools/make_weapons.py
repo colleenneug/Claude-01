@@ -52,8 +52,8 @@ MAKERS = {
                  line="Heavy. Every round lands like a decision."),
     "ves":  dict(name="VESPER", prefix="VS", mods=dict(fi=0.82, damage=0.9, mag=1.15, reload=0.92),
                  line="Light and fast. Empties itself before the other one has finished thinking."),
-    "salv": dict(name="ARK SALVAGE", prefix="AS", mods=dict(damage=0.95, reload=1.15, pierce=True),
-                 line="Stripped off the ark. Whatever it was built to shoot, it goes through it."),
+    "salv": dict(name="CYBER SALVAGE", prefix="AS", mods=dict(damage=0.95, reload=1.15, pierce=True),
+                 line="Stripped off a downed Cyber. Whatever it was built to shoot, it goes through it."),
     "ch":   dict(name="CHOIR", prefix="CH", mods=dict(damage=1.12, spread=0.7, pierce=True, hs=1.15),
                  line="It hums when it is loaded. Nobody on the Cradle will say what it was."),
 }
@@ -196,8 +196,8 @@ def main():
         print(f"  {k:8s} {len(v)}")
 
     # Who hands over the non-shop ones.
-    missions = ["earth_hangar", "earth_causeway", "earth_launch", "breach", "hold", "promenade",
-                "greenhouse", "archive", "foundry", "relay", "vault", "conductor"]
+    missions = ["earth_hangar", "earth_causeway", "earth_launch", "dead_air", "harbour", "hospital",
+                "signal_tower", "forge", "dam", "listening_station", "gate", "great_cave"]
     ranks = ["probationer", "strider_3", "hull_walker", "spine_runner", "strider_2",
              "strider_1", "senior", "lead"]
     bounties = ["bright_head_count", "ondo_scrap_rate", "hale_fence_line", "kaur_down_the_spine",

@@ -42,13 +42,16 @@ struct EnemyType {
 struct WaveSpawn { std::string enemyId; int count = 1; float radius = 20.0f; };
 
 // One leg of an expedition, in a mission file:
-//   stage <kind> [n] | <what it says on screen>
-// kinds: clear, hold <seconds>, uplink <seconds>, collect <n>, destroy <n>, boss
+//   stage <kind> [target] [n] | <what it says on screen>
+// kinds: clear, hold <seconds>, uplink <seconds>, collect <n>, destroy <n>,
+//        champion <enemy id> (one named heavy: a sub-boss in its own room),
+//        sequence <n> (n taps to break in the order they sing), boss
 // Each stage is one area of the route, in order. A mission with none gets
 // the default: every area a clear, and the boss (if any) at the end.
 struct MissionStage {
   std::string kind = "clear";
   int n = 0;
+  std::string target;   // champion: which enemy
   std::string text;
 };
 
@@ -222,6 +225,9 @@ struct MissionDef {
   // Campaign missions are expeditions unless this says otherwise
   // (`expedition = false` keeps the old single arena).
   bool expedition = true;
+  // Written out in the file: a mission off the campaign (a test fixture)
+  // can ask to be an expedition too.
+  bool expeditionSet = false;
 
   // Start with empty hands. You wake up: whatever you would have been issued
   // is in the armoury, on the other side of the building.

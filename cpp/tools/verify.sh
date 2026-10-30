@@ -98,7 +98,7 @@ check "patrol mission completes" "$OUT/patrol.json" \
 # takes a while to cross. Playing one to the end with a scripted pistol is
 # not the claim: a player who stands still to shoot loses the long fights.
 run "$OUT/breach.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
-    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=1500 -- --mission breach
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=1500 -- --mission dead_air
 check "a campaign sector is an expedition, and its route advances" "$OUT/breach.json" \
       "s['expedition'] is True and s['objectives'] >= 3 and (s['objective'] >= 1 or s['missionState'] == 'complete')"
 # ...and you hear it: every effect synthesised, and the fight asked for
@@ -114,26 +114,22 @@ if python3 - "$OUT/routes.txt" <<'PYCHECK'
 import sys
 rows = [l.strip().split('|') for l in open(sys.argv[1]) if '|' in l]
 seqs = [tuple(k.split(':', 1)[0] for k in r[3:] if not k.startswith('reach:')) for r in rows]
-ok = len(rows) >= 29 and len(set(tuple(r[3:]) for r in rows)) == len(rows)
+ok = len(rows) >= 18 and len(set(tuple(r[3:]) for r in rows)) == len(rows)
 ok = ok and all(len(set(q)) >= 2 for q in seqs)
-ok = ok and rows[-1][0] == 'conductor' and rows[-1][-1].startswith('boss:')
+ok = ok and rows[-1][0] == 'great_cave' and rows[-1][-1].startswith('boss:')
 kinds = set(k for q in seqs for k in q)
-ok = ok and {'clear', 'hold', 'uplink', 'collect', 'destroy', 'boss'} <= kinds
+ok = ok and {'clear', 'hold', 'uplink', 'collect', 'destroy', 'champion', 'sequence', 'boss'} <= kinds
 sys.exit(0 if ok else 1)
 PYCHECK
 then echo "  PASS every campaign mission is a different route to the Conductor"; PASS=$((PASS+1))
 else echo "  FAIL every campaign mission is a different route  ($(head -c 400 "$OUT/routes.txt"))"; FAIL=$((FAIL+1)); fi
 
-# The new goals play: an uplink is run (breach ends on one), cores are
-# picked up (spine), taps are broken (junction), a ring is held (counter).
-run "$OUT/spine.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
-    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=5000 -- --mission spine
-check "a collect objective is met by picking the cores up" "$OUT/spine.json" \
-      "s['objective'] >= 3 or s['missionState'] == 'complete'"
-run "$OUT/breachdone.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
-    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=4000 -- --mission breach
-check "an uplink runs to the end and finishes the mission" "$OUT/breachdone.json" \
-      "s['missionState'] == 'complete'"
+# The new goals play: an uplink is run and cores are picked up (DEAD AIR
+# has both, in that order, and ends on a tap).
+run "$OUT/deadair.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=6000 -- --mission dead_air
+check "an uplink and a collect objective are met on the way through" "$OUT/deadair.json" \
+      "s['objective'] >= 5 or s['missionState'] == 'complete'"
 
 # The route opens one sector at a time. From a fresh profile every campaign
 # mission but the first is locked, so cycling the hub's list has to step over
@@ -141,7 +137,7 @@ check "an uplink runs to the end and finishes the mission" "$OUT/breachdone.json
 run "$OUT/lock.json" EREBUS_SLOT=1 EREBUS_SKIP_SPACE=1 EREBUS_HUB_SCRIPT=mission \
     EREBUS_MAX_FRAMES=40
 check "route stays locked ahead of your progress" "$OUT/lock.json" \
-      "s['appState'] == 'hub' and s['selectedMission'] != 'spine'"
+      "s['appState'] == 'hub' and s['selectedMission'] != 'still_streets'"
 
 # A doctrine is the body it gives you, and the three are not
 # interchangeable: a Bulwark walks into the same fight with thirty more
@@ -156,12 +152,12 @@ check "route stays locked ahead of your progress" "$OUT/lock.json" \
 # shotgun is proved where it is now true: "you start unarmed and end up
 # issued", further down, which walks the block and comes out with a MAUL-12.
 run "$OUT/bulwark.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_FORCE_FIRE=1 \
-    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=600 -- --mission breach
+    EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=600 -- --mission dead_air
 check "a bulwark takes the field as a bulwark" "$OUT/bulwark.json" \
       "s['class'] == 'bulwark' and abs(s['maxHp'] - 124) < 0.01 and s['magSize'] == 12"
 
 run "$OUT/oracle.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=oracle EREBUS_MAX_FRAMES=60 \
-    -- --mission breach
+    -- --mission dead_air
 check "an oracle takes the field as an oracle" "$OUT/oracle.json" \
       "s['class'] == 'oracle' and abs(s['maxHp'] - 94) < 0.01 and s['magSize'] == 12"
 
@@ -223,16 +219,16 @@ check "the appraiser's desk opens after the conversation" "$OUT/rook.json" \
 check "the orbital quartermaster carries his own rack" "$OUT/voss.json" \
       "s['host'] == 'VOSS' and 'anvil' in s['weapons'] and 'kestrel' not in s['weapons']"
 check "the flight officer flies the ark and only the ark" "$OUT/kaur.json" \
-      "s['host'] == 'KAUR' and 'breach' in s['missions'] and 'earth_range' not in s['missions'] \
+      "s['host'] == 'KAUR' and 'dead_air' in s['missions'] and 'earth_range' not in s['missions'] \
        and 'patrol_dust_shelf' not in s['missions']"
 
 # THE ROUTE IS FLOWN IN ORDER. A fresh record standing at Kaur's counter can
-# see HARD DOCK and cannot launch it: the Earth programme comes first.
+# see DEAD AIR and cannot launch it: the Earth programme comes first.
 run "$OUT/kaurlock.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
     EREBUS_STATION_AT=0,0,31 EREBUS_STATION_YAW=90 EREBUS_HUB_SCRIPT=launch,launch,launch \
     EREBUS_MAX_FRAMES=170
 check "a locked sector cannot be launched" "$OUT/kaurlock.json" \
-      "s['appState'] == 'hub' and s['selectedMission'] == 'breach'"
+      "s['appState'] == 'hub' and s['selectedMission'] == 'dead_air'"
 
 # BOUNTIES. Taken at the desk of whoever posted them...
 run "$OUT/odil.json" EREBUS_SPACE_AUTOPILOT=cradle EREBUS_FORCE_ENGAGE=1 \
@@ -447,9 +443,9 @@ equipped_cosmetic = default
 owned_weapon maul_12
 owned_armor patrol_vest
 owned_cosmetic default
-completed breach
-completed spine
-completed junction
+completed dead_air
+completed still_streets
+completed relay_road
 SEED
 run "$OUT/legacy.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
 # ...but it does not keep a ship it was never issued. Ships come at the end
@@ -463,7 +459,7 @@ check "a record halfway down the ark is on foot at the Cradle" "$OUT/legacy.json
 cp "$OUT/save-legacy.txt" "$OUT/save-legacyhub.txt"
 run "$OUT/legacyhub.json" EREBUS_SKIP_SPACE=1 EREBUS_MAX_FRAMES=30 EREBUS_SKIP_TUTORIAL=
 check "an existing record opens its route where it left off" "$OUT/legacyhub.json" \
-      "s['selectedMission'] == 'hold'"
+      "s['selectedMission'] == 'harbour'"
 
 # THE KIT SCREEN. G opens it over a mission, and the whole point is that it
 # writes to the record from there: a menu you can only reach from a counter is
@@ -586,14 +582,14 @@ checkfile "experience holds below second class until the campaign is done" "$OUT
   sed -n '1,/^owned_cosmetic/p' "$OUT/save-cap.txt" | sed 's/^xp = .*/xp = 3200/'
   for m in tutorial_earth earth_range earth_hangar earth_assembly earth_causeway earth_perimeter \
            earth_fuel_farm earth_launch \
-           breach spine junction hold counter aft promenade barracks sunset greenhouse medbay \
-           archive ward reactor foundry coolant choir relay deeper threshold vault conductor; do
+           dead_air still_streets relay_road harbour hospital signal_tower forge dam \
+           listening_station gate great_cave; do
     echo "completed $m"
   done
 } > "$OUT/save-done.txt"
 # One sector short of the end, taken before the run below writes a ship into
 # the finished record.
-grep -v '^completed conductor$' "$OUT/save-done.txt" > "$OUT/save-almost.txt"
+grep -v '^completed great_cave$' "$OUT/save-done.txt" > "$OUT/save-almost.txt"
 run "$OUT/done.json" EREBUS_MAX_FRAMES=40 EREBUS_SKIP_TUTORIAL=
 check "the end of the campaign issues a ship" "$OUT/done.json" "s['appState'] == 'space'"
 checkfile "...the KITE" "$OUT/save-done.txt" "^owned_ship kite$"
@@ -645,7 +641,7 @@ check "a side contract cannot be launched before the campaign" "$OUT/sidelock.js
 check "at Kourou the arrow points at the pad" "$OUT/ground.json" \
       "s['next'].startswith('NEXT: THE RANGE') and 'PAD' in s['next']"
 check "on the ark it points at Kaur" "$OUT/legacy.json" \
-      "s['next'].startswith('NEXT: THE HOLD') and 'KAUR' in s['next']"
+      "s['next'].startswith('NEXT: THE HARBOUR') and 'KAUR' in s['next']"
 
 # Once the campaign is done, Earth is a flight away: landing on it puts you on
 # foot at Kourou.

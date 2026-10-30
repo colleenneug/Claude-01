@@ -118,12 +118,20 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
     if (tokens[0] == "stage") {
       MissionStage st;
       if (tokens.size() >= 2) st.kind = tokens[1];
-      if (tokens.size() >= 3 && tokens[2] != "|") {
-        try { st.n = std::stoi(tokens[2]); } catch (...) { st.n = 0; }
+      // After the kind: an optional word (a champion's enemy id) and an
+      // optional number, in that order, up to the bar.
+      for (size_t t = 2; t < tokens.size() && tokens[t] != "|" && tokens[t][0] != '|'; t++) {
+        try {
+          size_t used = 0;
+          int v = std::stoi(tokens[t], &used);
+          if (used == tokens[t].size()) { st.n = v; continue; }
+        } catch (...) {}
+        if (st.target.empty()) st.target = tokens[t];
       }
       size_t bar = line.find('|');
       if (bar != std::string::npos) st.text = trim(line.substr(bar + 1));
-      static const char* known[] = {"clear", "hold", "uplink", "collect", "destroy", "boss"};
+      static const char* known[] = {"clear", "hold", "uplink", "collect", "destroy", "boss",
+                                    "champion", "sequence"};
       bool ok = false;
       for (const char* k : known) ok = ok || st.kind == k;
       if (!ok) {
@@ -246,7 +254,10 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
         else if (k == "reward_xp") { try { m.rewardXp = std::stoi(v); } catch (...) {} }
         else if (k == "reward_weapon") m.rewardWeapon = v;
-        else if (k == "expedition") m.expedition = (v == "true" || v == "1");
+        else if (k == "expedition") {
+          m.expedition = (v == "true" || v == "1");
+          m.expeditionSet = true;
+        }
       }
     }
   }

@@ -69,6 +69,11 @@ struct Site {
     std::vector<std::string> reinforce;
     glm::vec3 areaMin{0.0f}, areaMax{0.0f};
     std::string reinforceGroup;
+    // champion: one named heavy, its health on the objective line.
+    bool champion = false;
+    // sequence: the taps in clearGroup have to be broken in the order they
+    // sing; a wrong one brings back every one already broken.
+    bool sequence = false;
   };
 
   // Something to pick up for a collect objective: a data core, a black box.

@@ -1047,7 +1047,7 @@ void Hud::drawPost(int screenW, int screenH, const Content& content,
           else if (const CosmeticDef* c = content.cosmetic(id)) name = c->name + " SHADER";
           else if (const MissionDef* m = content.mission(id)) name = m->name;
           else if (id == "track:earth") name = "THE STRIDER PROGRAMME";
-          else if (id == "track:cradle") name = "THE ARK, ALL TWENTY-TWO SECTORS";
+          else if (id == "track:cradle") name = "THE FIRST ATTACK - THE DROPS TO EARTH";
           else if (id.rfind("track:", 0) == 0) name = id.substr(6) + " ROUTE";
           else continue;
           line += (line.empty() ? "" : "   ") + name;
@@ -1693,10 +1693,10 @@ void Hud::drawLeaveConfirm(int screenW, int screenH, bool restarts) {
   const float w = std::min(760.0f, screenW - 64.0f), h = 190.0f;
   rect(cx - w * 0.5f, cy - h * 0.5f, w, h, glm::vec4(0.03f, 0.04f, 0.06f, 0.9f));
   rect(cx - w * 0.5f, cy - h * 0.5f, w, 3, gold);
-  textCentered(cx, cy - h * 0.5f + 24, restarts ? "START BLOCK D AGAIN?" : "LEAVE THE MISSION?", 3.0f, gold);
+  textCentered(cx, cy - h * 0.5f + 24, restarts ? "START HOME AGAIN?" : "LEAVE THE MISSION?", 3.0f, gold);
   wrappedCentered(cx, cy - h * 0.5f + 70, w - 60,
                   restarts ? "There is nowhere to go back to yet - this is the first morning. "
-                             "Leaving starts Block D from the top."
+                             "Leaving starts your escape from the top."
                            : "You keep the experience, bounty progress and any weapons you found. "
                              "It is not cleared, and it stays open to fly again from the same counter.",
                   1.7f, dim, 22.0f);

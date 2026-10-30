@@ -4,23 +4,22 @@
 #include <cmath>
 
 // ============================================================
-// KOUROU, BLOCK D — the crew quarters, and the pad outside them.
+// HOME — your house, the night the Cybers reach your street.
 //
-// Where a new record starts. You wake up in the bunks with nothing, because
-// whatever you were going to be issued is in the armoury on the other side
-// of the building, and something got into the block while you were asleep.
-//
-// The route is a route, not a checkpoint list: bunks, washroom corridor,
-// armoury, muster hall, blast door, and then out onto the pad. Objectives
-// change as you cross the building and nothing stops to congratulate you.
+// Where a new record starts. You wake up in your own bedroom with nothing:
+// the power is out, Cybers are in the house, and the only thing in it that
+// shoots is the pistol in the lockbox across the room. Your doctrine's
+// weapon is in a Division supply pod that came down through the living room
+// roof, and the way out is through the garage and into the street, where a
+// Division ship is coming down for survivors.
 //
 // Laid out along +Z, which is the direction you wake up facing:
 //
-//   z -34 .. -20   BUNKROOM      you, the bunks, a footlocker with a sidearm
-//   z -20 ..  -6   CORRIDOR      washroom doors either side
-//   z  -6 ..  10   ARMOURY       racks, and your issued weapon in one of them
-//   z  10 ..  30   MUSTER HALL   tables, the briefing screen, the blast door
-//   z  30 ..  80   THE PAD       outside: open ground and the range
+//   z -34 .. -20   BEDROOM       you, the bed, the lockbox with a pistol in it
+//   z -20 ..  -6   HALLWAY       the bathroom and the spare room either side
+//   z  -6 ..  10   LIVING ROOM   sofa, kitchen, and the supply pod
+//   z  10 ..  30   GARAGE        the car, the workbench, the door already open
+//   z  30 ..  80   THE STREET    wrecks, houses on fire, and the Division ship
 // ============================================================
 
 namespace {
@@ -48,6 +47,14 @@ const glm::vec3 HULL_DARK(0.25f, 0.26f, 0.29f);
 const glm::vec3 ENGINE_GLOW(0.42f, 0.74f, 1.00f);
 const glm::vec3 STROBE(1.00f, 0.32f, 0.26f);
 const glm::vec3 HOLD_LIGHT(1.00f, 0.86f, 0.62f);
+// Home: painted plaster and wood, a power cut, and the street on fire.
+const glm::vec3 PLASTER(0.42f, 0.39f, 0.35f);
+const glm::vec3 WOOD(0.36f, 0.26f, 0.18f);
+const glm::vec3 FABRIC(0.30f, 0.32f, 0.40f);
+const glm::vec3 ASPHALT(0.17f, 0.17f, 0.18f);
+const glm::vec3 BRICK(0.42f, 0.27f, 0.22f);
+const glm::vec3 FIRE(1.00f, 0.48f, 0.18f);
+const glm::vec3 POD(0.30f, 0.34f, 0.40f);
 
 struct Builder {
   std::vector<Level::Part> parts;
@@ -117,170 +124,154 @@ struct Builder {
   }
 };
 
-void buildKourouBlockD(Site& s) {
+void buildHome(Site& s) {
   Builder b;
-  const float CEIL = 3.4f;
+  const float CEIL = 3.0f;   // a house, not a barracks
 
-  // ---------------- bunkroom ----------------
+  // ---------------- bedroom ----------------
   b.room(-7, 7, -34, -20, CEIL, false, true);
-  // Two rows of bunks against the side walls. Each is a frame, a lower bed
-  // and an upper one — a single slab reads as a shelf.
-  for (int side = -1; side <= 1; side += 2) {
-    float x = (float)side * 5.0f;
-    for (int i = 0; i < 4; i++) {
-      float z = -32.0f + (float)i * 3.0f;
-      b.box(x - 1.6f, x + 1.6f, 0.0f, 0.55f, z, z + 2.0f, BUNK, true, 0.15f, 0.8f);
-      b.box(x - 1.6f, x + 1.6f, 1.45f, 1.75f, z, z + 2.0f, BUNK, true, 0.15f, 0.8f);
-      b.box(x + (float)side * 1.45f, x + (float)side * 1.6f, 0.0f, 2.1f, z, z + 0.2f,
-            LOCKER, true, 0.5f, 0.5f);
-      b.box(x + (float)side * 1.45f, x + (float)side * 1.6f, 0.0f, 2.1f, z + 1.8f, z + 2.0f,
-            LOCKER, true, 0.5f, 0.5f);
-    }
-  }
-  // The footlocker, standing open, across the room from where you wake up —
-  // far enough that getting to it is the first thing you do rather than
-  // something that happens to you while the cutscene is still running.
-  // Knee height on purpose: anything over Level::kStepHeight is a wall, and
-  // a wall across the only lane out of the bunkroom is not a footlocker.
+  // The bed you wake up beside, against the left wall: frame, mattress,
+  // pillow and headboard, so it reads as a bed and not as a crate.
+  b.box(-6.6f, -3.4f, 0.0f, 0.45f, -31.0f, -27.6f, WOOD, true, 0.1f, 0.8f);
+  b.box(-6.5f, -3.5f, 0.45f, 0.65f, -30.9f, -27.7f, FABRIC, true, 0.0f, 0.95f);
+  b.box(-6.3f, -5.3f, 0.65f, 0.8f, -30.6f, -29.6f, glm::vec3(0.62f, 0.62f, 0.60f), false, 0.0f, 0.95f);
+  b.box(-7.0f, -6.6f, 0.0f, 1.3f, -31.0f, -27.6f, WOOD, true, 0.1f, 0.8f);
+  // Wardrobe and desk on the right.
+  b.box(5.2f, 7.0f, 0.0f, 2.3f, -33.6f, -30.6f, WOOD, true, 0.1f, 0.75f);
+  b.box(4.8f, 7.0f, 0.0f, 0.8f, -26.0f, -23.6f, WOOD, true, 0.1f, 0.75f);
+  // The window, and the street on fire behind it.
+  b.lit(-7.05f, -6.95f, 1.0f, 2.3f, -25.6f, -22.4f, FIRE, 1.5f);
+  // The lockbox, standing open, across the room from where you wake up -
+  // far enough that getting to it is the first thing you do. Knee height on
+  // purpose: anything over Level::kStepHeight is a wall, and a wall across
+  // the only lane out of the room is not a lockbox.
   b.box(-1.2f, 0.4f, 0.0f, 0.42f, -22.6f, -21.4f, LOCKER, true, 0.55f, 0.45f);
-  // A lit rim round the open lid, not a lit lid: a whole glowing surface at
-  // this size stops reading as a light and starts reading as furniture made
-  // of light.
   b.lit(-1.2f, 0.4f, 0.42f, 0.46f, -22.62f, -22.5f, EXIT_SIGN, 0.7f);
   b.lit(-1.2f, 0.4f, 0.42f, 0.46f, -21.5f, -21.38f, EXIT_SIGN, 0.7f);
+  // The power is out. What light there is comes from the fires outside.
+  b.strips(-34, -20, CEIL, 4.5f, FIRE, 0.45f);
 
-  // The alarm: the block's strips are dead and the emergency line is on.
-  b.strips(-34, -20, CEIL, 4.5f, ALARM, 1.1f);
-
-  // ---------------- corridor, washrooms either side ----------------
+  // ---------------- hallway: bathroom on the left, spare room on the right
   b.room(-2.6f, 2.6f, -20, -6, CEIL, true, true);
   for (int side = -1; side <= 1; side += 2) {
     float x0 = side < 0 ? -9.0f : 2.6f, x1 = side < 0 ? -2.6f : 9.0f;
     b.box(x0, x1, -0.4f, 0.0f, -18.0f, -12.0f, FLOOR_IN, true, 0.2f, 0.8f);
     b.box(x0, x1, CEIL, CEIL + 0.4f, -18.0f, -12.0f, CEILING, false, 0.2f, 0.85f);
     float far = side < 0 ? x0 : x1;
-    b.box(far - (side < 0 ? 0.4f : 0.0f), far + (side < 0 ? 0.0f : 0.4f),
-          -0.4f, CEIL, -18.4f, -11.6f, WALL);
-    b.box(x0, x1, -0.4f, CEIL, -18.4f, -18.0f, WALL);
-    b.box(x0, x1, -0.4f, CEIL, -12.0f, -11.6f, WALL);
-    // basins, so a washroom is a washroom
-    for (int i = 0; i < 3; i++) {
-      float z = -17.0f + (float)i * 1.8f;
-      b.box(far - (side < 0 ? 0.0f : 0.9f), far + (side < 0 ? 0.9f : 0.0f),
-            0.85f, 1.05f, z, z + 1.1f, LOCKER, true, 0.6f, 0.35f);
+    b.box(far - (side < 0 ? 0.4f : 0.0f), far + (side < 0 ? 0.0f : 0.4f), -0.4f, CEIL, -18.4f, -11.6f, PLASTER);
+    b.box(x0, x1, -0.4f, CEIL, -18.4f, -18.0f, PLASTER);
+    b.box(x0, x1, -0.4f, CEIL, -12.0f, -11.6f, PLASTER);
+    if (side < 0) {
+      // the bathroom: a basin, and a bath along the far wall
+      b.box(far, far + 0.9f, 0.85f, 1.05f, -17.0f, -15.9f, LOCKER, true, 0.6f, 0.35f);
+      b.box(far, far + 1.6f, 0.0f, 0.6f, -15.2f, -12.4f, glm::vec3(0.70f, 0.70f, 0.68f), true, 0.3f, 0.4f);
+    } else {
+      // the spare room: a single bed and boxes nobody unpacked
+      b.box(far - 2.0f, far, 0.0f, 0.55f, -17.6f, -14.6f, FABRIC, true, 0.0f, 0.9f);
+      b.box(far - 1.2f, far, 0.0f, 0.7f, -13.4f, -12.4f, WOOD, true, 0.1f, 0.85f);
     }
   }
-  b.strips(-20, -6, CEIL, 3.5f, ALARM, 1.1f);
+  b.strips(-20, -6, CEIL, 3.5f, FIRE, 0.5f);
 
-  // ---------------- armoury ----------------
+  // ---------------- living room and kitchen ----------------
   b.room(-8, 8, -6, 10, CEIL, true, true, 1.8f);
-  // Racks down both walls, and a bench across the back.
-  for (int side = -1; side <= 1; side += 2) {
-    float x = (float)side * 6.4f;
-    for (int i = 0; i < 5; i++) {
-      float z = -4.5f + (float)i * 2.8f;
-      b.box(x - 0.9f, x + 0.9f, 0.0f, 2.3f, z, z + 0.35f, RACK, true, 0.65f, 0.4f);
-      b.box(x - 0.9f, x + 0.9f, 1.05f, 1.15f, z + 0.35f, z + 1.6f, RACK, true, 0.65f, 0.4f);
-    }
-  }
-  b.box(-5.0f, -2.0f, 0.0f, 0.95f, 7.6f, 9.0f, TABLE, true, 0.3f, 0.6f);
-  b.box(2.0f, 5.0f, 0.0f, 0.95f, 7.6f, 9.0f, TABLE, true, 0.3f, 0.6f);
-  // ...and the middle span is knee height, so the weapon on it is
-  // something you step over rather than something you walk around.
-  b.box(-2.0f, 2.0f, 0.0f, 0.42f, 7.6f, 9.0f, TABLE, true, 0.3f, 0.6f);
-  // The bench is lit: it is where the one weapon still signed out is lying.
+  // The sofa and the bookshelf on the left...
+  b.box(-7.6f, -4.6f, 0.0f, 0.45f, -2.0f, 3.0f, FABRIC, true, 0.0f, 0.9f);
+  b.box(-7.6f, -7.0f, 0.45f, 1.0f, -2.0f, 3.0f, FABRIC, true, 0.0f, 0.9f);
+  b.box(-7.6f, -7.0f, 0.0f, 2.2f, 5.0f, 9.0f, WOOD, true, 0.1f, 0.8f);
+  // ...the kitchen down the right: counter, and the fridge.
+  b.box(5.6f, 8.0f, 0.0f, 0.95f, -5.0f, 3.6f, PLASTER * 0.9f, true, 0.3f, 0.5f);
+  b.box(6.6f, 8.0f, 0.0f, 2.0f, 4.6f, 6.2f, glm::vec3(0.72f, 0.72f, 0.70f), true, 0.5f, 0.35f);
+  // The dining table, the kitchen island, and between them the Division
+  // supply pod that came down through the roof. Its middle is knee height,
+  // so the weapon on it is something you step over, not walk around.
+  b.box(-5.0f, -2.0f, 0.0f, 0.75f, 7.6f, 9.0f, WOOD, true, 0.2f, 0.7f);
+  b.box(2.0f, 5.0f, 0.0f, 0.95f, 7.6f, 9.0f, PLASTER * 0.9f, true, 0.3f, 0.5f);
+  b.box(-2.0f, 2.0f, 0.0f, 0.42f, 7.6f, 9.0f, POD, true, 0.6f, 0.4f);
   b.lit(-1.6f, 1.6f, 0.42f, 0.46f, 7.7f, 8.9f, EXIT_SIGN, 1.5f);
-  b.strips(-6, 10, CEIL, 4.0f, STRIP, 2.0f);
+  // The hole it came through: the sky, a little, and the glow of the fires.
+  b.lit(-2.4f, 2.4f, CEIL - 0.05f, CEIL + 0.3f, 6.8f, 9.8f, FIRE, 0.6f);
+  b.strips(-6, 10, CEIL, 4.0f, FIRE, 0.6f);
 
-  // ---------------- muster hall ----------------
-  b.room(-12, 12, 10, 30, 4.4f, true, true, 2.2f);
-  // Three rows of tables with an aisle down the middle. A muster hall has an
-  // aisle; a room spanned wall to wall by benches is a room you can only
-  // cross by climbing over the furniture.
-  for (int r = 0; r < 3; r++) {
-    float z = 13.5f + (float)r * 5.0f;
-    b.box(-6.0f, -1.6f, 0.0f, 0.9f, z, z + 1.3f, TABLE, true, 0.25f, 0.65f);
-    b.box(1.6f, 6.0f, 0.0f, 0.9f, z, z + 1.3f, TABLE, true, 0.25f, 0.65f);
-    for (float x : {-5.0f, -2.6f, 2.6f, 5.0f}) {
-      b.box(x - 0.6f, x + 0.6f, 0.0f, 0.42f, z - 1.1f, z - 0.3f, TABLE, true, 0.25f, 0.65f);
-    }
+  // ---------------- garage ----------------
+  b.room(-12, 12, 10, 30, 4.0f, true, true, 2.2f);
+  // The family car, a workbench, and shelves. The aisle down the middle is
+  // the way out.
+  b.box(-9.0f, -3.6f, 0.0f, 1.1f, 13.0f, 22.0f, glm::vec3(0.30f, 0.34f, 0.44f), true, 0.6f, 0.35f);
+  b.box(-8.4f, -4.2f, 1.1f, 1.8f, 15.0f, 20.0f, glm::vec3(0.12f, 0.14f, 0.17f), true, 0.7f, 0.2f);
+  b.box(5.0f, 9.0f, 0.0f, 0.95f, 14.0f, 15.6f, WOOD, true, 0.2f, 0.7f);
+  b.box(10.6f, 11.6f, 0.0f, 2.4f, 18.0f, 28.0f, RACK, true, 0.5f, 0.5f);
+  for (int i = 0; i < 4; i++) {
+    const float z = 18.6f + (float)i * 2.4f;
+    b.box(7.0f, 8.4f, 0.0f, 0.8f, z, z + 1.2f, glm::vec3(0.44f, 0.36f, 0.26f), true, 0.0f, 0.9f);
   }
-  // The briefing screen on the side wall, and the exit sign over the door.
-  b.lit(-11.6f, -11.5f, 1.6f, 3.4f, 16.0f, 23.0f, glm::vec3(0.35f, 0.62f, 0.9f), 0.9f);
-  b.lit(-2.0f, 2.0f, 3.5f, 3.9f, 29.8f, 30.0f, EXIT_SIGN, 2.2f);
-  b.strips(10, 30, 4.4f, 5.0f, STRIP, 2.2f);
+  // The garage door is already open; the light over it still works.
+  b.lit(-2.0f, 2.0f, 3.5f, 3.8f, 29.8f, 30.0f, EXIT_SIGN, 2.0f);
+  b.strips(10, 30, 4.0f, 5.0f, STRIP, 1.2f);
 
-  // ---------------- the pad ----------------
-  // Outside. No ceiling, which is the whole point of it: the first sky in
-  // the game, after four rooms of strip light.
-  b.box(-46, 46, -0.4f, 0.0f, 30, 82, CONCRETE, true, 0.1f, 0.85f);
-  b.box(-46, 46, -0.4f, 6.0f, 82, 82.6f, CONCRETE);
-  b.box(-46.6f, -46, -0.4f, 6.0f, 30, 82.6f, CONCRETE);
-  b.box(46, 46.6f, -0.4f, 6.0f, 30, 82.6f, CONCRETE);
-  // The face of the block you just walked out of, either side of the door.
-  b.box(-46, -2.2f, -0.4f, 7.0f, 29.6f, 30.0f, WALL);
-  b.box(2.2f, 46, -0.4f, 7.0f, 29.6f, 30.0f, WALL);
-  b.box(-2.2f, 2.2f, 4.4f, 7.0f, 29.6f, 30.0f, WALL);
-  // Blast barriers on the pad: cover, and something to break a hundred
-  // metres of flat concrete up.
+  // ---------------- the street ----------------
+  // Outside. The first sky in the game, and it is full of smoke.
+  b.box(-46, 46, -0.4f, 0.0f, 30, 82, ASPHALT, true, 0.1f, 0.85f);
+  // The houses across the street and either side: a row of fronts.
+  b.box(-46, 46, -0.4f, 6.0f, 82, 82.6f, BRICK);
+  b.box(-46.6f, -46, -0.4f, 6.0f, 30, 82.6f, BRICK);
+  b.box(46, 46.6f, -0.4f, 6.0f, 30, 82.6f, BRICK);
+  for (int i = 0; i < 6; i++) {
+    const float x = -40.0f + (float)i * 16.0f;
+    b.lit(x, x + 3.0f, 2.0f, 3.6f, 81.95f, 82.05f, (i % 2) ? FIRE : glm::vec3(0.30f, 0.32f, 0.36f), (i % 2) ? 1.6f : 0.4f);
+  }
+  // Your own house, either side of the garage door.
+  b.box(-46, -2.2f, -0.4f, 7.0f, 29.6f, 30.0f, PLASTER);
+  b.box(2.2f, 46, -0.4f, 7.0f, 29.6f, 30.0f, PLASTER);
+  b.box(-2.2f, 2.2f, 4.0f, 7.0f, 29.6f, 30.0f, PLASTER);
+  // Wrecked cars in the road: cover, and the street as it was left.
   for (int i = 0; i < 6; i++) {
     float x = -30.0f + (float)i * 12.0f;
     float z = 44.0f + (float)((i * 7) % 5) * 5.0f;
-    b.box(x - 3.2f, x + 3.2f, 0.0f, 1.5f, z, z + 0.8f, CONCRETE, true, 0.1f, 0.85f);
+    b.box(x - 3.2f, x + 3.2f, 0.0f, 1.2f, z, z + 0.8f, glm::vec3(0.28f, 0.22f, 0.20f), true, 0.5f, 0.6f);
+    b.box(x - 2.0f, x + 2.0f, 1.2f, 1.6f, z + 0.1f, z + 0.7f, glm::vec3(0.12f, 0.12f, 0.13f), true, 0.6f, 0.4f);
+    if (i % 3 == 1) b.lit(x - 1.0f, x + 1.0f, 1.6f, 2.4f, z + 0.2f, z + 0.6f, FIRE, 2.0f);
   }
-  // Service pylons. Kept west of x = 16: the transport's pan starts at 22
-  // and the row used to put a five-metre concrete post straight through its
-  // port nacelle.
+  // Street lamps, dead, and the stumps of what were trees.
   for (int i = 0; i < 4; i++) {
     float x = -32.0f + (float)i * 16.0f;
-    b.box(x - 1.0f, x + 1.0f, 0.0f, 5.0f, 70.0f, 72.0f, CONCRETE, true, 0.1f, 0.85f);
+    b.box(x - 0.6f, x + 0.6f, 0.0f, 5.0f, 70.4f, 71.6f, glm::vec3(0.22f, 0.22f, 0.24f), true, 0.6f, 0.4f);
   }
 
-  // Kourou, beyond the pan. The pad's perimeter wall used to be the edge of
-  // the world: from anything above head height you could see the concrete
-  // stop and blue sky start underneath it, and the closing shot — which
-  // climbs — made a launch site look like a platform hanging in mid-air.
-  // A ground plane out to four hundred metres and a scatter of buildings on
-  // it cost two dozen boxes and fix both.
-  b.box(-420, 420, -0.9f, -0.4f, -420, 440, glm::vec3(0.35f, 0.33f, 0.28f), false, 0.05f, 0.92f);
-  // It is flat, it is under everything, and it is in every cascade: casting
-  // from it buys nothing and only risks acne on itself.
+  // The town beyond: a ground plane out to four hundred metres and the
+  // neighbourhood on it, some of it burning, so nothing above head height
+  // sees the edge of the world.
+  b.box(-420, 420, -0.9f, -0.4f, -420, 440, glm::vec3(0.24f, 0.23f, 0.22f), false, 0.05f, 0.92f);
   b.parts.back().castShadow = false;
   {
-    // Hangars, assembly buildings and towers, out where you will never walk
-    // to them. Deterministic placement: a launch site is laid out, not
-    // scattered, and a seeded rand() here would differ between runs.
     const float far_[][5] = {
       // x, z, half-width, half-depth, height
-      {-150.0f, 210.0f, 34.0f, 22.0f, 26.0f},
-      { -78.0f, 300.0f, 20.0f, 20.0f, 14.0f},
-      {  96.0f, 180.0f, 26.0f, 30.0f, 34.0f},
-      { 190.0f, 260.0f, 40.0f, 24.0f, 18.0f},
-      {-230.0f, 120.0f, 24.0f, 34.0f, 12.0f},
-      { 150.0f,  20.0f, 18.0f, 18.0f, 22.0f},
-      {-140.0f, -60.0f, 30.0f, 20.0f, 16.0f},
-      {  60.0f, -90.0f, 22.0f, 26.0f, 28.0f},
+      {-150.0f, 210.0f, 14.0f, 10.0f, 9.0f},
+      { -78.0f, 300.0f, 12.0f, 12.0f, 8.0f},
+      {  96.0f, 180.0f, 16.0f, 12.0f, 10.0f},
+      { 190.0f, 260.0f, 30.0f, 20.0f, 34.0f},
+      {-230.0f, 120.0f, 12.0f, 14.0f, 8.0f},
+      { 150.0f,  20.0f, 10.0f, 10.0f, 9.0f},
+      {-140.0f, -60.0f, 14.0f, 10.0f, 9.0f},
+      {  60.0f, -90.0f, 22.0f, 18.0f, 26.0f},
     };
+    int k = 0;
     for (const auto& g : far_) {
       b.box(g[0] - g[2], g[0] + g[2], -0.9f, g[4], g[1] - g[3], g[1] + g[3],
-            glm::vec3(0.40f, 0.39f, 0.36f), false, 0.1f, 0.85f);
-      // A service tower on the corner of each, and a hazard light on top of
-      // it: at four hundred metres that red pinprick is the only thing that
-      // says the rest of the site is still crewed.
-      float tx = g[0] + g[2] * 0.7f, tz = g[1] - g[3] * 0.7f;
-      b.box(tx - 2.2f, tx + 2.2f, -0.9f, g[4] + 16.0f, tz - 2.2f, tz + 2.2f,
-            glm::vec3(0.33f, 0.33f, 0.31f), false, 0.2f, 0.8f);
-      b.lit(tx - 1.2f, tx + 1.2f, g[4] + 16.0f, g[4] + 17.2f, tz - 1.2f, tz + 1.2f,
-            glm::vec3(1.0f, 0.30f, 0.22f), 2.6f);
+            BRICK * 0.9f, false, 0.1f, 0.85f);
+      // Every other building is on fire.
+      if (k++ % 2 == 0) {
+        b.lit(g[0] - g[2] * 0.6f, g[0] + g[2] * 0.6f, g[4], g[4] + 2.5f, g[1] - g[3] * 0.6f, g[1] + g[3] * 0.6f,
+              FIRE, 3.0f);
+      }
     }
   }
 
-  // The transport, parked on the far pan with its ramp down and its hold
-  // lit, from the moment you walk outside. It is not yours and you cannot
-  // fly it — you do not have a ship yet, you have a pistol you found in a
-  // footlocker — but it is the thing Division keeps saying is holding for
-  // you, and it is visible across the whole fight so that the lift at the
-  // end is something you have been walking toward rather than a surprise.
+  // The Division ship, down at the end of the street with its ramp lowered
+  // and its hold lit, from the moment you walk out of the garage. It is
+  // here for survivors, and it is visible across the whole fight so that
+  // the pickup at the end is something you have been walking toward rather
+  // than a surprise.
   //
   // Parked nose-out (+Z) off to the right of the pan, clear of the pylons,
   // so the walk out of the blast door puts it in frame without it standing
@@ -357,10 +348,9 @@ void buildKourouBlockD(Site& s) {
   s.parts = std::move(b.parts);
   s.floorY = 0.0f;
 
-  // You wake up in the second bunk on the left, facing the length of the
-  // room — which is the way out.
+  // You wake up beside your bed, facing the door - which is the way out.
   s.playerSpawn = glm::vec3(-1.2f, 0.0f, -26.0f);
-  s.playerYaw = 90.0f;    // +Z, down the block
+  s.playerYaw = 90.0f;    // +Z, through the house
 
   s.triggers = {
     {"locker",   {-2.4f, -0.4f, -23.4f}, {1.8f, 2.2f, -20.4f}},
@@ -372,26 +362,27 @@ void buildKourouBlockD(Site& s) {
 
   // A sidearm in the footlocker, and your issued weapon in the lit rack.
   s.drops = {
-    {"sidearm", {-0.4f, 0.60f, -22.0f}, "SIDEARM RECOVERED"},
-    {"@issued", {0.0f, 0.60f, 8.3f}, "WEAPON RECOVERED"},
+    {"sidearm", {-0.4f, 0.60f, -22.0f}, "PISTOL RECOVERED"},
+    {"@issued", {0.0f, 0.60f, 8.3f}, "DIVISION SUPPLY POD - WEAPON RECOVERED"},
   };
 
-  // Hostiles. Nothing is awake in the bunkroom — you get a weapon before
-  // anything gets a shot at you — and each room's own wakes when you enter
-  // it, so the building does not empty itself into the corridor behind you.
+  // Cybers. Nothing is awake in the bedroom - you get a weapon before
+  // anything gets a shot at you - and each room's own wakes when you enter
+  // it, so the house does not empty itself into the hallway behind you.
+  // Scarabs inside, where the swarm got in; Marauders out in the street.
   s.hostiles = {
-    {"drone", {-1.6f, 0.0f, -14.0f}, "locker", ""},
-    {"drone", {1.8f, 0.0f, -9.0f}, "locker", ""},
-    {"drone", {-5.5f, 0.0f, 1.0f}, "corridor", ""},
-    {"thrall", {5.0f, 0.0f, 4.5f}, "corridor", ""},
-    {"drone", {-8.0f, 0.0f, 19.0f}, "armoury", ""},
+    {"scarab", {-1.6f, 0.0f, -14.0f}, "locker", ""},
+    {"scarab", {1.8f, 0.0f, -9.0f}, "locker", ""},
+    {"scarab", {-5.5f, 0.0f, 1.0f}, "corridor", ""},
+    {"drone", {5.0f, 0.0f, 4.5f}, "corridor", ""},
+    {"scarab", {-8.0f, 0.0f, 19.0f}, "armoury", ""},
     {"thrall", {7.5f, 0.0f, 22.0f}, "armoury", ""},
-    {"thrall", {0.0f, 0.0f, 26.0f}, "armoury", ""},
-    {"drone", {-14.0f, 0.0f, 48.0f}, "muster", ""},
+    {"scarab", {0.0f, 0.0f, 26.0f}, "armoury", ""},
+    {"scarab", {-14.0f, 0.0f, 48.0f}, "muster", ""},
     {"drone", {16.0f, 0.0f, 52.0f}, "muster", ""},
     {"thrall", {-4.0f, 0.0f, 58.0f}, "muster", ""},
-    {"thrall", {9.0f, 0.0f, 62.0f}, "muster", ""},
-    {"warden", {0.0f, 0.0f, 70.0f}, "outside", ""},
+    {"marauder", {9.0f, 0.0f, 62.0f}, "muster", ""},
+    {"marauder", {0.0f, 0.0f, 70.0f}, "outside", ""},
   };
 
   auto obj = [](const char* text, const char* hint, const char* trigger, bool clear) {
@@ -404,11 +395,11 @@ void buildKourouBlockD(Site& s) {
   };
   s.objectives = {
     obj("GET UP", "W A S D OR THE ARROW KEYS TO MOVE", "locker", false),
-    obj("GET OUT OF THE BLOCK", "SHIFT SPRINTS. CTRL OR C CROUCHES - AT SPEED THAT IS A SLIDE.", "corridor", false),
-    obj("REACH THE ARMOURY", "LEFT MOUSE FIRES. R RELOADS.", "armoury", false),
-    obj("CROSS THE MUSTER HALL", "Q OR E IS YOUR FIELD ABILITY.", "muster", false),
-    obj("GET TO THE PAD", "RIGHT MOUSE AIMS.", "outside", false),
-    obj("CLEAR THE PAD", "", "", true),
+    obj("GET OUT OF THE BEDROOM", "SHIFT SPRINTS. CTRL OR C CROUCHES - AT SPEED THAT IS A SLIDE.", "corridor", false),
+    obj("REACH THE LIVING ROOM", "LEFT MOUSE FIRES. R RELOADS.", "armoury", false),
+    obj("GET THROUGH THE GARAGE", "Q OR E IS YOUR FIELD ABILITY.", "muster", false),
+    obj("GET OUT TO THE STREET", "RIGHT MOUSE AIMS.", "outside", false),
+    obj("CLEAR THE STREET", "THE DIVISION SHIP IS COMING DOWN", "", true),
   };
 
 }
@@ -417,8 +408,10 @@ void buildKourouBlockD(Site& s) {
 
 bool buildSite(const std::string& name, Site& out) {
   out = Site{};
-  if (name == "kourou_block_d") {
-    buildKourouBlockD(out);
+  // "kourou_block_d" is the old name for the same opening, kept so a
+  // mission file that still says it gets the house rather than nothing.
+  if (name == "home" || name == "kourou_block_d") {
+    buildHome(out);
     return true;
   }
   return false;
@@ -464,6 +457,18 @@ std::vector<std::string> areaNames(const MissionDef& m) {
   if (m.campaign == "earth")
     return {"THE SERVICE ROAD", "THE CRAWLER WAY", "THE WATER TOWER", "THE LOADING YARD",
             "THE SHEDS", "THE BLAST WALL", "THE FUEL DEPOT"};
+  // The first attack: Earth, after the Cybers.
+  if (z == "outpost") return {"THE GATEHOUSE", "THE ANTENNA YARD", "THE GENERATOR SHED", "THE TAPE ROOM", "THE CLIFF ROAD", "THE RADIO MAST"};
+  if (z == "suburbs") return {"ELM ROW", "THE CUL-DE-SAC", "THE SCHOOL FIELD", "THE SHOPPING PARADE", "THE PLAYGROUND", "THE CHURCH CAR PARK"};
+  if (z == "highway") return {"THE ON-RAMP", "THE TOLL PLAZA", "THE OVERPASS", "THE SERVICE STATION", "THE JAMMED LANES", "THE BRIDGE"};
+  if (z == "harbour") return {"THE FISH MARKET", "CONTAINER ROW", "THE CRANES", "THE DRY DOCK", "THE PIER", "THE LANDING SHIP"};
+  if (z == "hospital") return {"THE CAR PARK", "THE LOBBY", "THE WARDS", "THE PHARMACY", "THE AMBULANCE BAY", "THE ROOF"};
+  if (z == "signal") return {"THE ACCESS ROAD", "THE FENCE LINE", "THE TRANSMITTER HALL", "THE CABLE RUN", "THE RELAY STATION", "THE TOWER FOOT"};
+  if (z == "forge") return {"THE TRUCK YARD", "THE ORE STORE", "THE FURNACE HALL", "THE ROLLING MILL", "THE CASTING FLOOR", "THE SLAG HEAP"};
+  if (z == "dam") return {"THE ACCESS ROAD", "THE SPILLWAY", "THE TURBINE DECK", "THE CONTROL ROOM", "THE CREST", "THE INTAKE TOWER"};
+  if (z == "station") return {"THE DISH ARRAY", "THE CONTROL BLOCK", "THE DATA VAULT", "THE COOLING PLANT", "THE ANTENNA FIELD", "THE OBSERVATORY"};
+  if (z == "gate") return {"THE VALLEY FLOOR", "THE SCREE SLOPE", "THE OUTER RING", "THE CAVE MOUTH", "THE SEALED DOOR", "THE WAY DOWN"};
+  if (z == "cave") return {"THE DESCENT", "THE DRIP HALL", "THE CAVE BRIDGE", "THE LAST LINE", "THE CHAMBER OF TAPS", "THE DEEP"};
   if (z == "dock") return {"THE COLLAR", "LOCK TWO", "THE MANIFEST BAY", "THE TRANSFER DECK", "CUSTOMS", "THE GANTRY"};
   if (z == "spine1" || z == "spine2")
     return {"THE FORWARD SPINE", "THE MAINTENANCE RUN", "BULKHEAD NINE", "THE CABLE TRUNK", "THE KEEL", "THE STRUT GALLERY"};
@@ -775,7 +780,7 @@ void buildExpedition(const MissionDef& m, Site& s) {
       const int n = std::max(1, stage.n);
       for (int k = 0; k < n; k++) {
         Site::Spawn sp;
-        sp.enemyId = structureId;
+        sp.enemyId = stage.target.empty() ? structureId : stage.target;
         sp.group = gid + "_targets";
         sp.pos = farPoint(0.25f);
         s.hostiles.push_back(sp);
@@ -783,6 +788,37 @@ void buildExpedition(const MissionDef& m, Site& s) {
       work.text = said("DESTROY THE TARGETS IN " + area.name);
       work.needsClear = true;
       work.clearGroup = gid + "_targets";
+    } else if (stage.kind == "champion") {
+      // One heavy, in a room of its own, standing where the far door is.
+      Site::Spawn sp;
+      sp.enemyId = stage.target.empty() ? "executor_1" : stage.target;
+      sp.wakeOn = gid;
+      sp.group = gid + "_champion";
+      sp.pos = c + farDir * (half * 0.45f);
+      s.hostiles.push_back(sp);
+      work.text = said("DEFEAT THE GUARDIAN");
+      work.needsClear = true;
+      work.champion = true;
+      work.clearGroup = gid + "_champion";
+    } else if (stage.kind == "sequence") {
+      // The taps stand in a ring round the room, and the reinforcements
+      // keep coming while you work out the order.
+      const int n = std::max(2, stage.n > 0 ? stage.n : 6);
+      for (int k = 0; k < n; k++) {
+        const float a = (float)k / (float)n * 6.2831853f + 0.4f;
+        Site::Spawn sp;
+        sp.enemyId = stage.target.empty() ? structureId : stage.target;
+        sp.group = gid + "_seq";
+        sp.pos = c + glm::vec3(std::cos(a), 0.0f, std::sin(a)) * (half * 0.55f);
+        s.hostiles.push_back(sp);
+      }
+      work.text = said("BREAK THE TAPS IN THE ORDER THEY SING");
+      work.sequence = true;
+      work.clearGroup = gid + "_seq";
+      work.reinforce = reinforceTypes;
+      work.areaMin = area.min;
+      work.areaMax = area.max;
+      work.reinforceGroup = gid + "_waves";
     } else if (stage.kind == "collect") {
       const int n = std::max(1, stage.n);
       for (int k = 0; k < n; k++) {

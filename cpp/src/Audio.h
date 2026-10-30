@@ -27,7 +27,7 @@ enum class Sfx {
   // things on the floor
   PickupAmmo, PickupHealth, PickupWeapon, PickupCore, LootDrop,
   // the mission
-  ObjectiveDone, HoldTick, MissionComplete, MissionFailed, BossSpawn, Promotion,
+  ObjectiveDone, HoldTick, TapNote, WrongNote, MissionComplete, MissionFailed, BossSpawn, Promotion,
   Comms, Cutscene,
   // menus and people
   UiMove, UiSelect, UiBack, UiDeny, Buy, Sell, Talk, BountyDone,

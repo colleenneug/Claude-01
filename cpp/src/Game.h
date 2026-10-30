@@ -442,6 +442,16 @@ private:
   bool wasGrounded_ = true, wasSliding_ = false;
   float airT_ = 0.0f, lastStride_ = 0.0f, dryT_ = 0.0f;
   int reinforcementsLeft_ = 0;
+  // A sequence objective's state: its taps (hostile indices), the order
+  // they have to fall in, how far along it you are, and the phrase being sung.
+  bool seqInit_ = false;
+  std::vector<size_t> seqTaps_;
+  std::vector<glm::vec3> seqPos_;
+  std::vector<int> seqOrder_;
+  std::vector<bool> seqDown_;
+  size_t seqStep_ = 0, seqSingIdx_ = 0;
+  float seqSingT_ = 0.0f, seqWrongT_ = 0.0f;
+  int seqLastSung_ = -1;
   void spawnReinforcements(const Site::Objective& o);
   std::string objectiveText_, objectiveHint_;
   std::vector<bool> triggerFiredById_;

@@ -91,6 +91,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   objectiveIndex_ = 0;
   objectiveClock_ = 0.0f;
   reinforceT_ = 4.0f;
+  seqInit_ = false;
   reinforcementsLeft_ = 0;
   objectiveText_.clear();
   objectiveHint_.clear();
@@ -103,7 +104,8 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // expedition: the same mission, as a long route through a place instead
   // of one walled field. Side contracts stay arenas — a contract is a job,
   // not a journey.
-  if (mission_.layout.empty() && mission_.campaignIndex > 0 && mission_.expedition) {
+  if (mission_.layout.empty() && mission_.expedition &&
+      (mission_.campaignIndex > 0 || mission_.expeditionSet)) {
     buildExpedition(mission_, site_);
     usingSite_ = true;
     level_.buildFromParts(site_.parts, site_.floorY);
@@ -670,6 +672,90 @@ void Game::updateSite(float dt) {
         done = false;
         break;
       }
+    } else if (o.sequence) {
+      // The phrase. The taps sing one after another in the order they have
+      // to fall; break the one whose turn it is and the phrase moves on,
+      // break any other and every tap already broken comes back.
+      if (!seqInit_) {
+        seqTaps_.clear();
+        seqPos_.clear();
+        for (size_t i = 0; i < hostiles_.size() && i < hostileGroup_.size(); i++) {
+          if (hostileGroup_[i] != o.clearGroup) continue;
+          seqTaps_.push_back(i);
+          seqPos_.push_back(hostiles_[i].pos);
+        }
+        seqOrder_.resize(seqTaps_.size());
+        for (size_t k = 0; k < seqOrder_.size(); k++) seqOrder_[k] = (int)k;
+        for (size_t k = seqOrder_.size(); k > 1; k--) {
+          lootRng_ = lootRng_ * 1664525u + 1013904223u;
+          std::swap(seqOrder_[k - 1], seqOrder_[(lootRng_ >> 8) % k]);
+        }
+        seqDown_.assign(seqTaps_.size(), false);
+        seqStep_ = 0;
+        seqSingIdx_ = 0;
+        seqSingT_ = 1.5f;
+        seqWrongT_ = 0.0f;
+        seqLastSung_ = -1;
+        seqInit_ = true;
+      }
+      for (size_t k = 0; k < seqTaps_.size(); k++) {
+        if (seqDown_[k] || hostiles_[seqTaps_[k]].blocksShots()) continue;
+        seqDown_[k] = true;
+        if (seqStep_ < seqOrder_.size() && seqOrder_[seqStep_] == (int)k) {
+          seqStep_++;
+          seqSingIdx_ = 0;
+          seqSingT_ = 1.2f;
+        } else {
+          // A wrong note: the shield comes back, and so does every tap.
+          for (size_t j = 0; j < seqTaps_.size(); j++) {
+            if (!seqDown_[j]) continue;
+            Hostile& t = hostiles_[seqTaps_[j]];
+            t.spawn(t.type, seqPos_[j]);
+            seqDown_[j] = false;
+          }
+          seqStep_ = 0;
+          seqSingIdx_ = 0;
+          seqSingT_ = 1.6f;
+          seqWrongT_ = 3.0f;
+          audio::play(Sfx::WrongNote);
+          break;
+        }
+      }
+      seqWrongT_ = std::max(0.0f, seqWrongT_ - dt);
+      seqSingT_ -= dt;
+      if (seqSingT_ <= 0.0f && seqStep_ < seqOrder_.size()) {
+        const size_t remaining = seqOrder_.size() - seqStep_;
+        if (seqSingIdx_ < remaining) {
+          const int k = seqOrder_[seqStep_ + seqSingIdx_];
+          Hostile& t = hostiles_[seqTaps_[(size_t)k]];
+          t.singT = 0.7f;
+          seqLastSung_ = k;
+          audio::playAt(Sfx::TapNote, t.pos, 1.0f, 0.75f + 0.1f * (float)k);
+          seqSingIdx_++;
+          seqSingT_ = 0.9f;
+        } else {
+          seqSingIdx_ = 0;      // the phrase again, after a breath
+          seqSingT_ = 2.2f;
+        }
+      }
+      reinforceT_ -= dt;
+      int awake = 0;
+      for (size_t i = 0; i < hostiles_.size() && i < hostileGroup_.size(); i++) {
+        if (hostileGroup_[i] == o.reinforceGroup && hostiles_[i].blocksShots()) awake++;
+      }
+      if (reinforceT_ <= 0.0f && awake < 6) {
+        spawnReinforcements(o);
+        reinforceT_ = 7.5f;
+      }
+      char buf[96];
+      if (seqWrongT_ > 0.0f) {
+        std::snprintf(buf, sizeof(buf), "WRONG NOTE - THE SHIELD IS BACK");
+      } else {
+        std::snprintf(buf, sizeof(buf), "TAPS IN ORDER %d OF %d - WATCH WHICH ONE SINGS",
+                      (int)seqStep_, (int)seqOrder_.size());
+      }
+      objectiveHint_ = buf;
+      done = seqStep_ >= seqOrder_.size();
     } else if (o.timed != Site::Objective::Timed::None) {
       // The clock only runs while you are in the zone. Reinforcements keep
       // coming either way — leaving the ring does not make them stop.
@@ -735,12 +821,23 @@ void Game::updateSite(float dt) {
       std::snprintf(buf, sizeof(buf), "TARGETS DOWN %d OF %d", down, total);
       objectiveHint_ = buf;
     }
+    if (o.champion) {
+      for (size_t i = 0; i < hostiles_.size() && i < hostileGroup_.size(); i++) {
+        if (hostileGroup_[i] != o.clearGroup || !hostiles_[i].blocksShots() || !hostiles_[i].type) continue;
+        char buf[96];
+        std::snprintf(buf, sizeof(buf), "%s - %d%%", hostiles_[i].type->name.c_str(),
+                      (int)std::ceil(100.0f * hostiles_[i].hp / std::max(1.0f, hostiles_[i].maxHp)));
+        objectiveHint_ = buf;
+        break;
+      }
+    }
     if (!done) break;
     // The first objective is "get here", met the moment you land: nothing
     // to celebrate. Every one after it gets the chime.
     if (missionT_ > 1.0f) audio::play(Sfx::ObjectiveDone);
     objectiveIndex_++;
     objectiveClock_ = 0.0f;
+    seqInit_ = false;
     reinforceT_ = 3.0f;
     if (objectiveIndex_ < site_.objectives.size()) {
       objectiveText_ = site_.objectives[objectiveIndex_].text;
@@ -1820,6 +1917,12 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
 bool Game::inCurrentEncounter(size_t i) const {
   if (i >= hostiles_.size()) return false;
   const Hostile& h = hostiles_[i];
+  // In a phrase, only the tap whose turn it is is worth a round.
+  if (usingSite_ && objectiveIndex_ < site_.objectives.size() && site_.objectives[objectiveIndex_].sequence &&
+      i < hostileGroup_.size() && hostileGroup_[i] == site_.objectives[objectiveIndex_].clearGroup) {
+    if (!seqInit_ || seqStep_ >= seqOrder_.size()) return false;
+    return seqTaps_[(size_t)seqOrder_[seqStep_]] == i;
+  }
   if (h.isBoss || h.stunT < 1e8f) return true;   // awake (or only briefly stunned)
   if (!usingSite_ || objectiveIndex_ >= site_.objectives.size()) return true;
   const std::string& g = site_.objectives[objectiveIndex_].clearGroup;
@@ -1835,6 +1938,14 @@ bool Game::waypoint(glm::vec3& at, std::string& label, bool& isPlace) const {
   if (usingSite_ && objectiveIndex_ < site_.objectives.size()) {
     const Site::Objective& o = site_.objectives[objectiveIndex_];
     bool place = false;
+    if (o.sequence && seqInit_ && seqLastSung_ >= 0 && (size_t)seqLastSung_ < seqTaps_.size()) {
+      // Whichever tap is singing: the arrow follows the phrase, it does not
+      // tell you the answer.
+      at = hostiles_[seqTaps_[(size_t)seqLastSung_]].bodyCentre();
+      label = "IT SANG";
+      isPlace = false;
+      return true;
+    }
     if (o.timed != Site::Objective::Timed::None) {
       at = glm::vec3(o.zone.x, 0.0f, o.zone.z);
       label = o.timed == Site::Objective::Timed::Uplink ? "UPLINK" : "HOLD";

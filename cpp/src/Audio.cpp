@@ -383,6 +383,21 @@ std::array<Buffer, (size_t)Sfx::Count> synthesiseAll() {
   set(Sfx::ObjectiveDone, notes({523.0f, 659.0f, 784.0f}, 0.09f, 0.4f, 3, 0.8f), 0.52f);
   set(Sfx::HoldTick, tone(0.05f, 1500.0f, 1500.0f, 0.0f, 0.012f, 1, 0.5f), 0.22f);
   {
+    // A tap's note: a bell. Played at a pitch per tap, so the phrase is a tune.
+    Buffer b = tone(1.4f, 523.0f, 523.0f, 0.002f, 0.45f, 0, 1.0f);
+    mix(b, tone(1.4f, 1046.0f, 1046.0f, 0.002f, 0.25f, 0, 0.5f));
+    mix(b, tone(1.4f, 1568.0f, 1568.0f, 0.002f, 0.12f, 0, 0.3f));
+    mix(b, tone(1.4f, 2637.0f, 2637.0f, 0.001f, 0.05f, 0, 0.2f));
+    set(Sfx::TapNote, b, 0.6f);
+  }
+  {
+    // The wrong one: the same bell, cracked, and the shield humming back up.
+    Buffer b = tone(0.9f, 523.0f, 494.0f, 0.002f, 0.3f, 2, 0.8f);
+    mix(b, tone(0.9f, 554.0f, 520.0f, 0.002f, 0.3f, 2, 0.8f));
+    mix(b, tone(1.2f, 80.0f, 240.0f, 0.2f, 0.4f, 0, 0.7f), 0.2f);
+    set(Sfx::WrongNote, b, 0.7f);
+  }
+  {
     Buffer b = notes({392.0f, 523.0f, 659.0f, 784.0f, 1047.0f}, 0.12f, 0.7f, 2, 0.5f);
     mix(b, tone(1.4f, 131.0f, 131.0f, 0.02f, 0.6f, 0, 0.6f), 0.48f);
     set(Sfx::MissionComplete, b, 0.62f);

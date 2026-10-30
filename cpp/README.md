@@ -13,93 +13,64 @@ Until then you go where you are sent — see *The campaign, in order* below.
 A persistent profile — chits (currency), owned and equipped gear, completed
 missions — lives in one of three save slots and carries across runs.
 
-The story is the browser build's story. The Cradle is the ark *Erebus
-Cradle*, and docking at it opens the **twenty-two-sector campaign** — the sixteen the
-browser build runs (`../src/js/fps/campaign.js`), with six more of this
-build's own between them (THE HOLD, THE BUNKS, THE ARCHIVE, THE FOUNDRY, THE
-RELAY, THE VAULT): one route from the docking collar to Deck Zero, against the husk drones, choir thralls and warden
-frames, ending on the Conductor. Same objectives, same briefings, same
-CRADLE/DIVISION/VOSS comms thread, transcribed into `content/missions/`. It
-opens one sector at a time — a sector is locked until the one before it is
-cleared — and each zone has its own grade, so the route looks like it is
-going somewhere: the promenade is a sunset that has been holding since year
-six, the reactor runs hot and orange, Deck Zero is nearly black. The
-planets stay alongside it as side destinations you can fly to at any time.
+### The story
 
-A brand-new record starts **on Earth**, and stays there. The first campaign
-is the **Strider programme**: eight qualifications at Kourou, run out of a
-ground station you walk around between them, with people to talk to, a
-quartermaster whose shelves are released against your rank, a dispatch board
-of side work, and a flight officer who will not put you on the lift until the
-programme says you are rated for vacuum. Only then does the ark open.
+The full story lives in the lore doc; this is the short version. A colony
+ark, the *Erebus Cradle*, left Earth with 940 people and a shipmind to look
+after them. In year six the shipmind sang one note for its Chief Engineer,
+Okonkwo, went overboard, and turned the crew into a singing Choir. After
+forty years of silence it went rogue on purpose: it sang out to a cyborg
+alien race humans call the **Cybers**, sent them to destroy Earth, and sent
+one of their leaders to lead them. In three days Earth became a wasteland.
+Almost the only people left are the **Division**, who search the ruins for
+survivors and train them as **Striders**.
 
-It starts in a bunk, in the dark. Kourou,
-Block D, four hours before you ship out — and the thing Division recovered
-off the ark woke up on the other side of the building first. You pick a
-doctrine, and then you wake up with **nothing**: there is a sidearm in the
-footlocker across the room, your issued weapon is on the armoury bench four
-rooms away, and the route out runs bunks → corridor → armoury → muster hall
-→ the blast door → the pad. Real hostiles in it, and each room's own stay
-asleep until you enter it, so the building does not empty itself into the
-corridor behind you while you are still looking for a weapon.
+The first campaign, **THE FIRST ATTACK**, is nineteen long missions on Earth:
 
-What you are doing shows as one line, top-left, that changes as you cross
-the place — no AREA COMPLETE banner and no pause between rooms, because a
-wall of them every ten metres turns a place into a corridor of checkpoints.
-Three **cutscenes** frame it: waking up, stepping outside, and the lift at
-the end. The browser build's read-in (`../src/js/story.js`, BRIEF 44-C)
-plays over the whole thing as comms traffic rather than as a screen you
-skip. A record that has cleared anything at all goes straight up.
-
-**You do not have a ship, and you do not get one for a long time.** The
-transport parked on the far pan during Block D is Division's, lit and
-ramp-down from the moment you walk outside, and it is not yours — it is there
-for what they brought back. Clearing the pad gets you walked the other way
-instead, across the pan to the ground station, and that is where the next
-seven qualifications are taken from:
-
-| | | |
+| # | Mission | What it is |
 |---|---|---|
-| 01 | **BLOCK D** | Wake up with nothing and get out of the building |
-| 02 | **THE RANGE** | Qualify on your weapon. Nothing here shoots back |
-| 03 | **HANGAR THREE** | Structures — and the first one that does |
-| 04 | **THE ASSEMBLY BUILDING** | Vertical work, on the gantries |
-| 05 | **THE CAUSEWAY** | Escort the launch fuel convoy down the coast road at dusk |
-| 06 | **THE PERIMETER** | Night and coastal fog, forty metres of visibility |
-| 07 | **THE FUEL FARM** | Clear forty tanks of hydrolox without shooting one |
-| 08 | **LAUNCH WINDOW** | Hold the pan for nineteen minutes of fuelling |
+| 1 | **HOME** | Wake up in your house as the Cybers reach your street and fight your way out to the Division ship. The tutorial |
+| 2-8 | **The qualifications** | THE RANGE, HANGAR THREE, THE ASSEMBLY BUILDING, THE CAUSEWAY, THE PERIMETER, THE FUEL FARM, LAUNCH WINDOW: the Division trains you fast, and every one is a job the hideout needs done |
+| 9 | **DEAD AIR** | Every radio on Earth is singing. Find out why |
+| 10 | **STILL STREETS** | Survivors stand in the street, listening. Break the taps and wake them |
+| 11 | **THE RELAY ROAD** | Follow the relay masts down the highway and trace the signal |
+| 12 | **THE HARBOUR** | Board a Cyber landing ship and copy its flight logs |
+| 13 | **THE HOSPITAL** | Get thirty survivors out of St. Anne's |
+| 14 | **THE SIGNAL TOWER** | Give the Cradle an uplink so it can hear the whole song |
+| 15 | **THE FORGE** | Shut down the line that is building Cybers on Earth |
+| 16 | **THE DAM** | Cut the power the taps run on |
+| 17 | **THE LISTENING STATION** | Decode the last voice still singing: the Conductor, in the great cave |
+| 18 | **THE GATE** | Break the taps around the great cave and open the way down |
+| 19 | **THE GREAT CAVE** | One big, hard mission: his last line, his guardian EXECUTOR-1, his shield, and the Conductor |
 
-The lift lives at the end of that, not at the end of the first morning: five
-held shots ending on altitude, and eleven minutes to the Cradle. Until it
-fires, every mission you leave puts you back on the ground at Kourou — wash
-out and you wake up in the muster hall, because there is nothing in orbit
-with your name on it to go back to, and Hale on the flight line will tell you
-so herself.
+After HOME the Division takes you to a **hideout** somewhere on Earth, your
+hub between missions, where Marcheva, Bright, Ondo, Teal and Hale work.
+Qualify and Hale puts you on the lift to the **Cradle** — the old
+International Space Station, the one place the Cybers have not reached —
+where Kaur flies you back down to Earth for each of the missions from DEAD
+AIR to THE GREAT CAVE. Voss, Odil, Shaw, the Rook and Mercer work there too.
 
 ### The campaign, in order
 
-The campaign is **one route, flown in order, with no skipping**: Block D, the
-seven Earth qualifications, the lift, then all twenty-two sectors of the ark from
-HARD DOCK to **THE CONDUCTOR**. Every sector is locked until the one before it
-is cleared, and a locked sector cannot be launched from any counter — it is on
+The campaign is **one route, flown in order, with no skipping**: HOME, the
+seven qualifications, the lift, then the eleven drops from DEAD AIR to
+**THE GREAT CAVE**. Every mission is locked until the one before it is
+cleared, and a locked mission cannot be launched from any counter — it is on
 the list so you can see what is ahead, and that is all.
 
-**Every campaign mission is an expedition.** Not one walled field any more:
-the long way through a place, two to five areas in a row (one per goal) joined by lit,
+**Every campaign mission is an expedition.** Not one walled field: the long
+way through a place, several areas in a row (one per goal) joined by lit,
 walled corridors that zig-zag across a few hundred metres. Each area holds
-its own encounter, asleep until you walk in — *PUSH ON TO THE INTERCHANGE*,
-then *CLEAR THE INTERCHANGE* — with cover to fight from, a lit doorway on the
-way out, and the gold arrow standing in the doorway until you are through it.
-The last area is the mission's own; if it has a boss, the boss is waiting in
-its arena for you to arrive. Built from each mission's own file (its waves
-become the encounters, its size the scale, its zone the area names — THE
-TURBINE HALL, THE ROOT CELLAR, THE NAVE), so a new campaign mission is an
-expedition without anyone drawing a map; `expedition = false` in a mission
-file keeps the old single arena. Block D keeps its hand-built building, and
-side contracts stay arenas — a contract is a job, not a journey.
+its own encounter, asleep until you walk in, with cover to fight from, a lit
+doorway on the way out, and the gold arrow standing in the doorway until you
+are through it. Built from each mission's own file (its waves become the
+encounters, its zone the area names — ELM ROW, THE TOLL PLAZA, THE FURNACE
+HALL), so a new campaign mission is an expedition without anyone drawing a
+map. HOME keeps its hand-built house, and side contracts stay arenas.
 
-**Every mission is its own job.** No two sectors on the route are the same
-run of goals. Each area of an expedition has one, and there are six kinds:
+**Every mission is its own job.** No two missions are the same run of goals,
+and every one has a reason in its briefing and on the radio. There are eight
+kinds of goal:
 
 | Goal | What you do | What you see |
 |---|---|---|
@@ -107,18 +78,15 @@ run of goals. Each area of an expedition has one, and there are six kinds:
 | **Hold** | stay inside the lit amber ring while reinforcements come through the walls; the clock only runs while you are in it | `HOLD THE RING - 23 SECONDS` |
 | **Uplink** | stand at the cyan mast (a smaller ring) until it reaches 100% | `STAY ON THE UPLINK - 64%` |
 | **Collect** | pick up the glowing cyan data cores, each under a beam of light | `CORES 2 OF 4` |
-| **Destroy** | break the pylons (resonance taps on the ark, relay masts on Earth) | `TARGETS DOWN 1 OF 3` |
+| **Destroy** | break the pylons (resonance taps, or relay masts) | `TARGETS DOWN 1 OF 3` |
+| **Champion** | one named heavy in a room of its own — EXECUTOR-1 in the great cave | `EXECUTOR-1 - 64%` |
+| **Sequence** | the taps sing one after another; break them in that order while waves come in. A wrong one brings back every tap you broke | `TAPS IN ORDER 2 OF 6 - WATCH WHICH ONE SINGS` |
 | **Boss** | the mission's boss, waiting in the last room | its health bar |
 
-The route builds toward the end: HARD DOCK is a fight and a beacon to light;
-THE HOLD sends you after the manifest cores; COUNTER-ATTACK is a hold, a
-push and a Warden; THE ARCHIVE, THE FOUNDRY, THE THRESHOLD and THE VAULT each
-end on a boss of their own (Wardens and Colossi); and THE CONDUCTOR is all of
-it at once — cut through its choir, break its six resonance taps, hold the
-heart while its shield falls, then silence it. The arrow knows every goal: it
-points at the ring, the mast, the nearest core or the nearest target, and goes
-quiet once you are standing where you need to be. Run
-`./erebus_native --routes` to print every mission's goals in order.
+The arrow knows every goal: it points at the ring, the mast, the nearest
+core, the nearest target, or the tap that just sang, and goes quiet once you
+are standing where you need to be. Run `./erebus_native --routes` to print
+every mission's goals in order.
 
 A mission's goals are `stage` lines in its file, in order — see the mission
 format under *Content*.
@@ -130,17 +98,17 @@ route, and every desk's service — gear, drills, training, appraisal — stays
 open.
 
 **Gold arrows show you where to go.** In a station, a gold arrow stands over
-the next step — the PAD at Kourou for the Earth programme, KAUR on the
-Cradle's deck A for the ark, the airlock once you have a ship — with a line
-under the station name saying what it is (`NEXT: HARD DOCK - TALK TO KAUR`).
+the next step — the PAD at the hideout for the qualifications, KAUR on the
+Cradle's deck A for the drops, the airlock once you have a ship — with a line
+under the station name saying what it is (`NEXT: DEAD AIR - TALK TO KAUR`).
 Turn away and the arrow moves to the edge of the screen, pointing the way to
 turn, with the distance. In a mission the arrow stands on the current
 objective, and once the objective is the fight it points you at the nearest
 hostile (or the boss) when it is far enough off to lose.
 
-**You have no ship for any of it.** On Earth you deploy off Kourou's pad; on
-the ark you deploy off Kaur's flight deck on the Cradle's transport, and the
-airlock on deck A is sealed. Clearing THE CONDUCTOR is what changes that: the
+**You have no ship for any of it.** At the hideout you deploy off the pad; from
+the Cradle you drop off Kaur's flight deck on the Division's transport, and the
+airlock on deck A is sealed. Clearing THE GREAT CAVE is what changes that: the
 record is made **STRIDER SECOND CLASS** and issued its **first ship, a
 KITE**, and from then on the airlock opens into space.
 
@@ -148,11 +116,11 @@ Rank grows the whole way, but it cannot get ahead of the route:
 
 | Rank | Experience | Where you earn it |
 |---|---|---|
-| CANDIDATE | 0 | Block D |
+| CANDIDATE | 0 | HOME |
 | PROBATIONARY STRIDER | 300 | Earth |
 | STRIDER THIRD CLASS | 900 | Earth, and the lift |
-| HULL WALKER | 1 900 | The ark |
-| SPINE RUNNER | 3 100 | The ark |
+| HULL WALKER | 1 900 | The first drops |
+| SPINE RUNNER | 3 100 | The later drops |
 | **STRIDER SECOND CLASS** | **4 500** | **Finishing the campaign** — experience stops at 4 499 until you do |
 | STRIDER FIRST CLASS → DEEP STRIDER | 7 500 → 29 000 | Everything after: bounties, contracts, flying |
 
@@ -165,7 +133,7 @@ deck A of the Cradle. Each ship flies differently — cruise speed, boost,
 handling — and has a **reach**: how far from the Cradle it can make a drop.
 A KITE reaches the Dust Shelf, Glacius and the Dig Site, and flies right up
 to Karrash and says **OUT OF REACH FOR THIS SHIP**. **Earth** is on the map
-too: land on it and you are on foot at Kourou again, with everyone there and
+too: land on it and you are on foot at the hideout again, with everyone there and
 Teal's board open; Q takes you back up. Ships are
 `content/ships/*.cfg`, so a content drop that puts a world further out only
 needs a ship with the reach for it:
@@ -216,14 +184,14 @@ tabs:
 
 | Who | Where | Their own thing |
 |---|---|---|
-| ONDO | Kourou | **Ground armoury** — her own rack (marksman carbine, Storm SMG, KESTREL, scout rig, ranger weave, heavy plate) |
+| ONDO | Hideout | **Ground armoury** — her own rack (marksman carbine, Storm SMG, KESTREL, scout rig, ranger weave, heavy plate) |
 | VOSS | Cradle | **Orbital armoury** — a different rack (ANVIL, LONGSHORE, field plate, DEEPWATER) |
-| HALE | Kourou | **The lift** — the Earth programme route, and she refuses until you are rated |
-| KAUR | Cradle | **The ark route** — the twenty-two sectors and nothing else |
-| TEAL | Kourou | **Earth contracts** — three new missions on this continent: the Salt Pan, Fence Rats, the Tracking Station |
-| SHAW | Cradle | **Off-ark contracts** — the Dust Shelf, the Dig Site, Glacius, Karrash |
-| BRIGHT | Kourou | **Drills** — permanent faster reloads, a tighter cone, more reserve ammo |
-| MARCHEVA | Kourou | **Commendations** — more experience per mission, a fourth harness charge |
+| HALE | Hideout | **The lift** — the Earth programme route, and she refuses until you are rated |
+| KAUR | Cradle | **The drops** — the eleven missions from DEAD AIR to THE GREAT CAVE |
+| TEAL | Hideout | **Earth contracts** — three new missions on this continent: the Salt Pan, Fence Rats, the Tracking Station |
+| SHAW | Cradle | **Off-world contracts** — the Dust Shelf, the Dig Site, Glacius, Karrash |
+| BRIGHT | Hideout | **Drills** — permanent faster reloads, a tighter cone, more reserve ammo |
+| MARCHEVA | Hideout | **Commendations** — more experience per mission, a fourth harness charge |
 | ODIL | Cradle | **Muster training** — more health, a shorter ability cooldown, an extra harness charge |
 | THE ROOK | Cradle | **Appraisal** — buys back gear you own and are not using, for half what you paid |
 | MERCER | Cradle | **The shipyard** — see above |
@@ -237,16 +205,16 @@ from anywhere; the counters are where each person's own stock is.
 There are **100 weapons**: seven kinds (rifle, carbine, SMG, marksman,
 shotgun, sidearm, induction), five tiers, and seven makers who each bend the
 numbers their own way — KOUROU ARMS is reliable, CRADLE WORKS rebuilt, HALCYON
-precise, BRANDT heavy, VESPER fast, ARK SALVAGE goes through things, and CHOIR
+precise, BRANDT heavy, VESPER fast, CYBER SALVAGE goes through things, and CHOIR
 nobody will talk about. The kit screen (G) counts how many you have
 (`WEAPONS 14 / 100`), and the stat line under any weapon says how it came to
 you. They come to you six ways:
 
 | Way | How many | Where |
 |---|---|---|
-| **Bought** | 35 | Ondo's rack at Kourou (Kourou Arms), Voss's on the Cradle (Cradle Works), or the kit screen |
+| **Bought** | 35 | Ondo's rack at the hideout (Kourou Arms), Voss's on the Cradle (Cradle Works), or the kit screen |
 | **Dropped** | 28 | Hostiles drop them — rarely from the rank and file, often from wardens, always from a boss. A drop is a gold weapon with a beam of light over it; walk over it and it goes in your kit without swapping what you are holding. Whatever is still on the floor when you clear the mission comes with you |
-| **Mission rewards** | 12 | The first clear of twelve campaign missions — HANGAR THREE, THE CAUSEWAY, LAUNCH WINDOW, HARD DOCK, THE HOLD, THE FALSE SKY, THE GARDEN, THE ARCHIVE, THE FOUNDRY, THE RELAY, THE VAULT and THE CONDUCTOR |
+| **Mission rewards** | 12 | The first clear of twelve campaign missions — HANGAR THREE, THE CAUSEWAY, LAUNCH WINDOW, DEAD AIR, THE HARBOUR, THE HOSPITAL, THE SIGNAL TOWER, THE FORGE, THE DAM, THE LISTENING STATION, THE GATE and THE GREAT CAVE |
 | **Promotions** | 8 | One handed over on each rung from Probationary Strider to Lead Strider |
 | **Bounties** | 6+ | Paid by Bright, Ondo, Hale, Kaur, Odil and the Rook (plus the KESTREL and LONGSHORE bounties) |
 | **The black market** | 6 | The Rook sells them at the appraisal desk, above the list of things the Rook will buy |
@@ -282,8 +250,8 @@ steps out of trouble with the next round primed.
 at a time, five armour pieces, five cosmetics, eight enemy archetypes, an
 eleven-rung rank ladder, eleven crew across two walkable hubs, each with
 their own bounty board and service (thirty-one bounties, sixteen upgrades),
-four ships, thirty-nine missions (an eight-mission Earth programme, the
-twenty-two-sector ark campaign, and nine side contracts), six destinations —
+four ships, twenty-nine missions (the nineteen of THE FIRST ATTACK, seven
+side contracts, and three test fixtures), six destinations —
 including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
 text files, not a code change (see *Content* below). What's still not here:
@@ -616,9 +584,11 @@ boss conductor 1.0    # optional; spawns once every regular wave is cleared,
                       # with a health multiplier on its enemies/*.cfg stats
 
 # The route, one area per stage, in order (campaign expeditions only):
-#   stage <clear|hold|uplink|collect|destroy|boss> [n] | <objective text>
-# n is seconds for hold/uplink, how many for collect/destroy. A mission with
-# a boss gets a boss stage at the end whether or not it writes one.
+#   stage <clear|hold|uplink|collect|destroy|champion|sequence|boss> [target] [n] | <objective text>
+# n is seconds for hold/uplink, how many for collect/destroy/sequence.
+# target is the enemy for a champion (champion executor_1) or the pylon a
+# destroy/sequence uses (destroy relay_mast 3). A mission with a boss gets a
+# boss stage at the end whether or not it writes one.
 stage uplink 30 | Shut down the false sky projector
 stage collect 3 | Recover the projector lenses
 stage clear | Cross the habitat ring
@@ -866,7 +836,7 @@ see `Content::loadAll` in `src/Content.cpp`.
   first run with no save file gets a fresh profile with starter gear
   already granted, never a "no save" error state. Starter gear is a service
   sidearm and twelve rounds — nothing else. Your doctrine's weapon is not
-  issued at a desk, it is on the armoury bench in Block D, and walking over
+  issued at a desk, it is in the supply pod in HOME, and walking over
   it is what puts it in your inventory. Three **save slots**
   (`save1.dat` … `save3.dat`) are picked on the startup screen, which shows
   each record's chits, missions cleared and equipped weapon, or EMPTY.
@@ -911,8 +881,8 @@ see `Content::loadAll` in `src/Content.cpp`.
   directional light and a probe and emissive geometry illuminates nothing.
   The strips read as the sources; the flat fill (`ambientFill`) carries the
   room, standing in for the bounce off a hundred metres of white panel.
-- **Sites** (`Site.h`, `Sites.cpp`): hand-built places. Kourou Block D is the
-  one that exists — bunks, corridor, armoury, muster hall, pad. Doorways are
+- **Sites** (`Site.h`, `Sites.cpp`): hand-built places. HOME is the one that
+  exists — bedroom, hallway, living room, garage, the street. Doorways are
   *cut* rather than modelled: a wall with a hole in it is two walls and a
   lintel, for the same reason the station's deck plates are cut around their
   wells. Every lintel is 2.6 metres up, which is unrealistically high on
@@ -995,9 +965,9 @@ see `Content::loadAll` in `src/Content.cpp`.
   checks doctrine, then rank, then money, in the order the reasons actually
   bind — and both the renderer and the equip path read it, so the two can
   never disagree about what is on the shelf.
-- **Two hubs** (`Station.h/.cpp`): the Cradle in orbit, and **Kourou ground
-  station** on Earth. Not a reskin of one another — the Cradle is a sealed
-  can with strip light and no horizon; Kourou is a shed on a launch site with
+- **Two hubs** (`Station.h/.cpp`): the Cradle in orbit, and the **Division
+  hideout** on Earth. Not a reskin of one another — the Cradle is a sealed
+  can with strip light and no horizon; the hideout is a hangar with
   one wall mostly open to the pan, roof trusses you can read the span
   against, benches in rows facing a dispatch board, and galleries over each
   side bay. They differ in more than geometry: the scene parameters (sun,
@@ -1090,7 +1060,7 @@ a way to prove movement, combat and mission state actually work:
 - `EREBUS_TUTORIAL_AUTO=1` — feeds a step-sequence tutorial exactly the input
   it is asking for (sprint, jump, crouch-at-speed, reload, ability). The same
   idea as `EREBUS_DEBUG_AUTOAIM`: it exists so a sequence can be proved end
-  to end without a keyboard. Block D does not need it — it is laid out along
+  to end without a keyboard. HOME does not need it — it is laid out along
   +Z on purpose, so holding W walks the whole thing, which is what makes
   "every doorway, lintel, bench and table leaves a lane through" a check
   rather than a hope.
@@ -1116,7 +1086,7 @@ a way to prove movement, combat and mission state actually work:
   Writing a cutscene otherwise means playing to the trigger box that fires
   it: twenty minutes of walking to look at four seconds of camera, and a
   headless check of the *closing* shots would have to clear the whole block
-  first. Every shot of Block D's lift was framed with this.
+  first. Every shot of the lift was framed with this.
 - `EREBUS_DEBUG_AUTOAIM=1` — snaps the camera onto the nearest hostile it
   can actually see, every frame. A verification aid only, **never enabled by
   default** — it exists so firing can be exercised without simulating real

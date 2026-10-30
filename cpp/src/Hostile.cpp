@@ -69,6 +69,7 @@ void Hostile::spawn(const EnemyType* t, glm::vec3 at, bool boss, float hpMult) {
 
 bool Hostile::update(float dt, const glm::vec3& playerPos, const Level& level) {
   hitFlash = std::max(0.0f, hitFlash - dt * 4.0f);
+  singT = std::max(0.0f, singT - dt);
 
   // A structure stands where it was built and never attacks; all it does is
   // hum, and come down when it has been shot enough.
@@ -224,6 +225,8 @@ void Hostile::collect(std::vector<DrawItem>& out) const {
   if (state == HostileState::Gone) return;
 
   if (type && type->structure) {
+    // While it sings, the core swells.
+    const float singScale = 1.0f + std::min(1.0f, singT * 2.0f) * 0.6f;
     // A pylon: a dark plinth, a column, a lit core that pulses faster as it
     // is damaged, and three fins. Going down, it sinks into its plinth.
     const float h = type->height, r = type->radius;
@@ -248,8 +251,12 @@ void Hostile::collect(std::vector<DrawItem>& out) const {
     core.tint = glm::mix(type->glow, glm::vec3(1.0f, 0.35f, 0.25f), 1.0f - health);
     core.emissive = core.tint;
     core.emissiveIntensity = (state == HostileState::Dying ? 1.0f : 3.0f + pulse * 3.0f + hitFlash * 6.0f);
+    if (singT > 0.0f && state != HostileState::Dying) {
+      core.tint = core.emissive = glm::mix(core.tint, glm::vec3(1.0f, 0.95f, 0.75f), std::min(1.0f, singT * 2.0f));
+      core.emissiveIntensity += singT * 22.0f;
+    }
     core.castShadow = false;
-    part(out, core, HostileGeometry::unitSphere(), col, {0, h * 0.92f, 0}, {0, 0, 0}, glm::vec3(r * 1.5f));
+    part(out, core, HostileGeometry::unitSphere(), col, {0, h * 0.92f, 0}, {0, 0, 0}, glm::vec3(r * 1.5f * singScale));
     return;
   }
 
