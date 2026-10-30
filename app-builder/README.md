@@ -13,7 +13,21 @@ open index.html                  # or double-click it
 python3 -m http.server 8000      # then visit http://localhost:8000
 ```
 
-It can also be put on any free static host (GitHub Pages, Netlify, Cloudflare Pages).
+## Using it in a web browser
+
+Once GitHub Pages is on, the builder lives at
+**https://colleenneug.github.io/Claude-01/** and works in any browser, on a computer or a phone.
+
+To turn it on (one time): on GitHub open the repository's **Settings → Pages**, and under
+**Build and deployment → Source** choose **GitHub Actions**. Then open the **Actions** tab, pick
+**Deploy app builder to GitHub Pages**, and press **Run workflow**. The address appears in
+the finished run after about a minute.
+
+If the run says the branch is not allowed to deploy, open **Settings → Environments →
+github-pages** and add this branch under **Deployment branches**, then run it again.
+
+It can also be dropped onto any other free static host (Netlify Drop, Cloudflare Pages):
+the whole site is the one `index.html` file.
 
 ## Free AI providers
 
