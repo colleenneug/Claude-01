@@ -29,7 +29,7 @@ public:
   // fractal value noise, exactly the role aBlend plays in the browser
   // build's planets.js — patches of two different stone layers rather
   // than a single tiled material repeating to the horizon.
-  static Mesh terrainPlane(float size, int segments, float noiseScale);
+  static Mesh terrainPlane(float size, int segments, float noiseScale, float heightScale);
 
 private:
   GLuint vao_ = 0, vbo_ = 0, ebo_ = 0;

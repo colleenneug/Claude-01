@@ -13,6 +13,7 @@ void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity, int 
   destroy();
   walls_.clear();
   props_.clear();
+  debris_.clear();
   colliders_.clear();
 
   parts_.clear();
@@ -27,7 +28,7 @@ void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity, int 
   // weight, so a constant segment count over a two-hundred-metre arena
   // stretches every patch into a smear.
   int segs = std::clamp((int)(arenaSize * 1.2f), 96, 220);
-  floorMesh_ = Mesh::terrainPlane(arenaSize, segs, 0.06f);
+  floorMesh_ = Mesh::terrainPlane(arenaSize, segs, 0.06f, 0.8f);
   boxMesh_ = Mesh::box(1.0f, 1.0f, 1.0f);   // scaled per instance, for walls and cover
 
   // Perimeter walls: four boxes, thick enough that fast movement can't
@@ -111,6 +112,117 @@ void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity, int 
     props_.push_back(prop);
     colliders_.push_back({centre - halfExt, centre + halfExt});
   }
+
+  // -- Debris scatter: non-collidable decoration that fills the empty ground
+  // between cover pieces so the arena reads as a place rather than a flat
+  // plane with boxes on it.
+
+  auto debrisTint = [&]() {
+    return floorTint * glm::vec3(rnd(0.7f, 1.1f), rnd(0.7f, 1.1f), rnd(0.7f, 1.1f));
+  };
+
+  // Large boulders: collidable, kept out of the spawn zone.
+  int boulderCount = std::clamp((int)(arenaSize * 0.08f), 4, 8);
+  for (int i = 0; i < boulderCount; i++) {
+    float x = rnd(-half_ + 6.0f, half_ - 6.0f);
+    float z = rnd(-half_ + 6.0f, half_ - 6.0f);
+    if (std::hypot(x, z) < clearRadius) continue;
+
+    float hw = rnd(0.5f, 1.25f);
+    float hh = rnd(0.25f, 0.75f);
+    float hd = rnd(0.5f, 1.25f);
+    glm::vec3 he(hw, hh, hd);
+    glm::vec3 c(x, hh, z);
+
+    bool clash = false;
+    for (const Collider& col : colliders_) {
+      if (c.x + hw < col.min.x - 0.6f || c.x - hw > col.max.x + 0.6f) continue;
+      if (c.z + hd < col.min.z - 0.6f || c.z - hd > col.max.z + 0.6f) continue;
+      clash = true; break;
+    }
+    if (clash) continue;
+
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), c);
+    m = glm::rotate(m, rnd(0.0f, 6.28f), glm::vec3(0, 1, 0));
+    m = glm::rotate(m, rnd(-0.12f, 0.12f), glm::vec3(1, 0, 0));
+    m = glm::rotate(m, rnd(-0.12f, 0.12f), glm::vec3(0, 0, 1));
+    m = glm::scale(m, he * 2.0f);
+
+    DrawItem it;
+    it.mesh = &boxMesh_;
+    it.model = m;
+    it.material = MaterialType::Armour;
+    it.tint = debrisTint() * 0.85f;
+    it.metallic = rnd(0.0f, 0.1f);
+    it.roughness = rnd(0.85f, 0.95f);
+    it.wear = rnd(1.5f, 2.0f);
+    it.castShadow = true;
+    debris_.push_back(it);
+    colliders_.push_back({c - he, c + he});
+  }
+
+  // Rubble: medium non-collidable chunks scattered between cover.
+  int rubbleCount = std::clamp((int)(arenaSize * 0.3f), 15, 30);
+  for (int i = 0; i < rubbleCount; i++) {
+    float x = rnd(-half_ + 3.0f, half_ - 3.0f);
+    float z = rnd(-half_ + 3.0f, half_ - 3.0f);
+
+    float sw = rnd(0.15f, 0.5f);
+    float sh = rnd(0.1f, 0.3f);
+    float sd = rnd(0.15f, 0.5f);
+    glm::vec3 pos(x, sh, z);
+    glm::vec3 size(sw * 2.0f, sh * 2.0f, sd * 2.0f);
+
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), pos);
+    m = glm::rotate(m, rnd(0.0f, 6.28f), glm::vec3(0, 1, 0));
+    m = glm::rotate(m, rnd(-0.2f, 0.2f), glm::vec3(1, 0, 0));
+    m = glm::rotate(m, rnd(-0.2f, 0.2f), glm::vec3(0, 0, 1));
+    m = glm::scale(m, size);
+
+    DrawItem it;
+    it.mesh = &boxMesh_;
+    it.model = m;
+    it.material = MaterialType::Armour;
+    it.tint = debrisTint() * 0.75f;
+    it.metallic = rnd(0.0f, 0.12f);
+    it.roughness = rnd(0.75f, 0.95f);
+    it.wear = rnd(1.4f, 2.0f);
+    it.castShadow = true;
+    debris_.push_back(it);
+  }
+
+  // Small rock clusters: dense scatter of tiny fragments across the ground.
+  int clusterCount = std::clamp((int)(arenaSize * 0.7f), 40, 80);
+  for (int i = 0; i < clusterCount; i++) {
+    float cx = rnd(-half_ + 2.0f, half_ - 2.0f);
+    float cz = rnd(-half_ + 2.0f, half_ - 2.0f);
+    int pieces = 2 + (int)rnd(0.0f, 2.9f);
+    for (int j = 0; j < pieces; j++) {
+      float ox = cx + rnd(-0.6f, 0.6f);
+      float oz = cz + rnd(-0.6f, 0.6f);
+      float sw = rnd(0.08f, 0.25f);
+      float sh = rnd(0.05f, 0.18f);
+      float sd = rnd(0.08f, 0.25f);
+      glm::vec3 pos(ox, sh, oz);
+      glm::vec3 size(sw * 2.0f, sh * 2.0f, sd * 2.0f);
+
+      glm::mat4 m = glm::translate(glm::mat4(1.0f), pos);
+      m = glm::rotate(m, rnd(0.0f, 6.28f), glm::vec3(0, 1, 0));
+      m = glm::rotate(m, rnd(-0.25f, 0.25f), glm::vec3(1, 0, 0));
+      m = glm::scale(m, size);
+
+      DrawItem it;
+      it.mesh = &boxMesh_;
+      it.model = m;
+      it.material = MaterialType::Armour;
+      it.tint = debrisTint();
+      it.metallic = rnd(0.0f, 0.08f);
+      it.roughness = rnd(0.8f, 0.98f);
+      it.wear = rnd(1.2f, 1.8f);
+      it.castShadow = false;
+      debris_.push_back(it);
+    }
+  }
 }
 
 void Level::destroy() {
@@ -189,6 +301,8 @@ void Level::collect(std::vector<DrawItem>& out) const {
     }
     out.push_back(it);
   }
+
+  for (const DrawItem& d : debris_) out.push_back(d);
 }
 
 bool Level::wallAt(const glm::vec3& point, glm::vec3& normalOut) const {
@@ -293,6 +407,7 @@ void Level::buildFromParts(const std::vector<Part>& parts, float floorY) {
   destroy();
   walls_.clear();
   props_.clear();
+  debris_.clear();
   colliders_.clear();
   parts_ = parts;
   fromParts_ = true;

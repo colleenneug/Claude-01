@@ -131,17 +131,20 @@ vec3 skyColour(vec3 dir) {
     vec2 cloudUv = dir.xz / max(dir.y, 0.06) * 0.6;
     float cloud1 = skyFbm(cloudUv * 0.8 + uTime * 0.002);
     float cloud2 = skyFbm(cloudUv * 2.6 + vec2(7.3, 3.1) + uTime * 0.004);
-    float cloud = smoothstep(0.44, 0.68, cloud1 * 0.65 + cloud2 * 0.35);
+    float cloud3 = skyFbm(cloudUv * 0.3 + vec2(2.1, 5.7) + uTime * 0.001);
+    float cloud = smoothstep(0.38, 0.64, cloud1 * 0.45 + cloud2 * 0.25 + cloud3 * 0.30);
     cloud *= cloudFade;
-    cloud *= smoothstep(0.9, 0.2, up);
+    cloud *= smoothstep(0.92, 0.15, up);
     float towardsSun = max(dot(dir, -uSunDir), 0.0);
-    vec3 cloudLit = mix(uSkyHorizon * 1.4, vec3(0.75, 0.72, 0.70), 0.35);
-    cloudLit += uSunColour * pow(towardsSun, 3.0) * 0.25;
-    col = mix(col, cloudLit, cloud * 0.35);
+    vec3 cloudLit = mix(uSkyHorizon * 1.6, vec3(0.82, 0.78, 0.74), 0.4);
+    cloudLit += uSunColour * pow(towardsSun, 3.0) * 0.35;
+    cloudLit += uSunColour * pow(towardsSun, 12.0) * 0.2;
+    col = mix(col, cloudLit, cloud * 0.55);
   }
 
   float towards = max(dot(dir, -uSunDir), 0.0);
   col += uSunColour * pow(towards, 900.0) * 16.0;
+  col += uSunColour * pow(towards, 64.0) * 0.18;
   col += uSunColour * pow(towards, 8.0) * 0.30;
   col += uSunColour * pow(towards, 2.0) * 0.07 * horizonMix;
   return col;
@@ -192,7 +195,9 @@ void main() {
   float fogAmount = 1.0 - exp(-optical);
 
   float towardsSun = max(dot(worldDir, -uSunDir), 0.0);
-  vec3 fogColour = uFogColour + uSunColour * uInscatter * pow(towardsSun, 8.0);
+  vec3 fogColour = uFogColour
+    + uSunColour * uInscatter * pow(towardsSun, 8.0)
+    + uSunColour * uInscatter * 0.15 * pow(towardsSun, 2.0);
 
   // Nothing was drawn here, so this is sky. It carries its own horizon haze,
   // so the fog integral — which would run to the far plane and swamp it —

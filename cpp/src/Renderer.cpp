@@ -362,11 +362,11 @@ void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, G
   // highlight and nothing below it for a shadow: the whole frame read as
   // one flat wash. Lower exposure puts the ground back in the mid tones and
   // gives the sun somewhere to go.
-  compositeShader_.set("uExposure", 0.82f);
-  compositeShader_.set("uGrain", 0.03f);
-  compositeShader_.set("uVignette", 0.65f);
-  compositeShader_.set("uAberration", 1.0f);
-  compositeShader_.set("uBloom", 0.32f);
+  compositeShader_.set("uExposure", 1.05f);
+  compositeShader_.set("uGrain", 0.018f);
+  compositeShader_.set("uVignette", 0.70f);
+  compositeShader_.set("uAberration", 0.6f);
+  compositeShader_.set("uBloom", 0.38f);
   compositeShader_.set("uTime", time);
 
   glBindVertexArray(fsTriVao_);

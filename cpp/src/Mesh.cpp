@@ -148,22 +148,47 @@ float fbm(float x, float y) {
   return valueNoise(x, y) * 0.6f + valueNoise(x * 2.7f, y * 2.7f) * 0.27f +
          valueNoise(x * 6.1f, y * 6.1f) * 0.13f;
 }
+float terrainHeight(float wx, float wz, float halfSize, float amplitude) {
+  float h = valueNoise(wx * 0.038f + 71.0f, wz * 0.038f + 137.0f) * 0.50f
+          + valueNoise(wx * 0.09f  + 71.0f, wz * 0.09f  + 137.0f) * 0.28f
+          + valueNoise(wx * 0.21f  + 71.0f, wz * 0.21f  + 137.0f) * 0.14f
+          + valueNoise(wx * 0.47f  + 71.0f, wz * 0.47f  + 137.0f) * 0.08f;
+  h = (h - 0.45f) * amplitude;
+  float d = std::sqrt(wx * wx + wz * wz) / halfSize;
+  float bowl = glm::clamp(d * 1.8f - 0.3f, 0.0f, 1.0f);
+  bowl = bowl * bowl;
+  return h * bowl;
+}
 }  // namespace
 
-Mesh Mesh::terrainPlane(float size, int segments, float noiseScale) {
+Mesh Mesh::terrainPlane(float size, int segments, float noiseScale, float heightScale) {
   std::vector<Vertex> verts;
   std::vector<unsigned> idx;
   float half = size * 0.5f;
+  float step = size / segments;
+  float eps = step * 0.5f;
+
   for (int z = 0; z <= segments; z++) {
     for (int x = 0; x <= segments; x++) {
       float wx = (float)x / segments * size - half;
       float wz = (float)z / segments * size - half;
       float n = fbm(wx * noiseScale, wz * noiseScale);
-      // Pushed towards its ends so the mask reads as patches of a different
-      // material rather than a smear between the two — same shaping as the
-      // browser build's paintBlend().
       float blend = glm::clamp((n - 0.42f) * 2.6f + 0.5f, 0.0f, 1.0f);
-      verts.push_back({{wx, 0.0f, wz}, {0.0f, 1.0f, 0.0f}, blend});
+
+      float y = terrainHeight(wx, wz, half, heightScale);
+
+      glm::vec3 normal(0.0f, 1.0f, 0.0f);
+      if (heightScale > 0.001f) {
+        float hL = terrainHeight(wx - eps, wz, half, heightScale);
+        float hR = terrainHeight(wx + eps, wz, half, heightScale);
+        float hD = terrainHeight(wx, wz - eps, half, heightScale);
+        float hU = terrainHeight(wx, wz + eps, half, heightScale);
+        glm::vec3 tx(2.0f * eps, hR - hL, 0.0f);
+        glm::vec3 tz(0.0f, hU - hD, 2.0f * eps);
+        normal = glm::normalize(glm::cross(tz, tx));
+      }
+
+      verts.push_back({{wx, y, wz}, normal, blend});
     }
   }
   int stride = segments + 1;

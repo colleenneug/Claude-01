@@ -326,20 +326,29 @@ vec3 shadeTerrain(vec3 p, vec3 n, vec3 baseTint, float blend,
     float base = triplanarHeight(p, w, 0.25);
     float crevasse = triplanarHeight(p * 2.8, w, 1.2);
     float frost = triplanarHeight(p * 0.15 + vec3(7.3), w, 0.4);
+    float micro = triplanarHeight(p, w, 4.5);
 
-    vec3 iceDeep = baseTint * vec3(0.75, 0.85, 1.05);
-    vec3 iceSurface = baseTint * vec3(1.1, 1.12, 1.18) + vec3(0.08);
-    vec3 albedo = mix(iceDeep, iceSurface, smoothstep(0.35, 0.65, base));
+    vec3 iceDeep = baseTint * vec3(0.65, 0.78, 1.12);
+    vec3 iceSurface = baseTint * vec3(1.1, 1.12, 1.22) + vec3(0.10);
+    vec3 albedo = mix(iceDeep, iceSurface, smoothstep(0.30, 0.60, base));
 
-    float frostMask = smoothstep(0.52, 0.72, frost);
-    albedo = mix(albedo, vec3(0.82, 0.86, 0.92), frostMask * 0.6);
+    float frostMask = smoothstep(0.48, 0.66, frost);
+    albedo = mix(albedo, vec3(0.85, 0.90, 0.96), frostMask * 0.65);
 
-    bumpN = bumpedNormal(n, p, 0.25, 0.7);
-    vec3 crevasseBump = bumpedNormal(n, p * 2.8, 1.2, 1.6);
-    bumpN = normalize(bumpN + crevasseBump - n);
+    float crack = smoothstep(0.48, 0.50, crevasse) * (1.0 - smoothstep(0.50, 0.52, crevasse));
+    albedo = mix(albedo, baseTint * vec3(0.35, 0.50, 0.72), crack * 0.8);
 
-    float baseRough = mix(0.18, 0.38, base);
-    roughOut = mix(baseRough, 0.72, frostMask);
+    albedo *= 0.92 + micro * 0.16;
+
+    bumpN = bumpedNormal(n, p, 0.25, 0.8);
+    vec3 crevasseBump = bumpedNormal(n, p * 2.8, 1.2, 2.0);
+    vec3 microBump = bumpedNormal(n, p, 4.5, 0.35);
+    bumpN = normalize(bumpN + crevasseBump + microBump - n * 2.0);
+
+    float baseRough = mix(0.12, 0.32, base);
+    roughOut = mix(baseRough, 0.65, frostMask);
+    roughOut += crack * 0.3;
+    roughOut += micro * 0.06;
     return albedo;
 
   } else if (uTerrainType == 2) {
@@ -347,19 +356,31 @@ vec3 shadeTerrain(vec3 p, vec3 n, vec3 baseTint, float blend,
     float base = triplanarHeight(p, w, 0.3);
     float layer = triplanarHeight(p * 2.1, w, 0.7);
     float strata = triplanarHeight(p * 0.12, w, 0.25);
+    float micro = triplanarHeight(p, w, 5.0);
+    float pebble = triplanarHeight(p, w, 8.0);
 
-    vec3 tintA = baseTint * vec3(1.15, 0.95, 0.82);
-    vec3 tintB = baseTint * vec3(0.85, 0.72, 0.60) + vec3(0.06, 0.02, 0.01);
-    vec3 albedo = mix(tintA * (0.75 + base * 0.50), tintB * (0.75 + layer * 0.50),
-                      smoothstep(0.3, 0.7, strata));
+    float strataLine = sin(p.y * 12.0 + fbm(p.xz * 0.3) * 4.0) * 0.5 + 0.5;
+    strataLine = smoothstep(0.35, 0.65, strataLine);
 
-    vec3 nA = bumpedNormal(n, p, 0.3, 1.4);
-    vec3 nB = bumpedNormal(n, p * 2.1, 0.7, 1.8);
+    vec3 tintA = baseTint * vec3(1.20, 0.92, 0.78);
+    vec3 tintB = baseTint * vec3(0.72, 0.58, 0.48) + vec3(0.06, 0.02, 0.01);
+    vec3 tintC = baseTint * vec3(0.95, 0.75, 0.55);
+    vec3 albedo = mix(tintA * (0.70 + base * 0.60), tintB * (0.70 + layer * 0.55),
+                      smoothstep(0.25, 0.75, strata));
+    albedo = mix(albedo, tintC, strataLine * 0.35);
+
+    float crevice = smoothstep(0.55, 0.42, micro);
+    albedo *= 1.0 - crevice * 0.35;
+    albedo *= 0.90 + pebble * 0.20;
+
+    vec3 nA = bumpedNormal(n, p, 0.3, 1.6);
+    vec3 nB = bumpedNormal(n, p * 2.1, 0.7, 2.0);
     vec3 coarse = normalize(mix(nA, nB, blend));
-    vec3 detail = bumpedNormal(n, p, 2.0, 0.7);
-    bumpN = normalize(coarse + detail - n);
+    vec3 detail = bumpedNormal(n, p, 5.0, 0.8);
+    vec3 fine = bumpedNormal(n, p, 8.0, 0.35);
+    bumpN = normalize(coarse + detail + fine - n * 2.0);
 
-    roughOut = clamp(0.82 + (fbm(p.xz * 0.5) - 0.5) * 0.14, 0.70, 0.98);
+    roughOut = clamp(0.78 + (fbm(p.xz * 0.5) - 0.5) * 0.18 + crevice * 0.12, 0.65, 1.0);
     return albedo;
 
   } else if (uTerrainType == 3) {
@@ -370,60 +391,89 @@ vec3 shadeTerrain(vec3 p, vec3 n, vec3 baseTint, float blend,
                + panelSeam(uvZ, cell) * w.z;
 
     vec2 cellId = floor(p.xz / cell);
-    float drift = (hash21(cellId) - 0.5) * 0.12;
+    float drift = (hash21(cellId) - 0.5) * 0.15;
     float grime = triplanarHeight(p * 0.8, w, 1.5);
+    float scratch = triplanarHeight(p, w, 12.0);
+    float rust = triplanarHeight(p * 0.3 + vec3(3.1, 7.2, 1.4), w, 0.6);
 
     float panelFoot = fwidth(uvY.x) * w.y + fwidth(uvY.y) * w.y
                     + fwidth(uvX.x) * w.x + fwidth(uvZ.x) * w.z;
     float detailFade = clamp(1.0 - panelFoot / cell * 1.4, 0.0, 1.0);
     seam *= detailFade;
 
-    vec3 albedo = baseTint * (1.0 + drift);
-    albedo *= (1.0 - seam * 0.4);
-    albedo = mix(albedo, albedo * 0.78, grime * 0.3 * detailFade);
+    float rustMask = smoothstep(0.55, 0.72, rust) * detailFade;
+    vec3 rustTint = vec3(0.45, 0.28, 0.15);
 
-    bumpN = bumpedNormal(n, p, 1.5, 0.3);
-    roughOut = clamp(0.35 + seam * 0.25 + grime * 0.08 * detailFade, 0.25, 0.55);
-    metallicOut = mix(0.55, 0.35, seam);
+    vec3 albedo = baseTint * (1.0 + drift);
+    albedo *= (1.0 - seam * 0.45);
+    albedo = mix(albedo, albedo * 0.72, grime * 0.35 * detailFade);
+    albedo = mix(albedo, rustTint, rustMask * 0.4);
+
+    vec3 seamBump = bumpedNormal(n, p, 1.5, 0.4);
+    vec3 scratchBump = bumpedNormal(n, p, 12.0, 0.2 * detailFade);
+    bumpN = normalize(seamBump + scratchBump - n);
+
+    float scratchLine = smoothstep(0.48, 0.50, scratch) * (1.0 - smoothstep(0.50, 0.52, scratch));
+    roughOut = clamp(0.32 + seam * 0.28 + grime * 0.10 * detailFade
+                     - scratchLine * 0.15 * detailFade + rustMask * 0.25, 0.18, 0.60);
+    metallicOut = mix(0.60, 0.30, seam) - rustMask * 0.25;
     return albedo;
 
   } else if (uTerrainType == 4) {
-    // -- VOLCANIC: dark jagged rock with bright mineral veins --
+    // -- VOLCANIC: dark jagged rock with ember glow in crevices --
     float base = triplanarHeight(p, w, 0.4);
     float layer = triplanarHeight(p * 2.5, w, 1.0);
     float veinNoise = triplanarHeight(p * 3.8 + vec3(5.1, 3.7, 8.2), w, 1.8);
+    float micro = triplanarHeight(p, w, 6.0);
+    float coarse = triplanarHeight(p * 0.15, w, 0.2);
 
-    vec3 darkRock = baseTint * vec3(0.60, 0.55, 0.52);
-    vec3 lightRock = baseTint * vec3(0.90, 0.80, 0.70);
-    vec3 albedo = mix(darkRock * (0.70 + base * 0.60),
-                      lightRock * (0.70 + layer * 0.50), blend);
+    vec3 darkRock = baseTint * vec3(0.45, 0.40, 0.38);
+    vec3 lightRock = baseTint * vec3(0.85, 0.72, 0.58);
+    vec3 albedo = mix(darkRock * (0.60 + base * 0.80),
+                      lightRock * (0.65 + layer * 0.55),
+                      smoothstep(0.35, 0.65, coarse));
 
-    float vein = smoothstep(0.62, 0.68, veinNoise) * (1.0 - smoothstep(0.68, 0.74, veinNoise));
-    albedo = mix(albedo, vec3(1.2, 0.6, 0.15), vein * 0.7);
+    float vein = smoothstep(0.60, 0.65, veinNoise) * (1.0 - smoothstep(0.65, 0.70, veinNoise));
+    albedo = mix(albedo, vec3(1.4, 0.55, 0.10), vein * 0.8);
 
-    vec3 nA = bumpedNormal(n, p, 0.4, 1.6);
-    vec3 nB = bumpedNormal(n, p * 2.5, 1.0, 2.0);
-    bumpN = normalize(nA + nB - n);
+    float crevice = smoothstep(0.50, 0.35, micro);
+    float emberGlow = crevice * smoothstep(0.38, 0.55, coarse);
+    albedo = mix(albedo, vec3(1.8, 0.4, 0.05), emberGlow * 0.5);
+    albedo *= 1.0 - crevice * 0.30;
+    albedo *= 0.88 + micro * 0.24;
 
-    roughOut = clamp(0.88 + (fbm(p.xz * 0.6) - 0.5) * 0.10, 0.78, 1.0);
+    vec3 nA = bumpedNormal(n, p, 0.4, 2.0);
+    vec3 nB = bumpedNormal(n, p * 2.5, 1.0, 2.4);
+    vec3 nC = bumpedNormal(n, p, 6.0, 0.5);
+    bumpN = normalize(nA + nB + nC - n * 2.0);
+
+    roughOut = clamp(0.82 + (fbm(p.xz * 0.6) - 0.5) * 0.16 + crevice * 0.10, 0.72, 1.0);
     return albedo;
 
   } else {
-    // -- STONE (default): the original two-layer blended terrain --
+    // -- STONE (default): layered stone with pebble detail --
     float base = triplanarHeight(p, w, 0.35);
     float layer = triplanarHeight(p * 1.7, w, 0.9);
+    float micro = triplanarHeight(p, w, 4.2);
+    float pebble = triplanarHeight(p, w, 7.5);
 
     vec3 tintA = baseTint;
-    vec3 tintB = baseTint * vec3(1.12, 1.04, 0.92) + vec3(0.03);
-    vec3 albedo = mix(tintA * (0.82 + base * 0.36), tintB * (0.82 + layer * 0.36), blend);
+    vec3 tintB = baseTint * vec3(1.15, 1.06, 0.90) + vec3(0.03);
+    vec3 tintC = baseTint * vec3(0.82, 0.78, 0.72);
+    vec3 albedo = mix(tintA * (0.75 + base * 0.50), tintB * (0.75 + layer * 0.45), blend);
 
-    vec3 nA = bumpedNormal(n, p, 0.35, 0.9);
-    vec3 nB = bumpedNormal(n, p * 1.7, 0.9, 1.0);
+    float crevice = smoothstep(0.52, 0.38, micro);
+    albedo = mix(albedo, tintC, crevice * 0.40);
+    albedo *= 0.90 + pebble * 0.20;
+
+    vec3 nA = bumpedNormal(n, p, 0.35, 1.1);
+    vec3 nB = bumpedNormal(n, p * 1.7, 0.9, 1.2);
     vec3 coarse = normalize(mix(nA, nB, blend));
-    vec3 detail = bumpedNormal(n, p, 1.6, 0.45);
-    bumpN = normalize(coarse + detail - n);
+    vec3 detail = bumpedNormal(n, p, 4.2, 0.6);
+    vec3 fine = bumpedNormal(n, p, 7.5, 0.25);
+    bumpN = normalize(coarse + detail + fine - n * 2.0);
 
-    roughOut = clamp(0.90 + (fbm(p.xz * 0.4) - 0.5) * 0.08, 0.75, 1.0);
+    roughOut = clamp(0.85 + (fbm(p.xz * 0.4) - 0.5) * 0.12 + crevice * 0.08, 0.70, 1.0);
     return albedo;
   }
 }

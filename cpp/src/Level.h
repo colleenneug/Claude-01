@@ -102,6 +102,7 @@ private:
   Mesh floorMesh_, boxMesh_;
   std::vector<glm::mat4> walls_;
   std::vector<Prop> props_;
+  std::vector<DrawItem> debris_;
   std::vector<Part> parts_;          // set only when built from parts
   std::vector<Collider> colliders_;
   bool fromParts_ = false;
