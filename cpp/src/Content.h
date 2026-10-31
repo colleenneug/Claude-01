@@ -252,6 +252,7 @@ struct MissionDef {
   // size implies. A gun range wants open ground; a junction wants to be
   // full of things to stand behind.
   float coverDensity = 1.0f;
+  int terrainType = 0;   // 0 stone, 1 ice, 2 red rock, 3 metal plate, 4 volcanic
   float fogDensity = 0.011f;
   float sunIntensity = 3.4f;
 };

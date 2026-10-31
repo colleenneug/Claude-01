@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 
-void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity) {
+void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity, int terrainType) {
   // Safe to call more than once on the same Level — the Hub lets a player
   // run several missions in one session, and each one rebuilds its arena
   // from scratch. Without this, a second build() would leak the previous
@@ -20,6 +20,7 @@ void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity) {
   half_ = arenaSize * 0.5f;
   floorTop_ = 0.0f;
   floorTint_ = floorTint;
+  terrainType_ = terrainType;
 
   // The floor's tessellation follows the arena rather than being fixed at 96
   // segments: the terrain material blends two stone layers off a per-vertex
@@ -146,6 +147,7 @@ void Level::collect(std::vector<DrawItem>& out) const {
   floor.tint = floorTint_;
   floor.metallic = 0.0f;
   floor.roughness = 0.92f;
+  floor.terrainType = terrainType_;
   out.push_back(floor);
 
   DrawItem wallBase;

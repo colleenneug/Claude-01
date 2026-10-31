@@ -53,6 +53,7 @@ uniform float uCapExtent;     // planet: how far the polar caps reach, 0 = none
 uniform vec3 uEmissive;
 uniform float uEmissiveIntensity;
 uniform float uAniso;         // 0 = isotropic reflections
+uniform int uTerrainType;    // 0 stone, 1 ice, 2 red rock, 3 metal plate, 4 volcanic
 
 const float PI = 3.14159265359;
 
@@ -271,42 +272,160 @@ ArmourSample shadeArmour(vec3 p, vec3 n, vec3 tint, float baseMetallic, float ba
   // grime sits.
   s.metallic = clamp(mix(baseMetallic * 0.55, baseMetallic, chip), 0.0, 1.0);
   s.roughness = clamp(baseRoughness + seam * 0.18 + fine * 0.06 * detailFade, 0.03, 1.0);
-  // A bump gradient here kept aliasing at oblique angles on a surface as
-  // large as a wall even after two rounds of stronger footprint-based
-  // fading (see bumpedNormal's own comment) — the seam/chip/drift detail
-  // above is already footprint-faded and alias-free on its own, so armour
-  // ships flat-normal rather than shipping a bump that still shimmers.
-  // Revisiting this bump with a proper analytic (rather than finite-
-  // difference) derivative is the natural follow-up.
-  s.bumpN = n;
+  // Analytic bump from the panel height field, replacing the finite-
+  // difference approach that aliased at oblique angles. The height is
+  // the triplanar fbm used for `fine` above (at scale 6.0), plus a
+  // shallow depression along the seams. Both already have the footprint
+  // fade applied to them through detailFade, so the bump vanishes at
+  // exactly the distance where the pattern stops being resolvable —
+  // the same anti-aliasing the albedo detail gets for free.
+  vec3 bumpGrad = vec3(0.0);
+  {
+    float bumpScale = 6.0;
+    float eps = 0.12 / max(bumpScale * 5.1, 1.0);
+    float h0 = triplanarHeight(p, w, bumpScale);
+    float hx = triplanarHeight(p + vec3(eps, 0, 0), w, bumpScale);
+    float hy = triplanarHeight(p + vec3(0, eps, 0), w, bumpScale);
+    float hz = triplanarHeight(p + vec3(0, 0, eps), w, bumpScale);
+    bumpGrad = vec3(hx - h0, hy - h0, hz - h0) / eps;
+    bumpGrad -= n * dot(bumpGrad, n);
+    bumpGrad *= 0.6 * detailFade;
+
+    // Seam depression: the seam function dips near grid lines, adding
+    // a shallow groove that catches light at panel edges.
+    float seamH0 = seam;
+    float seamEps = 0.003;
+    vec3 psx = p + vec3(seamEps, 0, 0);
+    vec3 psy = p + vec3(0, seamEps, 0);
+    vec3 psz = p + vec3(0, 0, seamEps);
+    float seamHx = (panelSeam(psx.yz, cell) * w.x + panelSeam(psx.xz, cell) * w.y + panelSeam(psx.xy, cell) * w.z) * detailFade;
+    float seamHy = (panelSeam(psy.yz, cell) * w.x + panelSeam(psy.xz, cell) * w.y + panelSeam(psy.xy, cell) * w.z) * detailFade;
+    float seamHz = (panelSeam(psz.yz, cell) * w.x + panelSeam(psz.xz, cell) * w.y + panelSeam(psz.xy, cell) * w.z) * detailFade;
+    vec3 seamGrad = vec3(seamHx - seamH0, seamHy - seamH0, seamHz - seamH0) / seamEps;
+    seamGrad -= n * dot(seamGrad, n);
+    bumpGrad -= seamGrad * 0.35;
+  }
+
+  float bumpFoot = fwidth(p.x) + fwidth(p.y) + fwidth(p.z);
+  float bumpFade = clamp(1.0 - bumpFoot * 6.0 * 3.0, 0.0, 1.0);
+  s.bumpN = normalize(n - bumpGrad * bumpFade);
   return s;
 }
 
 // ---------------------------------------------------------------- terrain
-// Two stone "layers" (a coarse base and a finer, differently tinted one),
-// blended by the per-vertex weight painted on the C++ side, plus a tight
-// detail layer folded in with a whiteout normal blend so the ground still
-// shows grain up close whatever the two big layers are doing.
-vec3 shadeTerrain(vec3 p, vec3 n, vec3 baseTint, float blend, out vec3 bumpN, out float roughOut) {
+// Per-planet terrain shading. The terrain type selects a surface character
+// so each world reads as a different place rather than the same sand with
+// a different tint.
+vec3 shadeTerrain(vec3 p, vec3 n, vec3 baseTint, float blend,
+                  out vec3 bumpN, out float roughOut, out float metallicOut) {
   vec3 w = triplanarWeights(n);
-  float base = triplanarHeight(p, w, 0.35);
-  float layer = triplanarHeight(p * 1.7, w, 0.9);
+  metallicOut = 0.0;
 
-  vec3 tintA = baseTint;
-  vec3 tintB = baseTint * vec3(1.12, 1.04, 0.92) + vec3(0.03);
-  vec3 albedo = mix(tintA * (0.82 + base * 0.36), tintB * (0.82 + layer * 0.36), blend);
+  if (uTerrainType == 1) {
+    // -- ICE: glossy surface with deep crevasses and frost patches --
+    float base = triplanarHeight(p, w, 0.25);
+    float crevasse = triplanarHeight(p * 2.8, w, 1.2);
+    float frost = triplanarHeight(p * 0.15 + vec3(7.3), w, 0.4);
 
-  // detail bump: much tighter frequency, always present regardless of blend
-  vec3 nA = bumpedNormal(n, p, 0.35, 0.9);
-  vec3 nB = bumpedNormal(n, p * 1.7, 0.9, 1.0);
-  vec3 coarse = normalize(mix(nA, nB, blend));
-  vec3 detail = bumpedNormal(n, p, 1.6, 0.45);
-  // whiteout blend: add the two tangent-ish perturbations and renormalise,
-  // which keeps both sets of bumps instead of the weaker one washing out.
-  bumpN = normalize(coarse + detail - n);
+    vec3 iceDeep = baseTint * vec3(0.75, 0.85, 1.05);
+    vec3 iceSurface = baseTint * vec3(1.1, 1.12, 1.18) + vec3(0.08);
+    vec3 albedo = mix(iceDeep, iceSurface, smoothstep(0.35, 0.65, base));
 
-  roughOut = clamp(0.90 + (fbm(p.xz * 0.4) - 0.5) * 0.08, 0.75, 1.0);
-  return albedo;
+    float frostMask = smoothstep(0.52, 0.72, frost);
+    albedo = mix(albedo, vec3(0.82, 0.86, 0.92), frostMask * 0.6);
+
+    bumpN = bumpedNormal(n, p, 0.25, 0.7);
+    vec3 crevasseBump = bumpedNormal(n, p * 2.8, 1.2, 1.6);
+    bumpN = normalize(bumpN + crevasseBump - n);
+
+    float baseRough = mix(0.18, 0.38, base);
+    roughOut = mix(baseRough, 0.72, frostMask);
+    return albedo;
+
+  } else if (uTerrainType == 2) {
+    // -- RED ROCK: craggy, layered sediment with strong bump --
+    float base = triplanarHeight(p, w, 0.3);
+    float layer = triplanarHeight(p * 2.1, w, 0.7);
+    float strata = triplanarHeight(p * 0.12, w, 0.25);
+
+    vec3 tintA = baseTint * vec3(1.15, 0.95, 0.82);
+    vec3 tintB = baseTint * vec3(0.85, 0.72, 0.60) + vec3(0.06, 0.02, 0.01);
+    vec3 albedo = mix(tintA * (0.75 + base * 0.50), tintB * (0.75 + layer * 0.50),
+                      smoothstep(0.3, 0.7, strata));
+
+    vec3 nA = bumpedNormal(n, p, 0.3, 1.4);
+    vec3 nB = bumpedNormal(n, p * 2.1, 0.7, 1.8);
+    vec3 coarse = normalize(mix(nA, nB, blend));
+    vec3 detail = bumpedNormal(n, p, 2.0, 0.7);
+    bumpN = normalize(coarse + detail - n);
+
+    roughOut = clamp(0.82 + (fbm(p.xz * 0.5) - 0.5) * 0.14, 0.70, 0.98);
+    return albedo;
+
+  } else if (uTerrainType == 3) {
+    // -- METAL PLATE: panelled deck floor for interior/ark missions --
+    float cell = 1.8;
+    vec2 uvX = p.yz, uvY = p.xz, uvZ = p.xy;
+    float seam = panelSeam(uvX, cell) * w.x + panelSeam(uvY, cell) * w.y
+               + panelSeam(uvZ, cell) * w.z;
+
+    vec2 cellId = floor(p.xz / cell);
+    float drift = (hash21(cellId) - 0.5) * 0.12;
+    float grime = triplanarHeight(p * 0.8, w, 1.5);
+
+    float panelFoot = fwidth(uvY.x) * w.y + fwidth(uvY.y) * w.y
+                    + fwidth(uvX.x) * w.x + fwidth(uvZ.x) * w.z;
+    float detailFade = clamp(1.0 - panelFoot / cell * 1.4, 0.0, 1.0);
+    seam *= detailFade;
+
+    vec3 albedo = baseTint * (1.0 + drift);
+    albedo *= (1.0 - seam * 0.4);
+    albedo = mix(albedo, albedo * 0.78, grime * 0.3 * detailFade);
+
+    bumpN = bumpedNormal(n, p, 1.5, 0.3);
+    roughOut = clamp(0.35 + seam * 0.25 + grime * 0.08 * detailFade, 0.25, 0.55);
+    metallicOut = mix(0.55, 0.35, seam);
+    return albedo;
+
+  } else if (uTerrainType == 4) {
+    // -- VOLCANIC: dark jagged rock with bright mineral veins --
+    float base = triplanarHeight(p, w, 0.4);
+    float layer = triplanarHeight(p * 2.5, w, 1.0);
+    float veinNoise = triplanarHeight(p * 3.8 + vec3(5.1, 3.7, 8.2), w, 1.8);
+
+    vec3 darkRock = baseTint * vec3(0.60, 0.55, 0.52);
+    vec3 lightRock = baseTint * vec3(0.90, 0.80, 0.70);
+    vec3 albedo = mix(darkRock * (0.70 + base * 0.60),
+                      lightRock * (0.70 + layer * 0.50), blend);
+
+    float vein = smoothstep(0.62, 0.68, veinNoise) * (1.0 - smoothstep(0.68, 0.74, veinNoise));
+    albedo = mix(albedo, vec3(1.2, 0.6, 0.15), vein * 0.7);
+
+    vec3 nA = bumpedNormal(n, p, 0.4, 1.6);
+    vec3 nB = bumpedNormal(n, p * 2.5, 1.0, 2.0);
+    bumpN = normalize(nA + nB - n);
+
+    roughOut = clamp(0.88 + (fbm(p.xz * 0.6) - 0.5) * 0.10, 0.78, 1.0);
+    return albedo;
+
+  } else {
+    // -- STONE (default): the original two-layer blended terrain --
+    float base = triplanarHeight(p, w, 0.35);
+    float layer = triplanarHeight(p * 1.7, w, 0.9);
+
+    vec3 tintA = baseTint;
+    vec3 tintB = baseTint * vec3(1.12, 1.04, 0.92) + vec3(0.03);
+    vec3 albedo = mix(tintA * (0.82 + base * 0.36), tintB * (0.82 + layer * 0.36), blend);
+
+    vec3 nA = bumpedNormal(n, p, 0.35, 0.9);
+    vec3 nB = bumpedNormal(n, p * 1.7, 0.9, 1.0);
+    vec3 coarse = normalize(mix(nA, nB, blend));
+    vec3 detail = bumpedNormal(n, p, 1.6, 0.45);
+    bumpN = normalize(coarse + detail - n);
+
+    roughOut = clamp(0.90 + (fbm(p.xz * 0.4) - 0.5) * 0.08, 0.75, 1.0);
+    return albedo;
+  }
 }
 
 // ---------------------------------------------------------- anisotropy
@@ -402,9 +521,9 @@ void main() {
     ArmourSample s = shadeArmour(vWorldPos, N, uTint, uMetallic, uRoughness, uWear);
     albedo = s.albedo; metallic = s.metallic; roughness = s.roughness; N = s.bumpN;
   } else if (uMaterial == 1) {
-    vec3 bumpN; float roughOut;
-    albedo = shadeTerrain(vWorldPos, N, uTint, vBlend, bumpN, roughOut);
-    N = bumpN; roughness = roughOut; metallic = 0.0;
+    vec3 bumpN; float roughOut; float metallicOut;
+    albedo = shadeTerrain(vWorldPos, N, uTint, vBlend, bumpN, roughOut, metallicOut);
+    N = bumpN; roughness = roughOut; metallic = metallicOut;
   } else if (uMaterial == 4) {
     float roughOut;
     albedo = shadePlanet(N, uTint, uTint2, uCapExtent, roughOut);

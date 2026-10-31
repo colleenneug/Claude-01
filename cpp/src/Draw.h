@@ -22,5 +22,6 @@ struct DrawItem {
   glm::vec3 emissive{0.0f};
   float emissiveIntensity = 0.0f;
   float anisoStrength = 0.0f; // 0 = isotropic
+  int terrainType = 0;       // 0 stone, 1 ice, 2 red rock, 3 metal plate, 4 volcanic
   bool castShadow = true;
 };

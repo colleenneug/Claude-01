@@ -22,7 +22,7 @@ public:
   // a sand shelf and the floor of a dead ark are not the same place, and a
   // single hardcoded dust brown made every sector look like the first one.
   void build(float arenaSize, glm::vec3 floorTint = glm::vec3(0.31f, 0.26f, 0.21f),
-             float coverDensity = 1.0f);
+             float coverDensity = 1.0f, int terrainType = 0);
 
   // One box of a hand-built level. The station (Station.cpp) is a list of
   // these: a station is a set of rooms, and rooms are easier to write as the
@@ -109,4 +109,5 @@ private:
   float floorTop_ = 0.0f;
   float wallHeight_ = 6.0f;
   glm::vec3 floorTint_{0.31f, 0.26f, 0.21f};
+  int terrainType_ = 0;
 };

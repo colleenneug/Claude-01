@@ -7,10 +7,10 @@
 // table isn't ported — it would need an extra upscale-blit stage this
 // renderer doesn't have — so this trades shadow/bloom/DOF/mote cost only.
 const Renderer::QualityTier Renderer::kTiers[Renderer::kQualityTiers] = {
-    {"high", {2048, 1024, 1024}, 5, true, 1.00f},
-    {"medium", {1024, 1024, 512}, 4, true, 0.70f},
-    {"low", {1024, 512, 512}, 3, false, 0.45f},
-    {"minimal", {768, 512, 512}, 2, false, 0.20f},
+    {"high", {2048, 1024, 1024}, 5, true, true, 1.00f},
+    {"medium", {1024, 1024, 512}, 4, true, true, 0.70f},
+    {"low", {1024, 512, 512}, 3, false, false, 0.45f},
+    {"minimal", {768, 512, 512}, 2, false, false, 0.20f},
 };
 
 void Renderer::create(int width, int height) {
@@ -24,6 +24,11 @@ void Renderer::create(int width, int height) {
 
   sceneHdr_.create(width_, height_, /*hdr=*/true, /*depthTexture=*/true);
   dofBuffer_.create(std::max(1, width_ / 2), std::max(1, height_ / 2), true, false);
+
+  ssaoShader_.load("shaders/fullscreen.vert", "shaders/ssao.frag");
+  ssaoBlurShader_.load("shaders/fullscreen.vert", "shaders/ssao_blur.frag");
+  ssaoBuffer_.create(std::max(1, width_ / 2), std::max(1, height_ / 2), false, false);
+  ssaoBlurBuffer_.create(std::max(1, width_ / 2), std::max(1, height_ / 2), false, false);
 
   applyQualityTier(0);
   bloom_.create(width_, height_);
@@ -43,9 +48,10 @@ void Renderer::applyQualityTier(int i) {
   csm_.create({q.shadow[0], q.shadow[1], q.shadow[2]});
   bloom_.activeLevels = q.bloomLevels;
   dofAllowed_ = q.dofAllowed;
+  ssaoAllowed_ = q.ssaoAllowed;
   motesFraction_ = q.motesFraction;
-  std::fprintf(stderr, "[Renderer] quality tier -> %s (shadow %d/%d/%d, bloom x%d, dof=%d, motes=%.2f)\n",
-               q.name, q.shadow[0], q.shadow[1], q.shadow[2], q.bloomLevels, q.dofAllowed, q.motesFraction);
+  std::fprintf(stderr, "[Renderer] quality tier -> %s (shadow %d/%d/%d, bloom x%d, dof=%d, ssao=%d, motes=%.2f)\n",
+               q.name, q.shadow[0], q.shadow[1], q.shadow[2], q.bloomLevels, q.dofAllowed, q.ssaoAllowed, q.motesFraction);
 }
 
 void Renderer::trackFrameTime(float dtSeconds) {
@@ -76,12 +82,16 @@ void Renderer::resize(int width, int height) {
   width_ = width; height_ = height;
   sceneHdr_.resize(width_, height_);
   dofBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
+  ssaoBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
+  ssaoBlurBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
   bloom_.resize(width_, height_);
 }
 
 void Renderer::destroy() {
   sceneHdr_.destroy();
   dofBuffer_.destroy();
+  ssaoBuffer_.destroy();
+  ssaoBlurBuffer_.destroy();
   csm_.destroy();
   bloom_.destroy();
   ibl_.destroy();
@@ -160,6 +170,7 @@ void Renderer::renderSceneToHdr(const SceneSource& scene, const Camera& camera) 
     pbrShader_.set("uEmissive", item.emissive);
     pbrShader_.set("uEmissiveIntensity", item.emissiveIntensity);
     pbrShader_.set("uAniso", item.anisoStrength);
+    pbrShader_.set("uTerrainType", item.terrainType);
     item.mesh->draw();
   }
   glCheck("Renderer::renderSceneToHdr");
@@ -225,6 +236,51 @@ void Renderer::renderDof() {
   glEnable(GL_DEPTH_TEST);
 }
 
+// ------------------------------------------------------------------ SSAO
+
+void Renderer::renderSSAO(const Camera& camera) {
+  int hw = std::max(1, width_ / 2), hh = std::max(1, height_ / 2);
+  glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
+  glm::mat4 invProj = glm::inverse(proj);
+
+  // Pass 1: raw AO into ssaoBuffer_
+  ssaoBuffer_.bind();
+  glDisable(GL_DEPTH_TEST);
+  ssaoShader_.use();
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, sceneHdr_.depthTexture());
+  ssaoShader_.set("tDepth", 0);
+  ssaoShader_.set("uProj", proj);
+  ssaoShader_.set("uInvProj", invProj);
+  ssaoShader_.set("uNear", 0.05f);
+  ssaoShader_.set("uFar", farPlane_);
+  ssaoShader_.set("uTexelSize", glm::vec2(1.0f / hw, 1.0f / hh));
+  ssaoShader_.set("uRadius", 0.5f);
+  ssaoShader_.set("uBias", 0.025f);
+  ssaoShader_.set("uIntensity", 1.5f);
+
+  glBindVertexArray(fsTriVao_);
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+
+  // Pass 2: bilateral blur into ssaoBlurBuffer_
+  ssaoBlurBuffer_.bind();
+  ssaoBlurShader_.use();
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, ssaoBuffer_.colorTexture());
+  ssaoBlurShader_.set("tAO", 0);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, sceneHdr_.depthTexture());
+  ssaoBlurShader_.set("tDepth", 1);
+  ssaoBlurShader_.set("uTexelSize", glm::vec2(1.0f / hw, 1.0f / hh));
+  ssaoBlurShader_.set("uNear", 0.05f);
+  ssaoBlurShader_.set("uFar", farPlane_);
+
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  glEnable(GL_DEPTH_TEST);
+}
+
 // -------------------------------------------------------------- composite
 
 void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, GLuint bloomTex, float time) {
@@ -248,6 +304,11 @@ void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, G
   glActiveTexture(GL_TEXTURE3);
   glBindTexture(GL_TEXTURE_2D, dofBuffer_.colorTexture());
   compositeShader_.set("tDof", 3);
+
+  glActiveTexture(GL_TEXTURE4);
+  glBindTexture(GL_TEXTURE_2D, ssaoBlurBuffer_.colorTexture());
+  compositeShader_.set("tAO", 4);
+  compositeShader_.set("uSSAO", ssaoAllowed_ ? 1.0f : 0.0f);
 
   glm::mat4 view = camera.view();
   glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
@@ -283,6 +344,19 @@ void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, G
   compositeShader_.set("uSkyZenith", scene.skyZenith());
   compositeShader_.set("uSkyHorizon", scene.skyHorizon());
   compositeShader_.set("uSkyIntensity", scene.skyIntensity());
+
+  // Light shafts: project the sun position onto screen space
+  {
+    glm::vec3 sunWorldPos = camera.position - scene.sunDirection() * 1000.0f;
+    glm::vec4 sunClip = lastViewProj_ * glm::vec4(sunWorldPos, 1.0f);
+    glm::vec2 sunScreen(0.5f);
+    if (sunClip.w > 0.0f) {
+      sunScreen = glm::vec2(sunClip.x / sunClip.w * 0.5f + 0.5f,
+                            sunClip.y / sunClip.w * 0.5f + 0.5f);
+    }
+    compositeShader_.set("uSunScreenPos", sunScreen);
+    compositeShader_.set("uShaftIntensity", scene.skyIntensity() > 0.01f ? 0.35f : 0.0f);
+  }
   // 1.15 with the ACES curve on top of it put the dusty floor of a mission
   // arena around 0.85 in the final image, which left nothing above it for a
   // highlight and nothing below it for a shadow: the whole frame read as
@@ -348,6 +422,8 @@ void Renderer::renderFrame(const SceneSource& scene, const Camera& camera, float
   glViewport(0, 0, width_, height_);
   renderSceneToHdr(scene, camera);
   renderMotes(scene, camera, time);
+
+  if (ssaoAllowed_) renderSSAO(camera);
 
   // Bloom runs its own chain of shader programs and must finish — leaving
   // whatever state it wants — before the composite shader is bound; see the

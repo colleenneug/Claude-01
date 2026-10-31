@@ -241,6 +241,13 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "sun_colour" || k == "sun_color") m.sunColour = parseVec3(v, m.sunColour);
         else if (k == "fog_density") { try { m.fogDensity = std::stof(v); } catch (...) {} }
         else if (k == "cover") { try { m.coverDensity = std::stof(v); } catch (...) {} }
+        else if (k == "terrain") {
+          if (v == "ice") m.terrainType = 1;
+          else if (v == "red_rock") m.terrainType = 2;
+          else if (v == "metal") m.terrainType = 3;
+          else if (v == "volcanic") m.terrainType = 4;
+          else m.terrainType = 0;
+        }
         else if (k == "sun_intensity") { try { m.sunIntensity = std::stof(v); } catch (...) {} }
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }

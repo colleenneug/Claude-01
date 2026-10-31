@@ -68,6 +68,7 @@ public:
     int shadow[3];
     int bloomLevels;
     bool dofAllowed;
+    bool ssaoAllowed;
     float motesFraction;
   };
   static constexpr int kQualityTiers = 4;
@@ -85,6 +86,7 @@ private:
   void renderSceneToHdr(const SceneSource& scene, const Camera& camera);
   void renderMotes(const SceneSource& scene, const Camera& camera, float time);
   void renderDof();
+  void renderSSAO(const Camera& camera);
   void renderComposite(const Camera& camera, const SceneSource& scene, GLuint bloomTex, float time);
 
   void trackFrameTime(float dtSeconds);
@@ -93,6 +95,7 @@ private:
   int tier_ = 0;
   bool autoQuality_ = true;
   bool dofAllowed_ = true;
+  bool ssaoAllowed_ = true;
   float motesFraction_ = 1.0f;
   float emaMs_ = 16.0f;
   int slowFrames_ = 0, fastFrames_ = 0, downgrades_ = 0;
@@ -106,8 +109,10 @@ private:
   glm::mat4 lastViewProj_{1.0f};
 
   Shader depthShader_, pbrShader_, motesShader_, dofShader_, compositeShader_;
+  Shader ssaoShader_, ssaoBlurShader_;
   Framebuffer sceneHdr_;   // full-res HDR + depth texture
   Framebuffer dofBuffer_;  // half-res blurred copy, blended in by roughness of focus
+  Framebuffer ssaoBuffer_, ssaoBlurBuffer_;  // half-res AO
 
   CascadedShadowMap csm_;
   Bloom bloom_;
