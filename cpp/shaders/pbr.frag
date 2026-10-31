@@ -261,17 +261,21 @@ ArmourSample shadeArmour(vec3 p, vec3 n, vec3 tint, float baseMetallic, float ba
   drift *= detailFade;
   chip *= detailFade;
 
+  float microScratch = triplanarHeight(p, w, 18.0);
+  float scratchLine = smoothstep(0.48, 0.50, microScratch) *
+                      (1.0 - smoothstep(0.50, 0.52, microScratch));
+
   vec3 bare = mix(tint, vec3(0.72, 0.74, 0.77), 0.7);
-  vec3 albedo = mix(tint * (1.0 + drift * 0.12), bare, chip * 0.6);
-  albedo *= (1.0 - seam * 0.35);  // grime collecting in the seam
+  vec3 albedo = mix(tint * (1.0 + drift * 0.14), bare, chip * 0.65);
+  albedo *= (1.0 - seam * 0.45);
+  albedo = mix(albedo, bare, scratchLine * 0.3 * detailFade);
 
   ArmourSample s;
   s.albedo = albedo;
-  // Paint is a dielectric, the metal underneath it is not: chips push
-  // metallic up towards the house value; seams are slightly rougher, where
-  // grime sits.
-  s.metallic = clamp(mix(baseMetallic * 0.55, baseMetallic, chip), 0.0, 1.0);
-  s.roughness = clamp(baseRoughness + seam * 0.18 + fine * 0.06 * detailFade, 0.03, 1.0);
+  s.metallic = clamp(mix(baseMetallic * 0.55, baseMetallic, chip)
+                     + scratchLine * 0.15 * detailFade, 0.0, 1.0);
+  s.roughness = clamp(baseRoughness + seam * 0.22 + fine * 0.08 * detailFade
+                      - scratchLine * 0.12 * detailFade, 0.03, 1.0);
   // Analytic bump from the panel height field, replacing the finite-
   // difference approach that aliased at oblique angles. The height is
   // the triplanar fbm used for `fine` above (at scale 6.0), plus a
@@ -289,10 +293,8 @@ ArmourSample shadeArmour(vec3 p, vec3 n, vec3 tint, float baseMetallic, float ba
     float hz = triplanarHeight(p + vec3(0, 0, eps), w, bumpScale);
     bumpGrad = vec3(hx - h0, hy - h0, hz - h0) / eps;
     bumpGrad -= n * dot(bumpGrad, n);
-    bumpGrad *= 0.6 * detailFade;
+    bumpGrad *= 0.8 * detailFade;
 
-    // Seam depression: the seam function dips near grid lines, adding
-    // a shallow groove that catches light at panel edges.
     float seamH0 = seam;
     float seamEps = 0.003;
     vec3 psx = p + vec3(seamEps, 0, 0);
@@ -303,7 +305,16 @@ ArmourSample shadeArmour(vec3 p, vec3 n, vec3 tint, float baseMetallic, float ba
     float seamHz = (panelSeam(psz.yz, cell) * w.x + panelSeam(psz.xz, cell) * w.y + panelSeam(psz.xy, cell) * w.z) * detailFade;
     vec3 seamGrad = vec3(seamHx - seamH0, seamHy - seamH0, seamHz - seamH0) / seamEps;
     seamGrad -= n * dot(seamGrad, n);
-    bumpGrad -= seamGrad * 0.35;
+    bumpGrad -= seamGrad * 0.55;
+
+    float scrEps = 0.12 / max(18.0 * 5.1, 1.0);
+    float scrH0 = triplanarHeight(p, w, 18.0);
+    vec3 scrGrad = vec3(
+      triplanarHeight(p + vec3(scrEps,0,0), w, 18.0) - scrH0,
+      triplanarHeight(p + vec3(0,scrEps,0), w, 18.0) - scrH0,
+      triplanarHeight(p + vec3(0,0,scrEps), w, 18.0) - scrH0) / scrEps;
+    scrGrad -= n * dot(scrGrad, n);
+    bumpGrad += scrGrad * 0.15 * detailFade;
   }
 
   float bumpFoot = fwidth(p.x) + fwidth(p.y) + fwidth(p.z);
@@ -582,9 +593,13 @@ void main() {
   } else {  // Rock
     vec3 w = triplanarWeights(N);
     float h = triplanarHeight(vWorldPos, w, 0.6);
-    albedo = uTint * (0.8 + h * 0.5);
-    N = bumpedNormal(N, vWorldPos, 2.4, 1.1);
-    roughness = clamp(uRoughness + (fbm(vWorldPos.xz) - 0.5) * 0.06, 0.6, 1.0);
+    float detail = triplanarHeight(vWorldPos, w, 3.0);
+    albedo = uTint * (0.75 + h * 0.50);
+    albedo *= 0.92 + detail * 0.16;
+    vec3 nCoarse = bumpedNormal(N, vWorldPos, 2.4, 1.4);
+    vec3 nFine = bumpedNormal(N, vWorldPos, 5.0, 0.5);
+    N = normalize(nCoarse + nFine - N);
+    roughness = clamp(uRoughness + (fbm(vWorldPos.xz) - 0.5) * 0.10, 0.55, 1.0);
     metallic = 0.0;
   }
 
@@ -641,5 +656,11 @@ void main() {
 
   vec3 ambient = (diffuseIbl + specularIbl) * uIblIntensity + uAmbientFill * albedo;
 
-  fragColor = vec4(direct + ambient, 1.0);
+  vec3 Lo = direct + ambient;
+
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 4.0) * 0.18;
+  float rimSun = max(dot(normalize(-uSunDir), -V), 0.0);
+  Lo += uSunColour * uSunIntensity * rim * rimSun * (1.0 - metallic * 0.7) * shadow;
+
+  fragColor = vec4(Lo, 1.0);
 }
