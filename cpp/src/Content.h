@@ -189,24 +189,19 @@ struct MissionDef {
   // id. One of the ways a weapon comes to you (WeaponDef::source = mission).
   std::string rewardWeapon;
   std::vector<CommsBeat> comms;
-  // Position in the campaign route down the ark, 1..N, or 0 for a mission
-  // that is not part of it (a planet's patrol, a debug fixture). The route is
-  // ordered by this number and unlocks one step at a time, so a mission's
-  // place in the story lives in the mission's own file rather than in a list
-  // somewhere else that has to be kept in step with it.
+  // Position in the campaign, 1..N, or 0 for a mission that is not part of
+  // it (a planet's patrol, a debug fixture). The route is ordered by this
+  // number and unlocks one step at a time, so a mission's place in the story
+  // lives in the mission's own file rather than in a list somewhere else
+  // that has to be kept in step with it.
   int campaignIndex = 0;
-  // Which campaign that number orders. There are two, and they are separate
-  // ladders rather than one long list: `earth` is the Strider programme at
-  // Kourou, which a record walks before it has ever left the ground, and
-  // `cradle` is the route down the ark. A mission with no campaignIndex is
-  // side content and belongs to neither.
+  // Which campaign that number orders. `earth` is the single 19-mission
+  // campaign from HOME through THE GREAT CAVE. A mission with no
+  // campaignIndex is side content and belongs to neither.
   //
   // Written as `track = earth` in the file. Not `campaign`, which has meant
-  // the index since the ark route was transcribed and still does.
-  //
-  // Defaulted to "cradle" so the sixteen files that were written before
-  // there were two campaigns keep meaning what they meant.
-  std::string campaign = "cradle";
+  // the index since the route was transcribed and still does.
+  std::string campaign = "earth";
   // Where aboard the ark it happens. Missions that share a zone share a look.
   std::string zone;
 
@@ -234,9 +229,9 @@ struct MissionDef {
 
   // The look of the place. Defaults are the dusty-planet grade the renderer
   // was built around; a mission overrides whichever of them it cares about.
-  // This is what makes the route down the ark read as a route rather than
-  // sixteen fights in the same room — THE FALSE SKY is a held sunset, the
-  // reactor runs hot and orange, Deck Zero is nearly black.
+  // This is what makes the campaign read as a journey rather than nineteen
+  // fights in the same room — DEAD AIR is grey pre-dawn fog, THE FORGE
+  // runs hot and orange, THE GREAT CAVE is nearly black.
   glm::vec3 skyZenith{0.055f, 0.070f, 0.115f};
   glm::vec3 skyHorizon{0.28f, 0.20f, 0.20f};
   glm::vec3 fogColour{0.42f, 0.30f, 0.34f};
@@ -273,7 +268,7 @@ struct RankDef {
   std::string blurb;    // one line of who you are at this rank
   std::string unlock;   // one line of what it opens up
   // A rank that experience alone cannot reach. `gate = campaign` means the
-  // whole campaign, Block D to THE CONDUCTOR, has to be behind the record
+  // whole campaign, HOME to THE GREAT CAVE, has to be behind the record
   // first; until it is, experience stops one point short of this rung and
   // finishing the campaign puts the record on it. See creditXp in Profile.h.
   std::string gate;

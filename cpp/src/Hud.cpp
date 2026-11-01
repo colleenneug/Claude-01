@@ -1047,7 +1047,7 @@ void Hud::drawPost(int screenW, int screenH, const Content& content,
           else if (const CosmeticDef* c = content.cosmetic(id)) name = c->name + " SHADER";
           else if (const MissionDef* m = content.mission(id)) name = m->name;
           else if (id == "track:earth") name = "THE STRIDER PROGRAMME";
-          else if (id == "track:cradle") name = "THE ARK, ALL TWENTY-TWO SECTORS";
+          else if (id == "track:cradle") name = "THE CAMPAIGN";
           else if (id.rfind("track:", 0) == 0) name = id.substr(6) + " ROUTE";
           else continue;
           line += (line.empty() ? "" : "   ") + name;

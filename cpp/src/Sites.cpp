@@ -417,7 +417,7 @@ void buildKourouBlockD(Site& s) {
 
 bool buildSite(const std::string& name, Site& out) {
   out = Site{};
-  if (name == "kourou_block_d") {
+  if (name == "kourou_block_d" || name == "home") {
     buildKourouBlockD(out);
     return true;
   }

@@ -46,9 +46,9 @@ void Hub::park() {
   // Open on where the record actually is: the first unfinished sector *after*
   // the last one it cleared. Scanning from the top for the first unfinished
   // mission is almost the same thing and wrong in one case that matters — a
-  // record halfway down the ark has never played the Earth programme, so the
-  // first unfinished mission in the combined list is BLOCK D, and it would
-  // open its route parked on a tutorial it skipped years ago.
+  // record partway through the campaign has already passed the tutorial, so
+  // the first unfinished mission in the combined list is HOME, and it would
+  // open its route parked on a mission it passed long ago.
   int lastCleared = -1;
   for (int i = 0; i < campaignCount_; i++) {
     if (profile.hasCompleted(missionIds_[(size_t)i])) lastCleared = i;
@@ -215,16 +215,14 @@ bool Hub::missionLocked(int index) const {
   if (!content_ || !profile_) return false;
   if (index < 0) return false;
   // Side content waits on the campaign. The route is the game until it is
-  // done: Block D to THE CONDUCTOR, in order, and nothing off to the side.
+  // done: HOME to THE GREAT CAVE, in order, and nothing off to the side.
   if (index >= campaignCount_) return !campaignComplete(*profile_, *content_);
   const MissionDef* m = content_->mission(missionIds_[(size_t)index]);
   if (!m) return false;
 
   // Within a track, a mission waits on the one before it. Across tracks, a
-  // whole track waits on the one before *it*: the ark does not open to a
-  // record that has not finished the Strider programme, and HARD DOCK
-  // showing OPEN to a candidate was the one thing that made the two
-  // campaigns read as one long list with a gap in it.
+  // whole track waits on the one before *it*: a later campaign does not open
+  // to a record that has not finished the one before it.
   const bool firstOfTrack =
       index == 0 || content_->mission(missionIds_[(size_t)index - 1])->campaign != m->campaign;
 

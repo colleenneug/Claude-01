@@ -941,9 +941,9 @@ std::vector<std::string> Content::missionIds() const {
 }
 
 std::vector<std::string> Content::campaignTracks() const {
-  // Earth first, then the ark, then anything a content drop invents. Not
-  // alphabetical and not filesystem order: the tracks are met in an order and
-  // the hub lists them in it.
+  // Earth first, then anything a content drop invents. Not alphabetical and
+  // not filesystem order: the tracks are met in an order and the hub lists
+  // them in it.
   std::vector<std::string> out;
   auto push = [&](const std::string& t) {
     if (t.empty()) return;
@@ -951,12 +951,11 @@ std::vector<std::string> Content::campaignTracks() const {
     out.push_back(t);
   };
   push("earth");
-  push("cradle");
   for (auto& kv : missions_) {
     if (kv.second.campaignIndex > 0) push(kv.second.campaign);
   }
-  // Drop any of the two built-ins that no mission actually claims, so a
-  // content tree with no Earth missions does not advertise an empty track.
+  // Drop any built-in that no mission actually claims, so a content tree
+  // with no Earth missions does not advertise an empty track.
   std::vector<std::string> live;
   for (const std::string& t : out) {
     for (auto& kv : missions_) {
