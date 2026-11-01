@@ -14,6 +14,7 @@ uniform sampler2D tDepth;
 uniform sampler2D tBloom;
 uniform sampler2D tDof;
 uniform sampler2D tAO;
+uniform sampler2D tSSR;
 uniform float uSSAO;
 
 uniform mat4 uInvViewProj;
@@ -207,6 +208,13 @@ void main() {
     col = skyColour(worldDir) * uSkyIntensity;
   } else {
     col = mix(col, fogColour, clamp(fogAmount, 0.0, 1.0));
+  }
+
+  if (!isSky) {
+    vec4 ssr = texture(tSSR, uv);
+    if (ssr.a > 0.001) {
+      col = mix(col, ssr.rgb, ssr.a * 0.45);
+    }
   }
 
   if (uShaftIntensity > 0.001) {

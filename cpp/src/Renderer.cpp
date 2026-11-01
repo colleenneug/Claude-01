@@ -346,6 +346,10 @@ void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, G
   compositeShader_.set("tAO", 4);
   compositeShader_.set("uSSAO", ssaoAllowed_ ? 1.0f : 0.0f);
 
+  glActiveTexture(GL_TEXTURE5);
+  glBindTexture(GL_TEXTURE_2D, ssrBuffer_.colorTexture());
+  compositeShader_.set("tSSR", 5);
+
   glm::mat4 view = camera.view();
   glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
   // Kept so the HUD can label things in the world with the same matrices
