@@ -53,7 +53,7 @@ public:
 
   // Loads the content/crew/*.cfg files belonging to `station`, plus the
   // wandering crew and the idlers for that place. Two hubs means two sets of
-  // routes: the Cradle's cross three decks, Kourou's cross one hall.
+  // routes: the Cradle's cross three decks, the hideout's cross one hall.
   void init(const Content& content, const std::string& station = "cradle");
   void update(float dt);
 

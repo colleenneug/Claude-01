@@ -42,7 +42,7 @@ TIER_RANK = {1: "", 2: "probationer", 3: "hull_walker", 4: "spine_runner", 5: "s
 
 # Makers: a prefix, a flavour, and how they bend the archetype.
 MAKERS = {
-    "ka":   dict(name="KOUROU ARMS", prefix="KA", mods=dict(reload=0.9),
+    "ka":   dict(name="DIVISION ARMS", prefix="KA", mods=dict(reload=0.9),
                  line="Ground issue from the programme's own works. Nothing clever, nothing that jams."),
     "cw":   dict(name="CRADLE WORKS", prefix="CW", mods=dict(damage=1.04, mag=1.1),
                  line="Rebuilt on the Cradle out of what came back. Voss signs every one."),
@@ -75,7 +75,7 @@ ORDER = ["rifle", "carbine", "smg", "marksman", "shotgun", "pistol", "induction"
 def plan():
     """Every weapon this writes: (maker, archetype, tier, source, sold_by)."""
     out = []
-    # SHOP: Ondo sells Kourou Arms on Earth, Voss sells Cradle Works in orbit.
+    # SHOP: Ondo sells Division Arms on Earth, Voss sells Cradle Works in orbit.
     for t in (1, 2):
         for a in ORDER:
             out.append(("ka", a, t, "shop", "ondo"))

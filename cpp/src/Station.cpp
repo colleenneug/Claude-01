@@ -337,7 +337,7 @@ void buildCradle(Builder& b, std::vector<Station::Terminal>& terminals) {
 }
 
 // ============================================================
-// KOUROU GROUND STATION — where the Strider programme actually happens.
+// DIVISION HIDEOUT — where the Strider programme actually happens.
 //
 // Not a smaller Cradle. The Cradle is a sealed can with strip light and no
 // horizon; this is a shed on a launch site with one wall mostly open to the
@@ -352,7 +352,7 @@ void buildCradle(Builder& b, std::vector<Station::Terminal>& terminals) {
 //   z   4 ..  20   COUNTERS     armoury on the port side, flight line starboard
 //   z  20 ..  28   RANGE WALL   a window onto the qualification range
 // ============================================================
-void buildKourou(Builder& b, std::vector<Station::Terminal>& terminals) {
+void buildHideout(Builder& b, std::vector<Station::Terminal>& terminals) {
   const float FLOOR = 0.0f;
   const float MEZZ = 5.2f;           // the gallery over the side bays
   const float ROOF = 11.0f;
@@ -528,10 +528,10 @@ bool Station::init(const Content& content, const std::string& layout) {
   Builder b;
   float floorY = DECK_A;
 
-  if (layout_ == "kourou") {
-    title_ = "KOUROU GROUND STATION";
+  if (layout_ == "hideout") {
+    title_ = "DIVISION HIDEOUT";
     subtitle_ = "STRIDER PROGRAMME - MUSTER FLOOR";
-    buildKourou(b, terminals_);
+    buildHideout(b, terminals_);
     // Daylight through a pad door, not strip light in a sealed can. The fill
     // is warm and much stronger than the Cradle's, because the far wall of
     // this room is a doorway onto a concrete pan in full sun and the bounce
@@ -571,8 +571,8 @@ bool Station::init(const Content& content, const std::string& layout) {
 void Station::destroy() { level_.destroy(); }
 
 void Station::enter(Camera& camera) {
-  // Wherever this layout's way in is: the Cradle's arrivals tube, or Kourou's
-  // pad door. Both face down the length of the place, because the first thing
+  // Wherever this layout's way in is: the Cradle's arrivals tube, or the
+  // hideout's pad door. Both face down the length of the place, because the first thing
   // you should see on arriving somewhere is the whole of it.
   player_.position = spawn_;
   player_.velocity = glm::vec3(0.0f);

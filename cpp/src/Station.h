@@ -43,11 +43,11 @@ public:
   // changes, but who is standing in it is content.
   //
   // `layout` picks the place. Two exist:
-  //   "cradle" — the ark in orbit, described above
-  //   "kourou" — the Strider programme's ground station on Earth, which is
-  //              where a record spends the whole of its first campaign
+  //   "cradle" — the station in orbit, described above
+  //   "hideout" — Division's ground hideout on Earth, which is where a
+  //               record spends the whole of its first campaign
   // The two differ in more than geometry: one is a sealed volume with no sky
-  // and no haze, the other has weather and a doorway onto a launch pan, so
+  // and no haze, the other has weather and a doorway onto a concrete pan, so
   // the scene parameters below are fields set by init() rather than the
   // constants they used to be.
   bool init(const Content& content, const std::string& layout = "cradle");
@@ -110,8 +110,8 @@ public:
   float moteBoxSize() const override { return 0.0f; }
   int moteCount() const override { return 0; }
   // The Cradle is pressurised and clean — no haze, lit by its own strips and
-  // the probe. Kourou has a doorway onto a launch pan and coastal air coming
-  // through it, so it gets both fog and a sky.
+  // the probe. The hideout has a doorway onto a concrete pan and coastal air
+  // coming through it, so it gets both fog and a sky.
   float fogDensity() const override { return fogDensity_; }
   glm::vec3 fogColour() const override { return fogColour_; }
   glm::vec3 clearColour() const override { return clearColour_; }
@@ -139,11 +139,11 @@ private:
   std::string subtitle_;
 
   // Where you arrive, and facing which way. Per layout, because the Cradle's
-  // arrivals end and Kourou's pad door are not in the same place.
+  // arrivals end and the hideout's pad door are not in the same place.
   glm::vec3 spawn_{0.0f, 0.0f, -48.0f};
   float spawnYaw_ = 90.0f;
 
-  // The grade. Defaults are the Cradle's; buildKourou overwrites them.
+  // The grade. Defaults are the Cradle's; buildHideout overwrites them.
   glm::vec3 sunDir_{-0.42f, -0.36f, -0.83f};
   glm::vec3 sunColour_{0.86f, 0.93f, 1.0f};
   float sunIntensity_ = 2.1f;

@@ -208,12 +208,12 @@ public:
   // otherwise.
   struct StationState {
     // The place. Not a constant any more: there are two hubs, and a heading
-    // that says THE CRADLE while you are standing in a shed at Kourou is the
+    // that says THE CRADLE while you are standing in the hideout is the
     // kind of detail that makes a place feel like a reskin.
     std::string title = "THE CRADLE";
-    // Whether there is a ship parked outside. Kourou has no airlock and no
-    // hull with your name on it, and a footer that offers to undock from a
-    // shed is a footer that has not been read.
+    // Whether there is a ship parked outside. The hideout has no airlock and
+    // no hull with your name on it, and a footer that offers to undock from
+    // it is a footer that has not been read.
     bool canUndock = true;
     std::string deck;            // "DECK A - CONCOURSE"
     std::string terminalName;    // empty when nothing is in reach

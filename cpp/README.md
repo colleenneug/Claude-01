@@ -716,7 +716,7 @@ stock = anvil, longshore, field_plate, deepwater, verdant
                               # ids, or track:<name> for a whole campaign track
 desk = true                   # a lit post to stand behind
 # board = true                # ...and a wall of lit slates, for contracts
-# station = kourou            # which hub they stand in: cradle or kourou
+# station = hideout            # which hub they stand in: cradle or hideout
 say | You want something that will still be working when the shooting stops.
 say | Everything on this bench came off something that stopped working.
 ```

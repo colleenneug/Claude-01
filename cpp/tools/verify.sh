@@ -385,7 +385,7 @@ checkfile "a promotion is recorded once" "$OUT/save-promo.txt" "^rank_paid = 1$"
 checkfile "a promotion pays its stipend" "$OUT/save-promo.txt" "^chits = 2[0-9][0-9]$"
 
 # The Strider programme. A record that has cleared Block D but not the rest of
-# Earth is on the ground: it resumes at Kourou, not in a ship it has not been
+# Earth is on the ground: it resumes at the hideout, not in a ship it has not been
 # issued and not in orbit.
 cat > "$OUT/save-ground.txt" <<'SEED'
 name = Operative
@@ -404,8 +404,8 @@ owned_cosmetic default
 completed tutorial_earth
 SEED
 run "$OUT/ground.json" EREBUS_MAX_FRAMES=60 EREBUS_SKIP_TUTORIAL=
-check "an unrated record resumes on the ground at Kourou" "$OUT/ground.json" \
-      "s['appState'] == 'station' and s['layout'] == 'kourou'"
+check "an unrated record resumes on the ground at the hideout" "$OUT/ground.json" \
+      "s['appState'] == 'station' and s['layout'] == 'hideout'"
 
 # Two holsters, each with its own magazine. The swap is proved by running the
 # same fixture twice and only swapping in one of them: a check that only
@@ -435,7 +435,7 @@ check "a side contract is still an arena" "$OUT/patrol.json" "s['expedition'] is
 # UPGRADING AN EXISTING SAVE. A record that was already flying the ark before
 # the Earth programme was written must not be sent back to school for it: it
 # keeps its ship, and its route stays open. Without the grandfather clause in
-# trackCleared this save woke up on the ground at Kourou with the whole ark
+# trackCleared this save woke up on the ground at the hideout with the whole ark
 # locked, which is the worst thing an update can do to somebody's record.
 cat > "$OUT/save-legacy.txt" <<'SEED'
 name = Operative
@@ -641,22 +641,22 @@ run "$OUT/sidelock.json" EREBUS_SKIP_SPACE=1 EREBUS_MAX_FRAMES=30 -- --mission p
 check "a side contract cannot be launched before the campaign" "$OUT/sidelock.json" \
       "s['appState'] == 'hub' and s['selectedMission'] != 'patrol_dust_shelf'"
 
-# The arrow knows where you are going: the pad at Kourou, Kaur on the ark.
-check "at Kourou the arrow points at the pad" "$OUT/ground.json" \
+# The arrow knows where you are going: the pad at the hideout, Kaur on the ark.
+check "at the hideout the arrow points at the pad" "$OUT/ground.json" \
       "s['next'].startswith('NEXT: THE RANGE') and 'PAD' in s['next']"
 check "on the ark it points at Kaur" "$OUT/legacy.json" \
       "s['next'].startswith('NEXT: THE HOLD') and 'KAUR' in s['next']"
 
 # Once the campaign is done, Earth is a flight away: landing on it puts you on
-# foot at Kourou.
+# foot at the hideout.
 cp "$OUT/save-kite.txt" "$OUT/save-earth.txt"
 run "$OUT/earth.json" EREBUS_SPACE_AUTOPILOT=earth EREBUS_FORCE_FORWARD=1 \
     EREBUS_FORCE_ENGAGE=1 EREBUS_MAX_FRAMES=600 EREBUS_SKIP_TUTORIAL=
 # The scripted E keeps pressing after the landing, so the run can end at
-# somebody's desk at Kourou — or through it, at their counter — rather than
+# somebody's desk at the hideout — or through it, at their counter — rather than
 # standing in the shed. Any of those is down.
-check "a ship can take you back down to Kourou" "$OUT/earth.json" \
-      "(s['appState'] == 'station' and s['layout'] == 'kourou') or \
+check "a ship can take you back down to the hideout" "$OUT/earth.json" \
+      "(s['appState'] == 'station' and s['layout'] == 'hideout') or \
        (s['appState'] == 'post' and s['host'] in ('teal', 'marcheva', 'hale', 'ondo', 'bright')) or \
        (s['appState'] == 'hub' and s['host'] in ('TEAL', 'HALE', 'ONDO', 'THE PAD'))"
 
@@ -666,7 +666,7 @@ cp "$OUT/save-ground.txt" "$OUT/save-leave.txt"
 run "$OUT/leave.json" EREBUS_SKIP_HUB=1 EREBUS_CLASS=bulwark EREBUS_LEAVE_AT=400 \
     EREBUS_MAX_FRAMES=480 -- --mission earth_perimeter
 check "a mission can be left part way through" "$OUT/leave.json" \
-      "s['appState'] == 'station' and s['layout'] == 'kourou'"
+      "s['appState'] == 'station' and s['layout'] == 'hideout'"
 checkabsent "...and is not cleared by it" "$OUT/save-leave.txt" "^completed earth_perimeter$"
 
 # A HUNDRED WEAPONS, AND THE WAYS THEY COME. A first clear can hand one over...

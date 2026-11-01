@@ -87,7 +87,7 @@ struct CrewDef {
   glm::vec3 colour{0.8f, 0.9f, 1.0f};
   glm::vec3 position{0.0f};
   float facingDegrees = 0.0f;
-  // Which hub they stand in: "cradle" or "kourou". Default is the Cradle,
+  // Which hub they stand in: "cradle" or "hideout". Default is the Cradle,
   // which is where everyone stood when there was only one place to stand.
   std::string station = "cradle";
   CrewShop shop = CrewShop::None;
@@ -354,7 +354,7 @@ struct WeaponDef {
   std::string source = "shop";
   std::string soldBy;   // crew id whose counter carries it (shop only)
   int tier = 1;         // 1..5, how far up the ladder it belongs
-  std::string maker;    // KOUROU ARMS, CRADLE WORKS... flavour, and a family
+  std::string maker;    // DIVISION ARMS, CRADLE WORKS... flavour, and a family
   std::string blurb;
 };
 
@@ -414,9 +414,9 @@ struct PlanetDef {
   float capExtent = 0.0f;
   std::string missionId;
   bool station = false;
-  // A world you land on and walk around rather than fight on: `hub = kourou`
+  // A world you land on and walk around rather than fight on: `hub = hideout`
   // puts you on foot in that station. Earth is one — once you have a ship,
-  // Kourou and everyone in it are a flight away instead of a memory.
+  // the hideout and everyone in it are a flight away instead of a memory.
   std::string hub;
 };
 

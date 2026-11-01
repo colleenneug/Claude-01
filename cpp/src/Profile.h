@@ -128,7 +128,7 @@ int settleRank(Profile& p, const Content& content, std::string* promotedTo = nul
 //
 // Without that, adding the Earth programme to a game whose saves were all
 // mid-ark would have taken every one of those records, put them back on the
-// ground at Kourou and locked the route they were halfway down. The same
+// ground at the hideout and locked the route they were halfway down. The same
 // reasoning as the tutorial's original "has cleared nothing at all" test: a
 // record is not punished for having played earlier.
 bool trackCleared(const Profile& p, const Content& content, const std::string& track);

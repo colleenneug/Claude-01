@@ -59,7 +59,7 @@ constexpr const char* kTutorialMission = "tutorial_earth";
 // Whether a record has finished the Strider programme on Earth. That is what
 // decides everything about where you are: unfinished means you have no ship
 // and no seat, and every mission you leave puts you back on the ground at
-// Kourou. The test is the track rather than a mission count, so a content
+// the hideout. The test is the track rather than a mission count, so a content
 // drop that adds a seventh Earth qualification keeps records on the ground
 // until they have flown it.
 bool earthProgrammeDone(const Content& content, const Profile& profile) {
@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
   // and rebuilding it every time you dock would throw away and re-upload
   // several hundred boxes for nothing.
   // Built here so the Cradle exists for a record that already has one; a
-  // record still on the ground rebuilds it as Kourou on its first arrival
+  // record still on the ground rebuilds it as the hideout on its first arrival
   // (see enterStation below).
   station.init(hubContent, "cradle");
 
@@ -286,7 +286,7 @@ int main(int argc, char** argv) {
   // rather than by landing on a world, so ending it returns you to the one
   // you actually left from.
   bool launchedFromStation = false;
-  // Which hub you are in. A record on the ground lives at Kourou and does not
+  // Which hub you are in. A record on the ground lives at the hideout and does not
   // see the Cradle until the programme is finished.
   std::string stationLayout = "cradle";
   if (state == AppState::Mission) {
@@ -473,11 +473,11 @@ int main(int argc, char** argv) {
   // the suite is about flying.
   auto canFly = [&]() { return profile.hasShip() || skipTutorial; };
   // Whether Q takes you out of the station you are standing in. The Cradle's
-  // airlock opens once there is a ship; Kourou has none of its own, so only
+  // airlock opens once there is a ship; the hideout has none of its own, so only
   // a record that flew there — one with the campaign behind it — leaves by Q.
   auto canUndockHere = [&]() {
     if (!canFly()) return false;
-    return station.layout() != "kourou" || campaignComplete(profile, hubContent);
+    return station.layout() != "hideout" || campaignComplete(profile, hubContent);
   };
   // Whether a crew member has a desk at all: a service, or a board.
   auto hasPost = [&](const CrewDef* def) {
@@ -496,7 +496,7 @@ int main(int argc, char** argv) {
     stationLayout = layout;
     station.enter(camera);
     // EREBUS_STATION_AT places you on arrival here too, not only on docking:
-    // Kourou is reached by resuming a record, not by flying to it.
+    // the hideout is reached by resuming a record, not by flying to it.
     if (stationAt) {
       float ax = 0.0f, ay = 0.0f, az = 0.0f;
       if (std::sscanf(stationAt, "%f,%f,%f", &ax, &ay, &az) == 3) {
@@ -533,14 +533,14 @@ int main(int argc, char** argv) {
   // CONDUCTOR is down, the route is the only thing to fly.
   auto counterRefusal = [&](const CrewDef* def) {
     Post::Refusal r;
-    if (def->shop == CrewShop::Route && station.layout() == "kourou" &&
+    if (def->shop == CrewShop::Route && station.layout() == "hideout" &&
         !earthProgrammeDone(hubContent, profile)) {
       r.heading = "RATED OPERATIVES ONLY";
-      r.why = "Finish the Strider programme here at Kourou and the lift opens. Until then it "
+      r.why = "Finish the Strider programme and the lift opens. Until then it "
               "does not take candidates. Deploy from THE PAD by the doorway.";
     } else if (def->shop == CrewShop::Contracts && !campaignComplete(profile, hubContent)) {
       r.heading = "AFTER THE CAMPAIGN";
-      r.why = station.layout() == "kourou"
+      r.why = station.layout() == "hideout"
                   ? "The board is for rated operatives with time on their hands. Finish the "
                     "programme and the ark first - deploy from THE PAD by the doorway."
                   : "Off-ark work is for after the ark. Kaur has the route on this deck, by the "
@@ -597,7 +597,7 @@ int main(int argc, char** argv) {
     // been issued. This is the load-time half of the same rule the
     // mission-exit path enforces.
     if (!skipSpace && !skipHub && !skipTutorial && !earthProgrammeDone(hubContent, profile)) {
-      enterStation("kourou");
+      enterStation("hideout");
       return;
     }
 
@@ -1012,7 +1012,7 @@ int main(int argc, char** argv) {
             firstMouse = true;
           }
         } else if (!target->hub.empty()) {
-          // A world you walk around: Earth puts you down at Kourou.
+          // A world you walk around: Earth puts you down at the hideout.
           ProfileStore::save(profile, savePath);
           lastBodyId = target->id;
           enterStation(target->hub);
@@ -1124,12 +1124,12 @@ int main(int argc, char** argv) {
           }
         }
       } else if (ePressed && term && term->id == "pad") {
-        // Kourou's one kiosk. There is no ship to undock from here, so the
+        // The hideout's one kiosk. There is no ship to undock from here, so the
         // pad door opens the route instead: it is the way out to a mission,
         // which on the ground is the only way out there is.
         ProfileStore::save(profile, savePath);
         hub.init(hubContent, profile);
-        // The pad flies what Kourou flies: the programme, and Dispatch's
+        // The pad flies what the hideout flies: the programme, and Division's
         // contracts on this continent. Not the ark, and not another world.
         {
           std::vector<std::string> padStock;
@@ -1153,7 +1153,7 @@ int main(int argc, char** argv) {
         // way back up off Earth, and you come out over it rather than at the
         // Cradle.
         ProfileStore::save(profile, savePath);
-        space.placeNear(station.layout() == "kourou" ? "earth" : "");
+        space.placeNear(station.layout() == "hideout" ? "earth" : "");
         state = AppState::Space;
         talkingTo = nullptr;
         prevEngageKey = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
@@ -1171,7 +1171,7 @@ int main(int argc, char** argv) {
       float py = station.player().position.y;
       ss.title = station.title();
       ss.canUndock = canUndockHere();
-      if (station.layout() == "kourou") {
+      if (station.layout() == "hideout") {
         ss.deck = py > 3.5f ? "GALLERY - BRIEFING AND STORES"
                             : station.subtitle();
       } else {
@@ -1211,7 +1211,7 @@ int main(int argc, char** argv) {
       // Nameplates need the same matrices the scene was drawn with, so they
       // sit on the people rather than near them.
       ss.viewProj = renderer.lastViewProj();
-      // ---- where the campaign wants you. The pad at Kourou for the Earth
+      // ---- where the campaign wants you. The pad at the hideout for the Earth
       // programme, Kaur's flight deck for the ark, and the airlock once there
       // is a ship through it.
       {
@@ -1220,7 +1220,7 @@ int main(int argc, char** argv) {
         bool have = false;
         glm::vec3 at(0.0f);
         std::string who;
-        if (nm && station.layout() == "kourou" && nm->campaign == "earth") {
+        if (nm && station.layout() == "hideout" && nm->campaign == "earth") {
           for (const Station::Terminal& t : station.terminals()) {
             if (t.id != "pad") continue;
             at = t.pos + glm::vec3(0.0f, 1.9f, 0.0f);
@@ -1273,7 +1273,7 @@ int main(int argc, char** argv) {
 
       if (frame % 30 == 0) {
         glfwSetWindowTitle(window,
-                           station.layout() == "kourou" ? "Erebus Cradle | Kourou Ground Station"
+                           station.layout() == "hideout" ? "Erebus Cradle | Division Hideout"
                                                         : "Erebus Cradle | The Cradle");
       }
 
@@ -1777,9 +1777,9 @@ int main(int argc, char** argv) {
             // Washed out of the very first morning, before there is a ground
             // station to go back to: start Block D again. Once the block is
             // behind you there is somewhere to stand, so every later failure
-            // returns you to Kourou instead of restarting anything.
+            // returns you to the hideout instead of restarting anything.
             if (profile.hasCompleted(kTutorialMission)) {
-              enterStation("kourou");
+              enterStation("hideout");
             } else if (game.init(contentDir, kTutorialMission, profile)) {
               gameEverStarted = true;
               launchedFromStation = false;
@@ -1793,13 +1793,13 @@ int main(int argc, char** argv) {
           } else if (launchedFromStation || justFinishedTutorial || !canFly()) {
             // You launched off a flight deck, so you come back to it. Which
             // deck depends on whether the programme is behind you: until it
-            // is, every mission ends at Kourou.
-            // Back to the deck you launched from: Kourou for the programme,
-            // the Cradle for the ark, and Kourou again for Teal's contracts
+            // is, every mission ends at the hideout.
+            // Back to the deck you launched from: the hideout for the programme,
+            // the Cradle for the campaign, and the hideout again for Teal's contracts
             // once a ship has taken you back down to it.
-            enterStation(!earthProgrammeDone(hubContent, profile) ? "kourou"
-                         : (station.layout() == "kourou" && campaignComplete(profile, hubContent))
-                               ? "kourou"
+            enterStation(!earthProgrammeDone(hubContent, profile) ? "hideout"
+                         : (station.layout() == "hideout" && campaignComplete(profile, hubContent))
+                               ? "hideout"
                                : "cradle");
             state = AppState::Station;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);

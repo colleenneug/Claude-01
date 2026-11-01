@@ -4,11 +4,11 @@
 #include <cmath>
 
 // ============================================================
-// KOUROU, BLOCK D — the crew quarters, and the pad outside them.
+// HOME — the tutorial site, and the pad outside it.
 //
-// Where a new record starts. You wake up in the bunks with nothing, because
-// whatever you were going to be issued is in the armoury on the other side
-// of the building, and something got into the block while you were asleep.
+// Where a new record starts. You wake up in your home with nothing, because
+// whatever you are going to be issued is in the Division supply pod outside,
+// and Cybers are on the street.
 //
 // The route is a route, not a checkpoint list: bunks, washroom corridor,
 // armoury, muster hall, blast door, and then out onto the pad. Objectives
@@ -117,7 +117,7 @@ struct Builder {
   }
 };
 
-void buildKourouBlockD(Site& s) {
+void buildHome(Site& s) {
   Builder b;
   const float CEIL = 3.4f;
 
@@ -236,7 +236,7 @@ void buildKourouBlockD(Site& s) {
     b.box(x - 1.0f, x + 1.0f, 0.0f, 5.0f, 70.0f, 72.0f, CONCRETE, true, 0.1f, 0.85f);
   }
 
-  // Kourou, beyond the pan. The pad's perimeter wall used to be the edge of
+  // Beyond the pan. The pad's perimeter wall used to be the edge of
   // the world: from anything above head height you could see the concrete
   // stop and blue sky start underneath it, and the closing shot — which
   // climbs — made a launch site look like a platform hanging in mid-air.
@@ -418,7 +418,7 @@ void buildKourouBlockD(Site& s) {
 bool buildSite(const std::string& name, Site& out) {
   out = Site{};
   if (name == "kourou_block_d" || name == "home") {
-    buildKourouBlockD(out);
+    buildHome(out);
     return true;
   }
   return false;

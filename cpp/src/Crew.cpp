@@ -21,10 +21,10 @@ const std::vector<std::vector<glm::vec3>> kRoutes = {
   {{6, 0, 38}, {6, 0, 28}, {-6, 0, 28}, {-6, 0, 38}},
 };
 
-// Kourou's routes. One hall with a mezzanine over each side, so these run up
+// Hideout routes. One hall with a mezzanine over each side, so these run up
 // and down the muster floor and along the galleries rather than around an
 // atrium. Nobody walks out of the pad door: it leads to a live flight line.
-const std::vector<std::vector<glm::vec3>> kKourouRoutes = {
+const std::vector<std::vector<glm::vec3>> kHideoutRoutes = {
   {{-9, 0, -22}, {-9, 0, 16}, {-3, 0, 16}, {-3, 0, -22}},
   {{9, 0, 18}, {9, 0, -20}, {4, 0, -20}, {4, 0, 18}},
   {{-20, 0, -26}, {20, 0, -26}, {20, 0, -18}, {-20, 0, -18}},
@@ -163,9 +163,9 @@ glm::mat4 joint(const glm::mat4& parent, glm::vec3 offset, float rxRad = 0.0f, f
 
 }  // namespace
 
-// ...and Kourou's idlers: candidates waiting to be called, two instructors
+// ...and the hideout's idlers: candidates waiting to be called, two instructors
 // talking on a gallery, somebody at the range window watching.
-const Idler kKourouIdlers[] = {
+const Idler kHideoutIdlers[] = {
   {-11.5f, 0, -14, 0}, {-11.5f, 0, -11, 12},     // waiting by the benches
   {11.0f, 0, -16, 0},
   {-14.0f, 5.2f, 4, 90}, {-14.0f, 5.2f, 7, 76},  // two on the port gallery
@@ -178,11 +178,11 @@ void Crew::init(const Content& content, const std::string& station) {
   people_.clear();
   HostileGeometry::ensure();
 
-  const bool kourou = station == "kourou";
-  const std::vector<std::vector<glm::vec3>>& routes = kourou ? kKourouRoutes : kRoutes;
-  const Idler* idlers = kourou ? kKourouIdlers : kIdlers;
-  const size_t idlerCount = kourou ? sizeof(kKourouIdlers) / sizeof(kKourouIdlers[0])
-                                   : sizeof(kIdlers) / sizeof(kIdlers[0]);
+  const bool isHideout = station == "hideout";
+  const std::vector<std::vector<glm::vec3>>& routes = isHideout ? kHideoutRoutes : kRoutes;
+  const Idler* idlers = isHideout ? kHideoutIdlers : kIdlers;
+  const size_t idlerCount = isHideout ? sizeof(kHideoutIdlers) / sizeof(kHideoutIdlers[0])
+                                      : sizeof(kIdlers) / sizeof(kIdlers[0]);
 
   // The ones with posts, from content/crew/*.cfg — only the ones who work
   // here.
