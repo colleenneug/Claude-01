@@ -30,6 +30,9 @@ void Renderer::create(int width, int height) {
   ssaoBuffer_.create(std::max(1, width_ / 2), std::max(1, height_ / 2), false, false);
   ssaoBlurBuffer_.create(std::max(1, width_ / 2), std::max(1, height_ / 2), false, false);
 
+  ssrShader_.load("shaders/fullscreen.vert", "shaders/ssr.frag");
+  ssrBuffer_.create(std::max(1, width_ / 2), std::max(1, height_ / 2), true, false);
+
   applyQualityTier(0);
   bloom_.create(width_, height_);
   ibl_.build(128);
@@ -84,6 +87,7 @@ void Renderer::resize(int width, int height) {
   dofBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
   ssaoBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
   ssaoBlurBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
+  ssrBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
   bloom_.resize(width_, height_);
 }
 
@@ -92,6 +96,7 @@ void Renderer::destroy() {
   dofBuffer_.destroy();
   ssaoBuffer_.destroy();
   ssaoBlurBuffer_.destroy();
+  ssrBuffer_.destroy();
   csm_.destroy();
   bloom_.destroy();
   ibl_.destroy();
@@ -203,6 +208,7 @@ void Renderer::renderMotes(const SceneSource& scene, const Camera& camera, float
   motesShader_.set("uSunDir", scene.sunDirection());
   motesShader_.set("uColour", scene.moteColour());
   motesShader_.set("uOpacity", scene.moteOpacity());
+  motesShader_.set("uTerrainType", scene.terrainType());
 
   glBindVertexArray(scene.moteVao());
   glDrawArrays(GL_POINTS, 0, moteCount);
@@ -279,6 +285,36 @@ void Renderer::renderSSAO(const Camera& camera) {
 
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glEnable(GL_DEPTH_TEST);
+}
+
+// ------------------------------------------------------------------- SSR
+
+void Renderer::renderSSR(const Camera& camera) {
+  int hw = std::max(1, width_ / 2), hh = std::max(1, height_ / 2);
+  glm::mat4 view = camera.view();
+  glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
+
+  ssrBuffer_.bind();
+  glDisable(GL_DEPTH_TEST);
+  ssrShader_.use();
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, sceneHdr_.colorTexture());
+  ssrShader_.set("tScene", 0);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, sceneHdr_.depthTexture());
+  ssrShader_.set("tDepth", 1);
+  ssrShader_.set("uProj", proj);
+  ssrShader_.set("uInvProj", glm::inverse(proj));
+  ssrShader_.set("uView", view);
+  ssrShader_.set("uNear", 0.05f);
+  ssrShader_.set("uFar", farPlane_);
+  ssrShader_.set("uTexelSize", glm::vec2(1.0f / hw, 1.0f / hh));
+
+  glBindVertexArray(fsTriVao_);
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  glEnable(GL_DEPTH_TEST);
+  glCheck("Renderer::renderSSR");
 }
 
 // -------------------------------------------------------------- composite
@@ -424,6 +460,7 @@ void Renderer::renderFrame(const SceneSource& scene, const Camera& camera, float
   renderMotes(scene, camera, time);
 
   if (ssaoAllowed_) renderSSAO(camera);
+  renderSSR(camera);
 
   // Bloom runs its own chain of shader programs and must finish — leaving
   // whatever state it wants — before the composite shader is bound; see the

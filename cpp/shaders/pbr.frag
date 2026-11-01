@@ -28,9 +28,9 @@ uniform float uSunIntensity;
 struct Cascade { mat4 viewProj; vec2 range; };
 uniform Cascade uCascade[3];
 uniform float uCascadeFade;
-uniform sampler2DShadow uCascadeMap0;
-uniform sampler2DShadow uCascadeMap1;
-uniform sampler2DShadow uCascadeMap2;
+uniform sampler2D uCascadeMap0;
+uniform sampler2D uCascadeMap1;
+uniform sampler2D uCascadeMap2;
 
 uniform samplerCube uIrradianceMap;
 uniform float uIblMaxMip;
@@ -532,21 +532,52 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
   return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// ------------------------------------------------------------- shadows
-float sampleCascadePCF(sampler2DShadow map, vec4 lightClip, vec2 texel) {
+// ------------------------------------------------------------- shadows (PCSS)
+const vec2 kPoisson[16] = vec2[16](
+  vec2(-0.9465, 0.1429), vec2(-0.7431, -0.5689), vec2(-0.4985, 0.4174),
+  vec2(-0.2557, -0.1520), vec2(-0.1235, 0.7896), vec2(-0.0611, -0.8747),
+  vec2( 0.1975, 0.3564), vec2( 0.2489, -0.3948), vec2( 0.4228, 0.7724),
+  vec2( 0.4714, -0.0168), vec2( 0.5380, -0.6493), vec2( 0.6558, 0.3319),
+  vec2( 0.7329, -0.3282), vec2( 0.8161, 0.1080), vec2( 0.8998, -0.5765),
+  vec2( 0.9600, 0.5400)
+);
+
+const float PCSS_LIGHT_SIZE = 0.024;
+
+float sampleCascadePCSS(sampler2D map, vec4 lightClip, vec2 texel) {
   vec3 proj = lightClip.xyz / lightClip.w;
   proj = proj * 0.5 + 0.5;
-  // A small constant bias so a surface doesn't shadow itself: the compare
-  // value is nudged towards the light, which is far cheaper than a normal-
-  // offset bias and adequate at these cascade resolutions.
-  float ref = min(proj.z - 0.0006, 1.0);
-  float sum = 0.0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) {
-      sum += texture(map, vec3(proj.xy + vec2(x, y) * texel, ref));
+  if (proj.z >= 1.0 || proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0)
+    return 1.0;
+  float ref = min(proj.z - 0.0008, 1.0);
+
+  // Blocker search: 12 Poisson samples at a fixed search radius
+  float searchRadius = PCSS_LIGHT_SIZE * proj.z / proj.z;  // simplified
+  float blockerSum = 0.0;
+  float blockerCount = 0.0;
+  for (int i = 0; i < 12; i++) {
+    vec2 offset = kPoisson[i] * searchRadius;
+    float d = texture(map, proj.xy + offset).r;
+    if (d < ref) {
+      blockerSum += d;
+      blockerCount += 1.0;
     }
   }
-  return sum / 9.0;
+
+  if (blockerCount < 0.5) return 1.0;
+
+  float avgBlocker = blockerSum / blockerCount;
+  float penumbra = (ref - avgBlocker) / max(avgBlocker, 0.001) * PCSS_LIGHT_SIZE;
+  penumbra = clamp(penumbra, texel.x, texel.x * 12.0);
+
+  // Variable-width PCF with all 16 Poisson samples
+  float sum = 0.0;
+  for (int i = 0; i < 16; i++) {
+    vec2 offset = kPoisson[i] * penumbra;
+    float d = texture(map, proj.xy + offset).r;
+    sum += step(ref, d);
+  }
+  return sum / 16.0;
 }
 
 float shadowFactor(float viewDepth) {
@@ -560,9 +591,9 @@ float shadowFactor(float viewDepth) {
   float w2 = smoothstep(uCascade[2].range.x - uCascadeFade, uCascade[2].range.x + uCascadeFade, viewDepth) *
              (1.0 - smoothstep(uCascade[2].range.y - uCascadeFade, uCascade[2].range.y + uCascadeFade, viewDepth));
 
-  if (w0 > 0.001) { sSum += w0 * sampleCascadePCF(uCascadeMap0, uCascade[0].viewProj * vec4(vWorldPos, 1.0), texel0); wSum += w0; }
-  if (w1 > 0.001) { sSum += w1 * sampleCascadePCF(uCascadeMap1, uCascade[1].viewProj * vec4(vWorldPos, 1.0), texel1); wSum += w1; }
-  if (w2 > 0.001) { sSum += w2 * sampleCascadePCF(uCascadeMap2, uCascade[2].viewProj * vec4(vWorldPos, 1.0), texel2); wSum += w2; }
+  if (w0 > 0.001) { sSum += w0 * sampleCascadePCSS(uCascadeMap0, uCascade[0].viewProj * vec4(vWorldPos, 1.0), texel0); wSum += w0; }
+  if (w1 > 0.001) { sSum += w1 * sampleCascadePCSS(uCascadeMap1, uCascade[1].viewProj * vec4(vWorldPos, 1.0), texel1); wSum += w1; }
+  if (w2 > 0.001) { sSum += w2 * sampleCascadePCSS(uCascadeMap2, uCascade[2].viewProj * vec4(vWorldPos, 1.0), texel2); wSum += w2; }
   return wSum > 0.001 ? sSum / wSum : 1.0;
 }
 

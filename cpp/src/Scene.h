@@ -86,4 +86,6 @@ public:
   virtual float fogBase() const { return -1.0f; }
   virtual glm::vec3 fogColour() const { return glm::vec3(0.42f, 0.30f, 0.34f); }
   virtual float fogInscatter() const { return 0.9f; }
+
+  virtual int terrainType() const { return 0; }
 };

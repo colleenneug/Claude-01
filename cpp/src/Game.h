@@ -100,6 +100,31 @@ public:
   GLuint moteVao() const override { return moteVao_; }
   float moteBoxSize() const override { return moteBox_; }
   int moteCount() const override { return moteCount_; }
+  int terrainType() const override { return mission_.terrainType; }
+  glm::vec3 moteColour() const override {
+    switch (mission_.terrainType) {
+      case 1: return glm::vec3(0.85f, 0.90f, 1.0f);
+      case 2: return glm::vec3(0.72f, 0.45f, 0.28f);
+      case 3: return glm::vec3(0.55f, 0.58f, 0.65f);
+      case 4: return glm::vec3(1.0f, 0.45f, 0.12f);
+      default: return glm::vec3(0.75f, 0.85f, 0.95f);
+    }
+  }
+  float moteSize() const override {
+    switch (mission_.terrainType) {
+      case 1: return 32.0f;
+      case 4: return 20.0f;
+      default: return 26.0f;
+    }
+  }
+  float moteOpacity() const override {
+    switch (mission_.terrainType) {
+      case 1: return 0.30f;
+      case 4: return 0.45f;
+      case 3: return 0.12f;
+      default: return 0.22f;
+    }
+  }
 
   // ---------- state main.cpp/Hud read ----------
   const Player& player() const { return player_; }

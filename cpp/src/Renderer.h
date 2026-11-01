@@ -87,6 +87,7 @@ private:
   void renderMotes(const SceneSource& scene, const Camera& camera, float time);
   void renderDof();
   void renderSSAO(const Camera& camera);
+  void renderSSR(const Camera& camera);
   void renderComposite(const Camera& camera, const SceneSource& scene, GLuint bloomTex, float time);
 
   void trackFrameTime(float dtSeconds);
@@ -110,9 +111,11 @@ private:
 
   Shader depthShader_, pbrShader_, motesShader_, dofShader_, compositeShader_;
   Shader ssaoShader_, ssaoBlurShader_;
+  Shader ssrShader_;
   Framebuffer sceneHdr_;   // full-res HDR + depth texture
   Framebuffer dofBuffer_;  // half-res blurred copy, blended in by roughness of focus
   Framebuffer ssaoBuffer_, ssaoBlurBuffer_;  // half-res AO
+  Framebuffer ssrBuffer_;                    // half-res SSR
 
   CascadedShadowMap csm_;
   Bloom bloom_;

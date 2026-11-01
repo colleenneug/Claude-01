@@ -1,9 +1,4 @@
 #version 410 core
-// Dust motes, ported from the browser build's atmos.js: a fixed buffer of
-// points that the vertex shader wraps into a box around the camera with
-// mod(), so walking through them gives real parallax without ever touching
-// the attribute array on the CPU side, and the same mote just reappears
-// behind you as you pass it.
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in float aSeed;
 layout(location = 2) in float aScale;
@@ -14,18 +9,42 @@ uniform vec3 uCamPos;
 uniform float uBox;
 uniform float uTime;
 uniform float uSize;
-// 1 = point size falls off with distance (dust); 0 = fixed size (stars).
 uniform float uDistanceScaled;
-uniform vec3 uSunDir;   // direction the light travels, world space
+uniform vec3 uSunDir;
+uniform int uTerrainType;
 
 out float vAlpha;
 out float vGlow;
 
 void main() {
-  vec3 p = aPosition + vec3(
-    sin(uTime * 0.13 + aSeed * 6.2831),
-    sin(uTime * 0.09 + aSeed * 3.1415) * 0.6,
-    cos(uTime * 0.11 + aSeed * 5.1234)) * 0.7;
+  vec3 drift;
+  if (uTerrainType == 4) {
+    // Volcanic embers: strong upward drift, lateral wander
+    drift = vec3(
+      sin(uTime * 0.18 + aSeed * 6.2831) * 0.5,
+      uTime * 0.4 + sin(uTime * 0.25 + aSeed * 4.0) * 0.3,
+      cos(uTime * 0.15 + aSeed * 5.1234) * 0.5);
+  } else if (uTerrainType == 1) {
+    // Snow: slow, mostly horizontal drift with gentle fall
+    drift = vec3(
+      sin(uTime * 0.07 + aSeed * 6.2831) * 1.2,
+      -uTime * 0.15 + sin(uTime * 0.05 + aSeed * 3.1415) * 0.2,
+      cos(uTime * 0.06 + aSeed * 5.1234) * 1.0);
+  } else if (uTerrainType == 3) {
+    // Metal sparks: fast, erratic
+    drift = vec3(
+      sin(uTime * 0.3 + aSeed * 6.2831) * 0.4,
+      sin(uTime * 0.22 + aSeed * 3.1415) * 0.3,
+      cos(uTime * 0.28 + aSeed * 5.1234) * 0.4);
+  } else {
+    // Stone / red rock: default gentle float
+    drift = vec3(
+      sin(uTime * 0.13 + aSeed * 6.2831),
+      sin(uTime * 0.09 + aSeed * 3.1415) * 0.6,
+      cos(uTime * 0.11 + aSeed * 5.1234)) * 0.7;
+  }
+
+  vec3 p = aPosition + drift;
 
   vec3 rel = p - uCamPos;
   rel = mod(rel + uBox * 0.5, uBox) - uBox * 0.5;
@@ -35,19 +54,12 @@ void main() {
   gl_Position = uProj * viewPos;
 
   float dist = max(-viewPos.z, 0.05);
-  // Clamped hard: unclamped, a mote drifting within a few centimetres of the
-  // lens would draw hundreds of pixels across, and thousands of those
-  // blended additively is enough overdraw on its own to halve the frame rate.
   float scaled = (uSize * aScale) / dist;
   gl_PointSize = clamp(mix(uSize * aScale, scaled, uDistanceScaled), 1.0, 24.0);
 
   float edge = length(rel) / (uBox * 0.5);
   vAlpha = smoothstep(0.25, 1.2, dist) * (1.0 - smoothstep(0.72, 1.0, edge));
 
-  // Forward scattering: brightest when the light keeps travelling roughly
-  // straight through the mote and into the eye, i.e. when the mote-to-camera
-  // direction lines up with the direction the light is already travelling —
-  // which is why dust stays invisible until you turn into the beam.
   vec3 toEye = normalize(uCamPos - world);
   vGlow = 1.0 + 5.0 * pow(max(dot(toEye, uSunDir), 0.0), 12.0);
 }
