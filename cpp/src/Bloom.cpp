@@ -55,6 +55,7 @@ GLuint Bloom::render(GLuint sceneColor, GLuint fullscreenTriVAO) {
   up_.use();
   up_.set("uRadius", 1.0f);
   up_.set("uStrength", 0.62f);
+  up_.set("uAnamorphic", anamorphic);
   for (int i = levels - 1; i > 0; i--) {
     mips_[i - 1].bind();
     glBindTexture(GL_TEXTURE_2D, mips_[i].colorTexture());

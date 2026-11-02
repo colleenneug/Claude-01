@@ -86,9 +86,10 @@ private:
   void renderSceneToHdr(const SceneSource& scene, const Camera& camera);
   void renderMotes(const SceneSource& scene, const Camera& camera, float time);
   void renderDof();
-  void renderSSAO(const Camera& camera);
+  void renderSSAO(const Camera& camera, const glm::vec3& viewSunDir);
   void renderSSR(const Camera& camera);
   void renderComposite(const Camera& camera, const SceneSource& scene, GLuint bloomTex, float time);
+  void renderTAA();
 
   void trackFrameTime(float dtSeconds);
   void applyQualityTier(int i);
@@ -112,10 +113,17 @@ private:
   Shader depthShader_, pbrShader_, motesShader_, dofShader_, compositeShader_;
   Shader ssaoShader_, ssaoBlurShader_;
   Shader ssrShader_;
+  Shader taaShader_;
   Framebuffer sceneHdr_;   // full-res HDR + depth texture
   Framebuffer dofBuffer_;  // half-res blurred copy, blended in by roughness of focus
   Framebuffer ssaoBuffer_, ssaoBlurBuffer_;  // half-res AO
   Framebuffer ssrBuffer_;                    // half-res SSR
+  Framebuffer compositeBuffer_;              // composite renders here for TAA
+  Framebuffer taaHistory_[2];                // ping-pong TAA resolved output
+  int taaPhase_ = 0;
+  glm::mat4 prevViewProj_{1.0f};
+  glm::vec2 jitterOffset_{0.0f};
+  int frameCount_ = 0;
 
   CascadedShadowMap csm_;
   Bloom bloom_;

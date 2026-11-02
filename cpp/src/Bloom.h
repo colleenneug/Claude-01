@@ -22,6 +22,7 @@ public:
   GLuint render(GLuint sceneColor, GLuint fullscreenTriVAO);
 
   int activeLevels = LEVELS;  // quality knob: fewer levels, cheaper bloom
+  float anamorphic = 0.0f;
 
 private:
   std::array<Framebuffer, LEVELS> mips_;

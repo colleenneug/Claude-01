@@ -52,6 +52,13 @@ uniform float uBloom;
 uniform vec2 uSunScreenPos;   // sun projected onto screen, for light shafts
 uniform float uShaftIntensity; // 0 disables light shafts
 
+uniform float uGradeSaturation;
+uniform vec3 uGradeLift;
+uniform vec3 uGradeGain;
+
+uniform mat4 uPrevViewProj;
+uniform float uMotionBlur;
+
 float linearDepth(float d) {
   float ndc = d * 2.0 - 1.0;
   return (2.0 * uNear * uFar) / (uFar + uNear - ndc * (uFar - uNear));
@@ -174,10 +181,12 @@ void main() {
     col = mix(col, texture(tDof, uv).rgb, clamp(coc, 0.0, 1.0));
   }
 
-  // Screen-space ambient occlusion: darken corners and contact areas.
+  // Screen-space ambient occlusion + contact shadows.
   if (uSSAO > 0.5 && depth01 < 0.99999) {
-    float ao = texture(tAO, uv).r;
-    col *= ao;
+    vec4 aoData = texture(tAO, uv);
+    float ao = aoData.r;
+    float cs = aoData.a;
+    col *= ao * cs;
   }
 
   // Volumetric fog: the analytic integral of an exponential height
@@ -239,9 +248,33 @@ void main() {
   // Bloom, added while still linear HDR.
   col += texture(tBloom, uv).rgb * uBloom;
 
+  // Camera motion blur: sample the raw scene along the per-pixel velocity.
+  if (uMotionBlur > 0.001 && !isSky) {
+    vec4 prevClip = uPrevViewProj * vec4(worldPos, 1.0);
+    if (prevClip.w > 0.0) {
+      vec2 prevUv = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+      vec2 vel = uv - prevUv;
+      float speed = length(vel);
+      if (speed > 0.001) {
+        vel = vel / speed * min(speed, 0.04);
+        vec3 blurred = col;
+        for (int i = 1; i <= 5; i++) {
+          vec2 sUv = clamp(uv + vel * float(i) / 5.0, 0.001, 0.999);
+          blurred += texture(tScene, sUv).rgb + texture(tBloom, sUv).rgb * uBloom;
+        }
+        col = mix(col, blurred / 6.0, clamp(speed * 20.0, 0.0, 0.45) * uMotionBlur);
+      }
+    }
+  }
+
   // Everything above this line is radiance; everything below is a picture.
   col = acesFilm(col * uExposure);
   col = linearToSRGB(col);
+
+  // Per-mission color grading: lift/gain/saturation.
+  col = col * uGradeGain + uGradeLift;
+  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(vec3(luma), col, uGradeSaturation);
 
   col += (hash(uv * vec2(1024.0, 768.0) + uTime) - 0.5) * uGrain;
   col *= clamp(1.0 - uVignette * r2 * 1.9, 0.0, 1.0);

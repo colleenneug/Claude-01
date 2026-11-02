@@ -2,6 +2,15 @@
 #include <algorithm>
 #include <cstdio>
 
+static float halton(int index, int base) {
+  float f = 1.0f, result = 0.0f;
+  for (int i = index; i > 0; i /= base) {
+    f /= base;
+    result += f * (i % base);
+  }
+  return result;
+}
+
 // Each tier gives up the least valuable thing left, in the same order the
 // browser build's TIERS table does. Pixel-ratio supersampling from that
 // table isn't ported — it would need an extra upscale-blit stage this
@@ -32,6 +41,11 @@ void Renderer::create(int width, int height) {
 
   ssrShader_.load("shaders/fullscreen.vert", "shaders/ssr.frag");
   ssrBuffer_.create(std::max(1, width_ / 2), std::max(1, height_ / 2), true, false);
+
+  taaShader_.load("shaders/fullscreen.vert", "shaders/taa.frag");
+  compositeBuffer_.create(width_, height_, false, false);
+  taaHistory_[0].create(width_, height_, false, false);
+  taaHistory_[1].create(width_, height_, false, false);
 
   applyQualityTier(0);
   bloom_.create(width_, height_);
@@ -88,6 +102,9 @@ void Renderer::resize(int width, int height) {
   ssaoBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
   ssaoBlurBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
   ssrBuffer_.resize(std::max(1, width_ / 2), std::max(1, height_ / 2));
+  compositeBuffer_.resize(width_, height_);
+  taaHistory_[0].resize(width_, height_);
+  taaHistory_[1].resize(width_, height_);
   bloom_.resize(width_, height_);
 }
 
@@ -97,6 +114,9 @@ void Renderer::destroy() {
   ssaoBuffer_.destroy();
   ssaoBlurBuffer_.destroy();
   ssrBuffer_.destroy();
+  compositeBuffer_.destroy();
+  taaHistory_[0].destroy();
+  taaHistory_[1].destroy();
   csm_.destroy();
   bloom_.destroy();
   ibl_.destroy();
@@ -134,6 +154,12 @@ void Renderer::renderSceneToHdr(const SceneSource& scene, const Camera& camera) 
 
   glm::mat4 view = camera.view();
   glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
+
+  // Sub-pixel jitter for temporal anti-aliasing (Halton 2,3 sequence)
+  int hi = (frameCount_ % 16) + 1;
+  jitterOffset_ = glm::vec2(halton(hi, 2) - 0.5f, halton(hi, 3) - 0.5f);
+  proj[2][0] += jitterOffset_.x * 2.0f / (float)width_;
+  proj[2][1] += jitterOffset_.y * 2.0f / (float)height_;
 
   pbrShader_.use();
   pbrShader_.set("uView", view);
@@ -244,7 +270,7 @@ void Renderer::renderDof() {
 
 // ------------------------------------------------------------------ SSAO
 
-void Renderer::renderSSAO(const Camera& camera) {
+void Renderer::renderSSAO(const Camera& camera, const glm::vec3& viewSunDir) {
   int hw = std::max(1, width_ / 2), hh = std::max(1, height_ / 2);
   glm::mat4 proj = glm::perspective(glm::radians(camera.fov()), (float)width_ / height_, 0.05f, farPlane_);
   glm::mat4 invProj = glm::inverse(proj);
@@ -265,6 +291,7 @@ void Renderer::renderSSAO(const Camera& camera) {
   ssaoShader_.set("uRadius", 0.5f);
   ssaoShader_.set("uBias", 0.025f);
   ssaoShader_.set("uIntensity", 1.5f);
+  ssaoShader_.set("uLightDir", viewSunDir);
 
   glBindVertexArray(fsTriVao_);
   glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -324,7 +351,7 @@ void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, G
   // owns its own bright/downsample/upsample passes); the composite shader
   // is bound here, after all of that has finished, so every uniform set
   // below actually lands on the program that ends up drawing.
-  Framebuffer::bindScreen(width_, height_);
+  compositeBuffer_.bind();
   glDisable(GL_DEPTH_TEST);
   compositeShader_.use();
 
@@ -402,17 +429,63 @@ void Renderer::renderComposite(const Camera& camera, const SceneSource& scene, G
   // highlight and nothing below it for a shadow: the whole frame read as
   // one flat wash. Lower exposure puts the ground back in the mid tones and
   // gives the sun somewhere to go.
-  compositeShader_.set("uExposure", 1.05f);
+  compositeShader_.set("uExposure", 1.05f + scene.gradeExposure());
   compositeShader_.set("uGrain", 0.018f);
   compositeShader_.set("uVignette", 0.70f);
   compositeShader_.set("uAberration", 0.6f);
   compositeShader_.set("uBloom", 0.38f);
   compositeShader_.set("uTime", time);
 
+  compositeShader_.set("uGradeSaturation", scene.gradeSaturation());
+  compositeShader_.set("uGradeLift", scene.gradeLift());
+  compositeShader_.set("uGradeGain", scene.gradeGain());
+
+  compositeShader_.set("uPrevViewProj", prevViewProj_);
+  compositeShader_.set("uMotionBlur", 0.5f);
+
   glBindVertexArray(fsTriVao_);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glEnable(GL_DEPTH_TEST);
   glCheck("Renderer::renderComposite");
+}
+
+// ------------------------------------------------------------------- TAA
+
+void Renderer::renderTAA() {
+  int readIdx = taaPhase_;
+  int writeIdx = 1 - taaPhase_;
+
+  taaHistory_[writeIdx].bind();
+  glDisable(GL_DEPTH_TEST);
+  taaShader_.use();
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, compositeBuffer_.colorTexture());
+  taaShader_.set("tCurrent", 0);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, taaHistory_[readIdx].colorTexture());
+  taaShader_.set("tHistory", 1);
+  glActiveTexture(GL_TEXTURE2);
+  glBindTexture(GL_TEXTURE_2D, sceneHdr_.depthTexture());
+  taaShader_.set("tDepth", 2);
+
+  taaShader_.set("uInvViewProj", glm::inverse(lastViewProj_));
+  taaShader_.set("uPrevViewProj", prevViewProj_);
+  taaShader_.set("uTexelSize", glm::vec2(1.0f / width_, 1.0f / height_));
+  taaShader_.set("uJitter", jitterOffset_);
+
+  glBindVertexArray(fsTriVao_);
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+
+  // Blit resolved result to screen
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, taaHistory_[writeIdx].fbo());
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  glViewport(0, 0, width_, height_);
+  glBlitFramebuffer(0, 0, width_, height_, 0, 0, width_, height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+  taaPhase_ = writeIdx;
+  glEnable(GL_DEPTH_TEST);
+  glCheck("Renderer::renderTAA");
 }
 
 // --------------------------------------------------------------- top level
@@ -463,15 +536,18 @@ void Renderer::renderFrame(const SceneSource& scene, const Camera& camera, float
   renderSceneToHdr(scene, camera);
   renderMotes(scene, camera, time);
 
-  if (ssaoAllowed_) renderSSAO(camera);
+  glm::vec3 viewSunDir = glm::mat3(camera.view()) * (-scene.sunDirection());
+  if (ssaoAllowed_) renderSSAO(camera, viewSunDir);
   renderSSR(camera);
 
-  // Bloom runs its own chain of shader programs and must finish — leaving
-  // whatever state it wants — before the composite shader is bound; see the
-  // comment at the top of renderComposite.
+  bloom_.anamorphic = 0.35f;
   GLuint bloomTex = bloom_.render(sceneHdr_.colorTexture(), fsTriVao_);
 
   if (dofAllowed_ && camera.aim > 0.01f) renderDof();
 
   renderComposite(camera, scene, bloomTex, time);
+  renderTAA();
+
+  prevViewProj_ = lastViewProj_;
+  frameCount_++;
 }

@@ -249,6 +249,10 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
           else m.terrainType = 0;
         }
         else if (k == "sun_intensity") { try { m.sunIntensity = std::stof(v); } catch (...) {} }
+        else if (k == "grade_exposure") { try { m.gradeExposure = std::stof(v); } catch (...) {} }
+        else if (k == "grade_saturation") { try { m.gradeSaturation = std::stof(v); } catch (...) {} }
+        else if (k == "grade_lift") m.gradeLift = parseVec3(v, m.gradeLift);
+        else if (k == "grade_gain") m.gradeGain = parseVec3(v, m.gradeGain);
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
         else if (k == "reward_xp") { try { m.rewardXp = std::stoi(v); } catch (...) {} }

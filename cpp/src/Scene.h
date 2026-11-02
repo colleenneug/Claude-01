@@ -88,4 +88,9 @@ public:
   virtual float fogInscatter() const { return 0.9f; }
 
   virtual int terrainType() const { return 0; }
+
+  virtual float gradeExposure() const { return 0.0f; }
+  virtual float gradeSaturation() const { return 1.0f; }
+  virtual glm::vec3 gradeLift() const { return glm::vec3(0.0f); }
+  virtual glm::vec3 gradeGain() const { return glm::vec3(1.0f); }
 };

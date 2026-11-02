@@ -250,6 +250,11 @@ struct MissionDef {
   int terrainType = 0;   // 0 stone, 1 ice, 2 red rock, 3 metal plate, 4 volcanic
   float fogDensity = 0.011f;
   float sunIntensity = 3.4f;
+
+  float gradeExposure = 0.0f;
+  float gradeSaturation = 1.0f;
+  glm::vec3 gradeLift{0.0f};
+  glm::vec3 gradeGain{1.0f};
 };
 
 // content/ranks/<id>.cfg — one rung of the Strider ladder. The ladder is

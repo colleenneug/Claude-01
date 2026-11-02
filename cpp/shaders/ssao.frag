@@ -16,6 +16,7 @@ uniform vec2 uTexelSize;
 uniform float uRadius;
 uniform float uBias;
 uniform float uIntensity;
+uniform vec3 uLightDir;
 
 float linearDepth(float d) {
   float ndc = d * 2.0 - 1.0;
@@ -37,6 +38,44 @@ float hash12(vec2 p) {
 }
 vec2 hash22(vec2 p) {
   return vec2(hash12(p), hash12(p + vec2(47.17, 113.43)));
+}
+
+// Screen-space contact shadows: ray-march toward the light to find
+// small-scale shadowing that cascaded maps miss at close range.
+const int CS_STEPS = 16;
+const float CS_STEP_SIZE = 0.04;
+const float CS_MAX_DIST = 30.0;
+
+float contactShadow(vec3 fragPos, vec3 normal) {
+  float fragLinZ = -fragPos.z;
+  if (fragLinZ > CS_MAX_DIST) return 1.0;
+
+  vec3 lightDir = normalize(uLightDir);
+  if (dot(normal, lightDir) < 0.01) return 1.0;
+
+  vec3 rayPos = fragPos;
+  float shadow = 1.0;
+
+  for (int i = 1; i <= CS_STEPS; i++) {
+    rayPos += lightDir * (CS_STEP_SIZE * fragLinZ * 0.15);
+
+    vec4 proj = uProj * vec4(rayPos, 1.0);
+    vec2 sUv = (proj.xy / proj.w) * 0.5 + 0.5;
+
+    if (sUv.x < 0.0 || sUv.x > 1.0 || sUv.y < 0.0 || sUv.y > 1.0) break;
+
+    float sampledZ = viewPosFromDepth(sUv).z;
+    float diff = rayPos.z - sampledZ;
+
+    if (diff > 0.005 * fragLinZ && diff < 0.5 * fragLinZ) {
+      float t = float(i) / float(CS_STEPS);
+      shadow = min(shadow, smoothstep(0.0, 1.0, t));
+      break;
+    }
+  }
+
+  float distFade = 1.0 - smoothstep(CS_MAX_DIST * 0.6, CS_MAX_DIST, fragLinZ);
+  return mix(1.0, shadow, distFade);
 }
 
 // Fibonacci hemisphere: deterministic, well-distributed sample directions.
@@ -95,5 +134,8 @@ void main() {
   }
 
   ao = 1.0 - (ao / float(SAMPLES)) * uIntensity;
-  fragColor = vec4(vec3(clamp(ao, 0.0, 1.0)), 1.0);
+
+  float cs = contactShadow(fragPos, normal);
+
+  fragColor = vec4(vec3(clamp(ao, 0.0, 1.0)), cs);
 }

@@ -101,6 +101,10 @@ public:
   float moteBoxSize() const override { return moteBox_; }
   int moteCount() const override { return moteCount_; }
   int terrainType() const override { return mission_.terrainType; }
+  float gradeExposure() const override { return mission_.gradeExposure; }
+  float gradeSaturation() const override { return mission_.gradeSaturation; }
+  glm::vec3 gradeLift() const override { return mission_.gradeLift; }
+  glm::vec3 gradeGain() const override { return mission_.gradeGain; }
   glm::vec3 moteColour() const override {
     switch (mission_.terrainType) {
       case 1: return glm::vec3(0.85f, 0.90f, 1.0f);

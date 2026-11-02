@@ -9,9 +9,13 @@ uniform sampler2D tSource;
 uniform vec2 uTexel;
 uniform float uRadius;
 uniform float uStrength;
+uniform float uAnamorphic;
 
 void main() {
-  vec2 t = uTexel * uRadius;
+  float hStretch = 1.0 + uAnamorphic * 2.0;
+  float vShrink  = 1.0 / (1.0 + uAnamorphic * 0.5);
+  vec2 t = uTexel * uRadius * vec2(hStretch, vShrink);
+
   vec3 s = texture(tSource, vUv + vec2(-t.x,  t.y)).rgb
          + texture(tSource, vUv + vec2( 0.0,  t.y)).rgb * 2.0
          + texture(tSource, vUv + vec2( t.x,  t.y)).rgb
@@ -21,5 +25,14 @@ void main() {
          + texture(tSource, vUv + vec2(-t.x, -t.y)).rgb
          + texture(tSource, vUv + vec2( 0.0, -t.y)).rgb * 2.0
          + texture(tSource, vUv + vec2( t.x, -t.y)).rgb;
-  fragColor = vec4(s * (uStrength / 16.0), 1.0);
+
+  if (uAnamorphic > 0.01) {
+    vec2 tWide = t * vec2(2.0, 0.3);
+    vec3 extra = texture(tSource, vUv + vec2(-tWide.x, 0.0)).rgb
+               + texture(tSource, vUv + vec2( tWide.x, 0.0)).rgb;
+    s += extra * uAnamorphic;
+    fragColor = vec4(s * (uStrength / (16.0 + 2.0 * uAnamorphic)), 1.0);
+  } else {
+    fragColor = vec4(s * (uStrength / 16.0), 1.0);
+  }
 }
