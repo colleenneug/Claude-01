@@ -240,6 +240,8 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "fog_colour" || k == "fog_color") m.fogColour = parseVec3(v, m.fogColour);
         else if (k == "sun_colour" || k == "sun_color") m.sunColour = parseVec3(v, m.sunColour);
         else if (k == "fog_density") { try { m.fogDensity = std::stof(v); } catch (...) {} }
+        else if (k == "fog_falloff") { try { m.fogFalloff = std::stof(v); } catch (...) {} }
+        else if (k == "sky_intensity") { try { m.skyIntensity = std::stof(v); } catch (...) {} }
         else if (k == "cover") { try { m.coverDensity = std::stof(v); } catch (...) {} }
         else if (k == "terrain") {
           if (v == "ice") m.terrainType = 1;
@@ -258,6 +260,7 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "reward_xp") { try { m.rewardXp = std::stoi(v); } catch (...) {} }
         else if (k == "reward_weapon") m.rewardWeapon = v;
         else if (k == "expedition") m.expedition = (v == "true" || v == "1");
+        else if (k == "cave") m.cave = (v == "true" || v == "1");
       }
     }
   }

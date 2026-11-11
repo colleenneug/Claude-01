@@ -118,7 +118,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
     level_.buildFromParts(site_.parts, site_.floorY);
     triggerFiredById_.assign(site_.triggers.size(), false);
   } else {
-    level_.build(mission_.arenaSize, mission_.floorColour, mission_.coverDensity, mission_.terrainType);
+    level_.build(mission_.arenaSize, mission_.floorColour, mission_.coverDensity, mission_.terrainType, mission_.cave);
   }
   HostileGeometry::ensure();
 

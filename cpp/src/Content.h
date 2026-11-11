@@ -249,7 +249,10 @@ struct MissionDef {
   float coverDensity = 1.0f;
   int terrainType = 0;   // 0 stone, 1 ice, 2 red rock, 3 metal plate, 4 volcanic
   float fogDensity = 0.011f;
+  float fogFalloff = 0.05f;
+  float skyIntensity = 1.0f;
   float sunIntensity = 3.4f;
+  bool cave = false;
 
   float gradeExposure = 0.0f;
   float gradeSaturation = 1.0f;

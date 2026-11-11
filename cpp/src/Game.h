@@ -83,6 +83,8 @@ public:
   glm::vec3 skyHorizon() const override { return mission_.skyHorizon; }
   glm::vec3 fogColour() const override { return mission_.fogColour; }
   float fogDensity() const override { return mission_.fogDensity; }
+  float fogFalloff() const override { return mission_.fogFalloff; }
+  float skyIntensity() const override { return mission_.skyIntensity; }
   glm::vec3 clearColour() const override { return mission_.fogColour * 0.10f; }
   // The light probe is a capture of a lit station interior (see IBL::build).
   // At full strength it is the dominant ambient in every mission, which means

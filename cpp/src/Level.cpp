@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 
-void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity, int terrainType) {
+void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity, int terrainType, bool cave) {
   // Safe to call more than once on the same Level — the Hub lets a player
   // run several missions in one session, and each one rebuilds its arena
   // from scratch. Without this, a second build() would leak the previous
@@ -22,6 +22,7 @@ void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity, int 
   floorTop_ = 0.0f;
   floorTint_ = floorTint;
   terrainType_ = terrainType;
+  cave_ = cave;
 
   // The floor's tessellation follows the arena rather than being fixed at 96
   // segments: the terrain material blends two stone layers off a per-vertex
@@ -31,21 +32,26 @@ void Level::build(float arenaSize, glm::vec3 floorTint, float coverDensity, int 
   floorMesh_ = Mesh::terrainPlane(arenaSize, segs, 0.06f, 0.8f);
   boxMesh_ = Mesh::box(1.0f, 1.0f, 1.0f);   // scaled per instance, for walls and cover
 
-  // Perimeter walls: four boxes, thick enough that fast movement can't
-  // tunnel through them in one substep at this project's frame budget.
-  const float t = 1.5f;   // wall thickness
-  struct WallSpec { glm::vec3 centre, half; };
-  WallSpec specs[4] = {
-    {{0, wallHeight_ * 0.5f, -half_}, {half_ + t, wallHeight_ * 0.5f, t}},   // north
-    {{0, wallHeight_ * 0.5f,  half_}, {half_ + t, wallHeight_ * 0.5f, t}},   // south
-    {{-half_, wallHeight_ * 0.5f, 0}, {t, wallHeight_ * 0.5f, half_ + t}},   // west
-    {{ half_, wallHeight_ * 0.5f, 0}, {t, wallHeight_ * 0.5f, half_ + t}},   // east
-  };
-  for (auto& w : specs) {
-    glm::mat4 m = glm::translate(glm::mat4(1.0f), w.centre);
-    m = glm::scale(m, w.half * 2.0f);
-    walls_.push_back(m);
-    colliders_.push_back({w.centre - w.half, w.centre + w.half});
+  if (cave_) {
+    buildCaveWalls(half_, wallHeight_ * 2.5f, 3.0f);
+    buildStalactites(half_, wallHeight_ * 2.0f);
+  } else {
+    // Perimeter walls: four boxes, thick enough that fast movement can't
+    // tunnel through them in one substep at this project's frame budget.
+    const float t = 1.5f;   // wall thickness
+    struct WallSpec { glm::vec3 centre, half; };
+    WallSpec specs[4] = {
+      {{0, wallHeight_ * 0.5f, -half_}, {half_ + t, wallHeight_ * 0.5f, t}},   // north
+      {{0, wallHeight_ * 0.5f,  half_}, {half_ + t, wallHeight_ * 0.5f, t}},   // south
+      {{-half_, wallHeight_ * 0.5f, 0}, {t, wallHeight_ * 0.5f, half_ + t}},   // west
+      {{ half_, wallHeight_ * 0.5f, 0}, {t, wallHeight_ * 0.5f, half_ + t}},   // east
+    };
+    for (auto& w : specs) {
+      glm::mat4 m = glm::translate(glm::mat4(1.0f), w.centre);
+      m = glm::scale(m, w.half * 2.0f);
+      walls_.push_back(m);
+      colliders_.push_back({w.centre - w.half, w.centre + w.half});
+    }
   }
 
   // Cover, scattered over the floor and kept clear of the middle so a
@@ -265,15 +271,19 @@ void Level::collect(std::vector<DrawItem>& out) const {
   DrawItem wallBase;
   wallBase.mesh = &boxMesh_;
   wallBase.material = MaterialType::Armour;
-  wallBase.tint = glm::vec3(0.46f, 0.49f, 0.54f);
-  // Not polished metal: at 0.85 a wall is a mirror, and the only thing there
-  // is to reflect is the light probe — a capture of a lit interior — so the
-  // perimeter of a dark deck came out with orange and blue cube faces
-  // painted across it. Plate and concrete, which is what it is.
-  wallBase.metallic = 0.22f;
-  wallBase.roughness = 0.46f;
-  wallBase.wear = 0.7f;
-  wallBase.anisoStrength = 0.35f;
+  if (cave_) {
+    wallBase.tint = floorTint_ * 1.3f;
+    wallBase.metallic = 0.04f;
+    wallBase.roughness = 0.88f;
+    wallBase.wear = 1.8f;
+    wallBase.anisoStrength = 0.0f;
+  } else {
+    wallBase.tint = glm::vec3(0.46f, 0.49f, 0.54f);
+    wallBase.metallic = 0.22f;
+    wallBase.roughness = 0.46f;
+    wallBase.wear = 0.7f;
+    wallBase.anisoStrength = 0.35f;
+  }
   for (auto& m : walls_) { DrawItem it = wallBase; it.model = m; out.push_back(it); }
 
   // The three kinds of cover are tinted apart. It is not decoration: you have
@@ -423,6 +433,223 @@ void Level::buildFromParts(const std::vector<Part>& parts, float floorY) {
     if (p.solid) colliders_.push_back({p.min, p.max});
   }
   half_ = extent;
+}
+
+// ---------------------------------------------------------------------------
+// Cave geometry generators
+// ---------------------------------------------------------------------------
+
+static float caveHash(float x, float y) {
+  float v = std::sin(x * 127.1f + y * 311.7f) * 43758.5453f;
+  return v - std::floor(v);
+}
+
+static float caveNoise(float x, float y) {
+  float ix = std::floor(x), iy = std::floor(y);
+  float fx = x - ix, fy = y - iy;
+  fx = fx * fx * (3.0f - 2.0f * fx);
+  fy = fy * fy * (3.0f - 2.0f * fy);
+  float a = caveHash(ix, iy), b = caveHash(ix + 1, iy);
+  float c = caveHash(ix, iy + 1), d = caveHash(ix + 1, iy + 1);
+  float ab = a + (b - a) * fx;
+  float cd = c + (d - c) * fx;
+  return ab + (cd - ab) * fy;
+}
+
+static float caveFbm(float x, float y) {
+  float sum = 0.0f, amp = 0.5f;
+  for (int i = 0; i < 4; i++) {
+    sum += caveNoise(x, y) * amp;
+    x *= 2.17f; y *= 2.17f;
+    amp *= 0.48f;
+  }
+  return sum;
+}
+
+void Level::buildCaveWalls(float half, float wallH, float thickness) {
+  auto rnd = [](float lo, float hi) { return lo + (hi - lo) * (float)rand() / (float)RAND_MAX; };
+
+  int segCount = std::clamp((int)(half * 0.7f), 24, 60);
+  float segLen = (half * 2.0f) / (float)segCount;
+
+  // For each of the four walls, place segments with random inward offsets
+  // and varying heights to create an irregular rock surface.
+  struct WallSide { int axis; float sign; };
+  WallSide sides[4] = {{2, -1.0f}, {2, 1.0f}, {0, -1.0f}, {0, 1.0f}};
+
+  for (auto& side : sides) {
+    for (int i = 0; i < segCount; i++) {
+      float along = -half + segLen * ((float)i + 0.5f);
+
+      float noiseVal = caveFbm(along * 0.08f, side.sign * 13.7f + side.axis * 7.3f);
+      float inwardOffset = noiseVal * 8.0f + rnd(0.0f, 3.0f);
+      float heightVar = wallH * (0.7f + noiseVal * 0.6f);
+      float widthVar = segLen * rnd(0.85f, 1.4f);
+      float depthVar = thickness + rnd(0.5f, 4.0f) + inwardOffset;
+
+      glm::vec3 centre, halfExt;
+      if (side.axis == 2) {
+        float baseZ = side.sign * half;
+        float z = baseZ - side.sign * depthVar * 0.5f;
+        centre = glm::vec3(along, heightVar * 0.5f, z);
+        halfExt = glm::vec3(widthVar * 0.5f, heightVar * 0.5f, depthVar * 0.5f);
+      } else {
+        float baseX = side.sign * half;
+        float x = baseX - side.sign * depthVar * 0.5f;
+        centre = glm::vec3(x, heightVar * 0.5f, along);
+        halfExt = glm::vec3(depthVar * 0.5f, heightVar * 0.5f, widthVar * 0.5f);
+      }
+
+      glm::mat4 m = glm::translate(glm::mat4(1.0f), centre);
+      m = glm::scale(m, halfExt * 2.0f);
+      walls_.push_back(m);
+      colliders_.push_back({centre - halfExt, centre + halfExt});
+
+      // Extra jutting rocks at random intervals for more irregularity
+      if (rnd(0.0f, 1.0f) < 0.35f) {
+        float jw = rnd(1.0f, 3.0f);
+        float jh = rnd(1.5f, heightVar * 0.6f);
+        float jd = rnd(1.5f, 5.0f);
+        glm::vec3 jCentre = centre;
+        if (side.axis == 2) {
+          jCentre.z -= side.sign * jd * 0.4f;
+          jCentre.x += rnd(-2.0f, 2.0f);
+        } else {
+          jCentre.x -= side.sign * jd * 0.4f;
+          jCentre.z += rnd(-2.0f, 2.0f);
+        }
+        jCentre.y = jh * 0.5f + rnd(0.0f, 2.0f);
+        glm::vec3 jHalf(jw * 0.5f, jh * 0.5f, jd * 0.5f);
+        glm::mat4 jm = glm::translate(glm::mat4(1.0f), jCentre);
+        jm = glm::scale(jm, jHalf * 2.0f);
+        walls_.push_back(jm);
+        colliders_.push_back({jCentre - jHalf, jCentre + jHalf});
+      }
+    }
+  }
+}
+
+void Level::buildCaveCeiling(float half, float baseHeight) {
+  auto rnd = [](float lo, float hi) { return lo + (hi - lo) * (float)rand() / (float)RAND_MAX; };
+
+  float tileSize = 6.0f;
+  int tiles = (int)(half * 2.0f / tileSize) + 1;
+
+  for (int ix = 0; ix < tiles; ix++) {
+    for (int iz = 0; iz < tiles; iz++) {
+      float x = -half + tileSize * ((float)ix + 0.5f);
+      float z = -half + tileSize * ((float)iz + 0.5f);
+
+      float distFromCentre = std::hypot(x, z) / half;
+
+      // Skip some tiles to create natural light shafts and openings
+      float gapNoise = caveFbm(x * 0.04f + 11.2f, z * 0.04f + 3.8f);
+      if (gapNoise < 0.32f && distFromCentre < 0.7f) continue;
+
+      float noise = caveFbm(x * 0.06f + 5.3f, z * 0.06f + 8.7f);
+
+      float ceilY = baseHeight + noise * 5.0f - distFromCentre * 2.0f;
+      ceilY = std::max(ceilY, 6.0f);
+      float thickness = 3.0f + rnd(1.0f, 5.0f);
+      float w = tileSize * rnd(0.85f, 1.15f);
+      float d = tileSize * rnd(0.85f, 1.15f);
+
+      glm::vec3 centre(x, ceilY + thickness * 0.5f, z);
+      glm::vec3 halfExt(w * 0.5f, thickness * 0.5f, d * 0.5f);
+
+      glm::mat4 m = glm::translate(glm::mat4(1.0f), centre);
+      m = glm::scale(m, halfExt * 2.0f);
+      walls_.push_back(m);
+    }
+  }
+}
+
+void Level::buildStalactites(float half, float hangHeight) {
+  auto rnd = [](float lo, float hi) { return lo + (hi - lo) * (float)rand() / (float)RAND_MAX; };
+
+  int count = std::clamp((int)(half * 0.4f), 12, 35);
+  float clearRadius = std::max(7.0f, half * 0.075f);
+
+  for (int i = 0; i < count; i++) {
+    float x = rnd(-half + 6.0f, half - 6.0f);
+    float z = rnd(-half + 6.0f, half - 6.0f);
+    if (std::hypot(x, z) < clearRadius) continue;
+
+    bool fromAbove = rnd(0.0f, 1.0f) < 0.45f;
+    float w = rnd(0.3f, 1.2f);
+    float d = rnd(0.3f, 1.2f);
+    float h;
+    glm::vec3 centre;
+
+    if (fromAbove) {
+      h = rnd(2.0f, hangHeight * 0.4f);
+      centre = glm::vec3(x, hangHeight - h * 0.5f, z);
+    } else {
+      h = rnd(0.5f, 3.0f);
+      centre = glm::vec3(x, h * 0.5f, z);
+    }
+
+    glm::vec3 halfExt(w * 0.5f, h * 0.5f, d * 0.5f);
+
+    bool clash = false;
+    for (const Collider& c : colliders_) {
+      if (centre.x + halfExt.x < c.min.x - 0.4f || centre.x - halfExt.x > c.max.x + 0.4f) continue;
+      if (centre.z + halfExt.z < c.min.z - 0.4f || centre.z - halfExt.z > c.max.z + 0.4f) continue;
+      if (centre.y + halfExt.y < c.min.y || centre.y - halfExt.y > c.max.y) continue;
+      clash = true;
+      break;
+    }
+    if (clash) continue;
+
+    DrawItem it;
+    it.mesh = &boxMesh_;
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), centre);
+    m = glm::rotate(m, rnd(0.0f, 0.15f), glm::vec3(1, 0, 0));
+    m = glm::rotate(m, rnd(0.0f, 6.28f), glm::vec3(0, 1, 0));
+    m = glm::rotate(m, rnd(0.0f, 0.15f), glm::vec3(0, 0, 1));
+    m = glm::scale(m, halfExt * 2.0f);
+    it.model = m;
+    it.material = MaterialType::Armour;
+    it.tint = floorTint_ * glm::vec3(rnd(0.8f, 1.2f), rnd(0.8f, 1.2f), rnd(0.8f, 1.2f));
+    it.metallic = rnd(0.0f, 0.08f);
+    it.roughness = rnd(0.82f, 0.98f);
+    it.wear = rnd(1.0f, 2.0f);
+    it.castShadow = true;
+    debris_.push_back(it);
+
+    if (!fromAbove && h > 1.5f) {
+      colliders_.push_back({centre - halfExt, centre + halfExt});
+    }
+  }
+
+  // Full-height columns: stalactite + stalagmite meeting in the middle
+  int columnCount = std::clamp((int)(half * 0.08f), 2, 6);
+  for (int i = 0; i < columnCount; i++) {
+    float x = rnd(-half + 10.0f, half - 10.0f);
+    float z = rnd(-half + 10.0f, half - 10.0f);
+    if (std::hypot(x, z) < clearRadius * 1.5f) continue;
+
+    float w = rnd(0.8f, 2.0f);
+    float d = rnd(0.8f, 2.0f);
+    float h = hangHeight;
+    glm::vec3 centre(x, h * 0.5f, z);
+    glm::vec3 halfExt(w * 0.5f, h * 0.5f, d * 0.5f);
+
+    bool clash = false;
+    for (const Collider& c : colliders_) {
+      if (centre.x + halfExt.x < c.min.x - 1.0f || centre.x - halfExt.x > c.max.x + 1.0f) continue;
+      if (centre.z + halfExt.z < c.min.z - 1.0f || centre.z - halfExt.z > c.max.z + 1.0f) continue;
+      clash = true;
+      break;
+    }
+    if (clash) continue;
+
+    Prop prop;
+    prop.kind = CoverKind::Pillar;
+    prop.model = glm::scale(glm::translate(glm::mat4(1.0f), centre), halfExt * 2.0f);
+    props_.push_back(prop);
+    colliders_.push_back({centre - halfExt, centre + halfExt});
+  }
 }
 
 glm::vec3 Level::spawnPoint(int index, int total, float radius) const {
