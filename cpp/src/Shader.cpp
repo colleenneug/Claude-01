@@ -16,6 +16,41 @@ std::string readFile(const std::string& path) {
   return ss.str();
 }
 
+// GLSL has no #include, and the sky is needed by three programs (the sky
+// pass itself, the capture that turns it into the light probe, and the
+// forward shader's fog). Three hand-kept copies of one function is three
+// chances for the reflection of the sky to disagree with the sky. So a line
+// of the form
+//
+//   #include "common/sky.glsl"
+//
+// is replaced by that file, resolved against the including file's own
+// directory. One level is all anything here needs, but nesting costs
+// nothing, so it recurses with a depth guard rather than silently stopping.
+std::string readShader(const std::string& path, int depth = 0) {
+  std::string src = readFile(path);
+  if (src.empty() || depth > 4) return src;
+  std::string dir;
+  size_t slash = path.find_last_of("/\\");
+  if (slash != std::string::npos) dir = path.substr(0, slash + 1);
+
+  std::istringstream in(src);
+  std::ostringstream out;
+  std::string line;
+  while (std::getline(in, line)) {
+    size_t at = line.find_first_not_of(" \t");
+    if (at != std::string::npos && line.compare(at, 8, "#include") == 0) {
+      size_t q0 = line.find('"', at), q1 = line.find('"', q0 == std::string::npos ? q0 : q0 + 1);
+      if (q0 != std::string::npos && q1 != std::string::npos) {
+        out << readShader(dir + line.substr(q0 + 1, q1 - q0 - 1), depth + 1) << "\n";
+        continue;
+      }
+    }
+    out << line << "\n";
+  }
+  return out.str();
+}
+
 GLuint compile(GLenum stage, const std::string& src, const std::string& tag) {
   GLuint s = glCreateShader(stage);
   const char* csrc = src.c_str();
@@ -36,8 +71,8 @@ GLuint compile(GLenum stage, const std::string& src, const std::string& tag) {
 }  // namespace
 
 bool Shader::load(const std::string& vertPath, const std::string& fragPath) {
-  std::string vsrc = readFile(vertPath);
-  std::string fsrc = readFile(fragPath);
+  std::string vsrc = readShader(vertPath);
+  std::string fsrc = readShader(fragPath);
   if (vsrc.empty() || fsrc.empty()) return false;
 
   GLuint vs = compile(GL_VERTEX_SHADER, vsrc, vertPath);
@@ -82,3 +117,9 @@ void Shader::set(const std::string& name, const glm::vec3& v) const { glUniform3
 void Shader::set(const std::string& name, const glm::vec4& v) const { glUniform4fv(loc(name), 1, glm::value_ptr(v)); }
 void Shader::set(const std::string& name, const glm::mat3& v) const { glUniformMatrix3fv(loc(name), 1, GL_FALSE, glm::value_ptr(v)); }
 void Shader::set(const std::string& name, const glm::mat4& v) const { glUniformMatrix4fv(loc(name), 1, GL_FALSE, glm::value_ptr(v)); }
+void Shader::setArray(const std::string& name, const glm::vec4* v, int count) const {
+  if (count > 0) glUniform4fv(loc(name), count, glm::value_ptr(v[0]));
+}
+void Shader::setArray(const std::string& name, const glm::vec3* v, int count) const {
+  if (count > 0) glUniform3fv(loc(name), count, glm::value_ptr(v[0]));
+}

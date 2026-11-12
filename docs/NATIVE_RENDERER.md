@@ -181,11 +181,11 @@ run covering the full shadow → scene → bloom → DoF → composite pipeline.
   hundred draw calls, three 2048²-or-smaller shadow maps, a 128px IBL
   cubemap) specifically so it has a good chance of running comfortably on
   real hardware, but that hasn't been measured.
-- **The IBL prefilter is a box-filtered mip chain**, not full split-sum GGX
-  importance sampling — see the note under rule 2.
-- **No light shafts / god rays.** The browser build has a radial-blur shaft
-  pass; it wasn't part of the eight rules asked for here, so it was left
-  out to keep scope honest rather than silently added back in.
+- ~~**The IBL prefilter is a box-filtered mip chain**~~ — replaced with a
+  GGX-prefiltered specular chain and a cosine-convolved irradiance cube; see
+  *The realism pass* below.
+- ~~**No light shafts / god rays.**~~ — added, as a march through the shadow
+  cascades rather than a radial blur; see *The realism pass* below.
 - **This is a rendering demo, not the game.** Missions, inventory, AI,
   economy, and netcode from the browser build were not ported. See
   `cpp/README.md`'s scope note.
@@ -247,3 +247,283 @@ Also worth recording: the headless capture harness could have caught it
 years earlier than a human did. Once a hub screenshot was actually dumped
 and looked at, the bug was obvious in one frame. Dumping a frame is cheap;
 assuming a pass is fine because a different pass looks fine is not.
+
+
+## The realism pass
+
+Everything above this heading describes the renderer as first written.
+This section describes a second pass over it, asked for as "make it look
+real". Sections 1 to 3 above are still accurate about *what* each technique
+is; where this pass replaced one, it says so here.
+
+Read this first, because it frames the rest: **no amount of rendering makes
+a box into a character.** The games this was asked to look like sit under
+thousands of hand-built meshes, scanned materials, motion capture and
+lighting artists. None of that is in this repository and none of it can be
+written in a shader, and the specific look of someone else's game is theirs
+besides. What a renderer *can* supply is light that behaves like light:
+shadows that soften with distance, corners that hold shade, air you can see
+the sun through, surfaces that are not perfect. That is what was added.
+
+### The frame, now
+
+```
+light probe      refreshed only when the scene's sky changes
+shadow cascades  3 depth passes from the sun
+depth pre-pass   everything opaque, depth only
+  ambient occlusion   half-res from depth, bilateral blur up to full res
+  sun shafts          half-res march through the cascades, bilateral blur
+colour pass      HDR; reads the two maps above; fog applied here
+sky              one triangle at the far plane
+dust motes       additive
+temporal AA      resolve against last frame
+exposure meter   log-average luminance, adapted over time
+bloom, DoF       as before
+composite        sharpen, DoF blend, bloom, exposure, ACES, grade, sRGB,
+                 aberration, grain, vignette
+```
+
+The rule the order follows: what is part of the **world** — sky, air,
+light — goes in before the temporal resolve, so it is anti-aliased, bloomed
+and exposed along with everything else. What is part of the **camera** goes
+in after. Before this pass the sky and the fog were both painted in the
+final composite, which is why the sun was the one bright thing in an outdoor
+frame that never bloomed.
+
+### Every solid was inside out
+
+This was found by accident and it is the largest single change in the pass,
+so it goes first.
+
+Local lights had just been added, and a glowing pickup half a metre off the
+ground lit the gun in your hand and did not light the ground under it. The
+light list was right. The ground's albedo was right. Visualising one term at
+a time (the method the *What broke* section above describes, and the reason
+it is worth describing) got to: on the ground directly below the light,
+`N·L` is zero. Then: the normal there is `(0, -1, 0)`. Then, from
+`gl_FrontFacing` and the local position: the fragment being shaded is a
+*front-facing* fragment of the *bottom* face of the floor box, seen from
+above.
+
+`Mesh::box`, `Mesh::cylinder` and `Mesh::sphere` all wound their triangles
+clockwise as seen from outside. OpenGL's front face is counter-clockwise,
+and back-face culling was on, so every solid in the game had its near faces
+discarded and its far faces drawn from behind — lit by normals pointing
+away from the viewer. Only the terrain plane, written separately, was wound
+correctly.
+
+It survived because a box is nearly its own mirror image. Drawn inside out
+it is still box-shaped and still roughly box-coloured. What was actually
+wrong, once you know to look:
+
+- A crate's "top" was the inside of its bottom. A station deck was drawn
+  40cm below the surface the player collides with.
+- Faces were lit when the sun was *behind* them. Pillars looked as though
+  they leaned, because the perspective of a far face is not that of a near
+  one.
+- The sun could never light a floor made of a box, since the face on screen
+  pointed down. The stations were carried by a flat fill for exactly this
+  reason, and the comment explaining the fill blamed the absence of local
+  lights.
+
+The fix is three index orders in `Mesh.cpp`. Two things then had to be put
+right because they had been tuned against the mirror image:
+
+- **The shadow pass now culls front faces.** With the old winding and
+  back-face culling it had been drawing each solid's far side into the
+  shadow map — by accident, the standard trick for avoiding self-shadowing
+  on lit faces. Culling front faces with the corrected winding draws the
+  same thing on purpose.
+- **Open space's sun direction is negated.** It had been aimed to light the
+  far hemisphere of each planet, since that was the hemisphere on screen.
+  Unchanged, every world you flew toward showed you its night side.
+
+The lesson is the same one as the viewport bug above: assuming a thing is
+right because the picture looks plausible is not the same as checking it,
+and one frame with the normal drawn as a colour would have shown this on
+the first day.
+
+### The light probe is the sky
+
+`IBL` used to capture one fixed room of coloured panels and light every
+scene with it; missions turned it down to 35% and added a flat fill derived
+from their sky colours, because lighting a salt pan with a station interior
+was visibly wrong. Now a scene that is under a sky gets a probe that *is*
+its sky: `shaders/common/sky.glsl` is one function, `#include`d by the sky
+pass and by the probe capture (`Shader` learned `#include` for this), so
+the fill in a shadow is the colour of the sky above it and the two cannot
+drift apart. The underside of the probe is the ground's own albedo lit by
+that sun and sky. Roofed places — the stations, and missions whose file sets
+`ambient` — keep the room.
+
+Either capture is then filtered properly, replacing the box-filtered mip
+chain called out under *Honest limits*:
+
+- **Specular**: each mip is the capture seen through a GGX lobe of one
+  roughness, 48 importance samples per texel, each read at the source mip
+  matching its own solid angle (that last part is what stops a probe with
+  one bright strip in it from prefiltering into fireflies).
+- **Diffuse**: a 16px irradiance cube, cosine-weighted. The old stand-in —
+  a near-top mip of the specular chain — is about the right blur with the
+  wrong weighting, and leaks light from behind the surface.
+
+### The sky
+
+Still painted, not simulated: a mission says what colour its zenith and
+horizon are, and a scattering integral would overrule that. What is
+physical is the shape. Haze is a band at the horizon (you look through
+forty times as much air sideways as up); the glow round the sun is
+Henyey-Greenstein forward scattering; the disc has a darkened limb.
+
+Clouds are a 2D fbm deck projected overhead, lit by asking how much cloud
+lies between each point and the sun — step toward the sun, sample again —
+so they are dark through their thickness and bright along the edge the sun
+is behind. Because they are in the sky function they are in the probe:
+an overcast mission is lit by an overcast sky. `clouds = 0..1` in a mission
+file.
+
+### Shadows that widen
+
+A fixed 3x3 filter gives every shadow edge the same width, which is wrong
+in both directions at once: a boot heel's shadow should be sharp and a
+pillar's, thirty metres out, should not. `sampleCascade()` now does
+percentage-closer soft shadows: eight taps to find what is nearer the sun
+than the shaded point and by how much, then twelve Poisson taps over a disc
+sized by that gap. The disc is turned by a different angle at every pixel,
+so undersampling shows as grain rather than as twelve overlapping copies of
+the edge, and the temporal resolve averages the grain away.
+
+The cascade textures are bound twice for this — once through their own
+comparison sampler, once through a sampler object that returns raw depth —
+because finding a blocker needs the number and filtering needs the
+comparison.
+
+Two biases keep the ground from finding itself to be its own blocker: the
+lookup is lifted off the surface along its normal by about a texel, and
+both the search and the filter allow for how steeply the surface runs away
+from the light. When the search finds nothing clearly in the way, the
+filter falls back to its tightest size rather than to "fully lit", which is
+what keeps the last few centimetres of a contact shadow.
+
+### Ambient occlusion
+
+The probe lights every point as though nothing were near it. `ssao.frag`
+estimates how much of the hemisphere above each pixel is blocked (Scalable
+Ambient Obscurance, McGuire 2012) at half resolution from the depth
+pre-pass, with normals reconstructed from depth by differencing toward
+whichever neighbour is on the same surface. `bilateral.frag` then blurs and
+upsamples it without crossing depth edges.
+
+It is applied to the fill light, not on top of the image, and it is applied
+the way Jimenez et al. (2016) describe: light that gets into a crease
+bounces before it gets out, so on a pale surface occlusion is much weaker
+than the raw number. Applying it raw is why SSAO so often looks like soot.
+Specular gets its own, sharper term (Lagarde), plus a horizon test so a
+bumped normal cannot reflect the sky out of the ground.
+
+### Sun shafts
+
+The fog is an analytic integral, which is exact and nearly free and assumes
+the sun reaches all the air along the ray. `volumetric.frag` walks each ray
+through the shadow cascades and reports the fraction of the *visible* haze
+that is actually lit. The fog multiplies its sun term by that. Nothing is
+drawn over the picture: it corrects the fog's one wrong assumption, and the
+edge between lit air and unlit air is what a shaft is.
+
+### Everything that glows is a light
+
+`Renderer::gatherLights` turns every emissive draw item into a light on what
+is near it — up to sixteen, chosen by how much of each reaches the
+neighbourhood of the camera, with the least important one faded toward
+zero so that walking down a corridor of strips the far one dims out rather
+than switching off.
+
+Strength comes from the emitter: radiance times the area it shows. There is
+no second set of numbers to keep in step. A long thin emitter is a line,
+not a point: it lights from the nearest point *on* it, with the fall-off of
+a line (inverse distance up close, inverse square far away). Treating a
+thirty-metre ceiling strip as a point at its nearest end burned a white
+hole in the ceiling above it, which is how that got found.
+
+These lights cast no shadows. That is the largest physical shortcut left in
+the pipeline.
+
+### Materials
+
+Still no textures; still one program. What changed:
+
+- **Bump mapping uses an exact derivative.** The noise now returns its own
+  slope from the same four corner values, so there is no finite-difference
+  step to get wrong — the bug the *What broke* section is about cannot
+  recur — and armour has its normal detail back, which had been removed
+  because the finite-difference version would not stop shimmering.
+- **Detail fades by the pixel's short side.** A pixel on ground seen at a
+  shallow angle is a sliver, millimetres across and tens of centimetres
+  deep. Fading noise by the long side — the first thing this pass did —
+  turned the ground in front of you to smears pointing at the horizon. The
+  footprint is now the geometric mean of the two sides, with the sliver
+  never treated as thinner than a quarter of its length: the compromise an
+  anisotropic texture filter makes.
+- **Boxes have edges.** A fragment on a box knows how far it is from each
+  pair of faces (`uBoxHalf`, `vLocalPos`), so within a bevel's width of an
+  edge its normal turns toward the neighbouring face — a rounded corner,
+  lit like one, with no extra triangles — and paint chips there first.
+- **Things that stand outdoors weather.** Dirt at the foot of a wall,
+  streaks down from its top, dust on whatever faces up — the dust in the
+  colour of that mission's ground.
+- **Things that move carry their detail with them.** Surface detail was
+  worked out from world position for everything, so a hostile walked
+  *through* its own scratches and the gun's seams swam as you turned.
+  `DrawItem::objectSpace` shades those in the object's frame.
+- **The ground is three scales** — the lie of the land, lumps, grit — and
+  holds water. `wetness = 0..1` in a mission file fills the hollows those
+  same height fields describe, so a puddle has the hollow's shape, and
+  being a mirror under a sky probe it shows the clouds.
+- **Expedition floors are ground.** They were plated metal like every other
+  box; open-air areas now shade as terrain.
+
+### Temporal anti-aliasing
+
+The scene is drawn offset by a different sub-pixel amount each frame (an
+eight-point Halton sequence) and blended with the previous result,
+reprojected through the depth buffer and clipped to the range of colours in
+the current frame's 3x3 neighbourhood. Besides edges, this is what averages
+away the grain the shadow, occlusion and shaft passes deliberately produce.
+History is read with a Catmull-Rom filter, because bilinear applied to its
+own output thirty times a second is a blur. The composite puts a little
+edge back with a sharpen clamped to the local range.
+
+Open space opts out: a field of one-pixel stars is exactly what jitter and
+history handle worst.
+
+Known weakness: there are no per-object motion vectors. A moving hostile is
+handled by the neighbourhood clip alone, and whatever is within arm's
+reach is assumed to be the weapon and to move with the camera.
+
+### Exposure
+
+`luminance.frag` and `adapt.frag` meter the log-average brightness of the
+frame and move the exposure toward a mid-grey average over a second or two.
+It is deliberately partial (the correction is raised to the power 0.45) and
+clamped to about half a stop either way: a place lit to be dark should stay
+dark, just not unreadable. The target is what the outdoor missions meter at
+(0.15 to 0.18), so a typical scene is left exactly as it was lit.
+
+### Quality tiers
+
+Soft shadows, occlusion, shafts and temporal AA are each tied to the
+adaptive-quality tiers (`Renderer::kTiers`; table in `cpp/README.md`). The
+`minimal` tier costs about what the whole pipeline did before this pass.
+
+### Honest limits, second edition
+
+- **Still never run on a physical GPU.** Everything here was rendered under
+  Xvfb on llvmpipe and looked at. On that rasteriser `high` costs roughly
+  twice what the old pipeline did per frame; what it costs on real hardware
+  is unmeasured.
+- **Local lights cast no shadows**, so a strip light shines through a wall.
+- **No screen-space reflections.** A puddle reflects the sky probe, not the
+  crate standing next to it.
+- **No motion vectors**, as above.
+- **The geometry is the geometry.** Enemies, crew and weapons are still
+  assemblies of boxes, cylinders and spheres. They are better lit boxes.

@@ -23,4 +23,15 @@ struct DrawItem {
   float emissiveIntensity = 0.0f;
   float anisoStrength = 0.0f; // 0 = isotropic
   bool castShadow = true;
+  // Surface detail — plates, chips, grain — is worked out from position.
+  // For something bolted to the world that position is the world's, so two
+  // walls that meet share one pattern across the join. For something that
+  // moves it has to be the object's own, or the pattern stays where it is
+  // and the object slides through it: a walking hostile whose scratches
+  // crawl across its armour, a gun whose seams swim as you turn.
+  bool objectSpace = false;
+  // Emissive only: how much light this throws on what is near it, as a
+  // multiple of what its size and brightness would give on their own
+  // (Renderer::gatherLights). 0 = glows but lights nothing.
+  float lightScale = 1.0f;
 };

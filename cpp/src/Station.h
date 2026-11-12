@@ -120,11 +120,16 @@ public:
   glm::vec3 skyHorizon() const override { return skyHorizon_; }
   float skyIntensity() const override { return skyIntensity_; }
   float iblIntensity() const override { return iblIntensity_; }
-  // A station you walk around has to be navigable, and this renderer has one
-  // directional light and a probe — the emissive strips read as sources but
-  // do not illuminate anything. So the fill carries the room, the way the
-  // bounced light off a hundred metres of white panel would in a real one.
-  // Cool, because everything in here is lit by the same cold strips.
+  // Both stations are rooms. The hideout has a sky outside its pad door, and
+  // that sky is drawn — but a probe made from it would light the whole
+  // inside as though the roof were off. The stock lit room is the better
+  // picture of what is around you in here.
+  bool skyLitAmbient() const override { return false; }
+  float cloudCover() const override { return cloudCover_; }
+  float grime() const override { return grime_; }
+  glm::vec3 groundAlbedo() const override { return groundAlbedo_; }
+  // The fill under the lights: see ambientFill_. Cool, because everything
+  // in here is lit by the same cold strips.
   glm::vec3 ambientFill() const override { return ambientFill_; }
 
 private:
@@ -153,12 +158,18 @@ private:
   float viewDistance_ = 400.0f;
   glm::vec3 skyZenith_{0.0f}, skyHorizon_{0.0f};
   float skyIntensity_ = 0.0f;
-  float iblIntensity_ = 0.85f;
-  // A station you walk around has to be navigable, and this renderer has one
-  // directional light and a probe — the emissive strips read as sources but
-  // do not illuminate anything. So the fill carries the room, the way the
-  // bounced light off a hundred metres of white panel would in a real one.
-  glm::vec3 ambientFill_{0.150f, 0.168f, 0.205f};
+  float iblIntensity_ = 0.60f;
+  float cloudCover_ = 0.0f;
+  // The Cradle is swept. Earth is not.
+  float grime_ = 0.18f;
+  glm::vec3 groundAlbedo_{0.30f, 0.31f, 0.34f};
+  // What is left after the lights. The strips overhead are lights now (see
+  // Renderer::gatherLights), so the fill no longer has to carry the room on
+  // its own — it stands for the light that has bounced twice off white
+  // panel, which is real and is not much. At the strength it had when it
+  // was the only light in here, every surface was the same brightness and
+  // nothing had a shadow side.
+  glm::vec3 ambientFill_{0.082f, 0.092f, 0.112f};
 
   bool inputFrozen_ = false;
   float reach_ = 3.2f;

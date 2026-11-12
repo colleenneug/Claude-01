@@ -260,6 +260,12 @@ struct MissionDef {
   float coverDensity = 1.0f;
   float fogDensity = 0.011f;
   float sunIntensity = 3.4f;
+  // Weather. How much of the sky is cloud (0 clear, 1 overcast) and how much
+  // water is standing on the ground (0 dry, 1 every hollow full). Both are
+  // in the light as well as in the picture: the clouds are in the probe the
+  // shadows are filled from, and a puddle reflects them.
+  float cloudCover = 0.45f;
+  float wetness = 0.0f;
 };
 
 // content/ranks/<id>.cfg — one rung of the Strider ladder. The ladder is

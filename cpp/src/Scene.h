@@ -65,6 +65,39 @@ public:
   virtual glm::vec3 skyHorizon() const { return glm::vec3(0.28f, 0.20f, 0.20f); }
   virtual float skyIntensity() const { return 1.0f; }
 
+  // How much of the sky is cloud, 0 (clear) to 1 (overcast). The clouds are
+  // part of the sky function, so they are in the light probe too: a cloudy
+  // mission is lit by a cloudy sky.
+  virtual float cloudCover() const { return 0.0f; }
+
+  // Whether the light probe should be a picture of this scene's own sky. If
+  // not it is the stock lit room (see IBL.h), which is what a sealed
+  // interior wants: there the sky is on the other side of a hull, and a
+  // probe of it would light the corridors as if they had no roof.
+  virtual bool skyLitAmbient() const { return skyIntensity() > 0.001f; }
+
+  // What the ground is made of, for the two places that need to know and are
+  // not the ground: the underside of the light probe (a thing lit from below
+  // is lit by the ground's colour) and the dust that settles on everything
+  // standing on it.
+  virtual glm::vec3 groundAlbedo() const { return glm::vec3(0.30f, 0.27f, 0.24f); }
+
+  // Standing water on the terrain, 0 (dry) to 1. See shadeTerrain.
+  virtual float wetness() const { return 0.0f; }
+
+  // How weathered built things are, 0 to 1: streaks down walls, dirt at
+  // their feet, dust on top. A place outdoors has it; a pressurised station
+  // someone is paid to keep clean mostly does not.
+  virtual float grime() const { return 1.0f; }
+
+  // Screen-space passes a scene may have no use for. Open space has neither
+  // creases close enough to occlude nor anything standing still enough,
+  // relative to a field of one-pixel stars, for temporal anti-aliasing to do
+  // more good than harm.
+  virtual bool wantsAmbientOcclusion() const { return wantsShadows(); }
+  virtual bool wantsTemporalAA() const { return true; }
+  virtual bool wantsAutoExposure() const { return true; }
+
   // How far the far plane and the shadow cascades have to reach. A mission
   // arena is tens of metres; open space is tens of thousands, and clamping
   // both to one number would either clip the planets away or throw all the

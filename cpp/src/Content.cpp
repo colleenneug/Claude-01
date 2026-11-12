@@ -249,6 +249,8 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "sun_colour" || k == "sun_color") m.sunColour = parseVec3(v, m.sunColour);
         else if (k == "fog_density") { try { m.fogDensity = std::stof(v); } catch (...) {} }
         else if (k == "cover") { try { m.coverDensity = std::stof(v); } catch (...) {} }
+        else if (k == "clouds") { try { m.cloudCover = std::stof(v); } catch (...) {} }
+        else if (k == "wetness") { try { m.wetness = std::stof(v); } catch (...) {} }
         else if (k == "sun_intensity") { try { m.sunIntensity = std::stof(v); } catch (...) {} }
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }

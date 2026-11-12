@@ -1,11 +1,13 @@
 #version 410 core
-// Final composite: depth-of-field blend, bloom, volumetric fog, lens
-// aberration, ACES filmic tone mapping, sRGB encode, grain, vignette. The
-// scene arrives here as linear HDR radiance with no tone mapping applied —
-// see Renderer::create, which sets NoToneMapping-equivalent behaviour by
-// simply never calling a tone-mapping step before this pass — which is what
-// lets bloom and the fog's sun inscatter see highlights a tone-mapped
-// buffer would already have thrown away.
+// Final composite: everything that happens in the camera rather than in the
+// world. Depth-of-field blend, bloom, exposure, ACES filmic tone mapping, a
+// light grade, sRGB encode, lens aberration, grain, vignette.
+//
+// The scene arrives as linear HDR radiance, already anti-aliased, with the
+// sky and the fog in it (they are part of the world, and are drawn there —
+// see sky.frag and applyFog in pbr.frag). Nothing before this pass tone-maps,
+// which is what lets bloom see highlights a tone-mapped buffer would already
+// have thrown away.
 in vec2 vUv;
 out vec4 fragColor;
 
@@ -13,9 +15,9 @@ uniform sampler2D tScene;
 uniform sampler2D tDepth;
 uniform sampler2D tBloom;
 uniform sampler2D tDof;
+uniform sampler2D tAdapt;      // 1x1, adapted log-luminance of the scene
 
-uniform mat4 uInvViewProj;
-uniform vec3 uCamPos;
+uniform vec2 uTexel;
 uniform float uNear;
 uniform float uFar;
 
@@ -23,44 +25,25 @@ uniform float uAim;
 uniform float uDofFocus;
 uniform float uDofRange;
 
-uniform float uFogDensity;
-uniform float uFogFalloff;
-uniform float uFogBase;
-uniform vec3 uFogColour;
-uniform float uInscatter;
-
-uniform vec3 uSunDir;
-uniform vec3 uSunColour;
-
-// The sky. Until this existed the background was simply the clear colour,
-// which the fog below then blended to fully — so every outdoor frame had a
-// flat wash of fog colour above the horizon and no sun in it anywhere, and
-// the light in the scene came from a direction the picture never showed.
-uniform vec3 uSkyZenith;
-uniform vec3 uSkyHorizon;
-uniform float uSkyIntensity;   // 0 keeps the clear colour, for open space
-
 uniform float uExposure;
+// Eye adaptation: how bright a frame is "meant" to average, and how far the
+// exposure is allowed to go to get it there. Strength 0 turns it off.
+uniform float uAdaptKey;
+uniform float uAdaptStrength;
+
 uniform float uTime;
 uniform float uGrain;
 uniform float uVignette;
 uniform float uAberration;
 uniform float uBloom;
+uniform float uSharpen;
 
 float linearDepth(float d) {
   float ndc = d * 2.0 - 1.0;
   return (2.0 * uNear * uFar) / (uFar + uNear - ndc * (uFar - uNear));
 }
 
-// Reconstruct the world-space position a fragment's depth corresponds to,
-// by unprojecting its NDC coordinate through the inverse view-projection
-// matrix — cleaner than carrying the tan(fov) projection parameters through
-// from the camera, now that the full matrices are on hand either way.
-vec3 worldPosFromDepth(vec2 uv, float depth01) {
-  vec4 ndc = vec4(uv * 2.0 - 1.0, depth01 * 2.0 - 1.0, 1.0);
-  vec4 wp = uInvViewProj * ndc;
-  return wp.xyz / wp.w;
-}
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
 // three's ACES fit, so the grade matches whichever renderer the reader
 // compares this against.
@@ -90,26 +73,6 @@ vec3 linearToSRGB(vec3 c) {
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
-// Zenith to horizon, with the haze concentrated in a band at the horizon
-// itself, plus the sun: a small hot disc inside a wide halo, and a broad
-// glow along the horizon on the sun's side. The powers are the whole model —
-// 900 is about a quarter of a degree across, which is roughly the real sun,
-// and 8 is the halo you actually see around it through dust.
-vec3 skyColour(vec3 dir) {
-  float up = clamp(dir.y, -1.0, 1.0);
-  float band = pow(clamp(1.0 - abs(up), 0.0, 1.0), 3.0);
-  vec3 col = mix(uSkyZenith, uSkyHorizon, band);
-  // Below the horizon line it falls off into ground haze rather than
-  // mirroring the sky back at you.
-  col *= mix(1.0, 0.42, clamp(-up * 4.0, 0.0, 1.0));
-
-  float towards = max(dot(dir, -uSunDir), 0.0);
-  col += uSunColour * pow(towards, 900.0) * 16.0;
-  col += uSunColour * pow(towards, 8.0) * 0.30;
-  col += uSunColour * pow(towards, 2.0) * 0.07 * band;
-  return col;
-}
-
 void main() {
   vec2 uv = vUv;
   vec2 fromCentre = uv - 0.5;
@@ -123,49 +86,59 @@ void main() {
   col.g = texture(tScene, uv).g;
   col.b = texture(tScene, uv - fromCentre * ab).b;
 
-  float depth01 = texture(tDepth, uv).r;
-  float dist = linearDepth(depth01);
+  // Temporal anti-aliasing trades shimmer for a little softness. Put some of
+  // the edge back: push each pixel away from the average of its four
+  // neighbours — in a compressed range, so the rim of a lamp is not turned
+  // into a black ring — and never beyond what those neighbours themselves
+  // span, which is what stops sharpening from inventing halos.
+  if (uSharpen > 0.001) {
+    vec3 n = texture(tScene, uv + vec2(0.0, uTexel.y)).rgb;
+    vec3 s = texture(tScene, uv - vec2(0.0, uTexel.y)).rgb;
+    vec3 e = texture(tScene, uv + vec2(uTexel.x, 0.0)).rgb;
+    vec3 w = texture(tScene, uv - vec2(uTexel.x, 0.0)).rgb;
+    vec3 c = texture(tScene, uv).rgb;
+    float lc = luma(c) / (1.0 + luma(c));
+    float ln = luma(n) / (1.0 + luma(n)), ls = luma(s) / (1.0 + luma(s));
+    float le = luma(e) / (1.0 + luma(e)), lw = luma(w) / (1.0 + luma(w));
+    float lo = min(lc, min(min(ln, ls), min(le, lw)));
+    float hi = max(lc, max(max(ln, ls), max(le, lw)));
+    float sharp = clamp(lc + (lc - 0.25 * (ln + ls + le + lw)) * uSharpen, lo, hi);
+    col *= sharp / max(lc, 1e-4);
+  }
 
   // Depth of field, blended in by the same circle-of-confusion the half-res
   // pass computed, scaled by how far down the sights the camera currently is.
   if (uAim > 0.001) {
+    float dist = linearDepth(texture(tDepth, uv).r);
     float coc = smoothstep(uDofFocus, uDofFocus + uDofRange, dist) * uAim;
     col = mix(col, texture(tDof, uv).rgb, clamp(coc, 0.0, 1.0));
-  }
-
-  // Volumetric fog: the analytic integral of an exponential height
-  // distribution along the view ray, so haze pools in low ground and thins
-  // as you climb, and looking towards the sun scatters its colour back.
-  vec3 worldPos = worldPosFromDepth(uv, depth01);
-  vec3 ray = worldPos - uCamPos;
-  float rayLen = length(ray);
-  vec3 worldDir = ray / max(rayLen, 1e-4);
-
-  float k = uFogFalloff;
-  float dY = worldPos.y - uCamPos.y;
-  float t = k * dY;
-  float span = (abs(t) < 1e-3) ? rayLen : rayLen * (1.0 - exp(-t)) / t;
-  float optical = uFogDensity * exp(-k * (uCamPos.y - uFogBase)) * max(span, 0.0);
-  float fogAmount = 1.0 - exp(-optical);
-
-  float towardsSun = max(dot(worldDir, -uSunDir), 0.0);
-  vec3 fogColour = uFogColour + uSunColour * uInscatter * pow(towardsSun, 8.0);
-
-  // Nothing was drawn here, so this is sky. It carries its own horizon haze,
-  // so the fog integral — which would run to the far plane and swamp it —
-  // does not apply.
-  bool isSky = depth01 >= 0.99999;
-  if (isSky && uSkyIntensity > 0.001) {
-    col = skyColour(worldDir) * uSkyIntensity;
-  } else {
-    col = mix(col, fogColour, clamp(fogAmount, 0.0, 1.0));
   }
 
   // Bloom, added while still linear HDR.
   col += texture(tBloom, uv).rgb * uBloom;
 
+  // Exposure. The base value is the grade the scenes were lit for; the
+  // adaptation nudges it toward a frame that averages mid-grey, the way an
+  // eye opens up in a dark room and stops down facing the sun. Deliberately
+  // partial and tightly clamped — a place that is meant to be dark should
+  // stay dark, just not unreadable.
+  float adapt = 1.0;
+  if (uAdaptStrength > 0.0) {
+    float adapted = exp(texelFetch(tAdapt, ivec2(0), 0).r);
+    adapt = clamp(pow(uAdaptKey / max(adapted, 1e-4), uAdaptStrength), 0.70, 1.50);
+  }
+
   // Everything above this line is radiance; everything below is a picture.
-  col = acesFilm(col * uExposure);
+  col = acesFilm(col * uExposure * adapt);
+
+  // The grade: a breath of cool in the shadows and warmth in the highlights,
+  // which is what film stock does and what makes a frame read as shot rather
+  // than computed. Small enough to miss, large enough to miss when it's gone.
+  float y = luma(col);
+  col *= mix(vec3(0.965, 1.0, 1.045), vec3(1.03, 1.0, 0.965), smoothstep(0.0, 0.75, y));
+  col = mix(vec3(y), col, 1.06);
+  col = clamp(col, 0.0, 1.0);
+
   col = linearToSRGB(col);
 
   col += (hash(uv * vec2(1024.0, 768.0) + uTime) - 0.5) * uGrain;

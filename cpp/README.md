@@ -576,6 +576,8 @@ fog_colour = 0.48, 0.26, 0.24
 fog_density = 0.012
 sun_colour = 1.00, 0.68, 0.42
 sun_intensity = 3.2
+clouds = 0.60                   # 0 clear .. 1 overcast; default 0.45
+wetness = 0.30                  # 0 dry .. 1 every hollow full of water; default 0
 reward = 105
 
 wave thrall 7 24      # enemy id, count, spawn ring radius (metres)
@@ -1010,23 +1012,56 @@ see `Content::loadAll` in `src/Content.cpp`.
   spawn, complete, failed — with per-beat delays, one voice on the channel
   at a time, and a hold time scaled to the line's length.
 
+## What the renderer does
+
+The long version, with the reasoning and the bugs, is
+`../docs/NATIVE_RENDERER.md`. The short version of one frame:
+
+| Pass | What it is for |
+|---|---|
+| Light probe | Outdoors, a picture of the mission's own sky — the same function the sky pass draws — filtered into a GGX specular chain and a cosine irradiance cube. What fills a shadow is the sky above it; what a puddle shows is the clouds |
+| Shadow cascades | Three depth maps from the sun, refit to the view each frame |
+| Depth pre-pass | Everything opaque, depth only, so the colour pass shades each pixel once and the next two passes have a depth buffer to read |
+| Ambient occlusion | Half resolution from the depth buffer, blurred back up edge-aware. Why a crate looks like it is standing *on* the floor |
+| Sun shafts | A march through the shadow cascades: how much of the haze in front of each pixel the sun actually reaches |
+| Colour | One material program. Boxes get rounded, worn edges; walls get seams, streaks, dirt at the foot and dust on top; the ground gets lumps, grit and standing water. Shadows widen with distance from what cast them. Everything that glows lights what is near it |
+| Sky | Painted zenith and horizon with a physical shape: haze banded at the horizon, forward-scatter round the sun, self-shadowed clouds |
+| Temporal anti-aliasing | Sub-pixel jitter, resolved against the previous frame |
+| Exposure | Log-average metering, adapting over a second or two, partial and clamped |
+| Bloom, depth of field, composite | As before, plus a sharpen and a light grade |
+
+Nothing in it is a texture or a model file. Every surface is still shaded
+from position and normal.
+
+**What it is not.** It is not the look of any shipped game, and it is not
+meant to be: the art here is this project's own, and it is boxes. A studio
+renderer sits under thousands of authored meshes, scanned materials and
+animation, and none of that can be written in a shader. What a renderer
+*can* supply — light that behaves like light — is what this pass was about.
+
 ## Adaptive quality
 
-Ported from the browser build's `fps/engine.js` (`TIERS`/`trackFrame`):
-`Renderer` watches a smoothed frame time and steps down through four tiers —
-`high` → `medium` → `low` → `minimal` — trading away shadow-map resolution,
-bloom level count, whether depth-of-field is allowed to run at all, and dust
-mote count, in that order, the same as the browser build gives up the least
-valuable thing left first. Falling is fast (about 1.5s of sustained slow
-frames); climbing back is deliberately much harder, and gets harder each
-time it has already fallen, so it can't sit oscillating between two tiers.
-The current tier shows in the window title (`gfx:<name>`).
+`Renderer` watches a smoothed frame time and steps down through four tiers,
+giving up the least valuable thing left first:
 
-Not ported: the browser build's tiers also scale a pixel-ratio
-supersampling factor, which would need an extra upscale-blit stage this
-renderer doesn't have — left out rather than half-implemented. See
-`EREBUS_QUALITY_TIER`/`EREBUS_QUALITY_AUTO` above to force a tier or turn
-auto-adjustment off.
+| Tier | Shadow maps | Soft shadows | Occlusion | Sun shafts | Temporal AA | Lights | Bloom | DoF |
+|---|---|---|---|---|---|---|---|---|
+| `high` | 2048 / 2048 / 1024 | yes | yes | yes | yes | 16 | 5 levels | yes |
+| `medium` | 1024 / 1024 / 512 | yes | yes | yes | yes | 12 | 4 | yes |
+| `low` | 1024 / 512 / 512 | — | yes | — | — | 8 | 3 | — |
+| `minimal` | 768 / 512 / 512 | — | — | — | — | 4 | 2 | — |
+
+Falling is fast (about 1.5s of sustained slow frames); climbing back is
+deliberately much harder, and gets harder each time it has already fallen,
+so it can't sit oscillating between two tiers. The current tier shows in the
+window title (`gfx:<name>`). `minimal` costs about what the whole pipeline
+used to; `high` is roughly twice that on a software rasteriser, which is the
+only place it has been measured.
+
+See `EREBUS_QUALITY_TIER`/`EREBUS_QUALITY_AUTO` above to force a tier or turn
+auto-adjustment off. The headless suite forces `minimal` (it checks game
+state, not pixels), except for the one check whose job is to prove the full
+pipeline raises no GL errors.
 
 ## Verifying it without a display
 
@@ -1168,15 +1203,15 @@ content/
 src/
   main.cpp                window, input, SlotSelect/Space/Hub/Mission state machine, headless hooks
   Gl.h                    GLEW/GLFW/GLM include point + glCheck()
-  Shader.{h,cpp}          program compile/link, cached uniform locations
+  Shader.{h,cpp}          program compile/link, #include, cached uniform locations
   Camera.{h,cpp}          view: look direction, FOV, the aim blend
   Draw.h                  MaterialType + DrawItem, shared by every drawable
   Mesh.{h,cpp}            box/cylinder/sphere/terrain-plane generators
-  Framebuffer.{h,cpp}     2D render target (HDR + optional depth texture)
+  Framebuffer.{h,cpp}     2D render target (RGBA or single-channel, optional depth texture)
   CascadedShadowMap.{h,cpp}  3 cascades, refit to the view frustum per frame
   Bloom.{h,cpp}           5-level downsample/tent-upsample bloom
-  IBL.{h,cpp}             room capture -> prefiltered cubemap
-  Renderer.{h,cpp}        orchestrates one frame, shadow pass through composite
+  IBL.{h,cpp}             sky or room capture -> GGX specular chain + irradiance cube
+  Renderer.{h,cpp}        orchestrates one frame, light probe through composite
   Content.{h,cpp}         loads enemies/missions/weapons/armor/cosmetics/planets from content/
   Profile.{h,cpp}         persistent save: chits, owned/equipped gear, completed missions
   Hub.{h,cpp}             between-mission loadout/mission picker
@@ -1191,10 +1226,20 @@ src/
   Game.{h,cpp}            owns and drives all of the above
 shaders/
   pbr.vert / pbr.frag     the one material program every opaque object uses
+  prepass.frag            depth pre-pass (shares pbr.vert, so depths match exactly)
   depth.vert / depth.frag cascade depth-only pass
+  common/sky.glsl         the sky, #included by everything that needs to agree about it
+  sky.vert / sky.frag     the sky pass
   motes.vert / motes.frag camera-relative dust
   ibl_capture.*           the light-room -> cubemap capture pass
+  ibl_sky.frag            the sky -> cubemap capture pass
+  ibl_prefilter.frag, ibl_irradiance.frag   the two filters over either capture
   fullscreen.vert         shared "big triangle" vertex stage for every post pass
+  ssao.frag               ambient occlusion from depth
+  volumetric.frag         sun shafts: lit fraction of the haze along each ray
+  bilateral.frag          depth-aware blur/upsample for both of the above
+  taa.frag                temporal anti-aliasing resolve
+  luminance.frag, adapt.frag   the exposure meter
   bright / downsample / upsample .frag   the bloom chain
   dof.frag, composite.frag
   hud.vert / hud.frag     2D HUD rectangles

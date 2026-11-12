@@ -604,6 +604,7 @@ void buildExpedition(const MissionDef& m, Site& s) {
 
     // floor, and a darker trim band round its edge
     b.box(c.x - half - T, c.x + half + T, -0.4f, 0.0f, c.z - half - T, c.z + half + T, floorTint, true, 0.2f, 0.85f);
+    b.parts.back().ground = true;
     // walls: a doorway on the side you come in by and the side you leave by
     for (glm::vec3 n : {glm::vec3(0, 0, 1), glm::vec3(0, 0, -1), glm::vec3(1, 0, 0), glm::vec3(-1, 0, 0)}) {
       const bool door = (hasExit && n == outDir) || (hasEntry && n == -inDir);

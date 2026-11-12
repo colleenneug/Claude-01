@@ -69,6 +69,12 @@ public:
   float skyIntensity() const override { return 0.0f; }
   float viewDistance() const override { return 60000.0f; }
   bool wantsShadows() const override { return false; }
+  // A starfield is thousands of points a pixel across. Jittering the frame
+  // moves each one on and off its pixel, and temporal AA then averages a
+  // star with the black beside it: they dim and they crawl. And a frame
+  // that is nearly all black has no sensible average to expose for.
+  bool wantsTemporalAA() const override { return false; }
+  bool wantsAutoExposure() const override { return false; }
   // Vacuum: no haze, no inscatter, and genuinely zero rather than a trace.
   // The fog is an integral along the whole view ray, and a background pixel
   // has no geometry, so its ray runs to the 60,000-unit far plane: even
@@ -131,7 +137,14 @@ private:
 
   glm::vec3 position_{0.0f, 0.0f, 2600.0f};
   glm::vec3 velocity_{0.0f};
-  glm::vec3 sunDirection_{glm::normalize(glm::vec3(-0.45f, -0.25f, -0.86f))};
+  // Which way the sunlight travels. This is the negative of the vector it
+  // was first written as, on purpose. Every solid used to be drawn inside
+  // out (see Mesh::box), so what you saw of a planet was its far side, and
+  // the sun was aimed to light *that*. With the meshes fixed you see the
+  // near side, and the same vector left every world you fly toward showing
+  // you its night. Turned round, the lit hemispheres are the ones they
+  // always were.
+  glm::vec3 sunDirection_{glm::normalize(glm::vec3(0.45f, 0.25f, 0.86f))};
 
   float maxSpeed_ = 900.0f;
   float boost_ = 2.6f;

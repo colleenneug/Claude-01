@@ -19,6 +19,12 @@ public:
   void draw() const;
   void destroy();
 
+  // Half the size of a box mesh, in its own units; zero for anything that is
+  // not a box. The material shader rounds and wears the edges of a box (see
+  // boxEdges in shaders/pbr.frag), and to do that a fragment has to know how
+  // far it is from them — which only the mesh can say.
+  glm::vec3 boxHalf() const { return boxHalf_; }
+
   // ---------- generators ----------
   // A box centred on the origin. Used for armour plates, crates, pillars,
   // and every part of the sentinel rig in Scene.cpp.
@@ -34,4 +40,5 @@ public:
 private:
   GLuint vao_ = 0, vbo_ = 0, ebo_ = 0;
   GLsizei indexCount_ = 0;
+  glm::vec3 boxHalf_{0.0f};
 };

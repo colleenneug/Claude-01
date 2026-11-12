@@ -34,6 +34,7 @@ void Mesh::destroy() {
   if (vao_) glDeleteVertexArrays(1, &vao_);
   vao_ = vbo_ = ebo_ = 0;
   indexCount_ = 0;
+  boxHalf_ = glm::vec3(0.0f);
 }
 
 Mesh Mesh::box(float w, float h, float d) {
@@ -56,10 +57,19 @@ Mesh Mesh::box(float w, float h, float d) {
     verts.push_back({f.b, f.n, 0.0f});
     verts.push_back({f.c, f.n, 0.0f});
     verts.push_back({f.dd, f.n, 0.0f});
-    idx.insert(idx.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+    // Counter-clockwise seen from outside, which is what OpenGL calls the
+    // front. Every generator in this file used to wind the other way, and
+    // with back-face culling on that draws each solid inside out: the near
+    // faces are thrown away and what you see is the far wall's inner side,
+    // lit by a normal that points away from you. A box is symmetrical enough
+    // to hide it — it still looks like a box — but its top was its floor,
+    // its lit side was its shadowed one, and nothing standing on a deck was
+    // standing on the face that got drawn.
+    idx.insert(idx.end(), {base, base + 2, base + 1, base, base + 3, base + 2});
   }
   Mesh m;
   m.upload(verts, idx);
+  m.boxHalf_ = glm::vec3(x, y, z);
   return m;
 }
 
@@ -78,7 +88,7 @@ Mesh Mesh::cylinder(float rTop, float rBottom, float h, int segments) {
   }
   for (int i = 0; i < segments; i++) {
     unsigned a = i * 2, b = a + 1, c = a + 2, d = a + 3;
-    idx.insert(idx.end(), {a, b, c, b, d, c});
+    idx.insert(idx.end(), {a, c, b, b, c, d});
   }
   // simple caps (fan), flat shaded up/down
   unsigned topCentre = static_cast<unsigned>(verts.size());
@@ -88,7 +98,7 @@ Mesh Mesh::cylinder(float rTop, float rBottom, float h, int segments) {
     float a = (float)i / segments * 2.0f * (float)M_PI;
     verts.push_back({{std::cos(a) * rTop, halfH, std::sin(a) * rTop}, {0, 1, 0}, 0.0f});
   }
-  for (int i = 0; i < segments; i++) idx.insert(idx.end(), {topCentre, topStart + i, topStart + i + 1});
+  for (int i = 0; i < segments; i++) idx.insert(idx.end(), {topCentre, topStart + i + 1, topStart + i});
 
   unsigned botCentre = static_cast<unsigned>(verts.size());
   verts.push_back({{0, -halfH, 0}, {0, -1, 0}, 0.0f});
@@ -97,7 +107,7 @@ Mesh Mesh::cylinder(float rTop, float rBottom, float h, int segments) {
     float a = (float)i / segments * 2.0f * (float)M_PI;
     verts.push_back({{std::cos(a) * rBottom, -halfH, std::sin(a) * rBottom}, {0, -1, 0}, 0.0f});
   }
-  for (int i = 0; i < segments; i++) idx.insert(idx.end(), {botCentre, botStart + i + 1, botStart + i});
+  for (int i = 0; i < segments; i++) idx.insert(idx.end(), {botCentre, botStart + i, botStart + i + 1});
 
   Mesh m;
   m.upload(verts, idx);
@@ -121,7 +131,7 @@ Mesh Mesh::sphere(float r, int rings, int segments) {
   for (int ring = 0; ring < rings; ring++) {
     for (int seg = 0; seg < segments; seg++) {
       unsigned a = ring * stride + seg, b = a + stride;
-      idx.insert(idx.end(), {a, b, a + 1, b, b + 1, a + 1});
+      idx.insert(idx.end(), {a, a + 1, b, b, a + 1, b + 1});
     }
   }
   Mesh m;

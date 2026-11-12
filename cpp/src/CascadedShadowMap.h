@@ -35,6 +35,17 @@ public:
   // next — a fragment falls in.
   glm::vec2 range(int i) const { return ranges_[i]; }
   int mapSize(int i) const { return mapSizes_[i]; }
+  // How big cascade i is in the world: the width its map covers and the
+  // depth it spans, both in metres. A soft shadow's width is a distance in
+  // the world, and these are what convert it to a distance in the map.
+  float worldWidth(int i) const { return radius_[i] * 2.0f; }
+  float depthSpan(int i) const { return radius_[i] * 2.0f + backOff_ * 2.0f - 0.1f; }
+  // A sampler that reads the cascades' stored depth rather than comparing
+  // against it. The depth textures themselves are set up for hardware
+  // comparison (which is what filters a shadow edge), but finding how far
+  // away a shadow's caster is needs the number. Binding the same texture to
+  // a second unit through this gives both.
+  GLuint rawSampler() const { return rawSampler_; }
   float fadeMetres() const { return fade_; }
 
 private:
@@ -42,6 +53,8 @@ private:
   std::array<int, CASCADES> mapSizes_{};
   std::array<glm::mat4, CASCADES> viewProj_{};
   std::array<glm::vec2, CASCADES> ranges_{};
+  std::array<float, CASCADES> radius_{{1.0f, 1.0f, 1.0f}};
+  GLuint rawSampler_ = 0;
   float splits_[CASCADES + 1] = {};
   float fade_ = 2.5f;
   float lambda_ = 0.7f;     // blend between log and uniform splits

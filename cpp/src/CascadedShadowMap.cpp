@@ -31,12 +31,25 @@ void CascadedShadowMap::create(const std::array<int, CASCADES>& mapSizes) {
     }
   }
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+  if (!rawSampler_) {
+    glGenSamplers(1, &rawSampler_);
+    glSamplerParameteri(rawSampler_, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glSamplerParameteri(rawSampler_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glSamplerParameteri(rawSampler_, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glSamplerParameteri(rawSampler_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float border[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    glSamplerParameterfv(rawSampler_, GL_TEXTURE_BORDER_COLOR, border);
+    glSamplerParameteri(rawSampler_, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+  }
 }
 
 void CascadedShadowMap::destroy() {
+  if (rawSampler_) { glDeleteSamplers(1, &rawSampler_); rawSampler_ = 0; }
   for (int i = 0; i < CASCADES; i++) {
     if (depth_[i]) glDeleteTextures(1, &depth_[i]);
     if (fbo_[i]) glDeleteFramebuffers(1, &fbo_[i]);
+    depth_[i] = fbo_[i] = 0;
   }
 }
 
@@ -95,6 +108,7 @@ void CascadedShadowMap::update(const glm::vec3& camPos, const glm::vec3& camForw
     float radius = 0.0f;
     for (auto& c : corners) radius = std::max(radius, glm::length(c - centre));
     radius = std::ceil(radius * 8.0f) / 8.0f;  // quantise so it stops breathing
+    radius_[i] = radius;
 
     // Snap the centre to this cascade's own texel grid, in light space.
     glm::mat4 lightRot = glm::lookAt(glm::vec3(0.0f), dir, upHint);

@@ -84,19 +84,18 @@ public:
   glm::vec3 fogColour() const override { return mission_.fogColour; }
   float fogDensity() const override { return mission_.fogDensity; }
   glm::vec3 clearColour() const override { return mission_.fogColour * 0.10f; }
-  // The light probe is a capture of a lit station interior (see IBL::build).
-  // At full strength it is the dominant ambient in every mission, which means
-  // every sector is lit by the same room no matter what its own sky says. So
-  // it contributes a fraction, and the rest of the fill comes from the
-  // mission's own sky — which is the physical story anyway: what fills a
-  // shadow outdoors is the sky above it.
-  float iblIntensity() const override { return 0.35f; }
+  // Outdoors the light probe is a picture of this mission's own sky, so what
+  // fills a shadow is the sky above it and nothing needs adding. A mission
+  // with a roof on it (one whose file sets `ambient`) cannot see its sky:
+  // it keeps the stock room probe, turned down, and says how lit it is.
+  bool skyLitAmbient() const override { return !mission_.ambientSet; }
+  float iblIntensity() const override { return mission_.ambientSet ? 0.35f : 1.0f; }
   glm::vec3 ambientFill() const override {
-    // A mission with a roof on it says how lit it is; everywhere else the sky
-    // above it does, which is the physical story anyway.
-    if (mission_.ambientSet) return mission_.ambient;
-    return mission_.skyHorizon * 0.070f + mission_.skyZenith * 0.055f;
+    return mission_.ambientSet ? mission_.ambient : glm::vec3(0.0f);
   }
+  float cloudCover() const override { return mission_.cloudCover; }
+  float wetness() const override { return mission_.wetness; }
+  glm::vec3 groundAlbedo() const override { return mission_.floorColour; }
   GLuint moteVao() const override { return moteVao_; }
   float moteBoxSize() const override { return moteBox_; }
   int moteCount() const override { return moteCount_; }

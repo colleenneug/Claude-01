@@ -125,7 +125,8 @@ void Level::collect(std::vector<DrawItem>& out) const {
       glm::vec3 centre = (p.min + p.max) * 0.5f;
       glm::vec3 size = p.max - p.min;
       it.model = glm::scale(glm::translate(glm::mat4(1.0f), centre), size);
-      it.material = p.emissive ? MaterialType::Emissive : MaterialType::Armour;
+      it.material = p.emissive ? MaterialType::Emissive
+                  : p.ground ? MaterialType::Terrain : MaterialType::Armour;
       it.tint = p.tint;
       it.metallic = p.metallic;
       it.roughness = p.roughness;

@@ -234,6 +234,7 @@ void Hostile::collect(std::vector<DrawItem>& out) const {
     const float health = maxHp > 0.0f ? hp / maxHp : 1.0f;
     DrawItem base;
     base.material = MaterialType::Armour;
+    base.objectSpace = true;   // the fins turn
     base.tint = type->colour;
     base.metallic = 0.7f;
     base.roughness = 0.35f;
@@ -292,6 +293,7 @@ void Hostile::collect(std::vector<DrawItem>& out) const {
   base.wear = isBoss ? 1.5f : 1.1f;
   base.anisoStrength = 0.4f;
   base.material = MaterialType::Armour;
+  base.objectSpace = true;   // its plating walks with it
   // The hit flash and death fade both ride the armour's own emissive slot —
   // a red pulse on a hit, fading opacity as it dies. This project's
   // materials don't support real transparency sorting for a handful of

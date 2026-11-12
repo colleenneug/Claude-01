@@ -23,6 +23,9 @@ public:
   void set(const std::string& name, const glm::vec4& v) const;
   void set(const std::string& name, const glm::mat3& v) const;
   void set(const std::string& name, const glm::mat4& v) const;
+  // A whole uniform array in one call; `name` is the array's own name.
+  void setArray(const std::string& name, const glm::vec4* v, int count) const;
+  void setArray(const std::string& name, const glm::vec3* v, int count) const;
 
 private:
   GLint loc(const std::string& name) const;

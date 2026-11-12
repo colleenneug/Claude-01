@@ -2,7 +2,21 @@
 
 void Framebuffer::create(int w, int h, bool hdr, bool depthTexture) {
   hdr_ = hdr;
+  format_ = hdr ? Format::Rgba16f : Format::Rgba8;
+  colourOnly_ = false;
+  mipmapped_ = false;
   wantDepthTex_ = depthTexture;
+  w_ = w; h_ = h;
+  glGenFramebuffers(1, &fbo_);
+  rebuild();
+}
+
+void Framebuffer::createColour(int w, int h, Format format, bool mipmapped) {
+  format_ = format;
+  hdr_ = format == Format::Rgba16f || format == Format::R16f;
+  colourOnly_ = true;
+  mipmapped_ = mipmapped;
+  wantDepthTex_ = false;
   w_ = w; h_ = h;
   glGenFramebuffers(1, &fbo_);
   rebuild();
@@ -24,9 +38,16 @@ void Framebuffer::rebuild() {
 
   glGenTextures(1, &colorTex_);
   glBindTexture(GL_TEXTURE_2D, colorTex_);
-  glTexImage2D(GL_TEXTURE_2D, 0, hdr_ ? GL_RGBA16F : GL_RGBA8, w_, h_, 0, GL_RGBA,
-               hdr_ ? GL_FLOAT : GL_UNSIGNED_BYTE, nullptr);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  GLenum internal = GL_RGBA8, layout = GL_RGBA, type = GL_UNSIGNED_BYTE;
+  switch (format_) {
+    case Format::Rgba8:   internal = GL_RGBA8;   layout = GL_RGBA; type = GL_UNSIGNED_BYTE; break;
+    case Format::Rgba16f: internal = GL_RGBA16F; layout = GL_RGBA; type = GL_FLOAT; break;
+    case Format::R8:      internal = GL_R8;      layout = GL_RED;  type = GL_UNSIGNED_BYTE; break;
+    case Format::R16f:    internal = GL_R16F;    layout = GL_RED;  type = GL_FLOAT; break;
+  }
+  glTexImage2D(GL_TEXTURE_2D, 0, internal, w_, h_, 0, layout, type, nullptr);
+  if (mipmapped_) glGenerateMipmap(GL_TEXTURE_2D);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipmapped_ ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -41,7 +62,7 @@ void Framebuffer::rebuild() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex_, 0);
-  } else {
+  } else if (!colourOnly_) {
     glGenRenderbuffers(1, &depthRbo_);
     glBindRenderbuffer(GL_RENDERBUFFER, depthRbo_);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w_, h_);

@@ -27,8 +27,14 @@ run() {  # run <state-file> <env assignments...> [-- <binary args>]
   # waits, which no scripted run can answer. EREBUS_CLASS settles it. A check
   # that wants a different doctrine just passes its own, later on the command
   # line, which wins.
+  # These checks read game state, not pixels, and a software rasteriser pays
+  # for every pass in CPU time. The minimal tier draws the same world through
+  # the same code with the expensive passes (soft shadows, occlusion, shafts,
+  # temporal AA) switched off, which roughly halves the suite. The fixed
+  # timestep would otherwise hold the renderer at "high" for the whole run:
+  # the tier is chosen from frame time, and a fixed dt always reports 16ms.
   xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 EREBUS_CLASS=wraith \
-    EREBUS_SKIP_TUTORIAL=1 \
+    EREBUS_SKIP_TUTORIAL=1 EREBUS_QUALITY_TIER=3 \
     EREBUS_SAVE_PATH="$save" EREBUS_LOG_STATE="$log" "${env_args[@]}" \
     "$BIN" "${bin_args[@]}" >/dev/null 2>&1
 }

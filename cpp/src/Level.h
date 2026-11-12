@@ -38,6 +38,10 @@ public:
     // Trim, railings' tops, ceiling panels: seen but not collided with.
     bool solid = true;
     bool castShadow = true;
+    // This box is the ground under an open sky — earth, not plate. It is
+    // shaded as terrain (lumps, grit, standing water after rain) rather than
+    // as the panelled metal every other part is.
+    bool ground = false;
   };
 
   // Build from an explicit list of boxes instead of the procedural arena.

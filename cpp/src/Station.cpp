@@ -554,7 +554,10 @@ bool Station::init(const Content& content, const std::string& layout) {
     skyHorizon_ = glm::vec3(0.62f, 0.46f, 0.34f);
     skyIntensity_ = 1.0f;
     iblIntensity_ = 1.0f;
-    ambientFill_ = glm::vec3(0.150f, 0.152f, 0.158f);
+    ambientFill_ = glm::vec3(0.100f, 0.098f, 0.096f);
+    cloudCover_ = 0.55f;
+    grime_ = 0.75f;
+    groundAlbedo_ = glm::vec3(0.36f, 0.33f, 0.29f);
     floorY = 0.0f;
   } else {
     title_ = "THE CRADLE";

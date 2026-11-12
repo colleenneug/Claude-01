@@ -1780,6 +1780,9 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
   // hand-spans from the eye, so its shadow would be a black wall over half
   // the frame.
   base.castShadow = false;
+  // Its detail is fixed to the gun, not to the world the gun is carried
+  // through.
+  base.objectSpace = true;
 
   DrawItem lit = base;
   lit.material = MaterialType::Emissive;
@@ -1904,7 +1907,13 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
     DrawItem flash = lit;
     flash.emissive = glm::vec3(1.0f, 0.86f, 0.62f);
     flash.emissiveIntensity = 14.0f * k;
+    // The flash is a few centimetres across and, for the two frames it
+    // lasts, the brightest thing in the room. Its size alone would make it a
+    // candle; a shot lights the wall you are standing next to.
+    flash.lightScale = 30.0f;
     piece(flash, sph, {0.0f, 0.006f, muzzleZ}, glm::vec3(0.075f, 0.075f, 0.075f) * k);
+    // One light for the flash, not three stacked in the same place.
+    flash.lightScale = 0.0f;
     flash.emissiveIntensity = 7.0f * k;
     piece(flash, box, {0.0f, 0.006f, muzzleZ - 0.02f},
           glm::vec3(0.19f * k, 0.028f * k, 0.028f * k), {0, 0, 45.0f * k});
