@@ -5,7 +5,11 @@
 #
 #   tools/verify.sh [build-dir]
 set -u
-BUILD="${1:-$(cd "$(dirname "$0")/../build" && pwd)}"
+# Made absolute whichever way it arrives: one check below changes directory
+# before running the binary, and a relative build path handed in on the
+# command line then pointed at nothing — a failure of the harness that read
+# exactly like a failure of the game.
+BUILD="$(cd "${1:-$(dirname "$0")/../build}" && pwd)"
 BIN="$BUILD/erebus_native"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
