@@ -14,11 +14,13 @@ void HostileGeometry::ensure() {
   g_unitBox = Mesh::box(1.0f, 1.0f, 1.0f);
   // Unit diameter, like the box and the cylinders below, so a part's scale
   // always means the size of the thing rather than half of it.
-  g_unitSphere = Mesh::sphere(0.5f, 10, 8);
+  // Enough segments that a head is round. At eight it was a lantern: the
+  // silhouette had corners, and a face built on it never stood a chance.
+  g_unitSphere = Mesh::sphere(0.5f, 16, 24);
   // Unit diameter, not unit radius, so a part's scale reads as the size of
   // the thing rather than twice it — the same convention Mesh::box uses.
-  g_unitCylinder = Mesh::cylinder(0.5f, 0.5f, 1.0f, 10);
-  g_unitTaper = Mesh::cylinder(0.36f, 0.5f, 1.0f, 10);
+  g_unitCylinder = Mesh::cylinder(0.5f, 0.5f, 1.0f, 20);
+  g_unitTaper = Mesh::cylinder(0.36f, 0.5f, 1.0f, 20);
   g_built = true;
 }
 void HostileGeometry::destroyShared() {

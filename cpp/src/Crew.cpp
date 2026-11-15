@@ -91,6 +91,13 @@ const glm::vec3 kHair[] = {
   {0.58f, 0.58f, 0.60f},     // white
 };
 
+// Irises. Mostly brown, because mostly they are.
+const glm::vec3 kEyes[] = {
+  {0.16f, 0.09f, 0.05f}, {0.22f, 0.13f, 0.07f}, {0.12f, 0.07f, 0.04f},
+  {0.20f, 0.12f, 0.06f}, {0.17f, 0.24f, 0.30f}, {0.20f, 0.26f, 0.18f},
+  {0.26f, 0.28f, 0.30f},
+};
+
 // Deterministic per-index picks. A station that looks different every time
 // you dock is a station you cannot learn your way around.
 float hash01(unsigned n) {
@@ -127,6 +134,7 @@ void rollAppearance(Crew::Person& p, unsigned seed) {
   p.trousers = kTrousers[pickIndex(countOf(kTrousers), 37u)];
   p.tint     = kCoats[pickIndex(countOf(kCoats), 53u)];
   p.accent   = kAccents[pickIndex(countOf(kAccents), 67u)];
+  p.eyes     = kEyes[pickIndex(countOf(kEyes), 79u)];
 
   // Grey and white hair belong on older faces, so pair them with a slightly
   // heavier build and never with the tied-back style.
@@ -217,8 +225,13 @@ void Crew::init(const Content& content, const std::string& station) {
     // A short person with short legs walks slower. Small, and it is the kind
     // of thing you do not notice until it is missing and a crowd moves like
     // one animation.
-    p.speed = (1.5f + hash01(seed * 5u + 1u) * 0.8f) * (0.88f + (p.height - 1.58f));
+    //
+    // A stroll, which is what people crossing a concourse do: a little over a
+    // metre a second. At the two metres a second this used to be, everybody
+    // in the room was late for something.
+    p.speed = (1.02f + hash01(seed * 5u + 1u) * 0.34f) * (0.88f + (p.height - 1.58f));
     p.phase = hash01(seed * 5u + 2u) * 6.2831853f;
+    p.stride = p.phase;
     seed++;
     people_.push_back(p);
   }
@@ -227,13 +240,47 @@ void Crew::init(const Content& content, const std::string& station) {
     const Idler& i = idlers[k];
     Person p;
     p.pos = glm::vec3(i.x, i.y, i.z);
-    p.yaw = glm::radians(i.yaw);
+    // Negated. The tables above came across from the browser build as
+    // written, but a yaw there and a yaw here turn opposite ways for a figure
+    // whose front is -Z — the named crew's `facing` values were flipped when
+    // they were ported, and these were not. So the pair "at the gallery rail"
+    // stood with their backs to the rail and the drop, looking at a wall.
+    p.yaw = glm::radians(-i.yaw);
     rollAppearance(p, seed);
     p.phase = hash01(seed * 5u + 2u) * 6.2831853f;
     seed++;
     people_.push_back(p);
   }
 }
+
+// Half the angle a thigh swings through, in radians, and how far round the
+// step cycle a walker goes per metre covered. They are one fact stated
+// twice: with legs this long swinging this far, a full cycle (two steps)
+// carries the body about 1.45 metres, so the cycle has to advance 2*pi in
+// that distance. Change one without the other and feet slide.
+namespace {
+const float kThighSwing = 0.46f;
+// The body, as fractions of its own height, taken from where the joints are
+// on real people (ankle 0.04, knee 0.28, hip 0.52, shoulder 0.81, chin 0.87)
+// rather than from what looked about right. The first version had the hip at
+// 0.48 and the shoulder at 0.72 with a small head on top: a figure a tenth
+// shorter than its stated height, all leg, with its arms hanging from where
+// its ribs should be.
+const float kAnkle = 0.04f;
+const float kShin = 0.240f;
+const float kThigh = 0.240f;
+const float kLegLength = kAnkle + kShin + kThigh;   // hip joint to sole: 0.52
+const float kPelvis = kLegLength + 0.02f;           // centre of the hips block
+const float kChest = 0.150f;                        // pelvis up to mid-chest
+const float kShoulder = 0.120f;                     // mid-chest up to the shoulder joint
+const float kChin = 0.180f;                         // mid-chest up to the chin
+const float kUpperArm = 0.170f;
+const float kForearm = 0.160f;
+float strideRate(float height) {
+  const float perCycle = 4.0f * kLegLength * height * std::sin(kThighSwing);
+  return 6.2831853f / perCycle;
+}
+}  // namespace
 
 void Crew::update(float dt) {
   time_ += dt;
@@ -249,14 +296,32 @@ void Crew::update(float dt) {
     }
     d /= dist;
     p.pos += d * p.speed * dt;
+    p.stride += p.speed * dt * strideRate(p.height);
     // Turn toward where they are going rather than snapping: a person who
     // pivots on the spot reads as a turret.
-    float want = std::atan2(d.z, d.x);
+    //
+    // The figure's front is -Z, and a rotation of `yaw` about Y carries -Z to
+    // (-sin yaw, -cos yaw). So the yaw that faces direction d is
+    // atan2(-d.x, -d.z). This used to be atan2(d.z, d.x), which is the right
+    // formula for a figure that faces +X: everyone walked a quarter turn off
+    // the way they were going, sliding sideways across the floor.
+    float want = std::atan2(-d.x, -d.z);
     float diff = std::remainder(want - p.yaw, 6.2831853f);
     p.yaw += diff * std::min(1.0f, 6.0f * dt);
   }
 }
 
+// Conventions for everything below, worked out rather than guessed, because
+// the first version settled them by looking at a render that was drawing
+// every solid inside out and so had front and back confused:
+//
+//   - the figure's front is -Z.
+//   - joint() rotates about X then Z. A limb hangs along -Y, and a POSITIVE
+//     rotation about X carries -Y toward -Z: positive is FORWARD. That holds
+//     for a thigh, an upper arm and a forearm alike.
+//   - so an elbow, which folds forward, bends positive; and a knee, which
+//     folds back, bends NEGATIVE. The knees used to bend positive. Legs that
+//     fold forward at the knee are a bird's.
 void Crew::collect(std::vector<DrawItem>& out) const {
   const Mesh& box = HostileGeometry::unitBox();
   const Mesh& sph = HostileGeometry::unitSphere();
@@ -266,63 +331,88 @@ void Crew::collect(std::vector<DrawItem>& out) const {
   for (size_t i = 0; i < people_.size(); i++) {
     const Person& p = people_[i];
 
+    // Cloth, not plate: see MaterialType. Everything a person is made of is
+    // shaded in their own frame, because they move.
     DrawItem base;
-    base.material = MaterialType::Armour;
+    base.material = MaterialType::Cloth;
     base.tint = p.tint;
-    // Cloth and working plastic, not plate: low metallic and rough, which is
-    // most of why these read as people and the hostiles read as machines.
-    base.metallic = 0.08f;
-    base.roughness = 0.78f;
-    base.wear = 0.5f;
+    base.metallic = 0.0f;
+    base.roughness = 0.82f;
+    base.wear = 0.0f;
     base.castShadow = true;
+    base.objectSpace = true;
 
     DrawItem legwear = base;
     legwear.tint = p.trousers;
+    legwear.roughness = 0.76f;
 
     DrawItem skin = base;
+    skin.material = MaterialType::Skin;
     skin.tint = p.skin;
-    skin.roughness = 0.62f;   // skin is not cloth; a little sheen reads as skin
-    skin.wear = 0.15f;
+    skin.roughness = 0.50f;   // skin is not cloth; a little sheen reads as skin
 
-    // The brow, the eye sockets and under the jaw. One tint, a shade down
-    // from the face, standing in for the shadow that a single directional
-    // light at station scale never actually casts at this size.
+    // The eye sockets, the lower lid, under the jaw: skin a shade down.
     DrawItem shade = skin;
-    shade.tint = p.skin * 0.80f;
+    shade.tint = p.skin * 0.78f;
+
+    DrawItem lips = skin;
+    lips.tint = p.skin * glm::vec3(0.80f, 0.56f, 0.54f);
+    lips.roughness = 0.38f;
 
     DrawItem hairMat = base;
     hairMat.tint = p.hair;
-    hairMat.roughness = 0.55f;
-    hairMat.metallic = 0.02f;
+    hairMat.roughness = 0.50f;
 
+    // Eyes are wet, and it is the highlight on them that makes a face look
+    // back at you. Hard and glossy, with nothing on them to chip.
     DrawItem sclera = base;
-    sclera.tint = glm::vec3(0.70f, 0.70f, 0.72f);
-    sclera.roughness = 0.25f;
-    sclera.metallic = 0.0f;
+    sclera.material = MaterialType::Armour;
+    sclera.tint = glm::vec3(0.72f, 0.71f, 0.70f);
+    sclera.roughness = 0.14f;
+    DrawItem iris = sclera;
+    iris.tint = p.eyes;
+    iris.roughness = 0.10f;
+    DrawItem pupil = sclera;
+    pupil.tint = glm::vec3(0.012f, 0.011f, 0.013f);
+    pupil.roughness = 0.08f;
 
-    DrawItem pupil = base;
-    pupil.tint = glm::vec3(0.045f, 0.040f, 0.050f);
-    pupil.roughness = 0.18f;
+    DrawItem boot = base;
+    boot.tint = p.trousers * 0.50f;
+    boot.roughness = 0.46f;
 
     DrawItem lit = base;
     lit.material = MaterialType::Emissive;
     lit.emissive = p.accent;
     lit.emissiveIntensity = 1.6f;
+    // A badge glows; it does not light the room. Twenty of them would
+    // otherwise be twenty entries in the renderer's list of lamps.
+    lit.lightScale = 0.0f;
 
-    // Walkers bob and swing; someone standing at a post breathes and shifts
-    // their weight. Both come off the same phase so nobody is in lockstep.
+    const float H = p.height;
+    const float B = p.build;
     const bool walking = p.route.size() >= 2;
-    const float t = time_ * (walking ? p.speed * 2.6f : 1.1f) + p.phase;
-    const float swing = walking ? std::sin(t) * 0.55f : std::sin(t) * 0.05f;
-    const float bob = walking ? std::fabs(std::sin(t)) * 0.035f : std::sin(t * 0.6f) * 0.012f;
 
+    // ------------------------------------------------- the step cycle
+    // One number, `gait`, runs the whole body while walking. Standing still
+    // it is zero and a slow idle clock takes over.
+    const float gait = walking ? std::sin(p.stride) : 0.0f;
+    const float gaitRate = walking ? std::cos(p.stride) : 0.0f;
+    const float idle = time_ * 1.1f + p.phase;
+
+    // The body rides over its legs like an inverted pendulum: highest when
+    // the standing leg is upright, lowest when both feet are down and the
+    // legs are spread. That is not a bob added for effect — it is the height
+    // at which a straight leg of this length, at this angle, reaches the
+    // floor, and using anything else leaves the feet in the air or the
+    // ground.
+    const float drop = walking ? kLegLength * H * (1.0f - std::cos(kThighSwing * gait)) : 0.0f;
     // Standing still, weight goes onto one hip and comes back. Very slow —
     // a five-second cycle — because a person shifting their weight every
     // second reads as somebody who needs the toilet.
-    const float weightShift = walking ? 0.0f : std::sin(t * 0.21f + p.phase) * 0.028f;
+    const float weightShift = walking ? 0.0f : std::sin(idle * 0.21f + p.phase) * 0.028f;
+    const float breath = std::sin(time_ * 1.4f + p.phase * 1.7f);
 
-    glm::mat4 root = glm::translate(glm::mat4(1.0f),
-                                    p.pos + glm::vec3(0.0f, bob, 0.0f));
+    glm::mat4 root = glm::translate(glm::mat4(1.0f), p.pos - glm::vec3(0.0f, drop, 0.0f));
     root = glm::rotate(root, p.yaw, glm::vec3(0, 1, 0));
     root = glm::rotate(root, weightShift * 0.5f, glm::vec3(0, 0, 1));
 
@@ -330,55 +420,67 @@ void Crew::collect(std::vector<DrawItem>& out) const {
     // rather than the figure being the same person at a different zoom: the
     // head is very nearly a constant size in real people, so a tall figure
     // is mostly longer legs.
-    const float H = p.height;
-    const float B = p.build;
     const float headScale = 0.90f + (H - 1.58f) * 0.22f;   // barely grows
 
     // ------------------------------------------------- hips, torso, coat
-    glm::mat4 hips = joint(root, {0.0f, H * 0.50f, 0.0f});
-    part(out, legwear, box, hips, {0, 0, 0}, {0.30f * B, 0.14f, 0.20f * B});
-    glm::mat4 chest = joint(hips, {0.0f, H * 0.14f, 0.0f}, 0.0f, -swing * 0.06f);
-    // A chest that tapers up into the shoulders rather than a slab: the box
-    // was the single thing most responsible for these reading as mannequins.
-    part(out, base, tpr, chest, {0, -H * 0.02f, 0}, {0.37f * B, H * 0.19f, 0.235f * B});
-    part(out, base, box, chest, {0, H * 0.035f, 0}, {0.355f * B, H * 0.085f, 0.225f * B});
-    part(out, base, tpr, chest, {0, -H * 0.11f, 0}, {0.46f * B, H * 0.20f, 0.34f * B});   // coat skirt
-    part(out, lit, box, chest, {0.09f * B, 0.03f, -0.118f * B}, {0.05f, 0.02f, 0.012f});  // badge
+    glm::mat4 hips = joint(root, {0.0f, H * kPelvis, 0.0f}, 0.0f, gait * 0.030f);
+    // Rounded, like everything else under a coat: a box here put its corners
+    // through the coat's skirt, as two dark wedges on the front of everyone.
+    part(out, legwear, sph, hips, {0, 0, 0}, {0.31f * B, 0.19f, 0.22f * B});
+    // Walking, the trunk leans a few degrees into it and the shoulders turn
+    // against the hips: the arm goes forward with the opposite leg, and it
+    // takes the shoulder with it.
+    glm::mat4 chest = joint(hips, {0.0f, H * kChest + breath * 0.0025f, 0.0f},
+                            walking ? -0.05f : 0.0f, -gait * 0.030f);
+    if (walking) chest = glm::rotate(chest, gait * 0.09f, glm::vec3(0, 1, 0));
+    // The trunk is a ribcage, and a ribcage is an egg: widest at the chest,
+    // rounding in to the shoulders above and the waist below. Anything with a
+    // flat top and square corners up here is a box wearing a coat, and it was
+    // the single thing most responsible for these reading as mannequins.
+    part(out, base, sph, chest, {0, H * 0.012f, 0}, {0.385f * B, H * 0.275f, 0.250f * B});
+    // Across the top of it, the line of the shoulders: wider than the ribs
+    // and shallow, so the arms hang from something.
+    part(out, base, sph, chest, {0, H * 0.098f, 0}, {0.440f * B, H * 0.085f, 0.215f * B});
+    part(out, base, tpr, chest, {0, -H * 0.125f, 0}, {0.44f * B, H * 0.22f, 0.32f * B});   // coat skirt
+    part(out, lit, box, chest, {0.09f * B, H * 0.045f, -0.123f * B}, {0.05f, 0.02f, 0.012f});  // badge
 
     // Shoulders and collar. The collar is what stops the head reading as a
     // ball balanced on a box.
-    part(out, base, tpr, chest, {0, H * 0.10f, 0}, {0.27f * B, 0.055f, 0.245f * B});
-    // Tall enough to actually reach: the collar sits at H*0.10 and the head
-    // at H*0.208, so a short neck leaves a gap you can see through.
+    part(out, base, tpr, chest, {0, H * 0.140f, 0}, {0.180f * B, 0.060f, 0.180f * B});
+    // From inside the collar to inside the jaw, so there is never a gap to
+    // see through between them.
     DrawItem neckMat = skin;
-    neckMat.tint = p.skin * 0.74f;
-    part(out, neckMat, cyl, chest, {0, H * 0.145f, 0}, {0.094f, H * 0.085f, 0.094f});
+    neckMat.tint = p.skin * 0.86f;
+    part(out, neckMat, cyl, chest, {0, H * 0.160f, 0}, {0.112f, H * 0.080f, 0.120f});
 
     // ------------------------------------------------- head
     // A slow drift plus an occasional glance. The glance is a smoothstep
     // pulse rather than a sine so it reads as a decision to look at
     // something, not as a metronome.
-    const float glanceT = std::fmod(t * 0.13f + p.phase, 1.0f);
+    const float glanceT = std::fmod(idle * 0.13f + p.phase, 1.0f);
     const float glanceWindow = glanceT < 0.16f ? glanceT / 0.16f : 0.0f;
     const float glance = glanceWindow * glanceWindow * (3.0f - 2.0f * glanceWindow);
-    const float headYaw = std::sin(t * 0.29f) * 0.10f +
-                          glance * (hash01((unsigned)i * 977u) * 1.1f - 0.55f);
-    const float headPitch = std::sin(t * 0.19f + 1.3f) * 0.05f;
-
-    glm::mat4 head = glm::translate(chest, glm::vec3(0.0f, H * 0.208f, 0.0f));
-    head = glm::rotate(head, headYaw, glm::vec3(0, 1, 0));
-    head = glm::rotate(head, headPitch, glm::vec3(1, 0, 0));
-    head = glm::rotate(head, std::sin(t * 0.37f) * 0.05f, glm::vec3(0, 0, 1));
+    // Somebody walking looks where they are going, mostly. The head also
+    // undoes the turn of the shoulders, or it would wag with every step.
+    const float headYaw = std::sin(idle * 0.29f) * (walking ? 0.05f : 0.10f) +
+                          glance * (hash01((unsigned)i * 977u) * 1.1f - 0.55f) * (walking ? 0.5f : 1.0f) -
+                          (walking ? gait * 0.09f : 0.0f);
+    const float headPitch = std::sin(idle * 0.19f + 1.3f) * 0.04f + (walking ? 0.04f : 0.0f);
 
     // Every primitive here is unit *diameter*, and part() takes the full
     // extent — so a feature's offset from the head's centre is a fraction of
     // the HALF extent, not of the size. Getting that wrong is what put the
     // first version's entire face floating five centimetres in front of the
     // skull, which at a distance read as a mask and up close read as a bug.
-    const float hw = 0.166f * headScale;      // full width
-    const float hh = 0.212f * headScale;      // full height
-    const float hd = 0.196f * headScale;      // full depth
+    const float hw = 0.168f * headScale;      // full width
+    const float hh = 0.236f * headScale;      // full height: an eighth of a body
+    const float hd = 0.204f * headScale;      // full depth
     const float hx = hw * 0.5f, hy = hh * 0.5f, hz = hd * 0.5f;
+
+    glm::mat4 head = glm::translate(chest, glm::vec3(0.0f, H * kChin + hy, 0.0f));
+    head = glm::rotate(head, headYaw, glm::vec3(0, 1, 0));
+    head = glm::rotate(head, headPitch, glm::vec3(1, 0, 0));
+    head = glm::rotate(head, std::sin(idle * 0.37f) * 0.03f, glm::vec3(0, 0, 1));
 
     part(out, skin, sph, head, {0, 0, 0}, {hw, hh, hd});
     // The jaw, narrowing downward. A sphere on its own is a head-shaped
@@ -387,20 +489,39 @@ void Crew::collect(std::vector<DrawItem>& out) const {
     part(out, skin, tpr, head, {0, -hy * 0.50f, -hz * 0.10f},
          {hw * 0.92f, hh * 0.30f, hd * 0.84f}, {180.0f, 0, 0});
 
-    // Brow, sitting just under the surface. Skin a shade down rather than a
-    // dark bar: at the size a head actually occupies on screen, a high
-    // contrast feature reads as a mark on the face, not as a brow.
+    // Brow ridge, sitting just under the surface.
     part(out, shade, box, head, {0, hy * 0.30f, -hz * 0.78f},
          {hw * 0.60f, hh * 0.05f, hd * 0.16f});
 
+    // A blink: about a tenth of a second, every few seconds, never two
+    // people at once. An eye that never closes is the single most unnerving
+    // thing a face can do, and it is free to fix.
+    const float blinkT = std::fmod(time_ * (0.21f + hash01((unsigned)i * 131u) * 0.10f) + p.phase, 1.0f);
+    const bool blinking = blinkT < 0.030f;
+    const float eyeY = hy * 0.10f;
+
     for (int side = -1; side <= 1; side += 2) {
       const float sx = (float)side * hx * 0.44f;
-      part(out, shade, sph, head, {sx, hy * 0.10f, -hz * 0.76f},
+      part(out, shade, sph, head, {sx, eyeY, -hz * 0.75f},
            {hw * 0.24f, hh * 0.10f, hd * 0.12f});                    // socket
-      part(out, sclera, sph, head, {sx, hy * 0.10f, -hz * 0.84f},
-           {hw * 0.17f, hh * 0.066f, hd * 0.09f});
-      part(out, pupil, sph, head, {sx, hy * 0.10f, -hz * 0.90f},
-           {hw * 0.105f, hh * 0.060f, hd * 0.06f});
+      // The eyeball sits *in* the socket and shows through a slot between
+      // two lids. With no lids the whole white is on show all the way round
+      // the iris, which on a person means terror and on these meant an owl.
+      part(out, sclera, sph, head, {sx, eyeY, -hz * 0.80f},
+           {hw * 0.165f, hh * 0.052f, hd * 0.085f});
+      part(out, iris, sph, head, {sx, eyeY + hh * 0.002f, -hz * 0.852f},
+           {hw * 0.084f, hh * 0.050f, hd * 0.050f});
+      part(out, pupil, sph, head, {sx, eyeY + hh * 0.002f, -hz * 0.874f},
+           {hw * 0.040f, hh * 0.025f, hd * 0.035f});
+      // Upper lid: rests over the top third of the iris, and comes down to
+      // meet the lower one in a blink.
+      part(out, skin, sph, head, {sx, eyeY + (blinking ? hh * 0.004f : hh * 0.027f), -hz * 0.815f},
+           {hw * 0.195f, blinking ? hh * 0.066f : hh * 0.046f, hd * 0.105f});
+      part(out, shade, sph, head, {sx, eyeY - hh * 0.029f, -hz * 0.805f},
+           {hw * 0.175f, hh * 0.026f, hd * 0.090f});                 // lower lid
+      // Eyebrow, in the hair's colour, tilted down toward the nose.
+      part(out, hairMat, box, head, {sx, hy * 0.325f, -hz * 0.855f},
+           {hw * 0.215f, hh * 0.020f, hd * 0.045f}, {0, 0, (float)side * 7.0f});
       // Ears, where the head is widest.
       part(out, skin, sph, head, {(float)side * hx * 0.94f, -hy * 0.04f, hz * 0.14f},
            {hw * 0.11f, hh * 0.20f, hd * 0.16f});
@@ -409,17 +530,17 @@ void Crew::collect(std::vector<DrawItem>& out) const {
     // Nose: the taper laid along -Z so its narrow end points forward.
     part(out, skin, tpr, head, {0, -hy * 0.10f, -hz * 0.82f},
          {hw * 0.17f, hd * 0.20f, hh * 0.24f}, {-90.0f, 0, 0});
-    // Mouth, one shade down and barely there.
-    part(out, shade, box, head, {0, -hy * 0.52f, -hz * 0.80f},
-         {hw * 0.26f, hh * 0.030f, hd * 0.06f});
+    // Mouth: lips a little redder than the face, and barely there.
+    part(out, lips, sph, head, {0, -hy * 0.50f, -hz * 0.80f},
+         {hw * 0.30f, hh * 0.034f, hd * 0.075f});
 
     // Hair. Pushed back and up so the hairline sits above the brow and the
     // face is never inside it — four styles, because a room where everyone
     // has the same haircut is a room of clones however good the faces are.
     switch (p.hairStyle) {
       case 1:   // cropped: a thin cap that follows the skull
-        part(out, hairMat, sph, head, {0, hy * 0.16f, hz * 0.10f},
-             {hw * 1.03f, hh * 0.86f, hd * 1.01f});
+        part(out, hairMat, sph, head, {0, hy * 0.20f, hz * 0.12f},
+             {hw * 1.06f, hh * 0.90f, hd * 1.05f});
         break;
       case 2:   // tied back: volume on top, and a tail at the nape
         part(out, hairMat, sph, head, {0, hy * 0.26f, hz * 0.16f},
@@ -434,56 +555,61 @@ void Crew::collect(std::vector<DrawItem>& out) const {
              {hw * 0.92f, hh * 0.05f, hd * 0.36f});
         break;
       default:  // short, hairline above the brow
-        part(out, hairMat, sph, head, {0, hy * 0.24f, hz * 0.12f},
-             {hw * 1.05f, hh * 0.88f, hd * 1.03f});
+        part(out, hairMat, sph, head, {0, hy * 0.24f, hz * 0.14f},
+             {hw * 1.09f, hh * 0.92f, hd * 1.08f});
         break;
     }
 
     // ------------------------------------------------- limbs
     for (int side = -1; side <= 1; side += 2) {
       const float sd = (float)side;
-      const float leg = swing * sd;
+      // This leg's thigh angle: forward positive. The two legs are half a
+      // cycle apart, which is all "sd *" is doing.
+      const float thigh = kThighSwing * gait * sd;
+      // The leg that is travelling forward is off the ground, and has to
+      // fold at the knee to clear it. The one on the ground stays nearly
+      // straight, because it is holding the body up.
+      const float swinging = std::max(0.0f, gaitRate * sd);
+      const float kneeFold = 0.05f + 0.95f * swinging * std::sqrt(swinging);
 
-      // Arms. A posture overrides the swing for someone standing still —
-      // arms hanging straight down is the one pose nobody actually adopts.
-      // Sign convention, established by rendering it rather than deriving it:
-      // a POSITIVE elbow bend brings the forearm forward. The rig's front is
-      // -Z (the badge and the boots are both on that side), and the joint
-      // rotation that follows from that is not the one the arithmetic
-      // suggests, so this was settled with a screenshot.
-      float shoulderPitch = -leg * 0.55f;
+      // Arms. Each swings against the leg on its own side. A posture
+      // overrides the swing for someone standing still — arms hanging
+      // straight down is the one pose nobody actually adopts.
+      float shoulderPitch = walking ? -thigh * 0.62f : std::sin(idle * 0.5f + sd) * 0.015f;
       float shoulderRoll  = sd * 0.07f;
-      float elbowBend     = 0.22f + std::max(0.0f, leg) * 0.4f;
+      // The arm bends a little more as it comes forward.
+      float elbowBend     = 0.20f + std::max(0.0f, -thigh) * 0.75f;
       float forearmYaw    = 0.0f;
 
       if (!walking) {
         switch (p.posture) {
           case Posture::ArmsCrossed:
-            // Forearms brought up and folded across the chest. The inward yaw
-            // is what crosses them; without it this is "holding a tray".
-            shoulderPitch = 0.10f;
-            shoulderRoll  = sd * 0.28f;
-            elbowBend     = 1.46f;
-            forearmYaw    = -sd * 0.95f;
+            // Upper arms a little forward, forearms folded flat across the
+            // chest, one above the other. The inward yaw is what crosses
+            // them; without it this is "holding a tray".
+            shoulderPitch = 0.22f;
+            shoulderRoll  = sd * 0.10f;
+            elbowBend     = 1.48f + sd * 0.09f;
+            forearmYaw    = -sd * 1.05f;
             break;
           case Posture::HandsBehindBack:
-            // Upper arms back, forearms folded across the small of the back.
-            // Positive pitch, for the same reason the elbow bend is positive:
-            // the sign that reads as "backward" here is not the one the
-            // arithmetic suggests, and this was settled by looking at it.
-            shoulderPitch = 0.42f;
-            shoulderRoll  = sd * 0.05f;
-            elbowBend     = 1.32f;
+            // Upper arms back, forearms turned in behind the small of the
+            // back. The forearm goes *backward* here, so its bend is
+            // negative — not an elbow bending the wrong way, but the nearest
+            // this rig gets to a shoulder rolled inward.
+            shoulderPitch = -0.16f;
+            shoulderRoll  = sd * 0.06f;
+            elbowBend     = -0.95f;
             forearmYaw    = -sd * 0.78f;
             break;
           case Posture::HandOnHip:
             // One hand only. The asymmetry is the point — both hands on both
             // hips is a pose nobody holds while waiting for a shuttle.
             if (side < 0) {
-              shoulderPitch = 0.06f;
-              shoulderRoll  = sd * 0.44f;
-              elbowBend     = 1.38f;
-              forearmYaw    = -sd * 0.72f;
+              shoulderPitch = -0.08f;
+              shoulderRoll  = sd * 0.50f;     // elbow out to the side
+              elbowBend     = 0.50f;
+              forearmYaw    = -sd * 0.75f;    // forearm back in to the hip
             }
             break;
           case Posture::Neutral:
@@ -493,33 +619,48 @@ void Crew::collect(std::vector<DrawItem>& out) const {
         }
       }
 
-      glm::mat4 shoulder = joint(chest, {sd * 0.205f * B, H * 0.075f, 0.0f},
+      glm::mat4 shoulder = joint(chest, {sd * 0.205f * B, H * kShoulder, 0.0f},
                                  shoulderPitch, shoulderRoll);
-      part(out, base, tpr, shoulder, {0, -H * 0.075f, 0},
-           {0.108f * B, H * 0.16f, 0.108f * B});
+      // Every limb is thickest where it leaves the body and narrows toward
+      // its end: shoulder to elbow, elbow to wrist, hip to knee, knee to
+      // ankle. The taper primitive is narrow at its top, so each is turned
+      // over. The right way up they were bell-bottomed — wrists wider than
+      // shoulders — with a ball stuck on top to hide where the arm began.
+      const glm::vec3 flip(180.0f, 0.0f, 0.0f);
+      // The round of the shoulder, the same width as the arm it caps.
+      part(out, base, sph, shoulder, {0, 0, 0}, {0.118f * B, 0.118f * B, 0.118f * B});
+      part(out, base, tpr, shoulder, {0, -H * kUpperArm * 0.5f, 0},
+           {0.118f * B, H * kUpperArm, 0.118f * B}, flip);
 
-      glm::mat4 elbow = joint(shoulder, {0, -H * 0.155f, 0}, elbowBend);
-      // About the elbow frame's Z, not its Y. After the forward bend the
-      // frame's Y points along the forearm, so a rotation about it spins the
-      // forearm on its own axis and nothing moves; the frame's Z is the one
-      // still pointing roughly up, and rotating about that is what swings a
-      // bent forearm across the body.
+      glm::mat4 elbow = joint(shoulder, {0, -H * kUpperArm, 0}, elbowBend);
+      // About the elbow frame's Z, not its Y. After the bend the frame's Y
+      // points along the forearm, so a rotation about it spins the forearm
+      // on its own axis and nothing moves; rotating about Z is what swings
+      // a bent forearm across the body.
       if (forearmYaw != 0.0f) elbow = glm::rotate(elbow, forearmYaw, glm::vec3(0, 0, 1));
-      // The forearm is bare below a rolled sleeve on some coats; keeping it
-      // coat-coloured with a skin hand is the cheap version and reads fine at
-      // the distance you ever see these from.
-      part(out, base, tpr, elbow, {0, -H * 0.07f, 0}, {0.092f * B, H * 0.15f, 0.092f * B});
-      part(out, skin, sph, elbow, {0, -H * 0.152f, 0}, {0.082f, 0.098f, 0.075f});   // hand
+      part(out, base, sph, elbow, {0, 0, 0}, {0.090f * B, 0.090f * B, 0.090f * B});
+      part(out, base, tpr, elbow, {0, -H * kForearm * 0.5f, 0}, {0.094f * B, H * kForearm, 0.094f * B}, flip);
+      // The hand: a palm and the fingers curled under it, flattened the way
+      // a hand at rest is rather than balled like a fist.
+      part(out, skin, sph, elbow, {0, -H * kForearm - 0.035f, 0}, {0.050f, 0.105f, 0.085f});
+      part(out, skin, sph, elbow, {0, -H * kForearm - 0.085f, -0.012f}, {0.044f, 0.075f, 0.070f});
 
       // Legs. Trousers, and a boot that is a separate colour from them.
-      glm::mat4 hip = joint(hips, {sd * 0.095f * B, -H * 0.02f, 0.0f}, leg * 0.9f);
-      part(out, legwear, tpr, hip, {0, -H * 0.11f, 0}, {0.138f * B, H * 0.22f, 0.138f * B});
-      glm::mat4 knee = joint(hip, {0, -H * 0.22f, 0}, std::max(0.0f, -leg) * 1.5f + 0.04f);
-      part(out, legwear, tpr, knee, {0, -H * 0.11f, 0}, {0.117f * B, H * 0.22f, 0.117f * B});
-      DrawItem boot = base;
-      boot.tint = p.trousers * 0.55f;
-      boot.roughness = 0.55f;
-      part(out, boot, box, knee, {0, -H * 0.205f, -0.045f}, {0.115f, 0.062f, 0.26f});
+      glm::mat4 hip = joint(hips, {sd * 0.095f * B, -H * 0.02f, 0.0f}, thigh);
+      part(out, legwear, tpr, hip, {0, -H * kThigh * 0.5f, 0}, {0.160f * B, H * kThigh, 0.160f * B}, flip);
+      glm::mat4 knee = joint(hip, {0, -H * kThigh, 0}, -kneeFold);
+      part(out, legwear, sph, knee, {0, 0, 0}, {0.120f * B, 0.120f * B, 0.120f * B});   // the knee itself
+      part(out, legwear, tpr, knee, {0, -H * kShin * 0.5f, 0}, {0.124f * B, H * kShin, 0.124f * B}, flip);
+      // The ankle takes back most of what the hip and knee turned the leg
+      // through, so a foot on the ground lies on the ground instead of
+      // digging its toe in.
+      glm::mat4 ankle = joint(knee, {0, -H * kShin, 0}, -(thigh - kneeFold) * 0.85f);
+      // The shin stops at the ankle, four percent of the body's height
+      // above the floor; the boot is that tall plus enough to cover the
+      // join, so its sole is exactly where the ground is. The feet used to
+      // hang six centimetres in the air.
+      const float bootH = H * kAnkle + 0.035f;
+      part(out, boot, box, ankle, {0, -H * kAnkle + bootH * 0.5f, -0.048f}, {0.104f, bootH, 0.245f});
     }
   }
 }

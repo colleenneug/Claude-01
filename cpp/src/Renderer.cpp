@@ -53,6 +53,7 @@ void Renderer::create(int width, int height) {
 
   const int hw = std::max(1, width_ / 2), hh = std::max(1, height_ / 2);
   sceneHdr_.create(width_, height_, /*hdr=*/true, /*depthTexture=*/true);
+  sceneHdr_.addAux();   // per-pixel motion, for the temporal resolve
   aoRaw_.createColour(hw, hh, Framebuffer::Format::R8);
   ao_.createColour(width_, height_, Framebuffer::Format::R8);
   shaftRaw_.createColour(hw, hh, Framebuffer::Format::R8);
@@ -416,10 +417,23 @@ void Renderer::renderSunShafts(const SceneSource& scene, const Camera& camera, c
 
 // -------------------------------------------------------------- scene pass
 
+glm::mat4 Renderer::previousModel(size_t index, const DrawItem& item) const {
+  if (!historyValid_ || index >= past_.size()) return item.model;
+  const Past& was = past_[index];
+  if (was.mesh != item.mesh) return item.model;
+  // Nothing here covers three metres in a frame. If the list says this did,
+  // the list has shifted and this is somebody else's past.
+  const glm::vec3 moved = glm::vec3(item.model[3]) - glm::vec3(was.model[3]);
+  if (glm::dot(moved, moved) > 9.0f) return item.model;
+  return was.model;
+}
+
 void Renderer::renderScene(const SceneSource& scene, const Camera& camera, const FrameView& fv) {
   pbrShader_.use();
   pbrShader_.set("uView", fv.view);
   pbrShader_.set("uProj", fv.proj);
+  pbrShader_.set("uCleanViewProj", fv.cleanViewProj);
+  pbrShader_.set("uPrevViewProj", historyValid_ ? prevCleanViewProj_ : fv.cleanViewProj);
   pbrShader_.set("uCamPos", camera.position);
 
   pbrShader_.set("uSunDir", scene.sunDirection());
@@ -483,8 +497,10 @@ void Renderer::renderScene(const SceneSource& scene, const Camera& camera, const
   pbrShader_.set("uDustColour", scene.groundAlbedo());
   const float sceneGrime = scene.grime();
 
-  for (const auto& item : drawList_) {
+  for (size_t index = 0; index < drawList_.size(); index++) {
+    const DrawItem& item = drawList_[index];
     pbrShader_.set("uModel", item.model);
+    pbrShader_.set("uPrevModel", previousModel(index, item));
     glm::mat3 normalMat = glm::mat3(glm::transpose(glm::inverse(item.model)));
     pbrShader_.set("uNormalMatrix", normalMat);
     pbrShader_.set("uMaterial", (int)item.material);
@@ -521,6 +537,9 @@ void Renderer::renderScene(const SceneSource& scene, const Camera& camera, const
   }
 
   for (int i = 0; i < CascadedShadowMap::CASCADES; i++) glBindSampler(8 + i, 0);
+
+  past_.resize(drawList_.size());
+  for (size_t i = 0; i < drawList_.size(); i++) past_[i] = {drawList_[i].mesh, drawList_[i].model};
   glCheck("Renderer::renderScene");
 }
 
@@ -602,6 +621,9 @@ GLuint Renderer::resolveTemporal(const FrameView& fv) {
   glActiveTexture(GL_TEXTURE2);
   glBindTexture(GL_TEXTURE_2D, sceneHdr_.depthTexture());
   taaShader_.set("tDepth", 2);
+  glActiveTexture(GL_TEXTURE3);
+  glBindTexture(GL_TEXTURE_2D, sceneHdr_.auxTexture());
+  taaShader_.set("tVelocity", 3);
   taaShader_.set("uTexel", glm::vec2(1.0f / width_, 1.0f / height_));
   taaShader_.set("uInvViewProjJittered", fv.invViewProj);
   taaShader_.set("uViewProj", fv.cleanViewProj);
@@ -845,7 +867,11 @@ void Renderer::renderFrame(const SceneSource& scene, const Camera& camera, float
   sceneHdr_.bind();
   glDepthFunc(GL_LEQUAL);
   glDepthMask(GL_FALSE);
+  // Only the scene pass has a velocity to write; the sky and the motes have
+  // one output each, and must not be pointed at two.
+  sceneHdr_.useAux(taaOn_);
   renderScene(scene, camera, fv);
+  sceneHdr_.useAux(false);
   renderSky(scene, camera, fv, time);
   renderMotes(scene, camera, fv, time);
   glDepthMask(GL_TRUE);

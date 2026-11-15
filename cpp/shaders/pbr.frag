@@ -27,8 +27,12 @@ in vec3 vViewPos;
 in float vBlend;
 in vec3 vLocalPos;
 in vec3 vLocalNormal;
+in vec4 vClipNow;
+in vec4 vClipThen;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+// How far this pixel's surface moved on screen since the last frame, in uv.
+layout(location = 1) out vec2 fragVelocity;
 
 uniform vec3 uCamPos;
 
@@ -86,7 +90,7 @@ uniform vec3 uFogColour;
 uniform float uInscatter;
 
 uniform int uMaterial;        // MaterialType: 0 armour, 1 terrain, 2 emissive,
-                              //               3 rock, 4 planet
+                              //               3 rock, 4 planet, 5 cloth, 6 skin
 uniform vec3 uTint;
 uniform float uMetallic;
 uniform float uRoughness;
@@ -511,6 +515,44 @@ Surface shadeTerrain(vec3 p, vec3 n, vec3 fp, vec3 baseTint, float blend) {
   return s;
 }
 
+// Cloth: a weave you can only just see, and creases. No seams, no chips, no
+// metal — everything that makes plate read as plate is what makes a coat
+// shaded as plate read as a cardboard box.
+Surface shadeCloth(vec3 p, vec3 n, vec3 fp) {
+  vec3 w = triplanarWeights(n);
+  float hFold, hWeave;
+  vec3 gFold, gWeave;
+  triplanarD(p + 5.3, w, fp, 8.0, 3, hFold, gFold);       // creases, a hand's width apart
+  triplanarD(p, w, fp, 170.0, 2, hWeave, gWeave);         // the thread
+
+  Surface s;
+  s.albedo = uTint * (0.86 + 0.26 * hFold) * (0.94 + 0.12 * hWeave);
+  s.metallic = 0.0;
+  s.roughness = clamp(uRoughness + (hFold - 0.5) * 0.10, 0.35, 1.0);
+  s.cavity = 0.86 + 0.14 * smoothstep(0.30, 0.60, hFold);
+  s.n = perturb(n, gFold * 0.030 + gWeave * 0.0010);
+  return s;
+}
+
+// Skin: nearly smooth, never one flat colour, a little oily.
+Surface shadeSkin(vec3 p, vec3 n, vec3 fp) {
+  vec3 w = triplanarWeights(n);
+  float hTone, hPore;
+  vec3 gTone, gPore;
+  triplanarD(p + 2.1, w, fp, 11.0, 3, hTone, gTone);
+  triplanarD(p, w, fp, 260.0, 2, hPore, gPore);
+
+  Surface s;
+  // Blood shows more in some places than others: the variation is mostly in
+  // the red.
+  s.albedo = uTint * (0.93 + 0.14 * hTone) * vec3(1.0 + 0.06 * (hTone - 0.5), 1.0, 1.0 - 0.04 * (hTone - 0.5));
+  s.metallic = 0.0;
+  s.roughness = clamp(uRoughness + (hTone - 0.5) * 0.12, 0.30, 0.9);
+  s.cavity = 1.0;
+  s.n = perturb(n, gPore * 0.0005);
+  return s;
+}
+
 // ---------------------------------------------------------- anisotropy
 // Bend the reflection vector towards a grain axis before sampling the
 // environment, so a highlight stretches along the grain instead of
@@ -552,20 +594,41 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
   return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+// Skin is not opaque. Light goes in, wanders a few millimetres through the
+// tissue and comes out somewhere else — so the edge of a shadow on a face is
+// not a line, it is a soft band, and the band is red because red is what
+// survives the trip. gSubsurface > 0 turns that on for the material being
+// shaded: the diffuse term is allowed to wrap a little way past the
+// terminator, and the part that only exists because of the wrap is tinted.
+// Without it a face is lit like a painted ball, which is most of what makes
+// a figure read as a mannequin.
+float gSubsurface = 0.0;
+const vec3 SCATTER_TINT = vec3(1.0, 0.32, 0.20);
+
 // One light's worth of surface response: what leaves toward the eye per unit
 // of light arriving along L, cosine included.
 vec3 brdf(vec3 N, vec3 V, vec3 L, float NoV, vec3 albedo, float metallic, float roughness, vec3 F0) {
-  float NoL = max(dot(N, L), 0.0);
-  if (NoL <= 0.0) return vec3(0.0);
+  float nl = dot(N, L);
+  float NoL = max(nl, 0.0);
+  vec3 lobe = vec3(NoL);
+  if (gSubsurface > 0.0) {
+    float wrapped = clamp((nl + gSubsurface) / (1.0 + gSubsurface), 0.0, 1.0);
+    lobe = mix(vec3(NoL), vec3(wrapped), SCATTER_TINT);
+  } else if (NoL <= 0.0) {
+    return vec3(0.0);
+  }
   vec3 H = normalize(V + L);
-  float NoH = max(dot(N, H), 0.0);
   float VoH = max(dot(V, H), 0.0);
-  float D = distributionGGX(NoH, roughness);
-  float G = geometrySmith(NoV, NoL, roughness);
   vec3 F = fresnelSchlick(VoH, F0);
-  vec3 spec = (D * G * F) / max(4.0 * NoV * max(NoL, 0.02), 1e-4);
   vec3 kd = (vec3(1.0) - F) * (1.0 - metallic);
-  return (kd * albedo / PI + spec) * NoL;
+  vec3 result = kd * albedo / PI * lobe;
+  if (NoL > 0.0) {
+    float NoH = max(dot(N, H), 0.0);
+    float D = distributionGGX(NoH, roughness);
+    float G = geometrySmith(NoV, NoL, roughness);
+    result += (D * G * F) / max(4.0 * NoV * max(NoL, 0.02), 1e-4) * NoL;
+  }
+  return result;
 }
 
 // ------------------------------------------------------------- shadows
@@ -726,6 +789,7 @@ vec3 applyFog(vec3 col, vec3 worldPos, float sunlit) {
 }
 
 void main() {
+  fragVelocity = (vClipNow.xy / vClipNow.w - vClipThen.xy / vClipThen.w) * 0.5;
   vec2 screenUv = gl_FragCoord.xy * uInvScreen;
   float sunlit = texture(uShaftMap, screenUv).r;
 
@@ -785,6 +849,12 @@ void main() {
     albedo = shadePlanet(N, uTint, uTint2, uCapExtent, roughOut);
     roughness = roughOut;
     metallic = 0.0;
+  } else if (uMaterial == 5 || uMaterial == 6) {
+    // People. Always in their own frame — they are never bolted to the world.
+    Surface s = uMaterial == 5 ? shadeCloth(pL, nL, fpL) : shadeSkin(pL, nL, fpL);
+    albedo = s.albedo; metallic = 0.0; roughness = s.roughness; cavity = s.cavity;
+    N = normalize(uObjRot * s.n);
+    if (uMaterial == 6) gSubsurface = 0.42;
   } else {  // Rock
     vec3 w = triplanarWeights(N);
     float h; vec3 g;
@@ -819,7 +889,7 @@ void main() {
   vec3 L = normalize(-uSunDir);
   float NoL = max(dot(N, L), 0.0);
   vec3 direct = vec3(0.0);
-  if (NoL > 0.0 && uSunIntensity > 0.0) {
+  if ((NoL > 0.0 || gSubsurface > 0.0) && uSunIntensity > 0.0) {
     float shadow = shadowFactor(-vViewPos.z, geoN, max(dot(geoN, L), 0.0));
     // A crease too small for the shadow map to hold is still a crease.
     float micro = mix(1.0, ao, 0.35);
@@ -860,6 +930,16 @@ void main() {
   vec3 specularIbl = prefiltered * (F0 * ab.x + ab.y) * specOcc;
 
   vec3 ambient = (diffuseIbl + specularIbl) * uIblIntensity + uAmbientFill * albedo * aoDiffuse;
+
+  // Cloth is covered in fibres standing off its surface, and at a glancing
+  // angle you look along them: the edge of a sleeve is paler than its
+  // middle. It is the opposite of what a hard surface does, and the eye
+  // knows the difference without being able to say what it is.
+  if (uMaterial == 5) {
+    float fuzz = pow(1.0 - NoV, 3.5);
+    vec3 nap = mix(albedo, vec3(dot(albedo, vec3(0.3333))), 0.35) * 1.6;
+    ambient += nap * fuzz * (irradiance * uIblIntensity + uAmbientFill) * 0.55 * ao;
+  }
 
   // A planet seen from orbit has air on it: the limb glows where you look
   // through the most of it, on the day side.

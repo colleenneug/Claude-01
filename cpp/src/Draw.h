@@ -5,7 +5,13 @@
 // Material types the pbr fragment shader branches on. Everything shades
 // procedurally from world position/normal (see shaders/pbr.frag) — there
 // are no texture assets in this project.
-enum class MaterialType : int { Armour = 0, Terrain = 1, Emissive = 2, Rock = 3, Planet = 4 };
+//
+// Cloth and Skin are what people are made of. Shading a coat as painted
+// plate gives it panel seams and chipped edges, and shading a face that way
+// gives it rivets; neither material has anything hard-surfaced in it.
+enum class MaterialType : int {
+  Armour = 0, Terrain = 1, Emissive = 2, Rock = 3, Planet = 4, Cloth = 5, Skin = 6
+};
 
 struct DrawItem {
   const Mesh* mesh = nullptr;

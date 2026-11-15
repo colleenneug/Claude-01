@@ -14,6 +14,15 @@ public:
   enum class Format { Rgba8, Rgba16f, R8, R16f };
 
   void create(int w, int h, bool hdr, bool depthTexture);
+  // A second colour attachment, two half-float channels, for a pass that
+  // has two things to say about each pixel. The scene pass uses it for how
+  // far each pixel moved since the last frame (see taa.frag). It is only
+  // written while useAux(true) is in force: every other pass that draws into
+  // this target has one output, and a shader with one output writing to a
+  // target with two leaves the second undefined.
+  void addAux();
+  void useAux(bool on) const;
+  GLuint auxTexture() const { return auxTex_; }
   // No depth attachment at all: a post-processing target that is only ever
   // drawn into with a fullscreen triangle has no use for one.
   void createColour(int w, int h, Format format, bool mipmapped = false);
@@ -29,7 +38,8 @@ public:
 
 private:
   void rebuild();
-  GLuint fbo_ = 0, colorTex_ = 0, depthTex_ = 0, depthRbo_ = 0;
+  GLuint fbo_ = 0, colorTex_ = 0, depthTex_ = 0, depthRbo_ = 0, auxTex_ = 0;
+  bool wantAux_ = false;
   int w_ = 0, h_ = 0;
   bool hdr_ = false, wantDepthTex_ = false;
   Format format_ = Format::Rgba8;

@@ -11,9 +11,11 @@
 // rendering.
 //
 // The catch is that last frame's picture is of last frame's world. Each
-// pixel is traced back to where it was (the camera moved; this reprojects
-// through the depth buffer), and what is found there is only trusted as far
-// as it looks like something that could be here now: it is clipped to the
+// pixel is traced back to where it was — the scene pass writes how far every
+// surface moved on screen, from last frame's camera *and* last frame's model
+// matrix, so this holds for a hostile mid-stride and for the gun in your
+// hand as well as for a wall — and what is found there is only trusted as
+// far as it looks like something that could be here now: it is clipped to the
 // range of colours in this frame's own 3x3 neighbourhood (Karis 2014,
 // Salvi 2016). A thing that was not there last frame is therefore simply
 // not blended, rather than left as a ghost.
@@ -23,6 +25,7 @@ out vec4 fragColor;
 uniform sampler2D tCurrent;
 uniform sampler2D tHistory;
 uniform sampler2D tDepth;
+uniform sampler2D tVelocity;
 uniform vec2 uTexel;
 uniform mat4 uInvViewProjJittered;   // this frame, as drawn
 uniform mat4 uViewProj;              // this frame, without the jitter
@@ -94,16 +97,17 @@ void main() {
       if (d < nearest) { nearest = d; nearestUv = uv; }
     }
   }
-  vec2 historyUv = vUv;
-  // Whatever is within arm's reach is the weapon, which moves with the
-  // camera rather than with the world: it was in the same place on screen
-  // last frame, not wherever a fixed point in the world would have been.
-  if (linearDepth(nearest) > 1.1) {
-    vec4 world = uInvViewProjJittered * vec4(nearestUv * 2.0 - 1.0, nearest * 2.0 - 1.0, 1.0);
+  vec2 historyUv;
+  if (nearest >= 0.99999) {
+    // Sky. Nothing was drawn here, so nothing wrote a velocity; the sky is
+    // infinitely far away and moves only as the camera turns.
+    vec4 world = uInvViewProjJittered * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
     world /= world.w;
     vec4 now = uViewProj * world;
     vec4 then = uPrevViewProj * world;
     historyUv = vUv - (now.xy / now.w - then.xy / then.w) * 0.5;
+  } else {
+    historyUv = vUv - textureLod(tVelocity, nearestUv, 0.0).rg;
   }
   if (any(lessThan(historyUv, vec2(0.0))) || any(greaterThan(historyUv, vec2(1.0)))) {
     fragColor = vec4(current, 1.0);

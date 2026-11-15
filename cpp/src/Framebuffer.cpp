@@ -22,6 +22,17 @@ void Framebuffer::createColour(int w, int h, Format format, bool mipmapped) {
   rebuild();
 }
 
+void Framebuffer::addAux() {
+  wantAux_ = true;
+  rebuild();
+}
+
+void Framebuffer::useAux(bool on) const {
+  const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+  glDrawBuffers(on && auxTex_ ? 2 : 1, both);
+}
+
 void Framebuffer::resize(int w, int h) {
   if (w == w_ && h == h_) return;
   w_ = w; h_ = h;
@@ -32,9 +43,23 @@ void Framebuffer::rebuild() {
   if (colorTex_) glDeleteTextures(1, &colorTex_);
   if (depthTex_) glDeleteTextures(1, &depthTex_);
   if (depthRbo_) glDeleteRenderbuffers(1, &depthRbo_);
-  colorTex_ = depthTex_ = depthRbo_ = 0;
+  if (auxTex_) glDeleteTextures(1, &auxTex_);
+  colorTex_ = depthTex_ = depthRbo_ = auxTex_ = 0;
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+
+  if (wantAux_) {
+    glGenTextures(1, &auxTex_);
+    glBindTexture(GL_TEXTURE_2D, auxTex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, w_, h_, 0, GL_RG, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, auxTex_, 0);
+  }
+  const GLenum first = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &first);
 
   glGenTextures(1, &colorTex_);
   glBindTexture(GL_TEXTURE_2D, colorTex_);
@@ -91,6 +116,7 @@ void Framebuffer::destroy() {
   if (colorTex_) glDeleteTextures(1, &colorTex_);
   if (depthTex_) glDeleteTextures(1, &depthTex_);
   if (depthRbo_) glDeleteRenderbuffers(1, &depthRbo_);
+  if (auxTex_) glDeleteTextures(1, &auxTex_);
   if (fbo_) glDeleteFramebuffers(1, &fbo_);
-  colorTex_ = depthTex_ = depthRbo_ = fbo_ = 0;
+  colorTex_ = depthTex_ = depthRbo_ = auxTex_ = fbo_ = 0;
 }

@@ -7,6 +7,13 @@ uniform mat4 uModel;
 uniform mat3 uNormalMatrix;   // transpose(inverse(model)) — correct under non-uniform scale
 uniform mat4 uView;
 uniform mat4 uProj;
+// Where this vertex is on screen now and where it was a frame ago, both
+// without the anti-aliasing jitter. The difference is how far the surface
+// moved, and the temporal resolve needs that to find last frame's picture
+// of a thing that is not standing still (see taa.frag).
+uniform mat4 uCleanViewProj;
+uniform mat4 uPrevViewProj;
+uniform mat4 uPrevModel;
 
 out vec3 vWorldPos;
 out vec3 vNormal;
@@ -19,6 +26,8 @@ out float vBlend;
 // the world.
 out vec3 vLocalPos;
 out vec3 vLocalNormal;
+out vec4 vClipNow;
+out vec4 vClipThen;
 
 // This vertex stage is shared with the depth pre-pass (prepass.frag), and the
 // colour pass then tests LEQUAL against what the pre-pass wrote. That only
@@ -33,6 +42,8 @@ void main() {
   vBlend = aBlend;
   vLocalPos = aPosition;
   vLocalNormal = aNormal;
+  vClipNow = uCleanViewProj * world;
+  vClipThen = uPrevViewProj * (uPrevModel * vec4(aPosition, 1.0));
 
   vec4 viewPos = uView * world;
   vViewPos = viewPos.xyz;

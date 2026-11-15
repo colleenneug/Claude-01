@@ -174,6 +174,17 @@ private:
 
   std::vector<DrawItem> drawList_;  // scratch, refilled every frame
 
+  // Last frame's draw list, as far as motion needs it: where each item was.
+  // Items are matched to their past selves by position in the list, which
+  // every scene builds in the same order each frame. When something appears
+  // or disappears part-way down, the items after it are briefly matched to
+  // the wrong neighbour; previousModel() refuses any match that is a
+  // different mesh or an implausible distance away, and an item with no
+  // believable past is treated as having stood still.
+  struct Past { const Mesh* mesh; glm::mat4 model; };
+  std::vector<Past> past_;
+  glm::mat4 previousModel(size_t index, const DrawItem& item) const;
+
   static constexpr int kMaxLights = 16;   // must match MAX_LIGHTS in pbr.frag
   int lightCount_ = 0;
   glm::vec4 lightPos_[kMaxLights], lightColour_[kMaxLights], lightAxis_[kMaxLights];

@@ -40,6 +40,7 @@ public:
     glm::vec3 skin{0.62f, 0.46f, 0.36f};
     glm::vec3 hair{0.16f, 0.12f, 0.10f};
     glm::vec3 trousers{0.22f, 0.23f, 0.26f};
+    glm::vec3 eyes{0.20f, 0.13f, 0.08f};
     int hairStyle = 0;           // 0 short, 1 cropped, 2 tied back, 3 under a cap
     Posture posture = Posture::Neutral;
 
@@ -47,8 +48,13 @@ public:
     // were put. `phase` keeps two people side by side from moving in lockstep.
     std::vector<glm::vec3> route;
     size_t leg = 0;
-    float speed = 1.6f;
+    float speed = 1.3f;
     float phase = 0.0f;
+    // Where in its step cycle a walker is. Advanced by distance covered, not
+    // by the clock: a foot on the ground stays where it was put only if the
+    // legs turn over exactly as fast as the body moves over them, and when
+    // they do not the figure skates.
+    float stride = 0.0f;
   };
 
   // Loads the content/crew/*.cfg files belonging to `station`, plus the
