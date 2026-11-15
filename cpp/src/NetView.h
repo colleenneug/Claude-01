@@ -32,9 +32,16 @@ struct Social {
 // a squad invite). Returns true while the screen is open.
 bool socialInput(GLFWwindow* window, Social& social, net::Client& client);
 
-// Nameplates over other players, the corner panel, notices, and the social
-// screen when it is open. Draws its own Hud batch.
+// What the HUD needs from a PvP fight that only the game knows.
+struct Pvp {
+  bool on = false;
+  float respawnIn = 0.0f;   // seconds on the floor left, 0 when up
+  float hitMarker = 0.0f;   // a round of yours just reached somebody
+};
+
+// Nameplates over other players, the corner panel, notices, the PvP
+// scoreboard, and the social screen when it is open. Draws its own Hud batch.
 void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, const glm::mat4& viewProj,
-             const glm::vec3& eye, const Social& social);
+             const glm::vec3& eye, const Social& social, const Pvp& pvp = Pvp{});
 
 }  // namespace netview

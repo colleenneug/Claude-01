@@ -421,6 +421,9 @@ void Hud::draw(int screenW, int screenH, const State& s) {
 
   // ---- mission name + wave progress, top-centre
   float wx = cx - 160, wy = 34, ww = 320, wh = 10;
+  if (s.hideProgress) {
+    // nothing: the PvP scoreboard sits here
+  } else {
   if (!s.missionName.empty()) {
     textCentered(cx, wy - 20, s.missionName, 2.0f, glm::vec4(s.accent, 0.9f));
   }
@@ -430,6 +433,7 @@ void Hud::draw(int screenW, int screenH, const State& s) {
   std::snprintf(buf, sizeof(buf), "%d%%", (int)std::lround(std::clamp(s.waveFrac, 0.0f, 1.0f) * 100.0f));
   text(wx + ww + 10, wy, buf, 1.8f, dim);
   text(wx - 10 - textWidth("CLEARED", 1.8f), wy, "CLEARED", 1.8f, dim);
+  }
 
   if (s.bossAlive) {
     // Far enough below the wave bar that the boss's name has room to sit

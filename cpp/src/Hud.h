@@ -76,6 +76,7 @@ public:
 
     std::string missionName;
     float waveFrac = 0.0f;
+    bool hideProgress = false;   // the Pit: its score is the progress (NetView)
     bool bossAlive = false;
     float bossHpFrac = 0.0f;
     std::string bossName;

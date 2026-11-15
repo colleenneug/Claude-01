@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 
 namespace netview {
 namespace {
@@ -106,6 +107,7 @@ void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>
     DrawItem lit = plate;
     lit.material = MaterialType::Emissive;
     lit.emissive = r.squadmate ? kSquad : kOther;
+    if (r.id == client.leader() && client.leader() != 0) lit.emissive = glm::vec3(1.0f, 0.82f, 0.30f) * (1.4f + 0.6f * std::sin(time * 6.0f));
     lit.emissiveIntensity = 2.2f;
     lit.castShadow = false;
 
@@ -151,7 +153,6 @@ void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>
       flash.emissiveIntensity = 7.0f;
       part(out, flash, sph, aim, {0.08f, -0.02f, -0.32f - len}, {0.16f, 0.16f, 0.22f});
     }
-    (void)time;
   }
 }
 
@@ -206,7 +207,7 @@ bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
 }
 
 void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, const glm::mat4& viewProj,
-             const glm::vec3& eye, const Social& social) {
+             const glm::vec3& eye, const Social& social, const Pvp& pvp) {
   if (!client.enabled()) return;
   hud.begin(screenW, screenH);
   const glm::vec4 dim(0.72f, 0.78f, 0.86f, 0.9f);
@@ -220,6 +221,17 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
     const glm::vec3 head = r.pos + glm::vec3(0, 2.15f, 0);
     if (!Hud::worldToScreen(viewProj, head, screenW, screenH, at)) continue;
     const float dist = glm::length(head - eye);
+    // The leader of a PvP match is singing, and the song carries: everyone
+    // sees where they are, through walls, at any range.
+    if (pvp.on && r.id == client.leader()) {
+      const glm::vec4 gold(1.0f, 0.82f, 0.30f, 0.95f);
+      hud.textCentered(at.x, at.y - 22, "SINGING", 1.5f, gold);
+      hud.textCentered(at.x, at.y, r.name, 1.8f, gold);
+      char m[16];
+      std::snprintf(m, sizeof(m), "%dM", (int)dist);
+      hud.textCentered(at.x, at.y + 18, m, 1.3f, gold);
+      continue;
+    }
     if (dist > 120.0f) continue;
     const float a = 1.0f - std::clamp((dist - 20.0f) / 100.0f, 0.0f, 0.7f);
     const float scale = dist > 30.0f ? 1.4f : 1.8f;
@@ -254,6 +266,48 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
     for (const net::SquadMember& m : client.squad()) {
       hud.text(x + 10, y, (m.id == client.id() ? "> " : "  ") + m.name + "   " + upper(m.place), 1.35f, dim);
       y += 22;
+    }
+  }
+
+  // ---- PvP: the score along the top, the floor timer, the result
+  if (pvp.on) {
+    const float cx = screenW * 0.5f;
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "THE PIT  -  FIRST TO %d", client.scoreLimit());
+    hud.rect(cx - 210, 12, 420, 26.0f + 22.0f * (float)std::min<size_t>(client.score().size(), 6),
+             glm::vec4(0.03f, 0.04f, 0.06f, 0.55f));
+    hud.textCentered(cx, 18, buf, 1.6f, amber);
+    float sy = 42;
+    for (size_t i = 0; i < client.score().size() && i < 6; i++) {
+      const net::ScoreRow& row = client.score()[i];
+      const bool me = row.id == client.id();
+      const bool lead = row.id == client.leader();
+      std::snprintf(buf, sizeof(buf), "%s%-14s %3d", lead ? "> " : "  ", row.name.c_str(), row.downs);
+      hud.textCentered(cx, sy, buf, 1.5f,
+                       lead ? glm::vec4(1.0f, 0.82f, 0.30f, 0.98f) : me ? cyan : dim);
+      sy += 22;
+    }
+    if (client.leader() == client.id())
+      hud.textCentered(cx, screenH - 120.0f, "YOU ARE SINGING - EVERYONE CAN SEE YOU", 1.8f,
+                       glm::vec4(1.0f, 0.82f, 0.30f, 0.95f));
+    if (pvp.respawnIn > 0.0f) {
+      std::snprintf(buf, sizeof(buf), "DOWN  -  UP AGAIN IN %.1f", pvp.respawnIn);
+      hud.rect(0, screenH * 0.5f - 30, (float)screenW, 60, glm::vec4(0.25f, 0.03f, 0.03f, 0.45f));
+      hud.textCentered(cx, screenH * 0.5f - 10, buf, 2.6f, bright);
+    }
+    if (pvp.hitMarker > 0.0f) {
+      const float a = std::clamp(pvp.hitMarker * 4.0f, 0.0f, 1.0f);
+      const float cy = screenH * 0.5f;
+      for (int k = 0; k < 4; k++) {
+        const float dx = (k & 1) ? 9.0f : -15.0f, dy = (k & 2) ? 9.0f : -15.0f;
+        hud.rect(cx + dx, cy + dy, 6, 6, glm::vec4(1.0f, 0.36f, 0.30f, a));
+      }
+    }
+    if (!client.winner().empty()) {
+      const std::string line = client.winner() == client.name() ? "YOU WIN THE PIT" : upper(client.winner()) + " WINS THE PIT";
+      hud.rect(0, screenH * 0.36f - 16, (float)screenW, 70, glm::vec4(0.03f, 0.04f, 0.06f, 0.75f));
+      hud.textCentered(cx, screenH * 0.36f, line, 3.2f, glm::vec4(1.0f, 0.82f, 0.30f, 0.98f));
+      hud.textCentered(cx, screenH * 0.36f + 34, "NEXT MATCH IN A MOMENT", 1.5f, dim);
     }
   }
 

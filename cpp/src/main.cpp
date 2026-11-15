@@ -691,6 +691,8 @@ int main(int argc, char** argv) {
   const char* netLogPath = std::getenv("EREBUS_NET_LOG");
   bool netInvited = false, netBefriended = false;
   int netPeakRemotes = 0, netPeakSquad = 0;   // most seen at once, for the log
+  int netTopScore = 0, netDowns = 0;
+  std::string netWinner;
   float lastMuzzle = 0.0f;
 
   // The end of a frame: dump a screenshot if this was the last one, and say
@@ -777,7 +779,7 @@ int main(int argc, char** argv) {
         place = md ? md->name : game.missionId();
         // A planet's patrol is the free-roam space everyone shares; anything
         // on a campaign ladder is a fireteam's mission.
-        activity = md && md->campaignIndex == 0 ? "freeroam" : "mission";
+        activity = md && md->mode == "pvp" ? "pvp" : md && md->campaignIndex == 0 ? "freeroam" : "mission";
         const Player& gp = game.player();
         feet = gp.position;
         hp01 = gp.maxHp > 0.0f ? std::max(0.0f, gp.hp / gp.maxHp) : 1.0f;
@@ -812,6 +814,31 @@ int main(int argc, char** argv) {
       netPeakRemotes = std::max(netPeakRemotes, (int)netClient.remotes().size());
       netPeakSquad = std::max(netPeakSquad, (int)netClient.squad().size());
       netview::socialInput(window, social, netClient);
+      // PvP: where everyone is, for your shots; your hits out, theirs in,
+      // and your downs to the server, which keeps the score.
+      if (state == AppState::Mission && gameEverStarted && game.pvp()) {
+        std::vector<Game::NetTarget> targets;
+        for (const net::Remote& r : netClient.remotes()) {
+          Game::NetTarget t;
+          t.id = r.id;
+          t.feet = r.pos;
+          t.down = (r.flags & 2u) != 0;
+          targets.push_back(t);
+        }
+        game.setNetTargets(targets);
+        for (const Game::NetHit& h : game.takeNetHits()) netClient.sendHit(h.id, h.damage, h.head);
+        for (const net::IncomingHit& h : netClient.takeHits()) game.takeNetDamage(h.from, h.damage, h.head);
+        uint64_t killer = 0;
+        if (game.takeNetDeath(killer)) {
+          netClient.sendKill(killer, game.scoreLimit());
+          netDowns++;
+        }
+        for (const net::ScoreRow& row : netClient.score()) netTopScore = std::max(netTopScore, row.downs);
+        if (!netClient.winner().empty()) netWinner = netClient.winner();
+      } else if (gameEverStarted) {
+        game.setNetTargets({});
+        netClient.takeHits();
+      }
       if (state == AppState::Mission) netview::collectRemotes(netClient, (float)now, game.extras);
       else if (state == AppState::Station) netview::collectRemotes(netClient, (float)now, station.extras);
     }
@@ -1522,6 +1549,19 @@ int main(int argc, char** argv) {
             dirVisible = glm::normalize(target - eye);
           }
         }
+        // In the Pit the targets are the other players.
+        if (game.pvp()) {
+          for (const net::Remote& r : netClient.remotes()) {
+            if (r.flags & 2u) continue;
+            glm::vec3 target = r.pos + glm::vec3(0.0f, 1.25f, 0.0f);
+            float d = glm::length(target - eye);
+            if (d < bestAny) { bestAny = d; dirAny = glm::normalize(target - eye); }
+            if (d < bestVisible && game.level().lineOfSight(eye, target)) {
+              bestVisible = d;
+              dirVisible = glm::normalize(target - eye);
+            }
+          }
+        }
         glm::vec3 bestDir = bestVisible < 1e8f ? dirVisible : dirAny;
         autoSeesTarget = !game.expedition() || bestVisible < 60.0f;
         // On an expedition the aid also walks the route: toward the arrow
@@ -1729,6 +1769,7 @@ int main(int argc, char** argv) {
       hs.hitMarkerT = game.hitMarkerT;
       hs.damageFlashT = game.damageFlashT;
       hs.missionName = game.missionName();
+      hs.hideProgress = game.pvp();
       hs.waveFrac = game.waveProgress();
       hs.bossAlive = game.bossAlive();
       hs.bossHpFrac = game.bossHpFraction();
@@ -2020,16 +2061,24 @@ int main(int argc, char** argv) {
     if (netClient.enabled() &&
         (state == AppState::Station || state == AppState::Mission || state == AppState::Space)) {
       glfwGetFramebufferSize(window, &width, &height);
-      netview::drawHud(hud, width, height, netClient, renderer.lastViewProj(), camera.position, social);
+      netview::Pvp pv;
+      if (state == AppState::Mission && gameEverStarted && game.pvp()) {
+        pv.on = true;
+        pv.respawnIn = game.respawnIn();
+        pv.hitMarker = game.netHitMarker();
+      }
+      netview::drawHud(hud, width, height, netClient, renderer.lastViewProj(), camera.position, social, pv);
     }
     if (netLogPath && maxFrames > 0 && frame + 1 >= maxFrames) {
       if (FILE* f = std::fopen(netLogPath, "w")) {
         std::fprintf(f, "{\"enabled\":%s,\"connected\":%s,\"place\":\"%s\",\"instance\":\"%s\",\"remotes\":%d,"
-                        "\"squad\":%d,\"squadLimit\":%d,\"friends\":%d,\"savedFriends\":%d,\"peakRemotes\":%d,\"peakSquad\":%d,\"names\":[",
+                        "\"squad\":%d,\"squadLimit\":%d,\"friends\":%d,\"savedFriends\":%d,\"peakRemotes\":%d,\"peakSquad\":%d,"
+                        "\"topScore\":%d,\"downs\":%d,\"winner\":\"%s\",\"names\":[",
                      netClient.enabled() ? "true" : "false", netClient.connected() ? "true" : "false",
                      netClient.place().c_str(), netClient.instance().c_str(), (int)netClient.remotes().size(),
                      (int)netClient.squad().size(), netClient.squadLimit(), (int)netClient.friends().size(),
-                     (int)profile.friends.size(), netPeakRemotes, netPeakSquad);
+                     (int)profile.friends.size(), netPeakRemotes, netPeakSquad,
+                     netTopScore, netDowns, netWinner.c_str());
         for (size_t i = 0; i < netClient.remotes().size(); i++)
           std::fprintf(f, "%s\"%s\"", i ? "," : "", netClient.remotes()[i].name.c_str());
         std::fprintf(f, "]}\n");

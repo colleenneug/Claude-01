@@ -38,6 +38,8 @@ enum class Msg : uint8_t {
   SquadInvite,      // target id
   SquadAccept,      // inviter id
   SquadLeave,
+  Hit,              // target id, damage, head: my round reached them (PvP)
+  Kill,             // killer id: they put me down (PvP)
   // server -> client
   Welcome = 64,     // the instance you are in
   Snapshot,         // everyone else in your instance
@@ -48,6 +50,9 @@ enum class Msg : uint8_t {
   SquadInviteFrom,  // id, name
   Squad,            // squad id, limit, members
   Notice,           // a line of text for the corner of the screen
+  HitFrom,          // attacker id, damage, head
+  Score,            // limit, leader id, count, (id, name, downs)...
+  MatchOver,        // winner name; scores reset a few seconds later
 };
 
 // The most players a squad can hold for what it is doing. A campaign mission

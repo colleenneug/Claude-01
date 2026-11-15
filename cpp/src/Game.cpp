@@ -1,4 +1,5 @@
 #include "Game.h"
+#include <ctime>
 #include "Audio.h"
 #include "Waypoint.h"
 #include <algorithm>
@@ -236,6 +237,14 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   player_.position = usingSite_ ? site_.playerSpawn
                                 : glm::vec3(0.0f, level_.floorY(), 0.0f);
   player_.hp = player_.maxHp;
+  if (pvp()) {
+    // Everyone loads into the Pit at once; nobody should load into the same
+    // square metre, so the first spawn is as random as the later ones.
+    pvpRng_ ^= (unsigned)std::time(nullptr) * 2654435761u ^ (unsigned)(uintptr_t)this;
+    respawnT_ = 0.0f;
+    netDied_ = false;
+    pvpRespawn();
+  }
 
   // A site places its own hostiles, by hand, in the rooms they are standing
   // in. Most of them are asleep until the room's trigger fires — the
@@ -1022,6 +1031,12 @@ void Game::explode(const glm::vec3& at, float radius, float damage, int directHi
     const float k = (int)i == directHit ? 1.0f : 1.0f - 0.6f * std::clamp(d / r, 0.0f, 1.0f);
     damageHostile(i, damage * k * (primed ? 1.5f : 1.0f), primed, at);
   }
+  for (const NetTarget& t : netTargets_) {
+    if (t.down) continue;
+    const float d = glm::length(t.feet + glm::vec3(0, 1.0f, 0) - at) - 0.5f;
+    if (d > r) continue;
+    netHit(t.id, damage * (1.0f - 0.6f * std::clamp(d / r, 0.0f, 1.0f)) * (primed ? 1.5f : 1.0f), primed);
+  }
   for (int k = 0; k < 10; k++) {
     const float a = (float)k * 0.628f;
     addImpact(at + glm::vec3(std::cos(a), 0.3f + 0.1f * (float)(k % 3), std::sin(a)) * (r * 0.35f),
@@ -1060,7 +1075,12 @@ void Game::updateProjectiles(float dt) {
         const float fuse = p.gravity > 0.0f ? 0.7f : 0.12f;
         if (glm::length(t.bodyCentre() - p.pos) < t.type->radius * 1.15f * t.bossScale + fuse) { hit = (int)i; break; }
       }
-      bool wall = p.pos.y <= level_.floorY() + 0.05f;
+      bool player = false;
+      for (const NetTarget& t : netTargets_) {
+        if (!t.down && glm::length(t.feet + glm::vec3(0, 1.0f, 0) - p.pos) < 0.6f + (p.gravity > 0.0f ? 0.7f : 0.12f))
+          player = true;
+      }
+      bool wall = player || p.pos.y <= level_.floorY() + 0.05f;
       for (const Collider& c : level_.colliders()) {
         if (wall) break;
         wall = p.pos.x > c.min.x && p.pos.x < c.max.x && p.pos.y > c.min.y && p.pos.y < c.max.y &&
@@ -1525,7 +1545,9 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
         projectiles_.push_back(p);
       }
     } else {
+      const bool hadRound = weapon_.canFire();
       weapon_.fire(camera.position, camera.forward(), level_, hostiles_, shotBuffer_);
+      if (hadRound && !netTargets_.empty()) netShoot(camera.position, camera.forward());
     }
     {
       lootRng_ = lootRng_ * 1664525u + 1013904223u;
@@ -1677,7 +1699,26 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
 
   if (waveProgress() >= 0.5f) fireComms(CommsTrigger::HalfCleared);
 
-  if (!player_.alive() && !downed()) {
+  netHitT_ = std::max(0.0f, netHitT_ - dt);
+  if (pvp()) {
+    // In the Pit a down is a point to whoever did it and three seconds on
+    // the floor, then up again somewhere else. Never a failed mission.
+    if (!player_.alive() && respawnT_ <= 0.0f) {
+      tally_.downs++;
+      netDied_ = true;
+      netKiller_ = lastAttacker_;
+      respawnT_ = 3.0f;
+      audio::play(Sfx::Downed);
+    }
+    if (respawnT_ > 0.0f) {
+      respawnT_ -= dt;
+      player_.velocity = glm::vec3(0.0f);
+      if (respawnT_ <= 0.0f) {
+        respawnT_ = 0.0f;
+        pvpRespawn();
+      }
+    }
+  } else if (!player_.alive() && !downed()) {
     // Down, not out — if the harness has a charge left. A boss is issued
     // none (see init), so dying to one means taking the fight from the top.
     tally_.downs++;
@@ -1702,7 +1743,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     }
   }
 
-  if (player_.alive() && !downed()) {
+  if (!pvp() && player_.alive() && !downed()) {
     bool wavesClear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                                   [](const Hostile& h) { return h.state == HostileState::Gone; });
     bool bossClear = bossIndex_ < 0 || hostiles_[bossIndex_].state == HostileState::Gone;
@@ -2423,4 +2464,101 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
     it.castShadow = false;
     out.push_back(it);
   }
+}
+
+// ---------------------------------------------------------------- online PvP
+
+void Game::netHit(uint64_t id, float damage, bool head) {
+  for (NetHit& h : netHits_) {
+    if (h.id == id) {
+      h.damage += damage;
+      h.head = h.head || head;
+      return;
+    }
+  }
+  NetHit h;
+  h.id = id;
+  h.damage = damage;
+  h.head = head;
+  netHits_.push_back(h);
+  netHitT_ = 0.25f;
+}
+
+// A hitscan round against the other players: the nearest one the ray
+// reaches before the weapon's range or a wall. Two spheres each — head and
+// body — the same shape a Cyber's hit test uses. A spread weapon lands more
+// of its pellets the closer you are.
+void Game::netShoot(const glm::vec3& origin, const glm::vec3& dir) {
+  auto raySphere = [](const glm::vec3& o, const glm::vec3& d, const glm::vec3& c, float r) {
+    const glm::vec3 oc = o - c;
+    const float b = glm::dot(oc, d);
+    const float cc = glm::dot(oc, oc) - r * r;
+    const float disc = b * b - cc;
+    if (disc < 0.0f) return -1.0f;
+    const float t = -b - std::sqrt(disc);
+    return t >= 0.0f ? t : -1.0f;
+  };
+  int best = -1;
+  float bestT = weapon_.range;
+  bool bestHead = false;
+  for (size_t i = 0; i < netTargets_.size(); i++) {
+    const NetTarget& t = netTargets_[i];
+    if (t.down) continue;
+    const float hd = raySphere(origin, dir, t.feet + glm::vec3(0, 1.74f, 0), 0.24f);
+    const float bd = std::max(raySphere(origin, dir, t.feet + glm::vec3(0, 1.25f, 0), 0.42f),
+                              raySphere(origin, dir, t.feet + glm::vec3(0, 0.55f, 0), 0.36f));
+    const bool head = hd >= 0.0f && (bd < 0.0f || hd <= bd);
+    const float d = head ? hd : bd;
+    if (d < 0.0f || d >= bestT) continue;
+    if (!level_.lineOfSight(origin, origin + dir * d)) continue;
+    best = (int)i;
+    bestT = d;
+    bestHead = head;
+  }
+  if (best < 0) return;
+  float dmg = weapon_.damage;
+  if (weapon_.pellets > 1) dmg *= (float)weapon_.pellets * std::clamp(9.0f / std::max(bestT, 1.0f), 0.15f, 1.0f);
+  if (bestHead) dmg *= weapon_.headshotMultiplier;
+  netHit(netTargets_[(size_t)best].id, dmg, bestHead);
+  addImpact(origin + dir * bestT, glm::vec3(1.0f, 0.36f, 0.30f));
+}
+
+void Game::takeNetDamage(uint64_t from, float damage, bool head) {
+  if (!pvp() || respawnT_ > 0.0f || !player_.alive()) return;
+  const float dmg = damage * (1.0f - player_.damageReduction);
+  const bool hadShield = player_.overshield > 0.0f;
+  player_.takeDamage(dmg);
+  player_.hp = std::max(0.0f, player_.hp);
+  lastAttacker_ = from;
+  audio::play(head ? Sfx::ShieldBreak : Sfx::Hurt, std::min(1.0f, 0.5f + dmg * 0.03f));
+  if (hadShield && player_.overshield <= 0.0f) audio::play(Sfx::ShieldBreak);
+  damageFlashT = 0.4f;
+}
+
+// Up again, as far from everyone else as a handful of tries can find.
+void Game::pvpRespawn() {
+  const float ring = std::max(8.0f, mission_.arenaSize * 0.32f);
+  glm::vec3 best = player_.position;
+  float bestScore = -1.0f;
+  for (int k = 0; k < 8; k++) {
+    pvpRng_ = pvpRng_ * 1664525u + 1013904223u;
+    const float a = (float)(pvpRng_ >> 8) / 16777216.0f * 6.2831853f;
+    pvpRng_ = pvpRng_ * 1664525u + 1013904223u;
+    const float rr = ring * (0.45f + 0.55f * (float)(pvpRng_ >> 8) / 16777216.0f);
+    glm::vec3 p(std::cos(a) * rr, level_.floorY(), std::sin(a) * rr);
+    level_.resolve(p, player_.radius, player_.height);
+    float nearest = 1e9f;
+    for (const NetTarget& t : netTargets_) nearest = std::min(nearest, glm::length(t.feet - p));
+    if (nearest > bestScore) {
+      bestScore = nearest;
+      best = p;
+    }
+  }
+  player_.position = best;
+  player_.velocity = glm::vec3(0.0f);
+  player_.hp = player_.maxHp;
+  player_.overshield = 0.0f;
+  player_.eyeHeight = 1.68f;
+  lastAttacker_ = 0;
+  weapon_.ammoInMag = weapon_.magSize;
 }

@@ -267,8 +267,8 @@ steps out of trouble with the next round primed.
 at a time, five armour pieces, five cosmetics, eight enemy archetypes, an
 eleven-rung rank ladder, eleven crew across two walkable hubs, each with
 their own bounty board and service (thirty-one bounties, sixteen upgrades),
-four ships, twenty-nine missions (the nineteen of THE FIRST ATTACK, seven
-side contracts, and three test fixtures), six destinations —
+four ships, thirty missions (the nineteen of THE FIRST ATTACK, seven
+side contracts, the Pit for player-versus-player, and three test fixtures), six destinations —
 including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
 text files, not a code change (see *Content* below). Online play is in —
@@ -306,10 +306,24 @@ you into their instance instead.
   bar, everyone else in amber — and a corner panel with your instance and
   squad.
 
-What is shared today is *who is where*: positions, aim, health, shots fired.
-Each game still runs its own enemies, so two players in the same patrol see
-each other fight but not the same Cybers. Shared enemies (real co-op) and
-the PvP modes are the next layer, on top of the same server.
+What is shared in the open places is *who is where*: positions, aim,
+health, shots fired. Each game still runs its own enemies, so two players in
+the same patrol see each other fight but not the same Cybers — shared
+enemies (real co-op) are the next layer, on top of the same server.
+
+**The Pit** is the first player-versus-player mode, and not quite a
+Crucible: free-for-all under the hideout, first to ten downs, and whoever is
+*leading* is "singing" — the room's old resonance tap picks them up, and
+everyone else sees their name, a gold glow and their distance through every
+wall. Leading makes you the target. Rounds really travel: your game finds
+who your shot reached (head and body, walls in the way, shotgun pellets
+falling off with range, rocket splash) and the server delivers the hit to
+that player, who takes it through their own armour. A down is three seconds
+on the floor and up again as far from everyone as a few tries can find. The
+server keeps the score and starts a new match eight seconds after a win.
+Launch it from the mission counter like any side contract; it is
+`content/missions/the_pit.cfg` with `mode = pvp` and `score_limit = 10`, so
+a second arena is a second file.
 
 **Hosting.** The game *is* the server — no other program:
 

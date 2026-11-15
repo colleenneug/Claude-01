@@ -44,6 +44,18 @@ struct Invite {
   bool squad = false;        // a squad invite; otherwise a friend request
 };
 
+struct IncomingHit {
+  uint64_t from = 0;
+  float damage = 0.0f;
+  bool head = false;
+};
+
+struct ScoreRow {
+  uint64_t id = 0;
+  std::string name;
+  int downs = 0;
+};
+
 struct SquadMember {
   uint64_t id = 0;
   std::string name, place;
@@ -76,6 +88,16 @@ public:
   void inviteToSquad(uint64_t id);
   void accept(const Invite& in);
   void leaveSquad();
+
+  // PvP.
+  void sendHit(uint64_t target, float damage, bool head);
+  void sendKill(uint64_t killer, int scoreLimit);
+  std::vector<IncomingHit> takeHits();
+  const std::vector<ScoreRow>& score() const { return score_; }
+  int scoreLimit() const { return scoreLimit_; }
+  uint64_t leader() const { return leader_; }
+  // The last match's winner, while the result is still up.
+  const std::string& winner() const { return winnerT_ > 0.0f ? winner_ : empty_; }
 
   const std::vector<Remote>& remotes() const { return remotes_; }
   const std::vector<Friend>& friends() const { return friends_; }
@@ -121,6 +143,12 @@ private:
   std::deque<Invite> invites_;
   std::deque<std::pair<std::string, float>> notices_;
   std::vector<std::pair<uint64_t, std::string>> newFriends_;
+  std::vector<IncomingHit> hits_;
+  std::vector<ScoreRow> score_;
+  int scoreLimit_ = 10;
+  uint64_t leader_ = 0;
+  std::string winner_, empty_;
+  float winnerT_ = 0.0f;
   bool found_ = false;
   uint64_t foundId_ = 0;
   std::string foundName_;

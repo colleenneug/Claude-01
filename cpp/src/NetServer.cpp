@@ -34,6 +34,12 @@ struct Instance {
   std::string place;
   int number = 1;              // the 1 in "DUST SHELF 1"
   std::vector<uint64_t> members;
+  // PvP: downs per player, first to `limit` wins; the leader is the one the
+  // song marks for everybody else.
+  std::map<uint64_t, int> score;
+  int limit = 10;
+  uint64_t leader = 0;
+  double resetAt = 0.0;        // a match just ended: scores clear at this time
 };
 
 std::string upper(std::string s) {
@@ -71,6 +77,7 @@ public:
       if (t >= nextPresence) {
         presence();
         dropSilent(t);
+        resetMatches(t);
         nextPresence = t + 1.0;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -111,6 +118,10 @@ private:
   void leaveInstance(Player& p) {
     if (Instance* in = instanceById(p.instance)) {
       in->members.erase(std::remove(in->members.begin(), in->members.end(), p.id), in->members.end());
+      if (in->score.erase(p.id)) {
+        if (in->leader == p.id) in->leader = 0;
+        sendScore(*in);
+      }
     }
     p.instance = -1;
     // An empty instance goes; the next arrival gets a fresh one.
@@ -158,6 +169,7 @@ private:
     w.str(instanceName(*target));
     w.u16((uint16_t)target->members.size());
     send(p, w);
+    if (p.activity == "pvp") sendScore(*target);
     std::printf("[Server] %s -> %s (%zu here)\n", p.name.c_str(), instanceName(*target).c_str(),
                 target->members.size());
     std::fflush(stdout);
@@ -375,12 +387,104 @@ private:
       case Msg::SquadLeave:
         leaveSquad(p);
         break;
+      case Msg::Hit: {
+        const uint64_t tid = r.u64();
+        const float dmg = r.f32();
+        const uint8_t head = r.u8();
+        auto t = players_.find(tid);
+        if (!r.ok || t == players_.end()) break;
+        // Only between two players in the same PvP instance, and nothing
+        // absurd: a client can lie, but not by a whole health bar per round.
+        if (t->second.instance != p.instance || p.activity != "pvp" || t->second.activity != "pvp") break;
+        Writer w;
+        header(w, Msg::HitFrom);
+        w.u64(id);
+        w.f32(std::clamp(dmg, 0.0f, 250.0f));
+        w.u8(head);
+        send(t->second, w);
+        break;
+      }
+      case Msg::Kill: {
+        const uint64_t killer = r.u64();
+        const int limit = r.u8();
+        Instance* in = instanceById(p.instance);
+        if (!r.ok || !in || p.activity != "pvp") break;
+        if (limit > 0) in->limit = limit;
+        auto k = players_.find(killer);
+        if (in->resetAt > 0.0) break;            // between matches
+        if (k == players_.end() || killer == id || k->second.instance != p.instance) {
+          broadcastNotice(*in, upper(p.name) + " WENT DOWN");
+          break;
+        }
+        const int now_ = ++in->score[killer];
+        in->score.emplace(id, 0);
+        broadcastNotice(*in, upper(k->second.name) + " DOWNED " + upper(p.name));
+        int best = 0;
+        for (auto& sc : in->score) best = std::max(best, sc.second);
+        if (now_ >= best) in->leader = killer;
+        sendScore(*in);
+        if (now_ >= in->limit) {
+          for (uint64_t mid : in->members) {
+            Writer w;
+            header(w, Msg::MatchOver);
+            w.str(k->second.name);
+            send(players_[mid], w);
+          }
+          in->resetAt = now() + 8.0;
+          std::printf("[Server] %s won in %s\n", k->second.name.c_str(), instanceName(*in).c_str());
+          std::fflush(stdout);
+        }
+        break;
+      }
       default:
         break;
     }
   }
 
   void place_(Player& p) { place(p); }
+
+  void broadcastNotice(const Instance& in, const std::string& text) {
+    for (uint64_t mid : in.members) {
+      auto m = players_.find(mid);
+      if (m != players_.end()) notice(m->second, text);
+    }
+  }
+
+  void sendScore(const Instance& in) {
+    Writer w;
+    header(w, Msg::Score);
+    w.u8((uint8_t)in.limit);
+    w.u64(in.leader);
+    std::vector<std::pair<uint64_t, int>> rows;
+    for (uint64_t mid : in.members) {
+      auto sc = in.score.find(mid);
+      rows.push_back({mid, sc == in.score.end() ? 0 : sc->second});
+    }
+    std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    if (rows.size() > 16) rows.resize(16);
+    w.u8((uint8_t)rows.size());
+    for (const auto& row : rows) {
+      auto m = players_.find(row.first);
+      w.u64(row.first);
+      w.str(m != players_.end() ? m->second.name : std::string("?"));
+      w.u16((uint16_t)row.second);
+    }
+    for (uint64_t mid : in.members) {
+      auto m = players_.find(mid);
+      if (m != players_.end()) send(m->second, w);
+    }
+  }
+
+  void resetMatches(double t) {
+    for (Instance& in : instances_) {
+      if (in.resetAt <= 0.0 || t < in.resetAt) continue;
+      in.resetAt = 0.0;
+      in.score.clear();
+      in.leader = 0;
+      sendScore(in);
+      broadcastNotice(in, "NEW MATCH - FIRST TO " + std::to_string(in.limit));
+    }
+  }
 
   void snapshots() {
     for (const Instance& in : instances_) {

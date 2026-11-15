@@ -210,6 +210,12 @@ struct MissionDef {
   // Defaulted to "cradle" so the sixteen files that were written before
   // there were two campaigns keep meaning what they meant.
   std::string campaign = "cradle";
+  // `mode = pvp`: an arena for Striders to fight each other online, not a
+  // fight against the Cybers. No waves, no clear, no failure: you are put
+  // back on your feet somewhere else and the server keeps the score, first
+  // to `score_limit` downs.
+  std::string mode;
+  int scoreLimit = 10;
   // Where aboard the ark it happens. Missions that share a zone share a look.
   std::string zone;
 

@@ -66,6 +66,9 @@ void Client::setWhere(const std::string& place, const std::string& activity) {
   place_ = place;
   activity_ = activity;
   if (moved) {
+    score_.clear();
+    leader_ = 0;
+    hits_.clear();
     remotes_.clear();     // whoever was here is not where you are going
     instance_.clear();
     nextHello_ = 0.0;     // say where you are now, now
@@ -104,6 +107,7 @@ void Client::sendWatch() {
 }
 
 void Client::update(float dt) {
+  winnerT_ = std::max(0.0f, winnerT_ - dt);
   for (auto& n : notices_) n.second -= dt;
   while (!notices_.empty() && notices_.front().second <= 0.0f) notices_.pop_front();
   if (!enabled_ || place_.empty()) return;
@@ -289,6 +293,37 @@ void Client::handle(const uint8_t* data, size_t len) {
       }
       break;
     }
+    case Msg::HitFrom: {
+      IncomingHit h;
+      h.from = r.u64();
+      h.damage = r.f32();
+      h.head = r.u8() != 0;
+      if (r.ok) hits_.push_back(h);
+      break;
+    }
+    case Msg::Score: {
+      const int limit = r.u8();
+      const uint64_t leader = r.u64();
+      const uint8_t n = r.u8();
+      std::vector<ScoreRow> rows;
+      for (uint8_t i = 0; i < n && r.ok; i++) {
+        ScoreRow row;
+        row.id = r.u64();
+        row.name = r.str();
+        row.downs = r.u16();
+        rows.push_back(row);
+      }
+      if (!r.ok) return;
+      scoreLimit_ = limit;
+      leader_ = leader;
+      score_ = rows;
+      break;
+    }
+    case Msg::MatchOver: {
+      winner_ = r.str();
+      winnerT_ = 8.0f;
+      break;
+    }
     case Msg::Notice: {
       const std::string text = r.str();
       if (r.ok) notice(text);
@@ -349,6 +384,33 @@ void Client::leaveSquad() {
   header(w, Msg::SquadLeave);
   w.u64(id_);
   send(w);
+}
+
+void Client::sendHit(uint64_t target, float damage, bool head) {
+  if (!enabled_) return;
+  Writer w;
+  header(w, Msg::Hit);
+  w.u64(id_);
+  w.u64(target);
+  w.f32(damage);
+  w.u8(head ? 1 : 0);
+  send(w);
+}
+
+void Client::sendKill(uint64_t killer, int limit) {
+  if (!enabled_) return;
+  Writer w;
+  header(w, Msg::Kill);
+  w.u64(id_);
+  w.u64(killer);
+  w.u8((uint8_t)std::clamp(limit, 1, 255));
+  send(w);
+}
+
+std::vector<IncomingHit> Client::takeHits() {
+  std::vector<IncomingHit> out;
+  out.swap(hits_);
+  return out;
 }
 
 std::vector<std::pair<uint64_t, std::string>> Client::takeNewFriends() {

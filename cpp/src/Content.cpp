@@ -357,6 +357,8 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "sun_intensity") { try { m.sunIntensity = std::stof(v); } catch (...) {} }
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
+        else if (k == "mode") m.mode = v;
+        else if (k == "score_limit") { try { m.scoreLimit = std::stoi(v); } catch (...) {} }
         else if (k == "reward_xp") { try { m.rewardXp = std::stoi(v); } catch (...) {} }
         else if (k == "reward_weapon") m.rewardWeapon = v;
         else if (k == "expedition") {

@@ -168,6 +168,41 @@ public:
   // ammo counter, no viewmodel and nothing to fire, which is the whole point
   // of waking up in a bunk.
   bool armed() const { return armed_; }
+
+  // ---- online: Striders fighting Striders (a mission with `mode = pvp`).
+  // main.cpp hands over where the other players are each frame; shots and
+  // blasts that reach them come back out as hits for the server to deliver,
+  // and hits the server delivers come in through takeNetDamage. A down is
+  // not a failure here: you get up somewhere else three seconds later.
+  struct NetTarget {
+    uint64_t id = 0;
+    glm::vec3 feet{0.0f};
+    bool down = false;
+  };
+  struct NetHit {
+    uint64_t id = 0;
+    float damage = 0.0f;
+    bool head = false;
+  };
+  bool pvp() const { return mission_.mode == "pvp"; }
+  int scoreLimit() const { return mission_.scoreLimit; }
+  void setNetTargets(const std::vector<NetTarget>& t) { netTargets_ = t; }
+  std::vector<NetHit> takeNetHits() {
+    std::vector<NetHit> out;
+    out.swap(netHits_);
+    return out;
+  }
+  void takeNetDamage(uint64_t from, float damage, bool head);
+  // True once for each time you went down in PvP, with who did it.
+  bool takeNetDeath(uint64_t& killer) {
+    if (!netDied_) return false;
+    netDied_ = false;
+    killer = netKiller_;
+    return true;
+  }
+  float respawnIn() const { return respawnT_; }
+  // Last confirmed hit on a player, for the hit marker.
+  float netHitMarker() const { return netHitT_; }
   // For online play: how bright the muzzle is now (a jump means a shot), and
   // the silhouette of what you are holding, as other players draw it.
   float muzzleFlash() const { return muzzleFlash_; }
@@ -449,6 +484,16 @@ private:
   glm::vec3 prevFwd_{0.0f, 0.0f, -1.0f};
   float bobT_ = 0.0f;
   const WeaponDef* weaponDef_ = nullptr;
+
+  std::vector<NetTarget> netTargets_;
+  std::vector<NetHit> netHits_;
+  uint64_t lastAttacker_ = 0, netKiller_ = 0;
+  bool netDied_ = false;
+  float respawnT_ = 0.0f, netHitT_ = 0.0f;
+  unsigned pvpRng_ = 0x9e3779b9u;
+  void netShoot(const glm::vec3& origin, const glm::vec3& dir);
+  void netHit(uint64_t id, float damage, bool head);
+  void pvpRespawn();
   bool armed_ = true;
 
   Holster slots_[2];

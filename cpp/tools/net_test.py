@@ -17,8 +17,9 @@ import sys
 import time
 
 MAGIC, VERSION = 0x31425245, 1
-HELLO, STATE, BYE, FIND, FREQ, FACC, WATCH, SINV, SACC, SLEAVE = range(1, 11)
-WELCOME, SNAP, FOUND, FREQ_FROM, FADDED, PRESENCE, SINV_FROM, SQUAD, NOTICE = range(64, 73)
+HELLO, STATE, BYE, FIND, FREQ, FACC, WATCH, SINV, SACC, SLEAVE, HIT, KILL = range(1, 13)
+(WELCOME, SNAP, FOUND, FREQ_FROM, FADDED, PRESENCE, SINV_FROM, SQUAD, NOTICE,
+ HIT_FROM, SCORE, MATCH_OVER) = range(64, 76)
 
 
 def s16(text):
@@ -57,6 +58,10 @@ class Fake:
         self.notices = []
         self.invites = []
         self.friends = []
+        self.hits = []
+        self.score = {}
+        self.leader = 0
+        self.winner = None
 
     def send(self, msg, body=b''):
         self.sock.sendto(struct.pack('<IBB', MAGIC, VERSION, msg) + struct.pack('<Q', self.id) + body,
@@ -107,6 +112,18 @@ class Fake:
                 self.friends.append(r.take('<Q'))
             elif msg == NOTICE:
                 self.notices.append(r.str())
+            elif msg == HIT_FROM:
+                self.hits.append((r.take('<Q'), r.take('<f'), r.take('<B')))
+            elif msg == SCORE:
+                r.take('<B')
+                self.leader = r.take('<Q')
+                self.score = {}
+                for _ in range(r.take('<B')):
+                    pid = r.take('<Q')
+                    r.str()
+                    self.score[pid] = r.take('<H')
+            elif msg == MATCH_OVER:
+                self.winner = r.str()
 
 
 def settle(fakes, seconds=0.4, activity='freeroam'):
@@ -207,6 +224,29 @@ def main():
     settle([b, c, d], 0.4, activity='mission')
     check('the squad outlives its leader', sorted(b.squad) == sorted([b.id, c.id]), b.squad)
     for f in (b, c, d):
+        f.send(BYE)
+
+    # PvP: hits only travel between players in the same PvP instance; downs
+    # score for whoever did them; first to the limit wins the match.
+    e, g, h = Fake(port, 3001, 'ECHO'), Fake(port, 3002, 'GOLF'), Fake(port, 3003, 'HOTEL')
+    e.hello('THE PIT', 'pvp')
+    g.hello('THE PIT', 'pvp')
+    h.hello('DUST SHELF', 'freeroam')
+    settle([e, g, h], 0.4, activity='pvp')
+    e.send(HIT, struct.pack('<QfB', g.id, 30.0, 1))
+    e.send(HIT, struct.pack('<QfB', h.id, 30.0, 0))
+    settle([e, g, h], 0.3, activity='pvp')
+    check('a PvP hit reaches its target', any(x[0] == e.id and abs(x[1] - 30.0) < 0.01 and x[2] == 1 for x in g.hits),
+          g.hits)
+    check('and never anyone outside the Pit', not h.hits, h.hits)
+    g.send(KILL, struct.pack('<QB', e.id, 2))
+    settle([e, g], 0.3, activity='pvp')
+    check('a down scores for whoever did it', e.score.get(e.id) == 1 and g.score.get(e.id) == 1, (e.score, g.score))
+    check('the leader is singing', e.leader == e.id and g.leader == e.id, (e.leader, g.leader))
+    g.send(KILL, struct.pack('<QB', e.id, 2))
+    settle([e, g], 0.3, activity='pvp')
+    check('first to the limit wins the match', e.winner == 'ECHO' and g.winner == 'ECHO', (e.winner, g.winner))
+    for f in (e, g, h):
         f.send(BYE)
     return 1 if fails else 0
 

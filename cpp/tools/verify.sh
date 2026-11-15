@@ -798,11 +798,16 @@ owned_weapon maul_12
 completed tutorial_earth
 SEED
 cp "$OUT/save-neta.txt" "$OUT/save-netb.txt"
-netrun() {  # netrun <name> <env...>
+netrun() {  # netrun <name> <env...> [-- <binary args>]
   local n="$1"; shift
+  local env_args=() bin_args=()
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "--" ]; then shift; bin_args=("$@"); break; fi
+    env_args+=("$1"); shift
+  done
   xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 EREBUS_MUTE=1 EREBUS_MAX_FRAMES=300 \
     EREBUS_SERVER=127.0.0.1:$NETPORT EREBUS_SAVE_PATH="$OUT/save-$n.txt" EREBUS_NET_LOG="$OUT/$n.json" \
-    EREBUS_NET_AUTO_ACCEPT=1 "$@" "$BIN" >/dev/null 2>&1
+    EREBUS_NET_AUTO_ACCEPT=1 "${env_args[@]}" "$BIN" "${bin_args[@]}" >/dev/null 2>&1
 }
 netrun neta EREBUS_NET_NAME=ALPHA EREBUS_NET_AUTO_INVITE=1 EREBUS_STATION_AT=0,0,20 EREBUS_STATION_YAW=90 &
 NETA=$!
@@ -817,6 +822,27 @@ check "online: a squad link forms" "$OUT/netb.json" "s['peakSquad'] == 2"
 check "online: the friendship is saved on both records" "$OUT/neta.json" \
       "s['savedFriends'] == 1 and json.load(open('$OUT/netb.json'))['savedFriends'] == 1"
 checkfile "online: a record keeps its id" "$OUT/save-neta.txt" "^net_id = [0-9a-f]{16}$"
+
+# The Pit: two clients in the PvP arena, one holding the trigger with the aim
+# aid on. Its rounds have to reach the other over the network, put them down,
+# and score on the server.
+NETPORT=$((NETPORT + 1))
+EREBUS_SERVER_SECONDS=300 "$BIN" --server "$NETPORT" > "$OUT/server3.log" 2>&1 &
+NETSRV=$!
+sleep 0.5
+cp "$OUT/save-neta.txt" "$OUT/save-pita.txt"; cp "$OUT/save-neta.txt" "$OUT/save-pitb.txt"
+sed -i -e '/^friend /d' -e '/^net_id/d' "$OUT/save-pita.txt" "$OUT/save-pitb.txt"
+netrun pita EREBUS_NET_NAME=ALPHA EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 \
+  EREBUS_MAX_FRAMES=600 -- --mission the_pit &
+NETA=$!
+netrun pitb EREBUS_NET_NAME=BRAVO EREBUS_SKIP_HUB=1 EREBUS_MAX_FRAMES=600 -- --mission the_pit &
+NETB=$!
+wait "$NETA" "$NETB"
+kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
+check "the Pit: both players are in the same match" "$OUT/pita.json" \
+      "s['instance'] == 'THE PIT 1' and s['peakRemotes'] >= 1"
+check "the Pit: a round put the other player down" "$OUT/pitb.json" "s['downs'] >= 1"
+check "the Pit: the server scored it" "$OUT/pita.json" "s['topScore'] >= 1"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
