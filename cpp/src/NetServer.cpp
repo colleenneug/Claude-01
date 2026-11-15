@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <map>
 #include <chrono>
 #include <thread>
@@ -55,7 +58,10 @@ std::string upper(std::string s) {
 
 class Server {
 public:
-  explicit Server(uint16_t port) : port_(port) {}
+  explicit Server(uint16_t port) : port_(port) {
+    if (const char* t = std::getenv("EREBUS_SERVER_TAGS")) tagsPath_ = t;
+    loadTags();
+  }
 
   bool start() {
     if (!sock_.open(port_)) {
@@ -97,6 +103,82 @@ private:
   std::vector<Instance> instances_;
   int nextInstance_ = 1;
   uint32_t rng_ = 0x2545f491u;
+
+  // ---- gamer tags: who owns which NAME#1234, kept on disk so a tag
+  // survives the server restarting.
+  std::string tagsPath_ = "server_tags.txt";
+  std::map<std::string, uint64_t> tagOwner_;
+  std::map<uint64_t, std::string> tagOf_;
+
+  void loadTags() {
+    std::ifstream f(tagsPath_);
+    std::string line;
+    while (std::getline(f, line)) {
+      std::istringstream ls(line);
+      std::string hex, tag;
+      ls >> hex;
+      std::getline(ls, tag);
+      const size_t a = tag.find_first_not_of(' ');
+      if (a == std::string::npos) continue;
+      tag = tag.substr(a);
+      try {
+        const uint64_t id = std::stoull(hex, nullptr, 16);
+        tagOwner_[tag] = id;
+        tagOf_[id] = tag;
+      } catch (...) {
+      }
+    }
+  }
+
+  void saveTags() {
+    std::ofstream f(tagsPath_, std::ios::trunc);
+    for (const auto& kv : tagOf_) {
+      char hex[24];
+      std::snprintf(hex, sizeof(hex), "%016llx", (unsigned long long)kv.first);
+      f << hex << " " << kv.second << "\n";
+    }
+  }
+
+  // Settles a player's tag from the name they asked for and the number they
+  // had last time: kept if it is still theirs, a free one otherwise.
+  void settleTag(Player& p, const std::string& asked, uint16_t wantNumber) {
+    const std::string base = cleanTagName(asked);
+    auto mine = tagOf_.find(p.id);
+    if (mine != tagOf_.end() && tagName(mine->second) == base) {
+      p.name = mine->second;
+      return;
+    }
+    std::string tag;
+    auto freeFor = [&](const std::string& t) {
+      auto o = tagOwner_.find(t);
+      return o == tagOwner_.end() || o->second == p.id;
+    };
+    if (wantNumber >= 1000 && wantNumber <= 9999 && freeFor(base + "#" + std::to_string(wantNumber)))
+      tag = base + "#" + std::to_string(wantNumber);
+    for (int k = 0; tag.empty() && k < 200; k++) {
+      const std::string t = base + "#" + std::to_string(1000 + roll() % 9000);
+      if (freeFor(t)) tag = t;
+    }
+    for (int n = 1000; tag.empty() && n <= 9999; n++) {
+      const std::string t = base + "#" + std::to_string(n);
+      if (freeFor(t)) tag = t;
+    }
+    if (tag.empty()) tag = base + "#0000";
+    if (mine != tagOf_.end()) tagOwner_.erase(mine->second);
+    tagOf_[p.id] = tag;
+    tagOwner_[tag] = p.id;
+    saveTags();
+    p.name = tag;
+  }
+
+  void sendTag(const Player& p) {
+    Writer w;
+    header(w, Msg::Tag);
+    w.str(p.name);
+    const size_t h = p.name.find('#');
+    w.u16((uint16_t)(h == std::string::npos ? 0 : std::atoi(p.name.c_str() + h + 1)));
+    send(p, w);
+  }
 
   uint32_t roll() {
     rng_ = rng_ * 1664525u + 1013904223u;
@@ -277,9 +359,14 @@ private:
     }
   }
 
+  // A whole tag finds exactly that player; a bare name finds whoever online
+  // has it (the first, if several do).
   Player* byName(const std::string& name) {
     const std::string want = upper(name);
     for (auto& kv : players_) if (upper(kv.second.name) == want) return &kv.second;
+    if (want.find('#') == std::string::npos) {
+      for (auto& kv : players_) if (tagName(kv.second.name) == cleanTagName(want)) return &kv.second;
+    }
     return nullptr;
   }
 
@@ -295,11 +382,18 @@ private:
       const bool fresh = p.id == 0;
       p.id = id;
       p.addr = from;
-      p.name = r.str();
+      const std::string asked = r.str();
       std::string place = r.str(), activity = r.str();
       if (!r.ok) return;
       p.follow = r.u64();
-      if (!r.ok) p.follow = 0;
+      uint16_t wantNumber = r.u16();
+      if (!r.ok) {
+        p.follow = 0;
+        wantNumber = 0;
+      }
+      const std::string before = p.name;
+      if (fresh || tagName(p.name) != cleanTagName(asked)) settleTag(p, asked, wantNumber);
+      if (fresh || p.name != before) sendTag(p);
       p.lastHeard = now();
       p.state.id = id;
       p.state.name = p.name;
@@ -499,7 +593,7 @@ private:
             auto m = players_.find(mid);
             if (m == players_.end()) continue;
             notice(m->second, m->second.team == t
-                                  ? upper(p.name) + " SENT " + std::to_string(screamers) + " SCREAMER" + (screamers > 1 ? "S" : "") + " ACROSS"
+                                  ? tagName(p.name) + " SENT " + std::to_string(screamers) + " SCREAMER" + (screamers > 1 ? "S" : "") + " ACROSS"
                                   : std::string(teamName(t)) + " SENT " + std::to_string(screamers) + " SCREAMER" + (screamers > 1 ? "S" : "") + " AT YOU");
           }
         }
@@ -528,12 +622,12 @@ private:
         auto k = players_.find(killer);
         if (in->resetAt > 0.0) break;            // between matches
         if (k == players_.end() || killer == id || k->second.instance != p.instance) {
-          broadcastNotice(*in, upper(p.name) + " WENT DOWN");
+          broadcastNotice(*in, tagName(p.name) + " WENT DOWN");
           break;
         }
         const int now_ = ++in->score[killer];
         in->score.emplace(id, 0);
-        broadcastNotice(*in, upper(k->second.name) + " DOWNED " + upper(p.name));
+        broadcastNotice(*in, tagName(k->second.name) + " DOWNED " + tagName(p.name));
         int best = 0;
         for (auto& sc : in->score) best = std::max(best, sc.second);
         if (now_ >= best) in->leader = killer;

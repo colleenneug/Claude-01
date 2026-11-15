@@ -299,6 +299,15 @@ you into their instance instead.
   leader is doing: a campaign mission is a fireteam of **3**; a patrol, the
   hideout, orbit and player-versus-player take **6**; a Gambit-style match
   is **4**. If the leader leaves, the squad carries on under the next one.
+- **Gamer tag and account.** Your tag is a name you choose plus four
+  digits the server adds so nobody else has the same one — `NIGHTJAR#4821`.
+  It belongs to your *account*, not a save slot: every slot and every
+  doctrine on this computer is the same player, with the same tag and the
+  same friends. The game remembers you in `account.dat` next to the saves,
+  so you choose a tag once (the social screen asks the first time you go
+  online) and are signed in on every launch after that. In the world only
+  the name shows; the social screen shows the whole tag, and **FIND A
+  STRIDER** looks anyone online up by it.
 - **Friends.** Press **F** on someone in the social screen; when they accept,
   both records keep the other (`friend ...` lines in the save), and from then
   on the panel shows where they are whenever you are both online. **J** on a
@@ -367,7 +376,7 @@ their saves:
 
 ```
 server = 203.0.113.7          # the host's address, :port if not 27960
-name = NIGHTJAR               # what other players see over your head
+name = NIGHTJAR               # a starting gamer tag name, if your account has none
 ```
 
 or sets `EREBUS_SERVER=host[:port]` instead. With neither, the game is the
@@ -383,7 +392,9 @@ their `online.cfg` instead, and UDP 27960 has to reach the host.
 
 | Input (online) | Action |
 |---|---|
-| O | Open / close the social screen |
+| O or Esc | Open / close the social screen (it takes the keyboard while open) |
+| Enter on YOUR TAG | Change your gamer tag's name |
+| Enter on FIND A STRIDER | Type a tag (or just a name) to look someone up |
 | Up / Down or Tab | Choose a row |
 | I | Squad invite the player on that row |
 | F | Send them a friend request |

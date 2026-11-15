@@ -681,7 +681,17 @@ int main(int argc, char** argv) {
     }
   }
   if (const char* e = std::getenv("EREBUS_SERVER")) netServerAddr = e;
-  if (const char* e = std::getenv("EREBUS_NET_NAME")) netName = e;
+  // The account (see AccountStore): one per computer, shared by every slot.
+  // EREBUS_SAVE_PATH runs (the test suite) each get their own beside the
+  // save, so two test players are two accounts.
+  std::string accountPath = "account.dat";
+  if (const char* ap = std::getenv("EREBUS_ACCOUNT_PATH")) accountPath = ap;
+  else if (savePathEnv) accountPath = std::string(savePathEnv) + ".account";
+  Account account = AccountStore::load(accountPath);
+  std::string netNameEnv;
+  if (const char* e = std::getenv("EREBUS_NET_NAME")) netNameEnv = e;
+  netview::installTextInput(window);
+  bool socialWasOpen = false;
   // Headless hooks for the test suite, which has no hands for the social
   // screen: invite / befriend the first player seen, and accept whatever
   // comes in. EREBUS_NET_LOG=<path> writes what the client saw at the end.
@@ -755,18 +765,29 @@ int main(int argc, char** argv) {
     if (!netServerAddr.empty() && netFor != savePath && state != AppState::SlotSelect &&
         state != AppState::CreateRecord) {
       netFor = savePath;
-      if (!profile.netId) {
-        profile.netId = net::freshId();
-        ProfileStore::save(profile, savePath);
+      // A save from before accounts carried its own identity: the first one
+      // seen becomes the account's, so nobody loses their tag or friends.
+      if (!account.netId && profile.netId) {
+        account.netId = profile.netId;
+        account.gamerTag = profile.gamerTag;
+        account.tagNumber = profile.tagNumber;
       }
-      std::string nm = netName;
-      if (nm.empty() && profile.name != "Operative") nm = profile.name;
-      if (nm.empty()) {
-        char tag[24];
-        std::snprintf(tag, sizeof(tag), "STRIDER-%04X", (unsigned)(profile.netId & 0xFFFFu));
-        nm = tag;
+      for (const auto& f : profile.friends) {
+        bool have = false;
+        for (const auto& o : account.friends) have |= o.first == f.first;
+        if (!have) account.friends.push_back(f);
       }
-      if (netClient.configure(netServerAddr, profile.netId, nm)) netClient.setFriends(profile.friends);
+      if (!account.netId) account.netId = net::freshId();
+      AccountStore::save(account, accountPath);
+      // The gamer tag's name: the record's own, else online.cfg's, else ask.
+      // (EREBUS_NET_NAME, for the test suite, beats all of them.)
+      std::string nm = !netNameEnv.empty() ? netNameEnv : !account.gamerTag.empty() ? account.gamerTag : netName;
+      const bool askForTag = nm.empty();
+      if (nm.empty()) nm = "STRIDER";
+      if (netClient.configure(netServerAddr, account.netId, nm, account.tagNumber)) {
+        netClient.setFriends(account.friends);
+        if (askForTag) netview::promptForTag(social);
+      }
     }
     game.extras.clear();
     station.extras.clear();
@@ -813,9 +834,9 @@ int main(int argc, char** argv) {
       netClient.update(dt);
       for (const auto& f : netClient.takeNewFriends()) {
         bool have = false;
-        for (const auto& o : profile.friends) have |= o.first == f.first;
-        if (!have) profile.friends.push_back(f);
-        ProfileStore::save(profile, savePath);
+        for (const auto& o : account.friends) have |= o.first == f.first;
+        if (!have) account.friends.push_back(f);
+        AccountStore::save(account, accountPath);
       }
       if (!netClient.remotes().empty()) {
         const net::Remote& first = netClient.remotes().front();
@@ -830,7 +851,22 @@ int main(int argc, char** argv) {
       }
       netPeakRemotes = std::max(netPeakRemotes, (int)netClient.remotes().size());
       netPeakSquad = std::max(netPeakSquad, (int)netClient.squad().size());
+      {
+        std::string tag;
+        int number = 0;
+        if (netClient.takeTag(tag, number)) {
+          account.gamerTag = net::tagName(tag);
+          account.tagNumber = number;
+          AccountStore::save(account, accountPath);
+        }
+      }
       netview::socialInput(window, social, netClient);
+      // The social screen owns the keyboard while it is up (it has a text
+      // field): the world underneath keeps running, you just stop walking.
+      if (social.open != socialWasOpen) {
+        game.setInputFrozen(social.open);
+        station.setInputFrozen(social.open);
+      }
       if (netAutoJoin && !social.joinId && state == AppState::Station) {
         for (const net::Friend& f : netClient.friends()) {
           if (f.online && (f.activity == "freeroam" || f.activity == "pvp") && f.place != netClient.place()) {
@@ -1992,7 +2028,7 @@ int main(int argc, char** argv) {
       // ones nothing in a fight is bound to.
       bool leaveNow = false;
       {
-        const bool escDown = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS ||
+        const bool escDown = (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !social.open && !socialWasOpen) ||
                              (leaveAtFrame > 0 && frame == leaveAtFrame);
         const bool canLeave = game.missionState() == MissionState::InProgress &&
                               !game.cutscenePlaying();
@@ -2234,7 +2270,7 @@ int main(int argc, char** argv) {
                      netClient.enabled() ? "true" : "false", netClient.connected() ? "true" : "false",
                      netClient.place().c_str(), netClient.instance().c_str(), (int)netClient.remotes().size(),
                      (int)netClient.squad().size(), netClient.squadLimit(), (int)netClient.friends().size(),
-                     (int)profile.friends.size(), netPeakRemotes, netPeakSquad,
+                     (int)account.friends.size(), netPeakRemotes, netPeakSquad,
                      netTopScore, netDowns, netWinner.c_str(), netCoopRole.c_str(), netCoopSnaps,
                      netClient.team(), netBanked, netScreamers, netClient.teamNotes(0), netClient.teamNotes(1));
         for (size_t i = 0; i < netClient.remotes().size(); i++)
@@ -2244,6 +2280,7 @@ int main(int argc, char** argv) {
       }
     }
 
+    socialWasOpen = social.open;
     if (finishFrame()) break;
 
     glfwSwapBuffers(window);

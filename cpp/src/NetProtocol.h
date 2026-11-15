@@ -61,9 +61,30 @@ enum class Msg : uint8_t {
   Score,            // limit, leader id, count, (id, name, downs)...
   MatchOver,        // winner name; scores reset a few seconds later
   Host,             // who runs the Cybers for you, and your team (0/1)
+  Tag,              // your gamer tag as the server settled it: "NAME#1234", number
   TeamScore,        // the Tuning: limit, team 0 notes, team 1 notes
   Screamers,        // the Tuning: count — the other team sent them at you
 };
+
+// Gamer tags. A name you choose plus four digits the server picks so that no
+// two players share the whole thing: NIGHTJAR#4821. In the world only the
+// name is shown; lists and searches use the whole tag.
+inline std::string tagName(const std::string& tag) {
+  const size_t h = tag.find('#');
+  return h == std::string::npos ? tag : tag.substr(0, h);
+}
+// Upper case, letters, digits, space, '-' and '_', two to sixteen of them.
+inline std::string cleanTagName(const std::string& in) {
+  std::string out;
+  for (char c : in) {
+    if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+    const bool ok = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+                    (c == ' ' && !out.empty() && out.back() != ' ');
+    if (ok && out.size() < 16) out += c;
+  }
+  while (!out.empty() && out.back() == ' ') out.pop_back();
+  return out.size() >= 2 ? out : std::string("STRIDER");
+}
 
 // The Tuning's two sides.
 inline const char* teamName(int t) { return t ? "LANTERN" : "ANVIL"; }

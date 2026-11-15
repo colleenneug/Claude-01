@@ -265,6 +265,8 @@ Profile ProfileStore::load(const std::string& path) {
       else if (k == "equipped_cosmetic") p.equippedCosmetic = v;
       else if (k == "equipped_ship") p.equippedShip = v;
       else if (k == "net_id") p.netId = std::stoull(v, nullptr, 16);
+      else if (k == "gamer_tag") p.gamerTag = v;
+      else if (k == "tag_number") p.tagNumber = std::stoi(v);
     } catch (...) {
       std::fprintf(stderr, "[Profile] %s: bad value for '%s' = '%s', ignored\n",
                    path.c_str(), k.c_str(), v.c_str());
@@ -311,15 +313,59 @@ bool ProfileStore::save(const Profile& p, const std::string& path) {
   for (auto& b : p.bounties) f << "bounty " << b.id << " " << b.progress << "\n";
   for (auto& id : p.bountiesDone) f << "bounty_done " << id << "\n";
   for (auto& id : p.upgrades) f << "upgrade " << id << "\n";
-  if (p.netId) {
-    char hex[24];
-    std::snprintf(hex, sizeof(hex), "%016llx", (unsigned long long)p.netId);
-    f << "net_id = " << hex << "\n";
-    for (auto& fr : p.friends) {
-      std::snprintf(hex, sizeof(hex), "%016llx", (unsigned long long)fr.first);
-      f << "friend " << hex << " " << fr.second << "\n";
+  // Online identity lives in the account (account.dat), not the slot.
+
+  return true;
+}
+
+Account AccountStore::load(const std::string& path) {
+  Account a;
+  std::ifstream f(path);
+  std::string line;
+  while (std::getline(f, line)) {
+    std::istringstream ls(line);
+    std::string first;
+    ls >> first;
+    try {
+      if (first == "friend") {
+        std::string hex, rest;
+        ls >> hex;
+        std::getline(ls, rest);
+        const size_t b = rest.find_first_not_of(" \t");
+        rest = b == std::string::npos ? std::string("STRIDER") : rest.substr(b);
+        const uint64_t id = std::stoull(hex, nullptr, 16);
+        bool have = false;
+        for (auto& fr : a.friends) have |= fr.first == id;
+        if (id && !have) a.friends.push_back({id, rest});
+        continue;
+      }
+      std::string eq, v;
+      ls >> eq;
+      std::getline(ls, v);
+      const size_t b = v.find_first_not_of(" \t");
+      v = b == std::string::npos ? std::string() : v.substr(b);
+      while (!v.empty() && (v.back() == '\r' || v.back() == ' ')) v.pop_back();
+      if (first == "net_id") a.netId = std::stoull(v, nullptr, 16);
+      else if (first == "gamer_tag") a.gamerTag = v;
+      else if (first == "tag_number") a.tagNumber = std::stoi(v);
+    } catch (...) {
     }
   }
+  return a;
+}
 
+bool AccountStore::save(const Account& a, const std::string& path) {
+  std::ofstream f(path, std::ios::trunc);
+  if (!f) return false;
+  char hex[24];
+  f << "# Your Erebus Cradle account: the same on every save slot.\n";
+  std::snprintf(hex, sizeof(hex), "%016llx", (unsigned long long)a.netId);
+  f << "net_id = " << hex << "\n";
+  if (!a.gamerTag.empty()) f << "gamer_tag = " << a.gamerTag << "\n";
+  if (a.tagNumber) f << "tag_number = " << a.tagNumber << "\n";
+  for (const auto& fr : a.friends) {
+    std::snprintf(hex, sizeof(hex), "%016llx", (unsigned long long)fr.first);
+    f << "friend " << hex << " " << fr.second << "\n";
+  }
   return true;
 }

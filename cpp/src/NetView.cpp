@@ -41,13 +41,16 @@ const glm::vec3 kSquad(0.35f, 0.95f, 1.0f);   // squad mates: the Division's cya
 const glm::vec3 kOther(1.0f, 0.70f, 0.30f);   // everyone else: amber
 
 struct Row {
-  enum Kind { Invite, Here, Friend, Leave } kind;
+  enum Kind { MyTag, AddFriend, Found, Invite, Here, Friend, Leave } kind;
   size_t index;
   std::string label, detail, keys;
 };
 
-std::vector<Row> rows(const net::Client& c) {
+std::vector<Row> rows(const net::Client& c, const Social& social) {
   std::vector<Row> out;
+  out.push_back({Row::MyTag, 0, "YOUR TAG", c.name(), "ENTER CHANGE"});
+  out.push_back({Row::AddFriend, 0, "FIND A STRIDER", "BY TAG, LIKE NIGHTJAR#4821", "ENTER TYPE A TAG"});
+  if (social.foundId) out.push_back({Row::Found, 0, social.foundTag, "FOUND - ONLINE", "F ADD FRIEND   I SQUAD INVITE"});
   // const_cast-free: invites() is non-const only so it can be popped.
   auto& invites = const_cast<net::Client&>(c).invites();
   for (size_t i = 0; i < invites.size(); i++) {
@@ -83,7 +86,21 @@ std::string upper(std::string s) {
   return s;
 }
 
+std::string g_typed;   // characters typed since the last frame
+void onChar(GLFWwindow*, unsigned int cp) {
+  if (cp < 128 && g_typed.size() < 64) g_typed += (char)cp;
+}
+
 }  // namespace
+
+void installTextInput(GLFWwindow* window) { glfwSetCharCallback(window, onChar); }
+
+void promptForTag(Social& social) {
+  social.open = true;
+  social.typing = Social::Typing::Tag;
+  social.text.clear();
+  g_typed.clear();
+}
 
 void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>& out, const Content* content) {
   const Mesh& box = HostileGeometry::unitBox();
@@ -210,6 +227,48 @@ bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
     social.open = false;
     return false;
   }
+  {
+    uint64_t id;
+    std::string tag;
+    if (client.takeFound(id, tag)) {
+      social.foundId = id;
+      social.foundTag = tag;
+    }
+  }
+  // ---- typing: everything typed goes in the field; Enter takes it, Escape
+  // drops it. No other key means anything until it is done.
+  if (social.typing != Social::Typing::None) {
+    for (char c : g_typed) {
+      const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' ||
+                      c == '-' || c == '_' || (c == '#' && social.typing == Social::Typing::Find);
+      if (ok && social.text.size() < 21) social.text += (char)std::toupper((unsigned char)c);
+    }
+    g_typed.clear();
+    const bool bs = glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
+    const bool en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+    const bool es = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    if (bs && !social.prevBackspace && !social.text.empty()) social.text.pop_back();
+    if (en && !social.prevEnter && !social.text.empty()) {
+      if (social.typing == Social::Typing::Tag) client.setTagName(social.text);
+      else client.findPlayer(social.text);
+      social.typing = Social::Typing::None;
+      social.text.clear();
+    }
+    if (es && !social.prevEsc) {
+      social.typing = Social::Typing::None;
+      social.text.clear();
+    }
+    social.prevBackspace = bs;
+    social.prevEnter = en;
+    social.prevEsc = es;
+    // Keep the edge memory of the other keys honest while typing.
+    const int keys[9] = {GLFW_KEY_O, GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_ENTER,
+                         GLFW_KEY_F, GLFW_KEY_I, GLFW_KEY_BACKSPACE, GLFW_KEY_TAB, GLFW_KEY_J};
+    for (int k = 0; k < 9; k++) social.prev[k] = glfwGetKey(window, keys[k]) == GLFW_PRESS;
+    return true;
+  }
+  g_typed.clear();
+
   const int keys[9] = {GLFW_KEY_O, GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_ENTER,
                        GLFW_KEY_F, GLFW_KEY_I, GLFW_KEY_BACKSPACE, GLFW_KEY_TAB, GLFW_KEY_J};
   bool hit[9];
@@ -218,19 +277,36 @@ bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
     hit[k] = down && !social.prev[k];
     social.prev[k] = down;
   }
+  social.prevEnter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
+  social.prevBackspace = glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
+  const bool es = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+  if (es && !social.prevEsc && social.open) social.open = false;
+  social.prevEsc = es;
   if (hit[0]) social.open = !social.open;
   if (!social.open) return false;
-  std::vector<Row> list = rows(client);
-  if (list.empty()) {
-    social.cursor = 0;
-    return true;
-  }
+  std::vector<Row> list = rows(client, social);
   if (hit[1]) social.cursor = (social.cursor + (int)list.size() - 1) % (int)list.size();
   if (hit[2] || hit[7]) social.cursor = (social.cursor + 1) % (int)list.size();
   social.cursor = std::clamp(social.cursor, 0, (int)list.size() - 1);
   const Row& row = list[social.cursor];
   auto& invites = client.invites();
   switch (row.kind) {
+    case Row::MyTag:
+      if (hit[3]) {
+        social.typing = Social::Typing::Tag;
+        social.text = net::tagName(client.name());
+      }
+      break;
+    case Row::AddFriend:
+      if (hit[3]) {
+        social.typing = Social::Typing::Find;
+        social.text.clear();
+      }
+      break;
+    case Row::Found:
+      if (hit[4]) client.requestFriend(social.foundId);
+      if (hit[5]) client.inviteToSquad(social.foundId);
+      break;
     case Row::Invite:
       if ((hit[3] || hit[6]) && row.index < invites.size()) {
         if (hit[3]) client.accept(invites[row.index]);
@@ -278,7 +354,7 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
     if (pvp.space) {
       // In orbit: everyone in the instance, at any range, with how far.
       const glm::vec4 col = r.squadmate ? glm::vec4(kSquad, 0.95f) : glm::vec4(kOther, 0.9f);
-      hud.textCentered(at.x, at.y - 18, r.name, 1.5f, col);
+      hud.textCentered(at.x, at.y - 18, net::tagName(r.name), 1.5f, col);
       char km[24];
       std::snprintf(km, sizeof(km), dist > 1000.0f ? "%.1f KM" : "%.0f M", dist > 1000.0f ? dist / 1000.0f : dist);
       hud.textCentered(at.x, at.y, km, 1.3f, col);
@@ -289,7 +365,7 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
     if (pvp.on && r.id == client.leader()) {
       const glm::vec4 gold(1.0f, 0.82f, 0.30f, 0.95f);
       hud.textCentered(at.x, at.y - 22, "SINGING", 1.5f, gold);
-      hud.textCentered(at.x, at.y, r.name, 1.8f, gold);
+      hud.textCentered(at.x, at.y, net::tagName(r.name), 1.8f, gold);
       char m[16];
       std::snprintf(m, sizeof(m), "%dM", (int)dist);
       hud.textCentered(at.x, at.y + 18, m, 1.3f, gold);
@@ -300,16 +376,17 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
     if (dist > 120.0f) {
       if (!r.squadmate) continue;
       char m[32];
-      std::snprintf(m, sizeof(m), "%s  %dM", r.name.c_str(), (int)dist);
+      std::snprintf(m, sizeof(m), "%s  %dM", net::tagName(r.name).c_str(), (int)dist);
       hud.textCentered(at.x, at.y, m, 1.3f, glm::vec4(kSquad, 0.85f));
       continue;
     }
     const float a = 1.0f - std::clamp((dist - 20.0f) / 100.0f, 0.0f, 0.7f);
     const float scale = dist > 30.0f ? 1.4f : 1.8f;
     const glm::vec4 col = r.squadmate ? glm::vec4(kSquad, a) : glm::vec4(kOther, a);
-    const float w = Hud::textWidth(r.name, scale);
+    const std::string shown = net::tagName(r.name);
+    const float w = Hud::textWidth(shown, scale);
     hud.rect(at.x - w * 0.5f - 6, at.y - 4, w + 12, scale * 7.0f + 8, glm::vec4(0.03f, 0.04f, 0.06f, 0.5f * a));
-    hud.textCentered(at.x, at.y, r.name, scale, col);
+    hud.textCentered(at.x, at.y, shown, scale, col);
     // Health under the name for squad mates — the people you are covering.
     if (r.squadmate) {
       const float bw = std::max(w, 50.0f);
@@ -335,7 +412,7 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
     hud.text(x, y, buf, 1.5f, cyan);
     y += 22;
     for (const net::SquadMember& m : client.squad()) {
-      hud.text(x + 10, y, (m.id == client.id() ? "> " : "  ") + m.name + "   " + upper(m.place), 1.35f, dim);
+      hud.text(x + 10, y, (m.id == client.id() ? "> " : "  ") + net::tagName(m.name) + "   " + upper(m.place), 1.35f, dim);
       y += 22;
     }
   }
@@ -353,7 +430,7 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
       const net::ScoreRow& row = client.score()[i];
       const bool me = row.id == client.id();
       const bool lead = row.id == client.leader();
-      std::snprintf(buf, sizeof(buf), "%s%-14s %3d", lead ? "> " : "  ", row.name.c_str(), row.downs);
+      std::snprintf(buf, sizeof(buf), "%s%-14s %3d", lead ? "> " : "  ", net::tagName(row.name).c_str(), row.downs);
       hud.textCentered(cx, sy, buf, 1.5f,
                        lead ? glm::vec4(1.0f, 0.82f, 0.30f, 0.98f) : me ? cyan : dim);
       sy += 22;
@@ -394,7 +471,7 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
   if (social.open) {
     const float w = std::min(820.0f, screenW - 64.0f);
     const float left = screenW * 0.5f - w * 0.5f, top = screenH * 0.16f;
-    std::vector<Row> list = rows(client);
+    std::vector<Row> list = rows(client, social);
     const float h = 120.0f + 34.0f * std::max<size_t>(list.size(), 1) + 40.0f;
     hud.rect(left, top, w, h, glm::vec4(0.03f, 0.04f, 0.06f, 0.9f));
     hud.rect(left, top, w, 3, cyan);
@@ -418,7 +495,23 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
       if (on && !r.keys.empty()) hud.text(left + w - 24 - Hud::textWidth(r.keys, 1.4f), ry + 2, r.keys, 1.4f, cyan);
       ry += 30;
     }
-    hud.textCentered(screenW * 0.5f, top + h - 30, "UP DOWN OR TAB  CHOOSE      O  CLOSE", 1.5f, dim);
+    hud.textCentered(screenW * 0.5f, top + h - 30, "UP DOWN OR TAB  CHOOSE      O OR ESC  CLOSE", 1.5f, dim);
+    if (social.typing != Social::Typing::None) {
+      const bool tag = social.typing == Social::Typing::Tag;
+      const float bw = std::min(640.0f, w - 40.0f), bh = 150.0f;
+      const float bx = screenW * 0.5f - bw * 0.5f, by = top + 60.0f;
+      hud.rect(bx, by, bw, bh, glm::vec4(0.02f, 0.03f, 0.05f, 0.97f));
+      hud.rect(bx, by, bw, 3, cyan);
+      hud.textCentered(screenW * 0.5f, by + 18, tag ? "CHOOSE YOUR GAMER TAG" : "FIND A STRIDER BY TAG", 2.2f, cyan);
+      hud.textCentered(screenW * 0.5f, by + 50,
+                       tag ? "TWO TO SIXTEEN LETTERS OR NUMBERS - THE SERVER ADDS YOUR FOUR DIGITS"
+                           : "THE WHOLE TAG, LIKE NIGHTJAR#4821, OR JUST THE NAME",
+                       1.3f, dim);
+      const bool blink = std::fmod(glfwGetTime(), 1.0) < 0.6;
+      hud.rect(bx + 30, by + 74, bw - 60, 36, glm::vec4(0.08f, 0.10f, 0.13f, 1.0f));
+      hud.text(bx + 42, by + 82, social.text + (blink ? "_" : " ") + (tag ? "#----" : ""), 2.2f, bright);
+      hud.textCentered(screenW * 0.5f, by + bh - 26, "ENTER  DONE      ESC  CANCEL", 1.4f, dim);
+    }
   }
   hud.end();
 }

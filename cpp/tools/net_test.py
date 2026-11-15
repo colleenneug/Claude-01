@@ -20,7 +20,7 @@ MAGIC, VERSION = 0x31425245, 1
 (HELLO, STATE, BYE, FIND, FREQ, FACC, WATCH, SINV, SACC, SLEAVE, HIT, KILL,
  HOSTILES, HOSTILE_HIT, ALLY_DAMAGE, BANK) = range(1, 17)
 (WELCOME, SNAP, FOUND, FREQ_FROM, FADDED, PRESENCE, SINV_FROM, SQUAD, NOTICE,
- HIT_FROM, SCORE, MATCH_OVER, HOST, TEAM_SCORE, SCREAMERS) = range(64, 79)
+ HIT_FROM, SCORE, MATCH_OVER, HOST, TAG, TEAM_SCORE, SCREAMERS) = range(64, 80)
 
 
 def s16(text):
@@ -70,13 +70,15 @@ class Fake:
         self.team = None
         self.notes = None
         self.screamers = 0
+        self.tag = None
+        self.found = None
 
     def send(self, msg, body=b''):
         self.sock.sendto(struct.pack('<IBB', MAGIC, VERSION, msg) + struct.pack('<Q', self.id) + body,
                          self.server)
 
-    def hello(self, place, activity, follow=0):
-        self.send(HELLO, s16(self.name) + s16(place) + s16(activity) + struct.pack('<Q', follow))
+    def hello(self, place, activity, follow=0, number=0):
+        self.send(HELLO, s16(self.name) + s16(place) + s16(activity) + struct.pack('<QH', follow, number))
 
     def state(self, activity):
         self.send(STATE, struct.pack('<6fB', 1, 0, 2, 90, 0, 1, 0) + s16('rifle') + s16(activity))
@@ -135,6 +137,10 @@ class Fake:
             elif msg == HOST:
                 self.host = r.take('<Q')
                 self.team = r.take('<B')
+            elif msg == TAG:
+                self.tag = (r.str(), r.take('<H'))
+            elif msg == FOUND:
+                self.found = (r.take('<Q'), r.str())
             elif msg == TEAM_SCORE:
                 r.take('<B')
                 self.notes = (r.take('<H'), r.take('<H'))
@@ -166,6 +172,34 @@ def main():
         nonlocal fails
         print(('  PASS ' if ok else '  FAIL ') + name + ('' if ok else '  (' + str(detail) + ')'))
         fails += 0 if ok else 1
+
+    # Gamer tags: a name plus four digits the server picks, never shared,
+    # kept across reconnects, and found by the whole tag or just the name.
+    t_a, t_b = Fake(port, 9001, 'Nightjar'), Fake(port, 9002, 'NIGHTJAR')
+    t_a.hello('HUB', 'hub')
+    t_b.hello('HUB', 'hub')
+    settle([t_a, t_b], 0.3, activity='hub')
+    import re
+    ok = bool(t_a.tag and re.fullmatch(r'NIGHTJAR#\d{4}', t_a.tag[0]) and t_b.tag and
+              re.fullmatch(r'NIGHTJAR#\d{4}', t_b.tag[0]))
+    check('a gamer tag is the name and four digits', ok, (t_a.tag, t_b.tag))
+    check('two players with one name get different tags', ok and t_a.tag[0] != t_b.tag[0], (t_a.tag, t_b.tag))
+    first = t_a.tag
+    t_a.send(BYE)
+    settle([t_b], 0.2, activity='hub')
+    t_a2 = Fake(port, 9001, 'NIGHTJAR')
+    t_a2.hello('HUB', 'hub', number=first[1] if first else 0)
+    settle([t_a2, t_b], 0.3, activity='hub')
+    check('your tag is still yours when you come back', t_a2.tag == first, (t_a2.tag, first))
+    t_c = Fake(port, 9003, 'KESTREL')
+    t_c.hello('HUB', 'hub')
+    settle([t_a2, t_b, t_c], 0.2, activity='hub')
+    t_c.send(FIND, s16(t_b.tag[0] if t_b.tag else 'x'))
+    settle([t_c], 0.3, activity='hub')
+    check('a whole tag finds exactly that player', t_c.found and t_c.found[0] == t_b.id, t_c.found)
+    for f in (t_a2, t_b, t_c):
+        f.send(BYE)
+    settle([], 0.1)
 
     # Thirteen players on one patrol: twelve fit in an instance.
     crowd = [Fake(port, 1000 + i, 'P%d' % i) for i in range(13)]
@@ -268,7 +302,8 @@ def main():
     check('the leader is singing', e.leader == e.id and g.leader == e.id, (e.leader, g.leader))
     g.send(KILL, struct.pack('<QB', e.id, 2))
     settle([e, g], 0.3, activity='pvp')
-    check('first to the limit wins the match', e.winner == 'ECHO' and g.winner == 'ECHO', (e.winner, g.winner))
+    check('first to the limit wins the match', str(e.winner).startswith('ECHO#') and g.winner == e.winner,
+          (e.winner, g.winner))
     for f in (e, g, h):
         f.send(BYE)
 

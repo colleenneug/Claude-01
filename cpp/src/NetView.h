@@ -37,6 +37,13 @@ struct Social {
   // clears it.
   uint64_t joinId = 0;
   std::string joinPlace;
+  // Typing: your tag's name, or a tag to look somebody up by.
+  enum class Typing { None, Tag, Find } typing = Typing::None;
+  std::string text;
+  bool prevBackspace = false, prevEnter = false, prevEsc = false;
+  // The last lookup's answer.
+  uint64_t foundId = 0;
+  std::string foundTag;
   std::string message;   // "PRESS F TO ADD ..." hints change with the row
 };
 
@@ -45,6 +52,11 @@ struct Social {
 // a squad invite, J joins a friend where they are). Returns true while the
 // screen is open.
 bool socialInput(GLFWwindow* window, Social& social, net::Client& client);
+
+// Typed characters, for the tag fields: installs a GLFW char callback once.
+void installTextInput(GLFWwindow* window);
+// Opens the social screen straight on "choose your tag" (a record with none).
+void promptForTag(Social& social);
 
 // What the HUD needs from a PvP fight that only the game knows.
 struct Pvp {

@@ -21,7 +21,7 @@ uint64_t freshId() {
   return x ? x : 1;
 }
 
-bool Client::configure(const std::string& hostPort, uint64_t id, const std::string& name) {
+bool Client::configure(const std::string& hostPort, uint64_t id, const std::string& name, int tagNumber) {
   enabled_ = false;
   if (hostPort.empty() || id == 0) return false;
   if (!resolve(hostPort, kDefaultPort, server_)) {
@@ -33,7 +33,9 @@ bool Client::configure(const std::string& hostPort, uint64_t id, const std::stri
     return false;
   }
   id_ = id;
-  name_ = name.empty() ? std::string("STRIDER") : name;
+  asked_ = cleanTagName(name);
+  name_ = asked_;
+  tagNumber_ = tagNumber;
   enabled_ = true;
   std::printf("[Net] online via %s as %s\n", server_.str().c_str(), name_.c_str());
   return true;
@@ -98,10 +100,11 @@ void Client::sendHello() {
   Writer w;
   header(w, Msg::Hello);
   w.u64(id_);
-  w.str(name_);
+  w.str(asked_);
   w.str(place_);
   w.str(activity_);
   w.u64(follow_);
+  w.u16((uint16_t)tagNumber_);
   send(w);
   sentHello_ = true;
 }
@@ -329,6 +332,16 @@ void Client::handle(const uint8_t* data, size_t len) {
       score_ = rows;
       break;
     }
+    case Msg::Tag: {
+      const std::string tag = r.str();
+      const int number = r.u16();
+      if (!r.ok) break;
+      if (tag != name_) notice("YOUR TAG IS " + tag);
+      name_ = tag;
+      tagNumber_ = number;
+      newTag_ = true;
+      break;
+    }
     case Msg::Host: {
       const uint64_t h = r.u64();
       if (!r.ok) break;
@@ -400,6 +413,22 @@ void Client::handle(const uint8_t* data, size_t len) {
     default:
       break;
   }
+}
+
+void Client::setTagName(const std::string& name) {
+  const std::string clean = cleanTagName(name);
+  if (clean == asked_) return;
+  asked_ = clean;
+  tagNumber_ = 0;
+  nextHello_ = 0.0;
+}
+
+bool Client::takeTag(std::string& tag, int& number) {
+  if (!newTag_) return false;
+  newTag_ = false;
+  tag = name_;
+  number = tagNumber_;
+  return true;
 }
 
 void Client::bye() {

@@ -821,7 +821,9 @@ check "online: the other player is seen" "$OUT/netb.json" "s['peakRemotes'] >= 1
 check "online: a squad link forms" "$OUT/netb.json" "s['peakSquad'] == 2"
 check "online: the friendship is saved on both records" "$OUT/neta.json" \
       "s['savedFriends'] == 1 and json.load(open('$OUT/netb.json'))['savedFriends'] == 1"
-checkfile "online: a record keeps its id" "$OUT/save-neta.txt" "^net_id = [0-9a-f]{16}$"
+checkfile "online: the account remembers its id" "$OUT/save-neta.txt.account" "^net_id = [0-9a-f]{16}$"
+checkfile "online: the account remembers its gamer tag" "$OUT/save-neta.txt.account" "^tag_number = [0-9]{4}$"
+checkabsent "online: a save slot does not carry the account" "$OUT/save-neta.txt" "^net_id"
 
 # The Pit: two clients in the PvP arena, one holding the trigger with the aim
 # aid on. Its rounds have to reach the other over the network, put them down,
@@ -833,9 +835,9 @@ sleep 0.5
 cp "$OUT/save-neta.txt" "$OUT/save-pita.txt"; cp "$OUT/save-neta.txt" "$OUT/save-pitb.txt"
 sed -i -e '/^friend /d' -e '/^net_id/d' "$OUT/save-pita.txt" "$OUT/save-pitb.txt"
 netrun pita EREBUS_NET_NAME=ALPHA EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 \
-  EREBUS_MAX_FRAMES=600 -- --mission the_pit &
+  EREBUS_MAX_FRAMES=1100 -- --mission the_pit &
 NETA=$!
-netrun pitb EREBUS_NET_NAME=BRAVO EREBUS_SKIP_HUB=1 EREBUS_MAX_FRAMES=600 -- --mission the_pit &
+netrun pitb EREBUS_NET_NAME=BRAVO EREBUS_SKIP_HUB=1 EREBUS_MAX_FRAMES=1100 -- --mission the_pit &
 NETB=$!
 wait "$NETA" "$NETB"
 kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null

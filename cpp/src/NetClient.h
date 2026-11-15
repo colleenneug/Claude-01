@@ -66,7 +66,13 @@ class Client {
 public:
   // hostPort: "host" or "host:port". False if it cannot be looked up; the
   // client then stays off.
-  bool configure(const std::string& hostPort, uint64_t id, const std::string& name);
+  // `name` is the gamer tag's name part; `tagNumber` the four digits the
+  // server gave this record last time (0 for none yet), asked for again.
+  bool configure(const std::string& hostPort, uint64_t id, const std::string& name, int tagNumber = 0);
+  // Change the name part of your tag. The server settles the number.
+  void setTagName(const std::string& name);
+  // Set when the server settled (or changed) your tag, once.
+  bool takeTag(std::string& tag, int& number);
   bool enabled() const { return enabled_; }
   // Heard from the server recently.
   bool connected() const;
@@ -156,7 +162,10 @@ private:
   Socket sock_;
   Address server_;
   uint64_t id_ = 0;
-  std::string name_;
+  std::string name_;            // the whole tag once the server has said; the asked name before
+  std::string asked_;
+  int tagNumber_ = 0;
+  bool newTag_ = false;
   std::string place_, activity_;
   bool sentHello_ = false;
   double lastHeard_ = -1e9;

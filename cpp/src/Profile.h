@@ -79,6 +79,9 @@ struct Profile {
   // time the record goes online, and kept so friends can find it again —
   // and the friends it has made, by that id, with the name they had then.
   uint64_t netId = 0;
+  // Gamer tag: the name you chose and the four digits the server gave it.
+  std::string gamerTag;
+  int tagNumber = 0;
   std::vector<std::pair<uint64_t, std::string>> friends;
 
   ActiveBounty* activeBounty(const std::string& id) {
@@ -159,6 +162,23 @@ int creditXp(Profile& p, const Content& content, int amount);
 // time it is opened. Returns true on the call that issued the ship, with its
 // name in `shipName`.
 bool settleCampaign(Profile& p, const Content& content, std::string* shipName = nullptr);
+
+// The account: who you are online, the same on every save slot and every
+// doctrine, because it is the same player. Kept in its own file next to the
+// saves (account.dat) so the game remembers you from one launch to the next
+// without asking again: your online id, your gamer tag and your friends.
+struct Account {
+  uint64_t netId = 0;
+  std::string gamerTag;
+  int tagNumber = 0;
+  std::vector<std::pair<uint64_t, std::string>> friends;
+};
+
+class AccountStore {
+public:
+  static Account load(const std::string& path);   // a fresh Account if there is none
+  static bool save(const Account& a, const std::string& path);
+};
 
 class ProfileStore {
 public:
