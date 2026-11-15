@@ -799,8 +799,15 @@ int main(int argc, char** argv) {
         place = "ORBIT";
         activity = "space";
       }
+      // In a menu (the mission counter, the kit) you are still standing
+      // where you were: keep that place, or the server would time you out
+      // of your instance and your squad while you pick a mission.
+      if (place.empty() && state == AppState::Hub) {
+        place = netClient.place();
+        activity = netClient.activity();
+      }
       netClient.setWhere(place, activity);
-      netClient.setSelf(feet, camera.yaw, camera.pitch, hp01, fired, downed, weaponShape);
+      if (state != AppState::Hub) netClient.setSelf(feet, camera.yaw, camera.pitch, hp01, fired, downed, weaponShape);
       netClient.update(dt);
       for (const auto& f : netClient.takeNewFriends()) {
         bool have = false;
