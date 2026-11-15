@@ -124,6 +124,40 @@ PYCHECK
 then echo "  PASS every campaign mission is a different route to the Conductor"; PASS=$((PASS+1))
 else echo "  FAIL every campaign mission is a different route  ($(head -c 400 "$OUT/routes.txt"))"; FAIL=$((FAIL+1)); fi
 
+# Every gun looks different: no two weapons in the armoury share a colour
+# scheme and set of fittings.
+( cd "$BUILD" && "$BIN" --looks 2>/dev/null ) > "$OUT/looks.txt"
+if [ "$(wc -l < "$OUT/looks.txt")" -ge 120 ] && [ -z "$(cut -d'|' -f2- "$OUT/looks.txt" | sort | uniq -d)" ]; then
+  echo "  PASS every weapon has a look of its own"; PASS=$((PASS+1))
+else
+  echo "  FAIL every weapon has a look of its own  ($(cut -d'|' -f2- "$OUT/looks.txt" | sort | uniq -d | head -3))"; FAIL=$((FAIL+1))
+fi
+
+# The heavy kinds work in a real fight: a rocket launcher clears a patrol on
+# splash damage alone, and a sniper clears it one shot at a time.
+for w in cw_comet cw_heron; do
+  cat > "$OUT/save-heavy_$w.txt" <<SEED
+name = Operative
+chits = 100
+class = bulwark
+equipped_weapon = $w
+equipped_sidearm = sidearm
+equipped_armor = patrol_vest
+equipped_cosmetic = default
+owned_weapon $w
+owned_weapon sidearm
+owned_armor patrol_vest
+owned_cosmetic default
+completed tutorial_earth
+SEED
+  run "$OUT/heavy_$w.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \
+      EREBUS_DEBUG_AUTOAIM=1 EREBUS_MAX_FRAMES=900 -- --mission patrol_dust_shelf
+done
+check "a rocket launcher clears a patrol" "$OUT/heavy_cw_comet.json" \
+      "s['missionState'] == 'complete' and s['magSize'] == 1"
+check "a sniper clears a patrol" "$OUT/heavy_cw_heron.json" \
+      "s['missionState'] == 'complete' and 'HERON' in s['weapon']"
+
 # The new goals play: an uplink is run and cores are picked up (DEAD AIR
 # has both, in that order, and ends on a tap).
 run "$OUT/deadair.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_FIXED_DT=0.033 \

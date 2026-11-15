@@ -32,11 +32,17 @@ ARCH = {
     "shotgun":   dict(damage=13, fi=0.760, mag=6,  res=48,  reload=2.6, spread=0.055, rng=34,  hs=1.5, pellets=8),
     "pistol":    dict(damage=20, fi=0.180, mag=12, res=96,  reload=1.2, spread=0.004, rng=120, hs=2.0, pellets=1),
     "induction": dict(damage=26, fi=0.220, mag=16, res=96,  reload=1.9, spread=0.003, rng=180, hs=1.8, pellets=1, pierce=True),
+    # The heavier kinds: a scoped sniper, a belt-fed machine gun, and two
+    # launchers that fire rounds you can watch fly and blow up.
+    "sniper":    dict(damage=95, fi=1.100, mag=5,  res=30,  reload=2.8, spread=0.0008, rng=400, hs=3.0, pellets=1, zoom=3.5),
+    "lmg":       dict(damage=17, fi=0.075, mag=100, res=300, reload=4.2, spread=0.018, rng=150, hs=1.6, pellets=1),
+    "launcher":  dict(damage=150, fi=1.200, mag=1, res=8,   reload=2.6, spread=0.0,   rng=300, hs=1.0, pellets=1, proj=55, splash=5.0),
+    "grenade":   dict(damage=90, fi=0.650, mag=6,  res=24,  reload=3.0, spread=0.0,   rng=120, hs=1.0, pellets=1, proj=36, grav=7.0, splash=4.0),
 }
 TIER_DMG = {1: 1.00, 2: 1.10, 3: 1.22, 4: 1.36, 5: 1.52}
 TIER_COST = {1: 120, 2: 220, 3: 380, 4: 600, 5: 900}
 ARCH_COST = {"rifle": 1.0, "carbine": 0.95, "smg": 0.9, "marksman": 1.15, "shotgun": 1.05,
-             "pistol": 0.7, "induction": 1.2}
+             "pistol": 0.7, "induction": 1.2, "sniper": 1.3, "lmg": 1.25, "launcher": 1.5, "grenade": 1.35}
 # What a tier is released at, for the weapons that are bought.
 TIER_RANK = {1: "", 2: "probationer", 3: "hull_walker", 4: "spine_runner", 5: "strider_2"}
 
@@ -66,10 +72,18 @@ MODELS = {
     "shotgun":   ["BREAKER", "RAM", "DOORMAN", "HAMMERHEAD", "BULLHORN", "CLAMOUR"],
     "pistol":    ["WREN", "SPARROW", "FINCH", "JACKDAW", "MAGPIE", "NIGHTJAR"],
     "induction": ["ARC", "COIL", "LATTICE", "FILAMENT", "CANTOR", "HYMN"],
+    "sniper":    ["HERON", "LANCET", "FARSIGHT", "STILETTO", "WATCHTOWER", "PINPOINT"],
+    "lmg":       ["ANVIL", "TORRENT", "HAILSTORM", "BULWARK", "LOCOMOTIVE", "DELUGE"],
+    "launcher":  ["COMET", "BLASTWAVE", "THUNDERHEAD", "PETARD", "TEMPEST", "SKYFALL"],
+    "grenade":   ["MORTAR", "POPPER", "CLOUDBURST", "BOOMSLANG", "CANISTER", "FLASHPOINT"],
 }
 
 ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V"}
-ORDER = ["rifle", "carbine", "smg", "marksman", "shotgun", "pistol", "induction"]
+ORDER = ["rifle", "carbine", "smg", "marksman", "shotgun", "pistol", "induction",
+         "sniper", "lmg", "launcher", "grenade"]
+# The original seven, which the older parts of the plan iterate over.
+CORE = ORDER[:7]
+HEAVY = ORDER[7:]
 
 
 def plan():
@@ -77,22 +91,38 @@ def plan():
     out = []
     # SHOP: Ondo sells Kourou Arms on Earth, Voss sells Cradle Works in orbit.
     for t in (1, 2):
-        for a in ORDER:
+        for a in CORE:
             out.append(("ka", a, t, "shop", "ondo"))
     for a in ("rifle", "pistol"):
         out.append(("ka", a, 3, "shop", "ondo"))
     for t in (3, 4):
-        for a in ORDER:
+        for a in CORE:
             out.append(("cw", a, t, "shop", "voss"))
     # DROPS: the field. Vesper is common, Brandt heavier, salvage deepest.
-    for a in ORDER:
+    for a in CORE:
         out.append(("ves", a, 1 if a in ("smg", "pistol", "carbine") else 2, "drop", ""))
-    for a in ORDER:
+    for a in CORE:
         out.append(("br", a, 3, "drop", ""))
-    for a in ORDER:
+    for a in CORE:
         out.append(("salv", a, 4, "drop", ""))
-    for a in ORDER:
+    for a in CORE:
         out.append(("ves", a, 5 if a in ("rifle", "marksman", "induction") else 4, "drop", ""))
+    # The heavy kinds: on the shelves from the middle of the ladder, in the
+    # field from Cybers, and two on the Rook's black market.
+    for a, t in [("sniper", 2), ("lmg", 2)]:
+        out.append(("ka", a, t, "shop", "ondo"))
+    for a in HEAVY:
+        out.append(("cw", a, 3, "shop", "voss"))
+    for a in HEAVY:
+        out.append(("cw", a, 4, "shop", "voss"))
+    for a, t in [("lmg", 2), ("grenade", 3), ("sniper", 5), ("launcher", 5)]:
+        out.append(("ves", a, t, "drop", ""))
+    for a in HEAVY:
+        out.append(("br", a, 3, "drop", ""))
+    for a in HEAVY:
+        out.append(("salv", a, 4, "drop", ""))
+    for a, t in [("sniper", 5), ("grenade", 5), ("launcher", 4)]:
+        out.append(("ch" if t == 5 else "hal", a, t, "rook", ""))
     # MISSION first-clear rewards.
     for a, t in [("rifle", 2), ("marksman", 2), ("shotgun", 3), ("pistol", 2), ("carbine", 3),
                  ("smg", 3), ("induction", 3), ("rifle", 4), ("marksman", 4), ("shotgun", 4),
@@ -123,7 +153,7 @@ def build(maker, arch, tier, source, sold_by, used):
             break
     dmg = base["damage"] * TIER_DMG[tier] * mods.get("damage", 1.0)
     fi = base["fi"] * mods.get("fi", 1.0)
-    mag = max(4, int(round(base["mag"] * mods.get("mag", 1.0) * (1.0 + 0.04 * (tier - 1)))))
+    mag = max(1 if arch == "launcher" else 4, int(round(base["mag"] * mods.get("mag", 1.0) * (1.0 + 0.04 * (tier - 1)))))
     res = int(round(base["res"] * (1.0 + 0.05 * (tier - 1)) / 4.0) * 4)
     reload = base["reload"] * mods.get("reload", 1.0) * (1.0 - 0.03 * (tier - 1))
     spread = base["spread"] * mods.get("spread", 1.0) * (1.0 - 0.06 * (tier - 1))
@@ -165,6 +195,13 @@ def build(maker, arch, tier, source, sold_by, used):
     ]
     if base["pellets"] > 1:
         lines.append(f"pellets = {base['pellets']}")
+    if base.get("zoom"):
+        lines.append(f"zoom = {base['zoom']}")
+    if base.get("proj"):
+        lines.append(f"projectile_speed = {base['proj']}")
+        lines.append(f"splash = {base['splash']}")
+    if base.get("grav"):
+        lines.append(f"gravity = {base['grav']}")
     if pierce:
         lines.append("pierce = true")
     lines.append(f"cost = {cost}")

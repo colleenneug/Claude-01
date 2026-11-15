@@ -15,6 +15,7 @@
 enum class Sfx {
   // weapons, one report per silhouette
   FirePistol, FireRifle, FireCarbine, FireSmg, FireShotgun, FireMarksman, FireInduction,
+  FireSniper, FireLmg, FireRocket, FireGrenade, Explosion,
   DryFire, ReloadOut, ReloadIn, WeaponSwap,
   // your rounds landing
   Hit, Headshot, Kill, HitMetal,

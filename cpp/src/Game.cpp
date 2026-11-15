@@ -25,6 +25,9 @@ static void applyDef(Weapon& w, const WeaponDef* def, const UpgradeTotals& u) {
   w.spread = def->spread * u.spreadMul;
   w.pierce = def->pierce;
   w.range = def->range;
+  w.projectileSpeed = def->projectileSpeed;
+  w.gravity = def->gravity;
+  w.splash = def->splash;
   w.reloading = false;
   w.reloadT = 0.0f;
   w.cooldown = 0.0f;
@@ -224,6 +227,8 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   viewKickPitch_ = viewKickYaw_ = 0.0f;
   viewKickRecoverPitch_ = viewKickRecoverYaw_ = 0.0f;
   impacts_.clear();
+  projectiles_.clear();
+  blasts_.clear();
 
   const CosmeticDef* cosmetic = content_.cosmetic(profile.equippedCosmetic);
   hudAccent_ = cosmetic ? cosmetic->accent : glm::vec3(0.85f, 0.95f, 1.0f);
@@ -422,6 +427,10 @@ static Sfx fireSound(const WeaponDef* w) {
   if (shape == "shotgun") return Sfx::FireShotgun;
   if (shape == "marksman") return Sfx::FireMarksman;
   if (shape == "induction") return Sfx::FireInduction;
+  if (shape == "sniper") return Sfx::FireSniper;
+  if (shape == "lmg") return Sfx::FireLmg;
+  if (shape == "launcher") return Sfx::FireRocket;
+  if (shape == "grenade") return Sfx::FireGrenade;
   return Sfx::FireRifle;
 }
 
@@ -967,6 +976,107 @@ void Game::updateTutorial(float dt) {
   }
 }
 
+void Game::damageHostile(size_t index, float dmg, bool headshot, const glm::vec3& point) {
+  if (index >= hostiles_.size()) return;
+  Hostile& h = hostiles_[index];
+  if (!h.blocksShots()) return;
+  const bool killed = h.takeDamage(dmg);
+  hitMarkerT = 0.14f;
+  if (killed) {
+    audio::play(Sfx::Kill);
+    audio::playAt(deathSound(h), h.pos);
+  } else if (h.type && h.type->structure) {
+    audio::playAt(Sfx::HitMetal, point, 0.8f);
+  } else {
+    audio::play(headshot ? Sfx::Headshot : Sfx::Hit);
+  }
+  // Chits are paid out once per mission clear, not per kill. A kill does
+  // drop resupply, without which a long mission is unwinnable on the fixed
+  // starting ammo (see dropPickup).
+  if (killed) {
+    // ...and the experience. Banked in the mission and handed to the record
+    // when the mission ends, so a run you walk out of pays what you did.
+    xpEarned_ += (int)std::lround(h.type->xp * upgrades_.xpMul);
+    dropPickup(h.pos, killCount_++);
+    maybeDropWeapon(h);
+    // ...and the bounties. Counted by archetype and by the silhouette of
+    // what was in your hands, which is what the boards ask for.
+    tally_.kills++;
+    tally_.killsOf[h.type->id]++;
+    if (headshot) tally_.headshots++;
+    if (weaponDef_) tally_.killsWith[weaponDef_->shape]++;
+  }
+}
+
+void Game::explode(const glm::vec3& at, float radius, float damage, int directHit, bool primed) {
+  // Everything in the radius takes the round, less towards the edge, and
+  // whatever it hit takes the whole of it. The blast does not hurt you: a
+  // launcher that killed its owner every time a Scarab got close would be a
+  // weapon nobody carried.
+  const float r = std::max(0.5f, radius);
+  for (size_t i = 0; i < hostiles_.size(); i++) {
+    Hostile& h = hostiles_[i];
+    if (!h.blocksShots() || !h.type) continue;
+    float d = glm::length(h.bodyCentre() - at) - h.type->radius * h.bossScale;
+    if ((int)i != directHit && d > r) continue;
+    const float k = (int)i == directHit ? 1.0f : 1.0f - 0.6f * std::clamp(d / r, 0.0f, 1.0f);
+    damageHostile(i, damage * k * (primed ? 1.5f : 1.0f), primed, at);
+  }
+  for (int k = 0; k < 10; k++) {
+    const float a = (float)k * 0.628f;
+    addImpact(at + glm::vec3(std::cos(a), 0.3f + 0.1f * (float)(k % 3), std::sin(a)) * (r * 0.35f),
+              glm::vec3(1.0f, 0.55f + 0.04f * (float)k, 0.22f));
+  }
+  Blast b;
+  b.pos = at;
+  b.radius = r;
+  b.life = 0.5f;
+  blasts_.push_back(b);
+  audio::playAt(Sfx::Explosion, at, 1.2f);
+  // Close enough and the ground moves under you too.
+  const float near = glm::length(at - player_.position);
+  if (near < r * 4.0f) shake_ = std::max(shake_, 0.6f * (1.0f - near / (r * 4.0f)) + 0.15f);
+}
+
+void Game::updateProjectiles(float dt) {
+  for (Blast& b : blasts_) b.life -= dt;
+  blasts_.erase(std::remove_if(blasts_.begin(), blasts_.end(), [](const Blast& b) { return b.life <= 0.0f; }),
+                blasts_.end());
+  for (Projectile& p : projectiles_) {
+    if (p.life <= 0.0f) continue;
+    // Flown in short steps, so a fast rocket cannot step over a thin wall
+    // or a Scarab between one frame and the next.
+    const int steps = std::max(1, (int)std::ceil(glm::length(p.vel) * dt / 0.4f));
+    const float h = dt / (float)steps;
+    for (int s = 0; s < steps && p.life > 0.0f; s++) {
+      p.vel.y -= p.gravity * h;
+      p.pos += p.vel * h;
+      p.life -= h;
+      int hit = -1;
+      for (size_t i = 0; i < hostiles_.size(); i++) {
+        const Hostile& t = hostiles_[i];
+        if (!t.blocksShots() || !t.type) continue;
+        // A grenade has a proximity fuse: close is enough.
+        const float fuse = p.gravity > 0.0f ? 0.7f : 0.12f;
+        if (glm::length(t.bodyCentre() - p.pos) < t.type->radius * 1.15f * t.bossScale + fuse) { hit = (int)i; break; }
+      }
+      bool wall = p.pos.y <= level_.floorY() + 0.05f;
+      for (const Collider& c : level_.colliders()) {
+        if (wall) break;
+        wall = p.pos.x > c.min.x && p.pos.x < c.max.x && p.pos.y > c.min.y && p.pos.y < c.max.y &&
+               p.pos.z > c.min.z && p.pos.z < c.max.z;
+      }
+      if (hit >= 0 || wall || p.life <= 0.0f) {
+        explode(p.pos - glm::normalize(p.vel + glm::vec3(1e-5f)) * 0.15f, p.splash, p.damage, hit, p.primed);
+        p.life = 0.0f;
+      }
+    }
+  }
+  projectiles_.erase(std::remove_if(projectiles_.begin(), projectiles_.end(),
+                                    [](const Projectile& p) { return p.life <= 0.0f; }),
+                     projectiles_.end());
+}
+
 void Game::addImpact(const glm::vec3& at, const glm::vec3& tint) {
   // Capped: a full-auto weapon into a wall would otherwise grow this without
   // bound, and thirty sparks in the same square metre look like one light.
@@ -1398,7 +1508,25 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     // One trigger pull can strike several hostiles — a shotgun's cone across
     // a pair of thralls, or an induction bolt through the front rank into the
     // one behind it — so this is a list, not a single hit.
-    weapon_.fire(camera.position, camera.forward(), level_, hostiles_, shotBuffer_);
+    if (weapon_.launcher()) {
+      // A round you can watch: out of the tube a little in front of the eye,
+      // so it does not start inside the wall you are standing against.
+      shotBuffer_.clear();
+      const bool primedRound = weapon_.primed;
+      if (weapon_.launch()) {
+        Projectile p;
+        p.primed = primedRound;
+        p.pos = camera.position + camera.forward() * 0.7f - camUp_ * 0.08f;
+        p.vel = camera.forward() * weapon_.projectileSpeed;
+        p.gravity = weapon_.gravity;
+        p.splash = weapon_.splash;
+        p.damage = weapon_.damage;
+        p.life = 6.0f;
+        projectiles_.push_back(p);
+      }
+    } else {
+      weapon_.fire(camera.position, camera.forward(), level_, hostiles_, shotBuffer_);
+    }
     {
       lootRng_ = lootRng_ * 1664525u + 1013904223u;
       audio::play(fireSound(weaponDef_), 1.0f, 0.96f + 0.08f * (float)(lootRng_ >> 8) / 16777216.0f);
@@ -1425,38 +1553,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
                                               : glm::vec3(1.0f, 0.84f, 0.55f));
       }
       if (!shot.hitHostile) continue;
-      Hostile& h = hostiles_[shot.hostileIndex];
-      bool killed = h.takeDamage(shot.damage);
-      hitMarkerT = 0.14f;
-      if (killed) {
-        audio::play(Sfx::Kill);
-        audio::playAt(deathSound(h), h.pos);
-      } else if (h.type && h.type->structure) {
-        audio::playAt(Sfx::HitMetal, shot.point, 0.8f);
-      } else {
-        audio::play(shot.headshot ? Sfx::Headshot : Sfx::Hit);
-      }
-      // Chits are paid out once per mission clear (see the reward-payout
-      // block below), not per kill — a per-kill bounty economy is a
-      // reasonable future addition but wasn't asked for. A kill does drop
-      // resupply, without which a long mission is unwinnable on the fixed
-      // starting ammo (see dropPickup).
-      if (killed) {
-        // ...and the experience. Every enemy archetype has carried an `xp`
-        // figure in its content file since they were written; this is what
-        // reads it. Banked in the mission and handed to the record when the
-        // mission ends, so a run you walk out of pays what you actually did
-        // rather than nothing.
-        xpEarned_ += (int)std::lround(h.type->xp * upgrades_.xpMul);
-        dropPickup(h.pos, killCount_++);
-        maybeDropWeapon(h);
-        // ...and the bounties. Counted by archetype and by the silhouette of
-        // what was in your hands, which is what the boards ask for.
-        tally_.kills++;
-        tally_.killsOf[h.type->id]++;
-        if (shot.headshot) tally_.headshots++;
-        if (weaponDef_) tally_.killsWith[weaponDef_->shape]++;
-      }
+      damageHostile((size_t)shot.hostileIndex, shot.damage, shot.headshot, shot.point);
     }
     // Kick the viewmodel back on every trigger pull, whether or not it hit.
     // Scaled by the round's damage against a rifle's, so a breaching shotgun
@@ -1520,6 +1617,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   }
 
   // ---- sparks age out.
+  updateProjectiles(dt);
   for (Impact& im : impacts_) im.life -= dt;
   impacts_.erase(std::remove_if(impacts_.begin(), impacts_.end(),
                                 [](const Impact& im) { return im.life <= 0.0f; }),
@@ -1704,11 +1802,17 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
   // Which silhouette to build. The weapon's own `shape` decides; left unset,
   // it is derived from the ballistics, so a content drop that adds a fourth
   // shotgun puts a shotgun in your hands without touching this file.
-  enum class Shape { Pistol, Shotgun, Induction, Smg, Marksman, Carbine, Rifle };
+  enum class Shape { Pistol, Shotgun, Induction, Smg, Marksman, Carbine, Rifle,
+                     Sniper, Lmg, Launcher, Grenade };
   Shape shape = Shape::Rifle;
   if (weaponDef_) {
     const std::string& sh = weaponDef_->shape;
     if (sh == "pistol") shape = Shape::Pistol;
+    else if (sh == "sniper") shape = Shape::Sniper;
+    else if (sh == "lmg") shape = Shape::Lmg;
+    else if (sh == "launcher") shape = Shape::Launcher;
+    else if (sh == "grenade") shape = Shape::Grenade;
+    else if (weaponDef_->projectileSpeed > 0.0f) shape = weaponDef_->gravity > 0.0f ? Shape::Grenade : Shape::Launcher;
     else if (sh == "shotgun") shape = Shape::Shotgun;
     else if (sh == "induction") shape = Shape::Induction;
     else if (sh == "smg") shape = Shape::Smg;
@@ -1769,21 +1873,33 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
   rig[2] = glm::vec4(-f, 0.0f);
   rig[3] = glm::vec4(origin, 1.0f);
 
+  // ---- its look. Every weapon has a colour scheme and a set of fittings of
+  // its own: the maker decides the family (Kourou Arms is drab, Halcyon is
+  // white and gold, salvage is rust and cyan), and the weapon's id picks the
+  // shade, the trim, the accent light, the muzzle, the optic, the magazine
+  // and the stock inside it. Two guns of the same kind from the same maker
+  // still never look the same.
+  const WeaponLook look = weaponDef_ ? weaponDef_->look : WeaponLook{};
+
   DrawItem base;
   base.material = MaterialType::Armour;
-  base.tint = glm::vec3(0.14f, 0.155f, 0.185f);
-  base.metallic = 0.9f;
-  base.roughness = 0.42f;
+  base.tint = look.body;
+  base.metallic = look.metallic;
+  base.roughness = look.roughness;
   base.wear = 0.8f;
   base.anisoStrength = 0.3f;
   // Nothing in your hands should cast a shadow across the world: it is two
   // hand-spans from the eye, so its shadow would be a black wall over half
   // the frame.
   base.castShadow = false;
+  DrawItem trim = base;
+  trim.tint = look.trim;
+  trim.metallic = 0.35f;
+  trim.roughness = 0.7f;
 
   DrawItem lit = base;
   lit.material = MaterialType::Emissive;
-  lit.emissive = class_ ? class_->accent : hudAccent_;
+  lit.emissive = look.accent;
   lit.emissiveIntensity = weapon_.primed ? 3.4f : 1.5f;
 
   // One scale for the whole gun, so its size is a single number to tune
@@ -1801,34 +1917,97 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
     out.push_back(it);
   };
 
+  // Where the muzzle is: the flash comes out of it and a muzzle device goes
+  // on it. Set by each silhouette below.
+  float muzzleZ = -0.380f;
+  bool fitMuzzle = true, fitOptic = true, fitUnder = true;
+
   if (isPistol) {
     // A sidearm is a slide, a grip and almost nothing else: short, blunt,
     // no stock and no rail. Held higher and closer than a rifle, which is
     // most of why it reads as a pistol before you have looked at its shape.
     piece(base, box, {0.0f, 0.0f, -0.030f}, {0.050f, 0.062f, 0.185f});      // slide
-    piece(base, box, {0.0f, -0.030f, -0.030f}, {0.044f, 0.030f, 0.160f});   // frame
-    piece(base, box, {0.0f, -0.082f, 0.052f}, {0.042f, 0.110f, 0.055f}, {18, 0, 0});  // grip
-    piece(base, box, {0.0f, -0.075f, 0.052f}, {0.032f, 0.096f, 0.040f}, {18, 0, 0});  // magazine
-    piece(base, box, {0.0f, -0.024f, 0.010f}, {0.030f, 0.022f, 0.048f});    // trigger guard
+    piece(trim, box, {0.0f, -0.030f, -0.030f}, {0.044f, 0.030f, 0.160f});   // frame
+    piece(trim, box, {0.0f, -0.082f, 0.052f}, {0.042f, 0.110f, 0.055f}, {18, 0, 0});  // grip
+    // the magazine, extended on some
+    piece(base, box, {0.0f, look.mag == 2 ? -0.100f : -0.075f, 0.052f},
+          {0.032f, look.mag == 2 ? 0.150f : 0.096f, 0.040f}, {18, 0, 0});
+    piece(trim, box, {0.0f, -0.024f, 0.010f}, {0.030f, 0.022f, 0.048f});    // trigger guard
     piece(base, cyl, {0.0f, -0.004f, -0.128f}, {0.024f, 0.060f, 0.024f}, {90, 0, 0});  // muzzle
+    if (look.slideCuts) {
+      for (int i = 0; i < 3; i++) {
+        piece(lit, box, {0.026f, 0.010f, -0.090f + (float)i * 0.024f}, {0.003f, 0.020f, 0.008f});
+      }
+    }
     piece(lit, box, {0.0f, 0.034f, 0.058f}, {0.016f, 0.006f, 0.012f});      // rear sight
     piece(base, box, {0.0f, 0.034f, -0.100f}, {0.008f, 0.020f, 0.008f});    // front sight
+    muzzleZ = -0.155f;
+    fitOptic = look.optic == 1;   // only a red dot fits a slide
+    fitUnder = false;
+  } else if (shape == Shape::Launcher) {
+    // A tube on your shoulder: the fat launch tube, a grip and a trigger
+    // under it, a sight box on the side, and the blast cone at the back.
+    piece(base, cyl, {0.0f, 0.020f, -0.120f}, {0.140f, 0.640f, 0.140f}, {90, 0, 0});
+    piece(trim, cyl, {0.0f, 0.020f, -0.440f}, {0.158f, 0.040f, 0.158f}, {90, 0, 0});   // muzzle ring
+    piece(trim, tpr, {0.0f, 0.020f, 0.240f}, {0.150f, 0.120f, 0.150f}, {-90, 0, 0});   // blast cone
+    piece(trim, box, {0.0f, -0.090f, 0.040f}, {0.040f, 0.100f, 0.050f}, {14, 0, 0});   // grip
+    piece(trim, box, {0.0f, -0.080f, -0.180f}, {0.036f, 0.090f, 0.044f}, {6, 0, 0});   // fore grip
+    piece(base, box, {0.085f, 0.060f, -0.060f}, {0.050f, 0.060f, 0.120f});              // sight box
+    piece(lit, box, {0.085f, 0.060f, 0.002f}, {0.034f, 0.030f, 0.004f});
+    for (int i = 0; i < 3; i++) {
+      piece(lit, cyl, {0.0f, 0.020f, -0.300f + (float)i * 0.16f}, {0.146f, 0.010f, 0.146f}, {90, 0, 0});
+    }
+    muzzleZ = -0.460f;
+    fitMuzzle = fitOptic = fitUnder = false;
   } else {
     // Shared across the long guns: a receiver, a pistol grip, a magazine and
-    // a stock. What changes is the barrel and what hangs off it.
-    piece(base, box, {0.0f, 0.0f, 0.0f}, {0.062f, 0.070f, 0.230f});                 // receiver
-    piece(base, box, {0.0f, -0.058f, 0.072f}, {0.044f, 0.088f, 0.050f}, {14, 0, 0});// grip
-    piece(base, box, {0.0f, -0.052f, -0.012f}, {0.040f, 0.090f, 0.062f}, {-8, 0, 0});// magazine
-    piece(base, box, {0.0f, -0.004f, 0.138f}, {0.040f, 0.052f, 0.086f});            // stock
+    // a stock. What changes is the barrel and what hangs off it, and each
+    // gun's own fittings.
+    const bool heavy = shape == Shape::Lmg || shape == Shape::Sniper;
+    piece(base, box, {0.0f, 0.0f, 0.0f}, {heavy ? 0.074f : 0.062f, heavy ? 0.080f : 0.070f, 0.230f});  // receiver
+    piece(trim, box, {0.0f, -0.058f, 0.072f}, {0.044f, 0.088f, 0.050f}, {14, 0, 0});// grip
+    // the magazine: straight, curved, or a drum
+    if (shape == Shape::Lmg) {
+      piece(trim, box, {-0.010f, -0.080f, -0.020f}, {0.090f, 0.100f, 0.110f});         // box mag
+      piece(base, box, {0.040f, 0.010f, -0.020f}, {0.030f, 0.020f, 0.060f});           // feed tray
+    } else if (shape == Shape::Grenade) {
+      piece(trim, cyl, {0.0f, -0.010f, -0.040f}, {0.150f, 0.110f, 0.150f}, {90, 0, 0}); // revolving drum
+      for (int i = 0; i < 6; i++) {
+        const float a = (float)i / 6.0f * 6.2831853f;
+        piece(base, cyl, {std::cos(a) * 0.050f, -0.010f + std::sin(a) * 0.050f, -0.040f},
+              {0.030f, 0.114f, 0.030f}, {90, 0, 0});
+      }
+    } else if (look.mag == 2 && shape != Shape::Sniper && shape != Shape::Shotgun) {
+      piece(trim, cyl, {0.0f, -0.080f, -0.012f}, {0.110f, 0.050f, 0.110f}, {0, 0, 90});  // drum
+    } else if (look.mag == 1) {
+      piece(trim, box, {0.0f, -0.050f, -0.004f}, {0.040f, 0.070f, 0.060f}, {-14, 0, 0});
+      piece(trim, box, {0.0f, -0.098f, 0.010f}, {0.040f, 0.050f, 0.058f}, {-30, 0, 0});  // curved
+    } else {
+      piece(trim, box, {0.0f, -0.052f, -0.012f}, {0.040f, 0.090f, 0.062f}, {-8, 0, 0});
+    }
+    // the stock: solid, a skeleton frame, or a stub
+    if (look.stock == 1) {
+      piece(trim, box, {0.0f, 0.016f, 0.150f}, {0.016f, 0.016f, 0.110f});
+      piece(trim, box, {0.0f, -0.034f, 0.150f}, {0.016f, 0.016f, 0.110f}, {-10, 0, 0});
+      piece(trim, box, {0.0f, -0.010f, 0.204f}, {0.040f, 0.070f, 0.016f});
+    } else if (look.stock == 2) {
+      piece(trim, box, {0.0f, -0.004f, 0.120f}, {0.044f, 0.054f, 0.050f});
+    } else {
+      piece(trim, box, {0.0f, -0.004f, 0.138f}, {0.040f, 0.052f, 0.086f});
+    }
     piece(base, box, {0.0f, 0.046f, -0.020f}, {0.026f, 0.016f, 0.150f});            // top rail
+    // a painted band round the receiver, on the ones that carry one
+    if (look.band) piece(trim, box, {0.0f, 0.0f, -0.060f}, {0.066f, 0.074f, 0.022f});
 
     switch (shape) {
       case Shape::Shotgun:
         // A fat bore, a second tube under it, and a pump you can see.
         piece(base, cyl, {0.0f, 0.004f, -0.230f}, {0.052f, 0.240f, 0.052f}, {90, 0, 0});
         piece(base, cyl, {0.0f, -0.040f, -0.200f}, {0.036f, 0.180f, 0.036f}, {90, 0, 0});
-        piece(base, box, {0.0f, -0.040f, -0.150f}, {0.056f, 0.052f, 0.070f});
+        piece(trim, box, {0.0f, -0.040f, -0.150f}, {0.056f, 0.052f, 0.070f});
         piece(lit, cyl, {0.0f, 0.004f, -0.352f}, {0.034f, 0.008f, 0.034f}, {90, 0, 0});
+        muzzleZ = -0.360f;
+        fitUnder = false;
         break;
 
       case Shape::Induction:
@@ -1837,30 +2016,82 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
         piece(base, tpr, {0.0f, 0.008f, -0.300f}, {0.030f, 0.380f, 0.030f}, {90, 0, 0});
         for (int i = 0; i < 3; i++) {
           float z = -0.190f - (float)i * 0.085f;
-          piece(base, cyl, {0.0f, 0.008f, z}, {0.070f, 0.018f, 0.070f}, {90, 0, 0});
+          piece(trim, cyl, {0.0f, 0.008f, z}, {0.070f, 0.018f, 0.070f}, {90, 0, 0});
           piece(lit, cyl, {0.0f, 0.008f, z - 0.030f}, {0.050f, 0.010f, 0.050f}, {90, 0, 0});
         }
         piece(lit, box, {0.0f, 0.046f, 0.040f}, {0.020f, 0.008f, 0.090f});
+        muzzleZ = -0.500f;
+        fitMuzzle = false;
         break;
 
       case Shape::Smg:
         // Short and stubby, with the magazine through the grip and a folding
         // stock that is barely there. Nothing in front of the hand.
         piece(base, cyl, {0.0f, 0.004f, -0.150f}, {0.034f, 0.150f, 0.034f}, {90, 0, 0});
-        piece(base, box, {0.0f, -0.070f, 0.066f}, {0.038f, 0.130f, 0.046f}, {12, 0, 0});
-        piece(base, box, {0.0f, 0.010f, 0.160f}, {0.020f, 0.030f, 0.070f});
+        piece(trim, box, {0.0f, -0.070f, 0.066f}, {0.038f, 0.130f, 0.046f}, {12, 0, 0});
         piece(base, box, {0.0f, -0.028f, -0.120f}, {0.044f, 0.038f, 0.090f});   // fore grip
         piece(lit, box, {0.0f, 0.046f, 0.030f}, {0.016f, 0.008f, 0.050f});
+        muzzleZ = -0.230f;
+        fitUnder = false;
         break;
 
       case Shape::Marksman:
         // Long barrel, a bipod folded under it, and a scope you can see the
         // tube of — the one gun whose silhouette says "range" on its own.
         piece(base, tpr, {0.0f, 0.006f, -0.330f}, {0.026f, 0.420f, 0.026f}, {90, 0, 0});
-        piece(base, box, {0.0f, -0.034f, -0.250f}, {0.028f, 0.020f, 0.150f});
+        piece(trim, box, {0.0f, -0.034f, -0.250f}, {0.028f, 0.020f, 0.150f});
         piece(base, cyl, {0.0f, 0.086f, -0.040f}, {0.058f, 0.230f, 0.058f}, {90, 0, 0});  // scope
         piece(base, cyl, {0.0f, 0.086f, -0.160f}, {0.070f, 0.040f, 0.070f}, {90, 0, 0});  // objective
         piece(lit, cyl, {0.0f, 0.086f, 0.078f}, {0.040f, 0.008f, 0.040f}, {90, 0, 0});    // eyepiece
+        muzzleZ = -0.545f;
+        fitOptic = fitUnder = false;
+        break;
+
+      case Shape::Sniper:
+        // The longest thing in the armoury: a heavy fluted barrel, a brake on
+        // the end, a bolt you can see, a big scope and a bipod down.
+        piece(base, cyl, {0.0f, 0.006f, -0.380f}, {0.034f, 0.520f, 0.034f}, {90, 0, 0});
+        for (int i = 0; i < 4; i++) {
+          piece(trim, box, {0.0f, 0.006f, -0.220f - (float)i * 0.090f}, {0.040f, 0.008f, 0.040f});
+        }
+        piece(trim, box, {0.0f, 0.006f, -0.650f}, {0.060f, 0.034f, 0.050f});           // brake
+        piece(base, cyl, {0.0f, 0.100f, -0.030f}, {0.070f, 0.300f, 0.070f}, {90, 0, 0}); // scope
+        piece(base, cyl, {0.0f, 0.100f, -0.190f}, {0.090f, 0.050f, 0.090f}, {90, 0, 0}); // objective
+        piece(lit, cyl, {0.0f, 0.100f, 0.122f}, {0.050f, 0.008f, 0.050f}, {90, 0, 0});   // eyepiece
+        piece(trim, box, {0.0f, 0.072f, -0.030f}, {0.030f, 0.030f, 0.060f});           // turret
+        piece(base, cyl, {0.050f, 0.020f, 0.040f}, {0.016f, 0.050f, 0.016f}, {0, 0, 90}); // bolt
+        piece(base, sph, {0.078f, 0.020f, 0.040f}, glm::vec3(0.022f));
+        piece(trim, box, {-0.016f, -0.070f, -0.420f}, {0.010f, 0.110f, 0.010f}, {0, 0, -14});  // bipod
+        piece(trim, box, {0.016f, -0.070f, -0.420f}, {0.010f, 0.110f, 0.010f}, {0, 0, 14});
+        muzzleZ = -0.680f;
+        fitMuzzle = fitOptic = fitUnder = false;
+        break;
+
+      case Shape::Lmg:
+        // A heavy barrel in a slotted shroud, a carry handle, a box of belt
+        // on the side and a bipod folded under the front.
+        piece(base, cyl, {0.0f, 0.006f, -0.260f}, {0.036f, 0.300f, 0.036f}, {90, 0, 0});
+        piece(trim, box, {0.0f, 0.006f, -0.230f}, {0.060f, 0.060f, 0.200f});           // shroud
+        for (int i = 0; i < 4; i++) {
+          piece(lit, box, {0.031f, 0.006f, -0.300f + (float)i * 0.045f}, {0.003f, 0.030f, 0.018f});
+        }
+        piece(base, box, {0.0f, 0.080f, -0.020f}, {0.020f, 0.016f, 0.120f});           // carry handle
+        piece(base, box, {0.0f, 0.062f, -0.070f}, {0.016f, 0.036f, 0.012f});
+        piece(base, box, {0.0f, 0.062f, 0.030f}, {0.016f, 0.036f, 0.012f});
+        piece(trim, box, {0.0f, -0.040f, -0.360f}, {0.040f, 0.016f, 0.090f});          // bipod, folded
+        muzzleZ = -0.440f;
+        fitUnder = false;
+        break;
+
+      case Shape::Grenade:
+        // A short fat barrel off a revolving drum, a ladder sight on top.
+        piece(base, cyl, {0.0f, 0.004f, -0.230f}, {0.070f, 0.200f, 0.070f}, {90, 0, 0});
+        piece(trim, cyl, {0.0f, 0.004f, -0.330f}, {0.082f, 0.020f, 0.082f}, {90, 0, 0});
+        piece(base, box, {0.0f, 0.070f, -0.160f}, {0.040f, 0.050f, 0.012f});           // ladder sight
+        piece(lit, box, {0.0f, 0.092f, -0.160f}, {0.030f, 0.006f, 0.008f});
+        piece(trim, box, {0.0f, -0.050f, -0.200f}, {0.036f, 0.080f, 0.040f}, {8, 0, 0}); // fore grip
+        muzzleZ = -0.345f;
+        fitMuzzle = fitOptic = fitUnder = false;
         break;
 
       case Shape::Carbine:
@@ -1870,37 +2101,72 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
         // barrel and a gas block for the service rifle.
         piece(base, cyl, {0.0f, 0.006f, -0.190f}, {0.026f, 0.190f, 0.026f}, {90, 0, 0});
         if (shape == Shape::Carbine) {
-          piece(base, cyl, {0.0f, 0.006f, -0.300f}, {0.048f, 0.150f, 0.048f}, {90, 0, 0});
+          piece(trim, cyl, {0.0f, 0.006f, -0.300f}, {0.048f, 0.150f, 0.048f}, {90, 0, 0});
+          fitMuzzle = false;
         } else {
           piece(base, cyl, {0.0f, 0.006f, -0.300f}, {0.030f, 0.160f, 0.030f}, {90, 0, 0});
           piece(base, box, {0.0f, 0.030f, -0.210f}, {0.030f, 0.034f, 0.055f});
         }
-        piece(base, box, {0.0f, -0.030f, -0.170f}, {0.034f, 0.030f, 0.120f});
+        piece(trim, box, {0.0f, -0.030f, -0.170f}, {0.034f, 0.030f, 0.120f});
         piece(lit, box, {0.0f, 0.046f, 0.030f}, {0.016f, 0.008f, 0.060f});
+        muzzleZ = -0.380f;
         break;
     }
   }
 
-  // Front and rear sights, so aiming has something to line up. The pistol
-  // and the marksman rifle carry their own, so they are excluded here rather
-  // than ending up with two sets.
-  if (!isPistol && shape != Shape::Marksman) {
+  // ---- the fittings. The muzzle device, the optic and whatever hangs under
+  // the front: each gun's own, from its look.
+  if (fitMuzzle && look.muzzle != 0) {
+    if (look.muzzle == 1) {          // a brake: a block with ports
+      piece(trim, box, {0.0f, 0.006f, muzzleZ - 0.020f}, {0.050f, 0.034f, 0.050f});
+      piece(lit, box, {0.0f, 0.006f, muzzleZ - 0.020f}, {0.052f, 0.006f, 0.010f});
+      muzzleZ -= 0.045f;
+    } else if (look.muzzle == 2) {   // a suppressor can
+      piece(trim, cyl, {0.0f, 0.006f, muzzleZ - 0.070f}, {0.046f, 0.140f, 0.046f}, {90, 0, 0});
+      muzzleZ -= 0.140f;
+    } else {                         // a flash hider: a short cone
+      piece(base, tpr, {0.0f, 0.006f, muzzleZ - 0.025f}, {0.040f, 0.050f, 0.040f}, {-90, 0, 0});
+      muzzleZ -= 0.050f;
+    }
+  }
+  if (fitOptic && look.optic != 0) {
+    const float y = isPistol ? 0.050f : 0.074f;
+    const float z = isPistol ? -0.010f : 0.000f;
+    if (look.optic == 1) {           // a red dot: a small box and its lens
+      piece(base, box, {0.0f, y, z}, {0.030f, 0.030f, 0.040f});
+      piece(lit, box, {0.0f, y + 0.004f, z + 0.021f}, {0.016f, 0.014f, 0.002f});
+    } else if (look.optic == 2) {    // a holographic sight: an open window
+      piece(base, box, {0.0f, y - 0.010f, z}, {0.040f, 0.012f, 0.060f});
+      piece(base, box, {-0.019f, y + 0.012f, z - 0.020f}, {0.004f, 0.036f, 0.020f});
+      piece(base, box, {0.019f, y + 0.012f, z - 0.020f}, {0.004f, 0.036f, 0.020f});
+      piece(base, box, {0.0f, y + 0.030f, z - 0.020f}, {0.040f, 0.004f, 0.020f});
+      piece(lit, box, {0.0f, y + 0.012f, z - 0.022f}, {0.006f, 0.006f, 0.002f});
+    } else {                         // a short scope
+      piece(base, cyl, {0.0f, y + 0.010f, z - 0.010f}, {0.044f, 0.150f, 0.044f}, {90, 0, 0});
+      piece(lit, cyl, {0.0f, y + 0.010f, z + 0.066f}, {0.030f, 0.006f, 0.030f}, {90, 0, 0});
+    }
+  } else if (!isPistol && shape != Shape::Marksman && shape != Shape::Sniper && shape != Shape::Launcher) {
+    // Iron sights, so aiming has something to line up.
     piece(base, box, {0.0f, 0.070f, -0.120f}, {0.010f, 0.030f, 0.010f});
     piece(lit, box, {0.0f, 0.072f, 0.058f}, {0.026f, 0.008f, 0.010f});
+  }
+  if (fitUnder) {
+    if (look.under == 1) {           // a vertical fore grip
+      piece(trim, box, {0.0f, -0.075f, -0.200f}, {0.030f, 0.080f, 0.032f}, {6, 0, 0});
+    } else if (look.under == 2) {    // a laser on the side, lit at the front
+      piece(base, box, {0.040f, -0.004f, -0.180f}, {0.020f, 0.024f, 0.060f});
+      piece(lit, box, {0.040f, -0.004f, -0.212f}, {0.012f, 0.012f, 0.004f});
+    }
   }
 
   // ---- muzzle flash. Bright, brief, and in front of the barrel: a shot you
   // can see leaving the gun rather than a number changing in the corner.
   // Three pieces, because a single quad reads as a sticker — a hot core, a
-  // wider petal, and a short streak along the bore.
+  // wider petal, and a short streak along the bore. A launcher's is a puff
+  // of back-blast instead.
   if (muzzleFlash_ > 0.001f) {
     float k = std::clamp(muzzleFlash_, 0.0f, 1.0f);
-    float muzzleZ = isPistol ? -0.155f
-                  : shape == Shape::Shotgun ? -0.360f
-                  : shape == Shape::Induction ? -0.500f
-                  : shape == Shape::Smg ? -0.230f
-                  : shape == Shape::Marksman ? -0.545f
-                  : -0.380f;
+    if (look.muzzle == 2 && fitMuzzle) k *= 0.35f;   // a suppressor eats most of it
     DrawItem flash = lit;
     flash.emissive = glm::vec3(1.0f, 0.86f, 0.62f);
     flash.emissiveIntensity = 14.0f * k;
@@ -1911,6 +2177,11 @@ void Game::collectViewmodel(std::vector<DrawItem>& out) const {
     flash.emissiveIntensity = 5.0f * k;
     piece(flash, box, {0.0f, 0.006f, muzzleZ - 0.09f},
           glm::vec3(0.030f * k, 0.030f * k, 0.22f * k));
+    if (shape == Shape::Launcher) {
+      flash.emissive = glm::vec3(1.0f, 0.62f, 0.30f);
+      flash.emissiveIntensity = 6.0f * k;
+      piece(flash, sph, {0.0f, 0.020f, 0.330f}, glm::vec3(0.16f) * k);
+    }
   }
 }
 
@@ -2028,6 +2299,40 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
 
   // Sparks where rounds landed. World geometry rather than a screen sprite,
   // so they are occluded by the thing they hit like everything else.
+  // Launcher rounds: a lit body along its line of flight and a short trail,
+  // and the blasts, a fireball that swells and fades.
+  for (const Projectile& p : projectiles_) {
+    const glm::vec3 dir = glm::normalize(p.vel + glm::vec3(1e-5f));
+    DrawItem it;
+    it.mesh = &HostileGeometry::unitBox();
+    it.material = MaterialType::Emissive;
+    it.tint = it.emissive = p.gravity > 0.0f ? glm::vec3(0.6f, 1.0f, 0.4f) : glm::vec3(1.0f, 0.7f, 0.35f);
+    it.emissiveIntensity = 6.0f;
+    it.castShadow = false;
+    const float yaw = std::atan2(dir.x, dir.z), pitch = -std::asin(std::clamp(dir.y, -1.0f, 1.0f));
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), p.pos);
+    m = glm::rotate(m, yaw, glm::vec3(0, 1, 0));
+    m = glm::rotate(m, pitch, glm::vec3(1, 0, 0));
+    it.model = glm::scale(m, p.gravity > 0.0f ? glm::vec3(0.14f) : glm::vec3(0.10f, 0.10f, 0.42f));
+    out.push_back(it);
+    DrawItem trail = it;
+    trail.emissiveIntensity = 2.5f;
+    trail.tint = trail.emissive = glm::vec3(1.0f, 0.85f, 0.6f);
+    trail.model = glm::scale(glm::translate(m, glm::vec3(0, 0, -0.9f)), glm::vec3(0.05f, 0.05f, 1.4f));
+    out.push_back(trail);
+  }
+  for (const Blast& b : blasts_) {
+    const float k = std::clamp(b.life / 0.5f, 0.0f, 1.0f);
+    DrawItem it;
+    it.mesh = &HostileGeometry::unitSphere();
+    it.material = MaterialType::Emissive;
+    it.tint = it.emissive = glm::mix(glm::vec3(0.6f, 0.2f, 0.08f), glm::vec3(1.0f, 0.85f, 0.5f), k);
+    it.emissiveIntensity = 10.0f * k;
+    it.castShadow = false;
+    it.model = glm::scale(glm::translate(glm::mat4(1.0f), b.pos), glm::vec3(b.radius * (1.2f - 0.6f * k)));
+    out.push_back(it);
+  }
+
   for (const Impact& im : impacts_) {
     float k = std::clamp(im.life / 0.22f, 0.0f, 1.0f);
     DrawItem it;

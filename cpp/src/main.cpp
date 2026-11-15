@@ -93,6 +93,19 @@ int main(int argc, char** argv) {
     }
   }
 
+  // --looks: every weapon's look, one a line, then exit. The test suite
+  // checks that no two weapons share one.
+  for (int i = 1; i < argc; i++) {
+    if (std::strcmp(argv[i], "--looks") != 0) continue;
+    const char* dirEnv = std::getenv("EREBUS_CONTENT_DIR");
+    Content c;
+    if (!c.loadAll(dirEnv ? dirEnv : "content")) return 1;
+    for (const std::string& id : c.weaponIds()) {
+      if (const WeaponDef* w = c.weapon(id)) std::printf("%s|%s\n", id.c_str(), weaponLookKey(*w).c_str());
+    }
+    return 0;
+  }
+
   // --routes: build every campaign expedition and print its objectives, one
   // mission a line, then exit. No window — it is how the test suite checks
   // that no two missions are the same route.
@@ -1489,6 +1502,8 @@ int main(int argc, char** argv) {
       bool aiming = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
       float targetAim = aiming ? 1.0f : 0.0f;
       camera.aim += (targetAim - camera.aim) * std::min(1.0f, dt * 10.0f);
+      // A scope narrows the view far further than iron sights do.
+      camera.fovAds = game.aimZoom() > 1.0f ? camera.fovHip / game.aimZoom() : 42.0f;
 
       bool firePressed = (forceFire && autoSeesTarget) || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
       // forceFire used to hold the reload key too, which kept the weapon

@@ -200,29 +200,46 @@ Upgrades are permanent, apply to every weapon you pick up, and come in tiers
 (the second drill needs the first). The G kit screen still sells everything
 from anywhere; the counters are where each person's own stock is.
 
-### A hundred weapons, and where they come from
+### 125 weapons, and where they come from
 
-There are **100 weapons**: seven kinds (rifle, carbine, SMG, marksman,
-shotgun, sidearm, induction), five tiers, and seven makers who each bend the
+There are **125 weapons**: eleven kinds (rifle, carbine, SMG, marksman,
+shotgun, sidearm, induction, and the heavy four — a scoped **sniper**, a
+belt-fed **machine gun**, a **rocket launcher** and a **grenade launcher**), five tiers, and seven makers who each bend the
 numbers their own way — KOUROU ARMS is reliable, CRADLE WORKS rebuilt, HALCYON
 precise, BRANDT heavy, VESPER fast, CYBER SALVAGE goes through things, and CHOIR
 nobody will talk about. The kit screen (G) counts how many you have
-(`WEAPONS 14 / 100`), and the stat line under any weapon says how it came to
+(`WEAPONS 14 / 125`), and the stat line under any weapon says how it came to
 you. They come to you six ways:
 
 | Way | How many | Where |
 |---|---|---|
-| **Bought** | 35 | Ondo's rack at the hideout (Kourou Arms), Voss's on the Cradle (Cradle Works), or the kit screen |
-| **Dropped** | 28 | Hostiles drop them — rarely from the rank and file, often from wardens, always from a boss. A drop is a gold weapon with a beam of light over it; walk over it and it goes in your kit without swapping what you are holding. Whatever is still on the floor when you clear the mission comes with you |
+| **Bought** | 45 | Ondo's rack at the hideout (Kourou Arms), Voss's on the Cradle (Cradle Works), or the kit screen |
+| **Dropped** | 40 | Hostiles drop them — rarely from the rank and file, often from wardens, always from a boss. A drop is a gold weapon with a beam of light over it; walk over it and it goes in your kit without swapping what you are holding. Whatever is still on the floor when you clear the mission comes with you |
 | **Mission rewards** | 12 | The first clear of twelve campaign missions — HANGAR THREE, THE CAUSEWAY, LAUNCH WINDOW, DEAD AIR, THE HARBOUR, THE HOSPITAL, THE SIGNAL TOWER, THE FORGE, THE DAM, THE LISTENING STATION, THE GATE and THE GREAT CAVE |
 | **Promotions** | 8 | One handed over on each rung from Probationary Strider to Lead Strider |
 | **Bounties** | 6+ | Paid by Bright, Ondo, Hale, Kaur, Odil and the Rook (plus the KESTREL and LONGSHORE bounties) |
-| **The black market** | 6 | The Rook sells them at the appraisal desk, above the list of things the Rook will buy |
+| **The black market** | 9 | The Rook sells them at the appraisal desk, above the list of things the Rook will buy |
 
 Only bought weapons are listed for sale; the rest appear in your kit once you
 have them, because a drop you can read off a menu first is a shopping list.
-The ninety new ones are written by `tools/make_weapons.py` (archetype × tier ×
+The generated ones are written by `tools/make_weapons.py` (archetype × tier ×
 maker); change a number there and run it again to re-balance the armoury.
+
+**The heavy kinds play differently, not just harder.** The sniper's scope
+zooms the view right in when you aim. The launchers fire rounds you can watch
+fly: a rocket goes straight and a grenade arcs (with a proximity fuse), and
+both explode — everything in the blast takes damage, less towards the edge,
+and you do not.
+
+**Every gun looks different.** Each maker is a family of finishes — Kourou
+Arms in drab olive and tan, Cradle Works gunmetal with orange, Halcyon white
+and gold, Brandt black and red, Vesper bright teal and purple, Cyber Salvage
+rust with cyan light, Choir pale bone and violet — and inside it each weapon
+gets its own shade, trim and accent light, plus its own fittings: muzzle
+brake, suppressor or flash hider; red dot, holographic sight or short scope;
+fore grip or laser; straight, curved or drum magazine; solid, skeleton or
+stub stock. No two of the 125 share a look (`./erebus_native --looks`). A
+weapon file can set its own `colour` and `accent` too.
 
 Campaigns are **tracks** (`track = earth` in a mission file), not one long
 list. Each track unlocks one step at a time within itself, so adding a

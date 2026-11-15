@@ -36,6 +36,10 @@ public:
   float spread = 0.0f;
   bool pierce = false;
   float range = 200.0f;
+  // A launcher fires a round you can watch instead of a ray (Game spawns
+  // and flies it); see WeaponDef for what the numbers mean.
+  float projectileSpeed = 0.0f, gravity = 0.0f, splash = 0.0f;
+  bool launcher() const { return projectileSpeed > 0.0f; }
 
   float cooldown = 0.0f;
   float reloadT = 0.0f;
@@ -62,6 +66,10 @@ public:
             std::vector<ShotResult>& out);
 
   bool canFire() const { return !reloading && cooldown <= 0.0f && ammoInMag > 0; }
+
+  // A launcher's trigger pull: spends the round and starts the cooldown.
+  // Returns whether a round left the tube; the caller makes the projectile.
+  bool launch();
 
 private:
   // Counts trigger pulls, so the pellet spread is a deterministic function of

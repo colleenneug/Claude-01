@@ -308,6 +308,23 @@ struct ShipDef {
 
 // content/weapons/<id>.cfg — equipping one (see Game::equipWeapon) sets
 // these directly onto the live Weapon instance.
+// How a weapon looks in your hands: its colours and its fittings. Worked out
+// once at load (Content::loadAll) from the weapon's maker and id, so that no
+// two weapons in the armoury share a look — see assignLooks in Content.cpp.
+struct WeaponLook {
+  glm::vec3 body{0.14f, 0.155f, 0.185f};   // the main finish
+  glm::vec3 trim{0.10f, 0.11f, 0.13f};     // grip, stock, magazine
+  glm::vec3 accent{0.45f, 0.90f, 1.00f};   // the lit sights and strips
+  float metallic = 0.9f, roughness = 0.42f;
+  int muzzle = 0;   // 0 plain, 1 brake, 2 suppressor, 3 flash hider
+  int optic = 0;    // 0 iron sights, 1 red dot, 2 holographic, 3 short scope
+  int under = 0;    // 0 nothing, 1 fore grip, 2 laser
+  int mag = 0;      // 0 straight, 1 curved, 2 drum (or extended, on a pistol)
+  int stock = 0;    // 0 solid, 1 skeleton, 2 stub
+  bool band = false;       // a painted band round the receiver
+  bool slideCuts = false;  // lit cuts down a pistol's slide
+};
+
 struct WeaponDef {
   std::string id, name;
   float damage = 22.0f, headshotMultiplier = 2.0f;
@@ -366,6 +383,22 @@ struct WeaponDef {
   int tier = 1;         // 1..5, how far up the ladder it belongs
   std::string maker;    // KOUROU ARMS, CRADLE WORKS... flavour, and a family
   std::string blurb;
+
+  // Launchers. projectile_speed 0 is a hitscan weapon (everything above);
+  // anything else fires a round you can watch fly. A rocket flies straight;
+  // with gravity it is a grenade and arcs. splash is a blast radius in
+  // metres: everything in it takes the damage, less towards the edge.
+  float projectileSpeed = 0.0f;
+  float gravity = 0.0f;
+  float splash = 0.0f;
+  // Aim magnification: 0 is the usual sights, 3 is a real scope.
+  float zoom = 0.0f;
+  // Its look. Every weapon gets a colour scheme and a shape variant of its
+  // own (Game::collectViewmodel, from its maker and id); these override the
+  // body and the lit accent when the file asks for something specific.
+  bool hasColour = false, hasAccent = false;
+  glm::vec3 colour{0.0f}, accent{0.0f};
+  WeaponLook look;   // filled in at load
 };
 
 // content/classes/<id>.cfg — a doctrine. Each one is its issued weapon, its
@@ -501,3 +534,8 @@ private:
   std::unordered_map<std::string, ShipDef> ships_;
   std::unordered_map<std::string, UpgradeDef> upgrades_;
 };
+
+// Gives every weapon its look (WeaponDef::look), each one different from
+// every other. Called by Content::loadAll; exposed for the test that checks it.
+void assignLooks(std::unordered_map<std::string, WeaponDef>& weapons);
+std::string weaponLookKey(const WeaponDef& w);

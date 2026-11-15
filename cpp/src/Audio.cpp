@@ -187,6 +187,33 @@ std::array<Buffer, (size_t)Sfx::Count> synthesiseAll() {
     set(Sfx::FireInduction, b, 0.62f);
   }
   {
+    // A sniper: the marksman's crack, harder, and a long roll off the hills.
+    Buffer b = gunshot(1.3f, 3600.0f, 80.0f, 0.09f, 0.62f, 7);
+    mix(b, noise(0.06f, 3000.0f, 14000.0f, 0.0f, 0.012f, 1.0f, 62));
+    set(Sfx::FireSniper, b, 0.95f);
+  }
+  set(Sfx::FireLmg, gunshot(0.34f, 3900.0f, 100.0f, 0.05f, 0.13f, 8), 0.72f);
+  {
+    // A rocket: a thump out of the tube and the motor catching.
+    Buffer b = tone(0.25f, 120.0f, 50.0f, 0.001f, 0.06f, 0, 1.0f);
+    mix(b, noise(1.0f, 200.0f, 5000.0f, 0.02f, 0.40f, 0.9f, 63), 0.03f);
+    set(Sfx::FireRocket, b, 0.85f);
+  }
+  {
+    // A grenade launcher: a hollow bloop.
+    Buffer b = tone(0.22f, 340.0f, 140.0f, 0.001f, 0.06f, 0, 1.0f);
+    mix(b, noise(0.15f, 200.0f, 2500.0f, 0.0f, 0.03f, 0.5f, 64));
+    set(Sfx::FireGrenade, b, 0.60f);
+  }
+  {
+    // The blast: a crack, the low punch, and debris settling after.
+    Buffer b = noise(1.8f, 20.0f, 4000.0f, 0.001f, 0.45f, 1.0f, 65);
+    mix(b, tone(1.4f, 80.0f, 25.0f, 0.001f, 0.40f, 0, 1.0f));
+    mix(b, noise(0.08f, 2000.0f, 12000.0f, 0.0f, 0.02f, 0.8f, 66));
+    for (int k = 0; k < 5; k++) mix(b, noise(0.06f, 2500.0f, 10000.0f, 0.0f, 0.02f, 0.3f, 67 + (uint32_t)k), 0.3f + 0.17f * k);
+    set(Sfx::Explosion, b, 1.0f);
+  }
+  {
     Buffer b = noise(0.06f, 1500.0f, 9000.0f, 0.0f, 0.008f, 1.0f, 11);
     mix(b, tone(0.05f, 1800.0f, 1700.0f, 0.0f, 0.01f, 1, 0.3f));
     set(Sfx::DryFire, b, 0.40f);

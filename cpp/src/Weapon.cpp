@@ -16,6 +16,14 @@ void Weapon::update(float dt) {
   }
 }
 
+bool Weapon::launch() {
+  if (!canFire()) return false;
+  cooldown = fireInterval;
+  ammoInMag--;
+  primed = false;
+  return true;
+}
+
 void Weapon::startReload() {
   if (reloading || ammoInMag == magSize || reserveAmmo <= 0) return;
   reloading = true;

@@ -113,6 +113,8 @@ public:
   const std::vector<Hostile>& hostiles() const { return hostiles_; }
   const Level& level() const { return level_; }
   const Weapon& weapon() const { return weapon_; }
+  // How far the sights magnify: 0 for the usual, 3 for a sniper's scope.
+  float aimZoom() const { return (armed_ && weaponDef_) ? weaponDef_->zoom : 0.0f; }
   MissionState missionState() const { return missionState_; }
   const std::string& missionName() const { return mission_.name; }
   float waveProgress() const;
@@ -414,6 +416,26 @@ private:
   };
   std::vector<Impact> impacts_;
   void addImpact(const glm::vec3& at, const glm::vec3& tint);
+
+  // Launcher rounds in flight, and the blasts they leave. A rocket flies
+  // straight; a grenade falls. Both go off on whatever they touch.
+  struct Projectile {
+    glm::vec3 pos{0.0f}, vel{0.0f};
+    float gravity = 0.0f, splash = 0.0f, damage = 0.0f, life = 0.0f;
+    bool primed = false;
+  };
+  std::vector<Projectile> projectiles_;
+  struct Blast {
+    glm::vec3 pos{0.0f};
+    float radius = 0.0f, life = 0.0f;
+  };
+  std::vector<Blast> blasts_;
+  void updateProjectiles(float dt);
+  void explode(const glm::vec3& at, float radius, float damage, int directHit, bool primed);
+  // One round's worth of damage into one hostile, with everything that goes
+  // with it: the marker, the sound, and on a kill the experience, resupply,
+  // loot and the bounty tally. Bullets and blasts both come through here.
+  void damageHostile(size_t index, float dmg, bool headshot, const glm::vec3& point);
   float swayX_ = 0.0f, swayY_ = 0.0f;
   glm::vec3 prevFwd_{0.0f, 0.0f, -1.0f};
   float bobT_ = 0.0f;

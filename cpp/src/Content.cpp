@@ -4,6 +4,9 @@
 #include <fstream>
 #include <sstream>
 #include <cctype>
+#include <cstdio>
+#include <set>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -98,6 +101,108 @@ EnemyType parseEnemy(const std::string& id, const fs::path& path) {
   }
   return e;
 }
+
+// ---- weapon looks. A maker is a family of finishes; inside it, the id picks
+// the shade, the trim, the accent light and the fittings. A look that is
+// already taken is rolled again, so every weapon in the armoury is its own.
+namespace {
+struct Palette {
+  std::vector<glm::vec3> body, trim, accent;
+  float metallic, roughness;
+};
+const Palette& paletteFor(const std::string& maker) {
+  static const Palette ka{{{0.30f, 0.32f, 0.22f}, {0.42f, 0.36f, 0.26f}, {0.24f, 0.26f, 0.24f}, {0.36f, 0.34f, 0.30f}},
+                          {{0.12f, 0.12f, 0.11f}, {0.20f, 0.17f, 0.12f}, {0.30f, 0.27f, 0.20f}},
+                          {{1.0f, 0.72f, 0.25f}, {0.55f, 1.0f, 0.45f}, {1.0f, 0.45f, 0.25f}}, 0.45f, 0.65f};
+  static const Palette cw{{{0.22f, 0.26f, 0.32f}, {0.18f, 0.20f, 0.24f}, {0.30f, 0.32f, 0.36f}, {0.20f, 0.24f, 0.30f}},
+                          {{0.70f, 0.36f, 0.12f}, {0.10f, 0.11f, 0.13f}, {0.44f, 0.46f, 0.50f}},
+                          {{1.0f, 0.55f, 0.15f}, {0.40f, 0.85f, 1.0f}, {1.0f, 0.85f, 0.40f}}, 0.85f, 0.40f};
+  static const Palette hal{{{0.82f, 0.80f, 0.74f}, {0.70f, 0.72f, 0.74f}, {0.88f, 0.86f, 0.82f}, {0.60f, 0.64f, 0.70f}},
+                           {{0.70f, 0.56f, 0.24f}, {0.16f, 0.16f, 0.18f}, {0.50f, 0.52f, 0.56f}},
+                           {{1.0f, 0.85f, 0.40f}, {0.50f, 0.80f, 1.0f}, {1.0f, 1.0f, 1.0f}}, 0.55f, 0.30f};
+  static const Palette br{{{0.07f, 0.07f, 0.08f}, {0.12f, 0.10f, 0.10f}, {0.16f, 0.16f, 0.15f}, {0.10f, 0.11f, 0.12f}},
+                          {{0.50f, 0.08f, 0.06f}, {0.28f, 0.28f, 0.28f}, {0.36f, 0.24f, 0.12f}},
+                          {{1.0f, 0.20f, 0.12f}, {1.0f, 0.55f, 0.15f}, {0.95f, 0.95f, 0.90f}}, 0.80f, 0.55f};
+  static const Palette ves{{{0.10f, 0.40f, 0.42f}, {0.34f, 0.16f, 0.46f}, {0.12f, 0.20f, 0.42f}, {0.46f, 0.12f, 0.24f}},
+                           {{0.85f, 0.85f, 0.88f}, {0.10f, 0.10f, 0.12f}, {0.90f, 0.70f, 0.10f}},
+                           {{0.30f, 1.0f, 0.90f}, {1.0f, 0.35f, 0.85f}, {0.60f, 0.50f, 1.0f}}, 0.60f, 0.35f};
+  static const Palette salv{{{0.34f, 0.18f, 0.10f}, {0.26f, 0.22f, 0.18f}, {0.20f, 0.14f, 0.12f}, {0.30f, 0.26f, 0.20f}},
+                            {{0.12f, 0.20f, 0.22f}, {0.40f, 0.30f, 0.18f}, {0.14f, 0.14f, 0.14f}},
+                            {{0.25f, 0.95f, 1.0f}, {0.40f, 1.0f, 0.55f}, {0.95f, 0.30f, 1.0f}}, 0.65f, 0.75f};
+  static const Palette ch{{{0.78f, 0.74f, 0.68f}, {0.66f, 0.62f, 0.72f}, {0.86f, 0.84f, 0.88f}, {0.56f, 0.50f, 0.62f}},
+                          {{0.30f, 0.20f, 0.40f}, {0.60f, 0.56f, 0.50f}, {0.12f, 0.10f, 0.16f}},
+                          {{0.75f, 0.45f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.45f, 0.60f, 1.0f}}, 0.40f, 0.30f};
+  static const Palette issue{{{0.14f, 0.155f, 0.185f}, {0.20f, 0.22f, 0.20f}, {0.24f, 0.22f, 0.20f}, {0.12f, 0.12f, 0.14f}},
+                             {{0.10f, 0.11f, 0.13f}, {0.30f, 0.26f, 0.20f}, {0.40f, 0.42f, 0.44f}},
+                             {{0.45f, 0.90f, 1.0f}, {1.0f, 0.70f, 0.30f}, {0.60f, 1.0f, 0.60f}}, 0.85f, 0.45f};
+  if (maker == "KOUROU ARMS") return ka;
+  if (maker == "CRADLE WORKS") return cw;
+  if (maker == "HALCYON") return hal;
+  if (maker == "BRANDT") return br;
+  if (maker == "VESPER") return ves;
+  if (maker == "CYBER SALVAGE") return salv;
+  if (maker == "CHOIR") return ch;
+  return issue;
+}
+
+WeaponLook rollLook(const WeaponDef& w, uint32_t salt) {
+  uint32_t h = 2166136261u ^ (salt * 0x9e3779b9u);
+  for (char c : w.id) h = (h ^ (unsigned char)c) * 16777619u;
+  auto pick = [&](int n) {
+    h ^= h >> 15;
+    h *= 0x2c1b3c6du;
+    h ^= h >> 12;
+    return (int)(h % (uint32_t)n);
+  };
+  const Palette& p = paletteFor(w.maker);
+  WeaponLook L;
+  // A shade of the maker's finish, not just its swatch: the same swatch
+  // lighter or darker reads as a different gun across a room.
+  const float shade = 0.80f + 0.08f * (float)pick(6);
+  L.body = p.body[(size_t)pick((int)p.body.size())] * shade;
+  L.trim = p.trim[(size_t)pick((int)p.trim.size())];
+  L.accent = p.accent[(size_t)pick((int)p.accent.size())];
+  L.metallic = p.metallic;
+  L.roughness = p.roughness;
+  L.muzzle = pick(4);
+  L.optic = pick(4);
+  L.under = pick(3);
+  L.mag = pick(3);
+  L.stock = pick(3);
+  L.band = pick(2) == 1;
+  L.slideCuts = pick(2) == 1;
+  // Better guns come better fitted.
+  if (w.tier >= 4 && L.optic == 0) L.optic = 1 + pick(3);
+  if (w.hasColour) L.body = w.colour;
+  if (w.hasAccent) L.accent = w.accent;
+  return L;
+}
+
+std::string lookKey(const WeaponDef& w, const WeaponLook& L) {
+  char buf[200];
+  std::snprintf(buf, sizeof(buf), "%s|%.2f,%.2f,%.2f|%.2f,%.2f,%.2f|%.2f,%.2f,%.2f|%d%d%d%d%d%d%d",
+                w.shape.c_str(), L.body.x, L.body.y, L.body.z, L.trim.x, L.trim.y, L.trim.z,
+                L.accent.x, L.accent.y, L.accent.z, L.muzzle, L.optic, L.under, L.mag, L.stock,
+                (int)L.band, (int)L.slideCuts);
+  return buf;
+}
+}  // namespace
+
+void assignLooksImpl(std::unordered_map<std::string, WeaponDef>& weapons) {
+  std::vector<std::string> ids;
+  for (const auto& kv : weapons) ids.push_back(kv.first);
+  std::sort(ids.begin(), ids.end());
+  std::set<std::string> taken;
+  for (const std::string& id : ids) {
+    WeaponDef& w = weapons[id];
+    for (uint32_t salt = 0; salt < 64; salt++) {
+      w.look = rollLook(w, salt);
+      if (taken.insert(lookKey(w, w.look)).second) break;
+    }
+  }
+}
+
+std::string weaponLookKeyImpl(const WeaponDef& w) { return lookKey(w, w.look); }
 
 MissionDef parseMission(const std::string& id, const fs::path& path) {
   MissionDef m;
@@ -296,6 +401,12 @@ WeaponDef parseWeapon(const std::string& id, const fs::path& path) {
       else if (k == "tier") w.tier = std::max(1, std::stoi(v));
       else if (k == "maker") w.maker = v;
       else if (k == "blurb") w.blurb = v;
+      else if (k == "projectile_speed") w.projectileSpeed = std::max(0.0f, std::stof(v));
+      else if (k == "gravity") w.gravity = std::stof(v);
+      else if (k == "splash") w.splash = std::max(0.0f, std::stof(v));
+      else if (k == "zoom") w.zoom = std::max(0.0f, std::stof(v));
+      else if (k == "colour" || k == "color") { w.colour = parseVec3(v, w.colour); w.hasColour = true; }
+      else if (k == "accent") { w.accent = parseVec3(v, w.accent); w.hasAccent = true; }
     } catch (...) {
       std::fprintf(stderr, "[Content] %s: bad value for '%s' = '%s', ignored\n",
                    path.string().c_str(), k.c_str(), v.c_str());
@@ -664,6 +775,8 @@ bool Content::loadAll(const std::string& dir) {
     }
   }
 
+  assignLooks(weapons_);
+
   fs::path armorDir = root / "armor";
   if (fs::exists(armorDir)) {
     for (auto& entry : fs::directory_iterator(armorDir)) {
@@ -1013,3 +1126,6 @@ std::vector<std::string> Content::cosmeticIds() const {
   for (auto& kv : cosmetics_) out.push_back(kv.first);
   return out;
 }
+
+void assignLooks(std::unordered_map<std::string, WeaponDef>& weapons) { assignLooksImpl(weapons); }
+std::string weaponLookKey(const WeaponDef& w) { return weaponLookKeyImpl(w); }
