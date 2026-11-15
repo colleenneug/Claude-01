@@ -369,6 +369,14 @@ name = NIGHTJAR               # what other players see over your head
 or sets `EREBUS_SERVER=host[:port]` instead. With neither, the game is the
 single-player game it always was and opens no socket.
 
+To try it on one PC: open two terminals in the `cpp` folder. In the first,
+run the server (`build\Release\erebus_native.exe --server` on Windows —
+allow it through the firewall when Windows asks). Put `server = 127.0.0.1`
+in `online.cfg` next to your saves and start the game as usual; start a
+second copy of the game on another save slot and the two of you are in the
+same hideout. For friends on other machines, the host's address goes in
+their `online.cfg` instead, and UDP 27960 has to reach the host.
+
 | Input (online) | Action |
 |---|---|
 | O | Open / close the social screen |

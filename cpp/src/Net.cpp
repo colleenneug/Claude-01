@@ -98,6 +98,15 @@ bool Socket::open(uint16_t port) {
 #ifdef _WIN32
   u_long nb = 1;
   ioctlsocket((SOCKET)fd, FIONBIO, &nb);
+  // Windows reports an ICMP "port unreachable" from an earlier send (a
+  // player who just quit) as an error on the next receive, which would cut
+  // the server's receive loop short every time someone leaves. Off.
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+#endif
+  BOOL reportReset = FALSE;
+  DWORD unused = 0;
+  WSAIoctl((SOCKET)fd, SIO_UDP_CONNRESET, &reportReset, sizeof(reportReset), nullptr, 0, &unused, nullptr, nullptr);
 #else
   fcntl((int)fd, F_SETFL, fcntl((int)fd, F_GETFL, 0) | O_NONBLOCK);
 #endif
