@@ -867,6 +867,27 @@ check "co-op: the second player mirrors the host's Cybers" "$OUT/coopb.json" \
 check "co-op: the host clears the shared patrol" "$OUT/coopa-state.json" "s['missionState'] == 'complete'"
 check "co-op: so does the guest" "$OUT/coopb-state.json" "s['missionState'] == 'complete'"
 
+# Joining a friend: ALPHA is on a patrol; BRAVO, a friend standing in the
+# hideout, joins them, and has to end up on the same patrol in ALPHA's
+# instance of it.
+NETPORT=$((NETPORT + 1))
+EREBUS_SERVER_SECONDS=300 "$BIN" --server "$NETPORT" > "$OUT/server5.log" 2>&1 &
+NETSRV=$!
+sleep 0.5
+grep -v '^net_id\|^friend ' "$OUT/save-pita.txt" > "$OUT/save-joina.txt"
+cp "$OUT/save-joina.txt" "$OUT/save-joinb.txt"
+printf 'net_id = 00000000000a11a0\nfriend 00000000000b1a40 BRAVO\n' >> "$OUT/save-joina.txt"
+printf 'net_id = 00000000000b1a40\nfriend 00000000000a11a0 ALPHA\n' >> "$OUT/save-joinb.txt"
+netrun joina EREBUS_NET_NAME=ALPHA EREBUS_SKIP_HUB=1 EREBUS_MAX_FRAMES=500 -- --mission patrol_dust_shelf &
+NETA=$!
+sleep 2
+netrun joinb EREBUS_NET_NAME=BRAVO EREBUS_NET_AUTO_JOIN=1 EREBUS_MAX_FRAMES=300 &
+NETB=$!
+wait "$NETA" "$NETB"
+kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
+check "joining a friend takes you to their patrol, in their instance" "$OUT/joinb.json" \
+      "s['place'] == 'Patrol: Dust Shelf' and s['instance'] == json.load(open('$OUT/joina.json'))['instance'] and s['peakRemotes'] >= 1"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

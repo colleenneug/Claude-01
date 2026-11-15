@@ -89,6 +89,9 @@ public:
   void inviteToSquad(uint64_t id);
   void accept(const Invite& in);
   void leaveSquad();
+  // The next place you arrive at, land in this player's instance if it has
+  // room (joining a friend where they are).
+  void follow(uint64_t id) { follow_ = id; }
 
   // PvP.
   void sendHit(uint64_t target, float damage, bool head);
@@ -163,6 +166,7 @@ private:
   std::vector<std::pair<uint64_t, std::string>> newFriends_;
   std::vector<IncomingHit> hits_;
   uint64_t host_ = 0;
+  uint64_t follow_ = 0;
   std::vector<NetHostile> hostiles_;
   bool newHostiles_ = false;
   std::vector<HostileHitIn> hostileHits_;

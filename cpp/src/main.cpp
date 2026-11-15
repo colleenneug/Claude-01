@@ -688,6 +688,7 @@ int main(int argc, char** argv) {
   const bool netAutoInvite = envFlag("EREBUS_NET_AUTO_INVITE");
   const bool netAutoFriend = envFlag("EREBUS_NET_AUTO_FRIEND");
   const bool netAutoAccept = envFlag("EREBUS_NET_AUTO_ACCEPT");
+  const bool netAutoJoin = envFlag("EREBUS_NET_AUTO_JOIN");   // J on the first joinable friend
   const char* netLogPath = std::getenv("EREBUS_NET_LOG");
   bool netInvited = false, netBefriended = false;
   int netPeakRemotes = 0, netPeakSquad = 0;   // most seen at once, for the log
@@ -817,6 +818,43 @@ int main(int argc, char** argv) {
       netPeakRemotes = std::max(netPeakRemotes, (int)netClient.remotes().size());
       netPeakSquad = std::max(netPeakSquad, (int)netClient.squad().size());
       netview::socialInput(window, social, netClient);
+      if (netAutoJoin && !social.joinId && state == AppState::Station) {
+        for (const net::Friend& f : netClient.friends()) {
+          if (f.online && (f.activity == "freeroam" || f.activity == "pvp") && f.place != netClient.place()) {
+            social.joinId = f.id;
+            social.joinPlace = f.place;
+            break;
+          }
+        }
+      }
+      // J on a friend: launch whatever they are in (a patrol or the Pit),
+      // and land in their instance of it.
+      if (social.joinId) {
+        std::string joinId;
+        for (const std::string& id : hubContent.missionIds()) {
+          const MissionDef* md = hubContent.mission(id);
+          if (md && md->name == social.joinPlace && (md->mode == "pvp" || md->campaignIndex == 0)) joinId = id;
+        }
+        if (joinId.empty()) {
+          netClient.notice("CANNOT JOIN THEM THERE");
+        } else if (state == AppState::Station || state == AppState::Mission || state == AppState::Space) {
+          const bool fromStation = state == AppState::Station;
+          ProfileStore::save(profile, savePath);
+          if (game.init(contentDir, joinId, profile)) {
+            netClient.follow(social.joinId);
+            gameEverStarted = true;
+            if (fromStation) launchedFromStation = true;
+            camera.position = game.player().eyePosition();
+            state = AppState::Mission;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            mouseCaptured = true;
+            firstMouse = true;
+            netClient.notice("JOINING " + social.joinPlace);
+          }
+        }
+        social.joinId = 0;
+        social.joinPlace.clear();
+      }
       // PvP: where everyone is, for your shots; your hits out, theirs in,
       // and your downs to the server, which keeps the score.
       if (state == AppState::Mission && gameEverStarted && game.pvp()) {

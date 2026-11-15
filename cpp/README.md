@@ -300,7 +300,9 @@ you into their instance instead.
   is **4**. If the leader leaves, the squad carries on under the next one.
 - **Friends.** Press **F** on someone in the social screen; when they accept,
   both records keep the other (`friend ...` lines in the save), and from then
-  on the panel shows where they are whenever you are both online.
+  on the panel shows where they are whenever you are both online. **J** on a
+  friend who is on a patrol or in the Pit takes you there, into their
+  instance of it if it has room.
 - **What you see.** Other Striders in your instance, in their own colour,
   with their name overhead — squad mates in the Division's cyan with a health
   bar, everyone else in amber — and a corner panel with your instance and
@@ -358,6 +360,7 @@ single-player game it always was and opens no socket.
 | Up / Down or Tab | Choose a row |
 | I | Squad invite the player on that row |
 | F | Send them a friend request |
+| J | Join a friend where they are (a patrol or the Pit), in their instance |
 | Enter | Accept an invite / leave the squad |
 | Backspace | Decline an invite |
 

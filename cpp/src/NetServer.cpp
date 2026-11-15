@@ -27,6 +27,7 @@ struct Player {
   double lastHeard = 0.0;
   PlayerState state;
   std::vector<uint64_t> watch; // friends whose presence they want
+  uint64_t follow = 0;         // arriving to join this player
 };
 
 struct Instance {
@@ -145,7 +146,15 @@ private:
     // A story mission is not a public place: its instance belongs to the
     // squad that launched it (or to you alone), and strangers never land in it.
     const uint64_t owner = p.activity == "mission" ? (p.squad ? p.squad : p.id) : 0;
-    if (p.squad) {
+    // Joining someone: their instance, if it is this place and has room.
+    if (p.follow && owner == 0) {
+      auto f = players_.find(p.follow);
+      if (f != players_.end() && f->second.place == p.place) {
+        Instance* in = instanceById(f->second.instance);
+        if (in && in->owner == 0 && (int)in->members.size() < kInstanceCap) target = in;
+      }
+    }
+    if (!target && p.squad) {
       for (auto& kv : players_) {
         const Player& o = kv.second;
         if (o.id == p.id || o.squad != p.squad || o.place != p.place || o.instance < 0) continue;
@@ -267,6 +276,8 @@ private:
       p.name = r.str();
       std::string place = r.str(), activity = r.str();
       if (!r.ok) return;
+      p.follow = r.u64();
+      if (!r.ok) p.follow = 0;
       p.lastHeard = now();
       p.state.id = id;
       p.state.name = p.name;

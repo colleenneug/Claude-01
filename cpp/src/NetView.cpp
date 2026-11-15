@@ -69,7 +69,9 @@ std::vector<Row> rows(const net::Client& c) {
     const net::Friend& f = c.friends()[i];
     std::string where = f.online ? (f.instance.empty() ? std::string("ONLINE") : f.instance) : std::string("OFFLINE");
     if (f.online && !f.activity.empty() && f.activity != "hub") where += "  (" + f.activity + ")";
-    out.push_back({Row::Friend, i, f.name, where, f.online ? "I SQUAD INVITE" : ""});
+    const bool joinable = f.online && (f.activity == "freeroam" || f.activity == "pvp") && f.place != c.place();
+    out.push_back({Row::Friend, i, f.name, where,
+                   f.online ? (joinable ? "I SQUAD INVITE   J JOIN" : "I SQUAD INVITE") : ""});
   }
   if (!c.squad().empty()) out.push_back({Row::Leave, 0, "LEAVE SQUAD", "", "ENTER"});
   return out;
@@ -161,10 +163,10 @@ bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
     social.open = false;
     return false;
   }
-  const int keys[8] = {GLFW_KEY_O, GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_ENTER,
-                       GLFW_KEY_F, GLFW_KEY_I, GLFW_KEY_BACKSPACE, GLFW_KEY_TAB};
-  bool hit[8];
-  for (int k = 0; k < 8; k++) {
+  const int keys[9] = {GLFW_KEY_O, GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_ENTER,
+                       GLFW_KEY_F, GLFW_KEY_I, GLFW_KEY_BACKSPACE, GLFW_KEY_TAB, GLFW_KEY_J};
+  bool hit[9];
+  for (int k = 0; k < 9; k++) {
     const bool down = glfwGetKey(window, keys[k]) == GLFW_PRESS;
     hit[k] = down && !social.prev[k];
     social.prev[k] = down;
@@ -197,6 +199,11 @@ bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
     case Row::Friend: {
       const net::Friend& f = client.friends()[row.index];
       if (hit[5] && f.online) client.inviteToSquad(f.id);
+      if (hit[8] && f.online && (f.activity == "freeroam" || f.activity == "pvp") && f.place != client.place()) {
+        social.joinId = f.id;
+        social.joinPlace = f.place;
+        social.open = false;
+      }
       break;
     }
     case Row::Leave:

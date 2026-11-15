@@ -23,13 +23,18 @@ void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>
 struct Social {
   bool open = false;
   int cursor = 0;
-  bool prev[8] = {};
+  bool prev[9] = {};
+  // Set by J on a friend's row: go where they are. main.cpp launches it and
+  // clears it.
+  uint64_t joinId = 0;
+  std::string joinPlace;
   std::string message;   // "PRESS F TO ADD ..." hints change with the row
 };
 
 // Reads the keys for the screen (O toggles it; while open, Up/Down or Tab
 // choose a row, Enter accepts, Backspace declines, F adds a friend, I sends
-// a squad invite). Returns true while the screen is open.
+// a squad invite, J joins a friend where they are). Returns true while the
+// screen is open.
 bool socialInput(GLFWwindow* window, Social& social, net::Client& client);
 
 // What the HUD needs from a PvP fight that only the game knows.

@@ -72,8 +72,8 @@ class Fake:
         self.sock.sendto(struct.pack('<IBB', MAGIC, VERSION, msg) + struct.pack('<Q', self.id) + body,
                          self.server)
 
-    def hello(self, place, activity):
-        self.send(HELLO, s16(self.name) + s16(place) + s16(activity))
+    def hello(self, place, activity, follow=0):
+        self.send(HELLO, s16(self.name) + s16(place) + s16(activity) + struct.pack('<Q', follow))
 
     def state(self, activity):
         self.send(STATE, struct.pack('<6fB', 1, 0, 2, 90, 0, 1, 0) + s16('rifle') + s16(activity))
@@ -293,6 +293,33 @@ def main():
     settle([j, k], 0.4)
     check('the host hands over when it leaves', j.host == j.id and k.host == j.id, (j.host, k.host))
     for f in (j, k):
+        f.send(BYE)
+
+    # Joining a friend lands you in their instance, wherever random would
+    # have put you. Two instances of the place: the friend's (with room) and
+    # another; ten tries, every one has to land with the friend.
+    friend = Fake(port, 6000, 'NOVEMBER')
+    friend.hello('ASH FIELDS', 'freeroam')
+    settle([friend], 0.2)
+    crowd2 = [Fake(port, 6100 + n, 'Q%d' % n) for n in range(11)]
+    for f in crowd2:
+        f.hello('ASH FIELDS', 'freeroam')
+    settle([friend] + crowd2, 0.4)
+    other = Fake(port, 6200, 'OSCAR')
+    other.hello('ASH FIELDS', 'freeroam')   # instance 1 is full: a second opens
+    settle([friend, other] + crowd2, 0.3)
+    crowd2[0].send(BYE)                       # room for one in the friend's
+    settle([friend, other] + crowd2[1:], 0.3)
+    landed = []
+    for n in range(10):
+        j = Fake(port, 6300 + n, 'J%d' % n)
+        j.hello('ASH FIELDS', 'freeroam', follow=friend.id)
+        settle([j, friend, other], 0.15)
+        landed.append(j.instance == friend.instance)
+        j.send(BYE)
+        settle([friend, other], 0.1)
+    check('joining a friend lands you in their instance', all(landed), landed)
+    for f in [friend, other] + crowd2[1:]:
         f.send(BYE)
 
     # A story mission is private: two strangers on the same mission do not

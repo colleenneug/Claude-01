@@ -98,6 +98,7 @@ void Client::sendHello() {
   w.str(name_);
   w.str(place_);
   w.str(activity_);
+  w.u64(follow_);
   send(w);
   sentHello_ = true;
 }
@@ -176,6 +177,7 @@ void Client::handle(const uint8_t* data, size_t len) {
       const std::string name = r.str();
       const uint16_t here = r.u16();
       if (!r.ok) return;
+      follow_ = 0;
       if (name != instance_) {
         instance_ = name;
         notice(here > 1 ? name + " - " + std::to_string(here - 1) + " OTHER STRIDER" + (here > 2 ? "S" : "") + " HERE"
