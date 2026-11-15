@@ -185,6 +185,22 @@ public:
     bool head = false;
   };
   bool pvp() const { return mission_.mode == "pvp"; }
+  // The Tuning (mode = tuning): Cybers drop notes, you bank them at the tap
+  // in the middle of the arena, first team to the limit wins. Like the Pit,
+  // a down is not a failure — but whatever notes you were carrying are gone.
+  bool tuning() const { return mission_.mode == "tuning"; }
+  int notesCarried() const { return notesCarried_; }
+  int notesBankedTotal() const { return notesBankedTotal_; }
+  static constexpr int kNotesMax = 15;
+  // Notes banked since the last call, for the server.
+  int takeBanked() {
+    const int n = bankedPending_;
+    bankedPending_ = 0;
+    return n;
+  }
+  // The other team sent screamers: tough Cybers that come straight for you.
+  void spawnScreamers(int n);
+  glm::vec3 tapPosition() const { return glm::vec3(0.0f, level_.floorY(), 0.0f); }
   int scoreLimit() const { return mission_.scoreLimit; }
   void setNetTargets(const std::vector<NetTarget>& t) { netTargets_ = t; }
   std::vector<NetHit> takeNetHits() {
@@ -201,6 +217,7 @@ public:
     return true;
   }
   float respawnIn() const { return respawnT_; }
+  float noteFlash() const { return noteFlashT_; }
   // ---- online co-op: the Cybers of a patrol, shared. One game in the
   // instance (the host) runs them and chases whichever Strider is nearest;
   // the others (guests) draw them where the host says, and send the damage
@@ -209,6 +226,7 @@ public:
   enum class CoopRole { Solo, Host, Guest };
   struct CoopHostile {
     uint16_t index = 0;
+    std::string type;               // so a guest can build one the host just spawned
     glm::vec3 pos{0.0f};
     float yaw = 0.0f, hp = 1.0f;   // hp 0..1 of maximum
     uint8_t state = 0;
@@ -536,6 +554,13 @@ private:
   std::vector<glm::vec3> coopPos_;     // guest: where the host last put each Cyber
   std::vector<float> coopHitAt_;       // guest: when you last hit each one (for kill credit)
   bool coopQuiet_ = false;             // host: applying someone else's hit
+  int notesCarried_ = 0, notesBankedTotal_ = 0, bankedPending_ = 0;
+  float refillT_ = 0.0f;               // the Tuning: next top-up of the arena's Cybers
+  float noteFlashT_ = 0.0f;
+  size_t addHostile(const EnemyType* t, const glm::vec3& at, float hpMult = 1.0f);
+  glm::vec3 ringSpawn(float radiusFrac);
+  void creditNotes(const Hostile& h);
+  void updateTuning(float dt);
   void netHit(uint64_t id, float damage, bool head);
   void pvpRespawn();
   bool armed_ = true;

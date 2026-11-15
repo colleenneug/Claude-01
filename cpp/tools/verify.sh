@@ -888,6 +888,32 @@ kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
 check "joining a friend takes you to their patrol, in their instance" "$OUT/joinb.json" \
       "s['place'] == 'Patrol: Dust Shelf' and s['instance'] == json.load(open('$OUT/joina.json'))['instance'] and s['peakRemotes'] >= 1"
 
+# The Tuning, offline: the aim aid fights the arena's Cybers, picks up their
+# notes and banks them at the tap; the arena keeps itself stocked without
+# the list of Cybers growing without end.
+run "$OUT/tuning.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_CLASS=bulwark \
+    EREBUS_MAX_FRAMES=1200 -- --mission the_tuning
+check "the Tuning: notes are banked at the tap" "$OUT/tuning.json" "s['notesBanked'] >= 5"
+check "the Tuning: the arena restocks without growing" "$OUT/tuning.json" "10 <= s['hostiles'] <= 30"
+
+# ...and online: two players land in the same match on opposite sides, each
+# hosting their own side's Cybers.
+NETPORT=$((NETPORT + 1))
+EREBUS_SERVER_SECONDS=200 "$BIN" --server "$NETPORT" > "$OUT/server6.log" 2>&1 &
+NETSRV=$!
+sleep 0.5
+cp "$OUT/save-joina.txt" "$OUT/save-tunea.txt"; cp "$OUT/save-joinb.txt" "$OUT/save-tuneb.txt"
+netrun tunea EREBUS_NET_NAME=ALPHA EREBUS_SKIP_HUB=1 EREBUS_MAX_FRAMES=300 -- --mission the_tuning &
+NETA=$!
+sleep 1
+netrun tuneb EREBUS_NET_NAME=BRAVO EREBUS_SKIP_HUB=1 EREBUS_MAX_FRAMES=300 -- --mission the_tuning &
+NETB=$!
+wait "$NETA" "$NETB"
+kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
+check "the Tuning online: two players, one match, opposite sides" "$OUT/tunea.json" \
+      "s['instance'] == 'THE TUNING 1' and s['team'] != json.load(open('$OUT/tuneb.json'))['team'] \
+       and json.load(open('$OUT/tuneb.json'))['instance'] == 'THE TUNING 1'"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

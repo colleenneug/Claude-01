@@ -28,6 +28,7 @@ struct Player {
   PlayerState state;
   std::vector<uint64_t> watch; // friends whose presence they want
   uint64_t follow = 0;         // arriving to join this player
+  int team = 0;                // the Tuning: which side; 0 everywhere else
 };
 
 struct Instance {
@@ -41,8 +42,10 @@ struct Instance {
   int limit = 10;
   uint64_t leader = 0;
   double resetAt = 0.0;        // a match just ended: scores clear at this time
-  uint64_t host = 0;           // co-op: whose game runs the Cybers here
+  uint64_t hosts[2] = {0, 0};  // co-op: whose game runs the Cybers, per team
   uint64_t owner = 0;          // a story mission's instance is its squad's alone
+  bool teams = false;          // the Tuning: two sides, each in its own copy
+  int notes[2] = {0, 0};       // the Tuning: banked per team
 };
 
 std::string upper(std::string s) {
@@ -125,8 +128,12 @@ private:
         if (in->leader == p.id) in->leader = 0;
         sendScore(*in);
       }
-      if (in->host == p.id) {
-        in->host = in->members.empty() ? 0 : in->members[0];
+      if (in->hosts[p.team] == p.id) {
+        in->hosts[p.team] = 0;
+        for (uint64_t mid : in->members) {
+          auto m = players_.find(mid);
+          if (m != players_.end() && m->second.team == p.team) { in->hosts[p.team] = mid; break; }
+        }
         sendHost(*in);
       }
     }
@@ -151,7 +158,7 @@ private:
       auto f = players_.find(p.follow);
       if (f != players_.end() && f->second.place == p.place) {
         Instance* in = instanceById(f->second.instance);
-        if (in && in->owner == 0 && (int)in->members.size() < kInstanceCap) target = in;
+        if (in && in->owner == 0 && hasRoom(*in)) target = in;
       }
     }
     if (!target && p.squad) {
@@ -159,13 +166,13 @@ private:
         const Player& o = kv.second;
         if (o.id == p.id || o.squad != p.squad || o.place != p.place || o.instance < 0) continue;
         Instance* in = instanceById(o.instance);
-        if (in && in->owner == owner && (int)in->members.size() < kInstanceCap) { target = in; break; }
+        if (in && in->owner == owner && hasRoom(*in)) { target = in; break; }
       }
     }
     if (!target) {
       std::vector<Instance*> open;
       for (Instance& in : instances_) {
-        if (in.place == p.place && in.owner == owner && (int)in.members.size() < kInstanceCap) open.push_back(&in);
+        if (in.place == p.place && in.owner == owner && hasRoom(in)) open.push_back(&in);
       }
       if (!open.empty()) target = open[roll() % open.size()];
     }
@@ -177,12 +184,26 @@ private:
       for (const Instance& o : instances_) if (o.place == p.place) number = std::max(number, o.number + 1);
       in.number = number;
       in.owner = owner;
+      in.teams = p.activity == "tuning";
       instances_.push_back(in);
       target = &instances_.back();
     }
+    // A side for the Tuning: a squad mate's if they are here, else the
+    // smaller one.
+    p.team = 0;
+    if (target->teams) {
+      int count[2] = {0, 0}, mate = -1;
+      for (uint64_t mid : target->members) {
+        auto m = players_.find(mid);
+        if (m == players_.end()) continue;
+        count[m->second.team]++;
+        if (p.squad && m->second.squad == p.squad) mate = m->second.team;
+      }
+      p.team = (mate >= 0 && count[mate] < kTeamCap) ? mate : (count[1] < count[0] ? 1 : 0);
+    }
     target->members.push_back(p.id);
     p.instance = target->id;
-    if (!target->host) target->host = p.id;
+    if (!target->hosts[p.team]) target->hosts[p.team] = p.id;
     Writer w;
     header(w, Msg::Welcome);
     w.u32((uint32_t)target->id);
@@ -191,6 +212,7 @@ private:
     send(p, w);
     if (p.activity == "pvp") sendScore(*target);
     sendHost(*target);
+    if (target->teams) sendTeamScore(*target);
     std::printf("[Server] %s -> %s (%zu here)\n", p.name.c_str(), instanceName(*target).c_str(),
                 target->members.size());
     std::fflush(stdout);
@@ -429,18 +451,18 @@ private:
       }
       case Msg::Hostiles: {
         Instance* in = instanceById(p.instance);
-        if (!in || in->host != id) break;     // only the host speaks for the Cybers
+        if (!in || in->hosts[p.team] != id) break;     // only the host speaks for the Cybers
         for (uint64_t mid : in->members) {
           if (mid == id) continue;
           auto m = players_.find(mid);
-          if (m != players_.end()) sock_.send(m->second.addr, data, len);
+          if (m != players_.end() && m->second.team == p.team) sock_.send(m->second.addr, data, len);
         }
         break;
       }
       case Msg::HostileHit: {
         Instance* in = instanceById(p.instance);
-        if (!in || !in->host || in->host == id) break;
-        auto h = players_.find(in->host);
+        if (!in || !in->hosts[p.team] || in->hosts[p.team] == id) break;
+        auto h = players_.find(in->hosts[p.team]);
         if (h != players_.end()) sock_.send(h->second.addr, data, len);
         break;
       }
@@ -448,8 +470,53 @@ private:
         Instance* in = instanceById(p.instance);
         const uint64_t tid = r.u64();
         auto t = players_.find(tid);
-        if (!r.ok || !in || in->host != id || t == players_.end() || t->second.instance != p.instance) break;
+        if (!r.ok || !in || in->hosts[p.team] != id || t == players_.end() || t->second.instance != p.instance ||
+            t->second.team != p.team)
+          break;
         sock_.send(t->second.addr, data, len);
+        break;
+      }
+      case Msg::Bank: {
+        const int count = r.u8();
+        const int limit = r.u8();
+        Instance* in = instanceById(p.instance);
+        if (!r.ok || !in || !in->teams || count <= 0 || in->resetAt > 0.0) break;
+        if (limit > 0) in->limit = limit;
+        const int t = p.team;
+        in->notes[t] += std::min(count, 15);
+        // A big deposit sends trouble across: 5 notes one screamer, 10 two,
+        // 15 four.
+        const int screamers = count >= 15 ? 4 : count >= 10 ? 2 : count >= 5 ? 1 : 0;
+        if (screamers && in->hosts[1 - t]) {
+          auto h = players_.find(in->hosts[1 - t]);
+          if (h != players_.end()) {
+            Writer w;
+            header(w, Msg::Screamers);
+            w.u8((uint8_t)screamers);
+            send(h->second, w);
+          }
+          for (uint64_t mid : in->members) {
+            auto m = players_.find(mid);
+            if (m == players_.end()) continue;
+            notice(m->second, m->second.team == t
+                                  ? upper(p.name) + " SENT " + std::to_string(screamers) + " SCREAMER" + (screamers > 1 ? "S" : "") + " ACROSS"
+                                  : std::string(teamName(t)) + " SENT " + std::to_string(screamers) + " SCREAMER" + (screamers > 1 ? "S" : "") + " AT YOU");
+          }
+        }
+        sendTeamScore(*in);
+        if (in->notes[t] >= in->limit) {
+          for (uint64_t mid : in->members) {
+            auto m = players_.find(mid);
+            if (m == players_.end()) continue;
+            Writer w;
+            header(w, Msg::MatchOver);
+            w.str(teamName(t));
+            send(m->second, w);
+          }
+          in->resetAt = now() + 10.0;
+          std::printf("[Server] %s won the Tuning in %s\n", teamName(t), instanceName(*in).c_str());
+          std::fflush(stdout);
+        }
         break;
       }
       case Msg::Kill: {
@@ -498,10 +565,28 @@ private:
     }
   }
 
+  bool hasRoom(const Instance& in) const {
+    return (int)in.members.size() < (in.teams ? 2 * kTeamCap : kInstanceCap);
+  }
+
   void sendHost(const Instance& in) {
+    for (uint64_t mid : in.members) {
+      auto m = players_.find(mid);
+      if (m == players_.end()) continue;
+      Writer w;
+      header(w, Msg::Host);
+      w.u64(in.hosts[m->second.team]);
+      w.u8((uint8_t)m->second.team);
+      send(m->second, w);
+    }
+  }
+
+  void sendTeamScore(const Instance& in) {
     Writer w;
-    header(w, Msg::Host);
-    w.u64(in.host);
+    header(w, Msg::TeamScore);
+    w.u8((uint8_t)std::min(in.limit, 255));
+    w.u16((uint16_t)in.notes[0]);
+    w.u16((uint16_t)in.notes[1]);
     for (uint64_t mid : in.members) {
       auto m = players_.find(mid);
       if (m != players_.end()) send(m->second, w);
@@ -539,7 +624,9 @@ private:
       in.resetAt = 0.0;
       in.score.clear();
       in.leader = 0;
-      sendScore(in);
+      in.notes[0] = in.notes[1] = 0;
+      if (in.teams) sendTeamScore(in);
+      else sendScore(in);
       broadcastNotice(in, "NEW MATCH - FIRST TO " + std::to_string(in.limit));
     }
   }
@@ -551,11 +638,16 @@ private:
         if (v == players_.end()) continue;
         Writer w;
         header(w, Msg::Snapshot);
+        // In the Tuning each side fights in its own copy of the arena: you
+        // see your team, not theirs.
+        auto visible = [&](uint64_t oid) {
+          return oid != viewerId && (!in.teams || players_[oid].team == v->second.team);
+        };
         uint8_t count = 0;
-        for (uint64_t oid : in.members) if (oid != viewerId) count++;
+        for (uint64_t oid : in.members) if (visible(oid)) count++;
         w.u8(count);
         for (uint64_t oid : in.members) {
-          if (oid == viewerId) continue;
+          if (!visible(oid)) continue;
           const Player& o = players_[oid];
           const PlayerState& s = o.state;
           w.u64(o.id);

@@ -1028,6 +1028,7 @@ void Game::damageHostile(size_t index, float dmg, bool headshot, const glm::vec3
     xpEarned_ += (int)std::lround(h.type->xp * upgrades_.xpMul);
     dropPickup(h.pos, killCount_++);
     maybeDropWeapon(h);
+    creditNotes(h);
     // ...and the bounties. Counted by archetype and by the silhouette of
     // what was in your hands, which is what the boards ask for.
     tally_.kills++;
@@ -1763,12 +1764,18 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   if (waveProgress() >= 0.5f) fireComms(CommsTrigger::HalfCleared);
 
   netHitT_ = std::max(0.0f, netHitT_ - dt);
-  if (pvp()) {
+  if (pvp() || tuning()) {
     // In the Pit a down is a point to whoever did it and three seconds on
-    // the floor, then up again somewhere else. Never a failed mission.
+    // the floor, then up again somewhere else. Never a failed mission. In
+    // the Tuning the notes you were carrying go with you.
     if (!player_.alive() && respawnT_ <= 0.0f) {
       tally_.downs++;
-      netDied_ = true;
+      if (tuning() && notesCarried_ > 0) {
+        pickupNote_ = std::to_string(notesCarried_) + " NOTES LOST";
+        pickupNoteT_ = 3.0f;
+        notesCarried_ = 0;
+      }
+      netDied_ = pvp();
       netKiller_ = lastAttacker_;
       respawnT_ = 3.0f;
       audio::play(Sfx::Downed);
@@ -1806,7 +1813,8 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
     }
   }
 
-  if (!pvp() && player_.alive() && !downed()) {
+  if (tuning()) updateTuning(dt);
+  if (!pvp() && !tuning() && player_.alive() && !downed()) {
     bool wavesClear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                                   [](const Hostile& h) { return h.state == HostileState::Gone; });
     bool bossClear = bossIndex_ < 0 || hostiles_[bossIndex_].state == HostileState::Gone;
@@ -2399,6 +2407,36 @@ void Game::collect(float time, std::vector<DrawItem>& out) const {
     if (waypoint(at, label, place) && place) collectWaypointArrow(out, at, time);
   }
   for (auto& h : hostiles_) h.collect(out);
+  if (tuning()) {
+    // The tap: an old resonance mast the Division capped and turned into a
+    // bank. It glows brighter the more you are carrying.
+    const glm::vec3 base = tapPosition();
+    DrawItem stone;
+    stone.material = MaterialType::Armour;
+    stone.tint = glm::vec3(0.22f, 0.23f, 0.26f);
+    stone.metallic = 0.6f;
+    stone.roughness = 0.4f;
+    stone.mesh = &HostileGeometry::unitCylinder();
+    stone.model = glm::scale(glm::translate(glm::mat4(1.0f), base + glm::vec3(0, 0.15f, 0)), glm::vec3(5.6f, 0.3f, 5.6f));
+    out.push_back(stone);
+    stone.model = glm::scale(glm::translate(glm::mat4(1.0f), base + glm::vec3(0, 1.6f, 0)), glm::vec3(0.7f, 3.2f, 0.7f));
+    out.push_back(stone);
+    DrawItem glow = stone;
+    glow.material = MaterialType::Emissive;
+    glow.emissive = glm::vec3(1.0f, 0.78f, 0.35f);
+    glow.emissiveIntensity = 1.5f + 0.25f * (float)notesCarried_ + 0.6f * std::sin(time * 3.0f);
+    glow.castShadow = false;
+    for (int k = 0; k < 3; k++) {
+      const float y = 0.9f + 0.9f * (float)k + 0.15f * std::sin(time * 2.0f + (float)k);
+      glow.mesh = &HostileGeometry::unitBox();
+      glow.model = glm::scale(glm::translate(glm::mat4(1.0f), base + glm::vec3(0, y, 0)), glm::vec3(0.9f, 0.08f, 0.9f));
+      out.push_back(glow);
+    }
+    glow.mesh = &HostileGeometry::unitCylinder();
+    glow.emissiveIntensity *= 0.5f;
+    glow.model = glm::scale(glm::translate(glm::mat4(1.0f), base + glm::vec3(0, 0.31f, 0)), glm::vec3(6.4f, 0.02f, 6.4f));
+    out.push_back(glow);
+  }
   collectViewmodel(out);
 
   // Sparks where rounds landed. World geometry rather than a screen sprite,
@@ -2630,10 +2668,11 @@ void Game::pvpRespawn() {
 
 std::vector<Game::CoopHostile> Game::coopSnapshot() const {
   std::vector<CoopHostile> out;
-  for (size_t i = 0; i < hostiles_.size() && i < 60; i++) {
+  for (size_t i = 0; i < hostiles_.size() && i < 48; i++) {
     const Hostile& h = hostiles_[i];
     CoopHostile c;
     c.index = (uint16_t)i;
+    c.type = h.type ? h.type->id : std::string();
     c.pos = h.pos;
     c.yaw = h.yaw;
     c.hp = h.maxHp > 0.0f ? h.hp / h.maxHp : 0.0f;
@@ -2649,9 +2688,35 @@ void Game::applyCoopSnapshot(const std::vector<CoopHostile>& list) {
   }
   if (coopHitAt_.size() < hostiles_.size()) coopHitAt_.resize(hostiles_.size(), -100.0f);
   for (const CoopHostile& c : list) {
+    const HostileState next = (HostileState)std::min<int>(c.state, (int)HostileState::Gone);
+    const bool up = next != HostileState::Dying && next != HostileState::Gone;
+    // One the host spawned after you loaded, or a slot it reused for a new
+    // one: build it here the same.
+    if (up && (c.index >= hostiles_.size() || !hostiles_[c.index].blocksShots() ||
+               (hostiles_[c.index].type && hostiles_[c.index].type->id != c.type))) {
+      const EnemyType* t = content_.enemy(c.type);
+      if (!t) continue;
+      while (hostiles_.size() < c.index) {
+        Hostile gone;
+        gone.type = t;
+        gone.state = HostileState::Gone;
+        hostiles_.push_back(gone);
+        if (hostileWakeOn_.size() + 1 == hostiles_.size()) hostileWakeOn_.push_back("");
+        if (hostileGroup_.size() + 1 == hostiles_.size()) hostileGroup_.push_back("");
+      }
+      if (c.index == hostiles_.size()) {
+        addHostile(t, c.pos);
+      } else {
+        hostiles_[c.index].spawn(t, c.pos);
+        hostiles_[c.index].state = HostileState::Chase;
+      }
+      coopPos_.resize(hostiles_.size(), c.pos);
+      coopHitAt_.resize(hostiles_.size(), -100.0f);
+      coopPos_[c.index] = c.pos;
+      hostiles_[c.index].pos = c.pos;
+    }
     if (c.index >= hostiles_.size()) continue;
     Hostile& h = hostiles_[c.index];
-    const HostileState next = (HostileState)std::min<int>(c.state, (int)HostileState::Gone);
     const bool wasUp = h.blocksShots();
     coopPos_[c.index] = c.pos;
     if (glm::length(c.pos - h.pos) > 6.0f) h.pos = c.pos;   // too far to ease: it moved while you loaded
@@ -2670,6 +2735,7 @@ void Game::applyCoopSnapshot(const std::vector<CoopHostile>& list) {
         audio::playAt(deathSound(h), h.pos);
         xpEarned_ += (int)std::lround(h.type->xp * upgrades_.xpMul);
         dropPickup(h.pos, killCount_++);
+        creditNotes(h);
         tally_.kills++;
         tally_.killsOf[h.type->id]++;
         if (weaponDef_) tally_.killsWith[weaponDef_->shape]++;
@@ -2695,4 +2761,94 @@ void Game::takeCoopDamage(float damage) {
   if (hadShield && player_.overshield <= 0.0f) audio::play(Sfx::ShieldBreak);
   damageFlashT = 0.4f;
   shake_ = std::max(shake_, std::min(0.9f, 0.22f + dmg * 0.012f));
+}
+
+// ---------------------------------------------------------------- the Tuning
+
+size_t Game::addHostile(const EnemyType* t, const glm::vec3& at, float hpMult) {
+  // Reuse a slot that has finished dying, past the opening waves, so a long
+  // match does not grow the list (and the host's snapshot) without end. A
+  // guest never chooses: it builds whatever index the host sends.
+  size_t slot = hostiles_.size();
+  if (coopRole_ != CoopRole::Guest) {
+    for (size_t i = (size_t)waveTotal_; i < hostiles_.size(); i++) {
+      if (hostiles_[i].state == HostileState::Gone) { slot = i; break; }
+    }
+  }
+  Hostile h;
+  h.spawn(t, at, false, hpMult);
+  h.state = HostileState::Chase;
+  if (slot == hostiles_.size()) {
+    hostiles_.push_back(h);
+    if (hostileWakeOn_.size() + 1 == hostiles_.size()) hostileWakeOn_.push_back("");
+    if (hostileGroup_.size() + 1 == hostiles_.size()) hostileGroup_.push_back("");
+  } else {
+    hostiles_[slot] = h;
+  }
+  return slot;
+}
+
+glm::vec3 Game::ringSpawn(float radiusFrac) {
+  glm::vec3 best(0.0f);
+  float bestD = -1.0f;
+  for (int k = 0; k < 6; k++) {
+    lootRng_ = lootRng_ * 1664525u + 1013904223u;
+    const float a = (float)(lootRng_ >> 8) / 16777216.0f * 6.2831853f;
+    glm::vec3 p(std::cos(a), 0.0f, std::sin(a));
+    p *= mission_.arenaSize * radiusFrac;
+    p.y = level_.floorY();
+    float d = glm::length(p - player_.position);
+    for (const NetTarget& t : allies_) d = std::min(d, glm::length(p - t.feet));
+    if (d > bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+void Game::creditNotes(const Hostile& h) {
+  if (!tuning() || !h.type) return;
+  const int n = h.maxHp >= 200.0f ? 3 : h.maxHp >= 100.0f ? 2 : 1;
+  const int before = notesCarried_;
+  notesCarried_ = std::min(kNotesMax, notesCarried_ + n);
+  if (notesCarried_ > before) noteFlashT_ = 0.5f;
+}
+
+void Game::spawnScreamers(int n) {
+  if (!tuning() || coopRole_ == CoopRole::Guest) return;
+  const EnemyType* t = content_.enemy("warden");
+  if (!t) t = content_.enemy("marauder");
+  if (!t) return;
+  for (int k = 0; k < n && k < 8; k++) {
+    const size_t i = addHostile(t, ringSpawn(0.42f), 1.2f);
+    hostiles_[i].singT = 30.0f;   // they sing: the glow says these were sent
+  }
+  pickupNote_ = std::to_string(n) + " SCREAMER" + (n > 1 ? "S" : "") + " INCOMING";
+  pickupNoteT_ = 3.5f;
+}
+
+void Game::updateTuning(float dt) {
+  noteFlashT_ = std::max(0.0f, noteFlashT_ - dt);
+  // The tap: walk into the middle with notes and they are banked.
+  if (notesCarried_ > 0 && player_.alive() && respawnT_ <= 0.0f) {
+    const glm::vec3 d = player_.position - tapPosition();
+    if (d.x * d.x + d.z * d.z < 3.2f * 3.2f) {
+      bankedPending_ += notesCarried_;
+      notesBankedTotal_ += notesCarried_;
+      pickupNote_ = "BANKED " + std::to_string(notesCarried_) + " NOTE" + (notesCarried_ > 1 ? "S" : "");
+      pickupNoteT_ = 2.5f;
+      audio::play(Sfx::TapNote);
+      notesCarried_ = 0;
+    }
+  }
+  // The host (or a game on its own) keeps the arena stocked: the opening
+  // waves' worth of Cybers, topped up one at a time.
+  if (coopRole_ == CoopRole::Guest || mission_.waves.empty()) return;
+  refillT_ -= dt;
+  if (refillT_ > 0.0f) return;
+  refillT_ = 2.5f;
+  int up = 0;
+  for (const Hostile& h : hostiles_) up += h.blocksShots() ? 1 : 0;
+  if (up >= waveTotal_) return;
+  lootRng_ = lootRng_ * 1664525u + 1013904223u;
+  const WaveSpawn& w = mission_.waves[(lootRng_ >> 8) % mission_.waves.size()];
+  if (const EnemyType* t = content_.enemy(w.enemyId)) addHostile(t, ringSpawn(0.38f));
 }

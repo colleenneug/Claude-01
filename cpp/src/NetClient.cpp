@@ -69,6 +69,9 @@ void Client::setWhere(const std::string& place, const std::string& activity) {
     score_.clear();
     leader_ = 0;
     host_ = 0;
+    team_ = 0;
+    teamNotes_[0] = teamNotes_[1] = 0;
+    screamers_ = 0;
     hostiles_.clear();
     newHostiles_ = false;
     hostileHits_.clear();
@@ -328,7 +331,24 @@ void Client::handle(const uint8_t* data, size_t len) {
     }
     case Msg::Host: {
       const uint64_t h = r.u64();
-      if (r.ok) host_ = h;
+      if (!r.ok) break;
+      host_ = h;
+      const uint8_t t = r.u8();
+      if (r.ok) team_ = t & 1;
+      break;
+    }
+    case Msg::TeamScore: {
+      const int limit = r.u8();
+      const int a = r.u16(), b = r.u16();
+      if (!r.ok) break;
+      teamLimit_ = limit;
+      teamNotes_[0] = a;
+      teamNotes_[1] = b;
+      break;
+    }
+    case Msg::Screamers: {
+      const int n = r.u8();
+      if (r.ok && isHost()) screamers_ += n;
       break;
     }
     case Msg::Hostiles: {
@@ -343,6 +363,7 @@ void Client::handle(const uint8_t* data, size_t len) {
         h.yaw = r.f32();
         h.hp = r.u8() / 255.0f;
         h.state = r.u8();
+        h.type = r.str();
         list.push_back(h);
       }
       if (!r.ok) break;
@@ -459,7 +480,7 @@ void Client::sendHostiles(const std::vector<NetHostile>& list) {
   Writer w;
   header(w, Msg::Hostiles);
   w.u64(id_);
-  const size_t n = std::min<size_t>(list.size(), 60);   // one packet's worth
+  const size_t n = std::min<size_t>(list.size(), 48);   // one packet's worth
   w.u16((uint16_t)n);
   for (size_t i = 0; i < n; i++) {
     const NetHostile& h = list[i];
@@ -468,6 +489,7 @@ void Client::sendHostiles(const std::vector<NetHostile>& list) {
     w.f32(h.yaw);
     w.u8((uint8_t)std::lround(std::clamp(h.hp, 0.0f, 1.0f) * 255.0f));
     w.u8(h.state);
+    w.str(h.type);
   }
   send(w);
 }
@@ -490,6 +512,16 @@ void Client::sendAllyDamage(uint64_t target, float damage) {
   w.u64(id_);
   w.u64(target);
   w.f32(damage);
+  send(w);
+}
+
+void Client::sendBank(int count, int limit) {
+  if (!enabled_ || count <= 0) return;
+  Writer w;
+  header(w, Msg::Bank);
+  w.u64(id_);
+  w.u8((uint8_t)std::clamp(count, 1, 255));
+  w.u8((uint8_t)std::clamp(limit, 1, 255));
   send(w);
 }
 

@@ -117,6 +117,17 @@ public:
   std::vector<HostileHitIn> takeHostileHits();
   float takeAllyDamage();
 
+  // The Tuning.
+  int team() const { return team_; }
+  int teamNotes(int t) const { return teamNotes_[t & 1]; }
+  int teamLimit() const { return teamLimit_; }
+  void sendBank(int count, int limit);
+  int takeScreamers() {
+    const int n = screamers_;
+    screamers_ = 0;
+    return n;
+  }
+
   // The last match's winner, while the result is still up.
   const std::string& winner() const { return winnerT_ > 0.0f ? winner_ : empty_; }
 
@@ -167,6 +178,10 @@ private:
   std::vector<IncomingHit> hits_;
   uint64_t host_ = 0;
   uint64_t follow_ = 0;
+  int team_ = 0;
+  int teamNotes_[2] = {0, 0};
+  int teamLimit_ = 60;
+  int screamers_ = 0;
   std::vector<NetHostile> hostiles_;
   bool newHostiles_ = false;
   std::vector<HostileHitIn> hostileHits_;

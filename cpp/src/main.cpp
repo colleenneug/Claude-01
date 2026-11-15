@@ -695,6 +695,7 @@ int main(int argc, char** argv) {
   int netTopScore = 0, netDowns = 0;
   double netNextHostiles = 0.0;
   int netCoopSnaps = 0;           // snapshots a guest applied, for the log
+  int netBanked = 0, netScreamers = 0;
   std::string netCoopRole = "solo";
   std::string netWinner;
   float lastMuzzle = 0.0f;
@@ -783,7 +784,10 @@ int main(int argc, char** argv) {
         place = md ? md->name : game.missionId();
         // A planet's patrol is the free-roam space everyone shares; anything
         // on a campaign ladder is a fireteam's mission.
-        activity = md && md->mode == "pvp" ? "pvp" : md && md->campaignIndex == 0 ? "freeroam" : "mission";
+        activity = md && md->mode == "pvp"      ? "pvp"
+                 : md && md->mode == "tuning" ? "tuning"
+                 : md && md->campaignIndex == 0 ? "freeroam"
+                                                : "mission";
         const Player& gp = game.player();
         feet = gp.position;
         hp01 = gp.maxHp > 0.0f ? std::max(0.0f, gp.hp / gp.maxHp) : 1.0f;
@@ -881,7 +885,8 @@ int main(int argc, char** argv) {
         netClient.takeHits();
       }
       // Co-op on a patrol: the instance's host runs the Cybers for everyone.
-      if (state == AppState::Mission && gameEverStarted && !game.pvp() && activity == "freeroam") {
+      if (state == AppState::Mission && gameEverStarted && !game.pvp() &&
+          (activity == "freeroam" || activity == "tuning")) {
         std::vector<Game::NetTarget> allies;
         for (const net::Remote& r : netClient.remotes()) {
           Game::NetTarget t;
@@ -904,6 +909,7 @@ int main(int argc, char** argv) {
               h.yaw = c.yaw;
               h.hp = c.hp;
               h.state = c.state;
+              h.type = c.type;
               out.push_back(h);
             }
             netClient.sendHostiles(out);
@@ -922,6 +928,7 @@ int main(int argc, char** argv) {
               c.yaw = h.yaw;
               c.hp = h.hp;
               c.state = h.state;
+              c.type = h.type;
               list.push_back(c);
             }
             game.applyCoopSnapshot(list);
@@ -931,6 +938,17 @@ int main(int argc, char** argv) {
         }
         if (role != Game::CoopRole::Solo) netCoopRole = role == Game::CoopRole::Host ? "host" : "guest";
         game.takeCoopDamage(netClient.takeAllyDamage());
+        if (game.tuning()) {
+          const int banked = game.takeBanked();
+          if (banked) netClient.sendBank(banked, game.scoreLimit());
+          if (const int n = netClient.takeScreamers()) {
+            game.spawnScreamers(n);
+            netScreamers += n;
+          }
+          netBanked += banked;
+          netTopScore = std::max(netTopScore, std::max(netClient.teamNotes(0), netClient.teamNotes(1)));
+          if (!netClient.winner().empty()) netWinner = netClient.winner();
+        }
       } else if (gameEverStarted) {
         game.setCoop(Game::CoopRole::Solo, {});
       }
@@ -1664,11 +1682,11 @@ int main(int argc, char** argv) {
         // encounter when it is out of sight or out of reach. Without it a
         // headless run stands in the first room of a mission that is now a
         // few hundred metres long.
-        if (game.expedition()) {
+        if (game.expedition() || game.tuning()) {
           glm::vec3 at;
           std::string label;
           bool place = false;
-          bool have = game.waypoint(at, label, place);
+          bool have = game.expedition() && game.waypoint(at, label, place);
           // Running dry: the nearest box of rounds first, whatever the arrow
           // says. A player would; a bot that does not loses every hold.
           {
@@ -1683,6 +1701,13 @@ int main(int argc, char** argv) {
                 if (d < best) { best = d; at = glm::vec3(pk.pos.x, 0.0f, pk.pos.z); place = true; have = true; }
               }
             }
+          }
+          // The Tuning: with a handful of notes, go and bank them.
+          if (game.tuning() && game.notesCarried() >= 5) {
+            at = game.tapPosition();
+            at.y = 0.0f;
+            place = true;
+            have = true;
           }
           if (have) {
             glm::vec3 to = at - game.player().position;
@@ -1864,7 +1889,7 @@ int main(int argc, char** argv) {
       hs.hitMarkerT = game.hitMarkerT;
       hs.damageFlashT = game.damageFlashT;
       hs.missionName = game.missionName();
-      hs.hideProgress = game.pvp();
+      hs.hideProgress = game.pvp() || game.tuning();
       hs.waveFrac = game.waveProgress();
       hs.bossAlive = game.bossAlive();
       hs.bossHpFrac = game.bossHpFraction();
@@ -1915,7 +1940,8 @@ int main(int argc, char** argv) {
             "\"bossAlive\":%s,\"chits\":%d,\"inCutscene\":%s,\"harness\":%d,"
             "\"xp\":%d,\"careerXp\":%d,\"rank\":\"%s\","
             "\"slot\":%d,\"primary\":\"%s\",\"sidearm\":\"%s\",\"loot\":%d,\"owned\":%d,\"objective\":%d,\"objectives\":%d,\"expedition\":%s,"
-            "\"objectiveText\":\"%s\",\"objectiveHint\":\"%s\",\"sounds\":%d,\"sfxKinds\":%d}\n",
+            "\"objectiveText\":\"%s\",\"objectiveHint\":\"%s\",\"sounds\":%d,\"sfxKinds\":%d,"
+            "\"notesCarried\":%d,\"notesBanked\":%d,\"hostiles\":%d}\n",
             frame + 1,
             game.missionState() == MissionState::Complete ? "complete"
               : game.missionState() == MissionState::Failed ? "failed" : "in_progress",
@@ -1933,7 +1959,8 @@ int main(int argc, char** argv) {
             game.holster(Game::SlotSidearm).name.c_str(), game.lootDropped(),
             (int)profile.ownedWeapons.size(), game.objectiveIndex(), game.objectiveCount(),
             game.expedition() ? "true" : "false", game.objectiveText().c_str(), game.objectiveHint().c_str(),
-            audio::playCount(), audio::soundCount());
+            audio::playCount(), audio::soundCount(), game.notesCarried(), game.notesBankedTotal(),
+            (int)game.hostiles().size());
           std::fclose(f);
         }
       }
@@ -2153,6 +2180,20 @@ int main(int argc, char** argv) {
       heardBountyNoteT = bountyNoteT;
     }
 
+    if (state == AppState::Mission && gameEverStarted && game.tuning()) {
+      glfwGetFramebufferSize(window, &width, &height);
+      netview::Tuning tv;
+      tv.carried = game.notesCarried();
+      tv.max = Game::kNotesMax;
+      tv.bankedSelf = game.notesBankedTotal();
+      tv.limit = game.scoreLimit();
+      tv.respawnIn = game.respawnIn();
+      tv.flash = game.noteFlash();
+      tv.tapOnScreen = Hud::worldToScreen(renderer.lastViewProj(), game.tapPosition() + glm::vec3(0, 3.6f, 0),
+                                          width, height, tv.tapAt);
+      tv.tapDist = glm::length(game.tapPosition() - game.player().position);
+      netview::drawTuning(hud, width, height, netClient.enabled() ? &netClient : nullptr, tv);
+    }
     if (netClient.enabled() &&
         (state == AppState::Station || state == AppState::Mission || state == AppState::Space)) {
       glfwGetFramebufferSize(window, &width, &height);
@@ -2169,12 +2210,13 @@ int main(int argc, char** argv) {
         std::fprintf(f, "{\"enabled\":%s,\"connected\":%s,\"place\":\"%s\",\"instance\":\"%s\",\"remotes\":%d,"
                         "\"squad\":%d,\"squadLimit\":%d,\"friends\":%d,\"savedFriends\":%d,\"peakRemotes\":%d,\"peakSquad\":%d,"
                         "\"topScore\":%d,\"downs\":%d,\"winner\":\"%s\",\"coopRole\":\"%s\",\"coopSnaps\":%d,"
-                        "\"names\":[",
+                        "\"team\":%d,\"banked\":%d,\"screamers\":%d,\"teamNotes\":[%d,%d],\"names\":[",
                      netClient.enabled() ? "true" : "false", netClient.connected() ? "true" : "false",
                      netClient.place().c_str(), netClient.instance().c_str(), (int)netClient.remotes().size(),
                      (int)netClient.squad().size(), netClient.squadLimit(), (int)netClient.friends().size(),
                      (int)profile.friends.size(), netPeakRemotes, netPeakSquad,
-                     netTopScore, netDowns, netWinner.c_str(), netCoopRole.c_str(), netCoopSnaps);
+                     netTopScore, netDowns, netWinner.c_str(), netCoopRole.c_str(), netCoopSnaps,
+                     netClient.team(), netBanked, netScreamers, netClient.teamNotes(0), netClient.teamNotes(1));
         for (size_t i = 0; i < netClient.remotes().size(); i++)
           std::fprintf(f, "%s\"%s\"", i ? "," : "", netClient.remotes()[i].name.c_str());
         std::fprintf(f, "]}\n");

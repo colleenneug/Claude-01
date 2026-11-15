@@ -359,4 +359,68 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
   hud.end();
 }
 
+void drawTuning(Hud& hud, int screenW, int screenH, const net::Client* client, const Tuning& t) {
+  hud.begin(screenW, screenH);
+  const float cx = screenW * 0.5f;
+  const glm::vec4 gold(1.0f, 0.82f, 0.30f, 0.98f);
+  const glm::vec4 dim(0.72f, 0.78f, 0.86f, 0.9f);
+  const glm::vec4 bright(0.92f, 0.96f, 1.0f, 0.98f);
+  char buf[96];
+
+  // ---- the banks, along the top: yours on the left in your colour
+  const bool online = client && client->connected();
+  const int limit = online ? std::max(1, client->teamLimit()) : std::max(1, t.limit);
+  hud.rect(cx - 260, 10, 520, online ? 70.0f : 46.0f, glm::vec4(0.03f, 0.04f, 0.06f, 0.6f));
+  std::snprintf(buf, sizeof(buf), "THE TUNING  -  FIRST TO %d NOTES", limit);
+  hud.textCentered(cx, 16, buf, 1.5f, gold);
+  if (online) {
+    const int mine = client->team(), theirs = 1 - mine;
+    const glm::vec4 us(kSquad, 0.98f), them(kOther, 0.95f);
+    for (int k = 0; k < 2; k++) {
+      const int team = k == 0 ? mine : theirs;
+      const float y = 38.0f + 20.0f * (float)k;
+      const float frac = std::clamp((float)client->teamNotes(team) / (float)limit, 0.0f, 1.0f);
+      hud.text(cx - 246, y, net::teamName(team), 1.4f, k == 0 ? us : them);
+      hud.rect(cx - 150, y + 2, 330, 8, glm::vec4(0.1f, 0.12f, 0.14f, 0.85f));
+      hud.rect(cx - 150, y + 2, 330 * frac, 8, k == 0 ? us : them);
+      std::snprintf(buf, sizeof(buf), "%d", client->teamNotes(team));
+      hud.text(cx + 192, y, buf, 1.4f, bright);
+    }
+  } else {
+    std::snprintf(buf, sizeof(buf), "BANKED %d", t.bankedSelf);
+    hud.textCentered(cx, 36, buf, 1.5f, bright);
+  }
+
+  // ---- what you carry, bottom centre
+  std::snprintf(buf, sizeof(buf), "NOTES %d / %d", t.carried, t.max);
+  const glm::vec4 carryCol = t.flash > 0.0f ? bright : t.carried >= t.max ? gold : dim;
+  hud.textCentered(cx, screenH - 150.0f, buf, 2.2f, carryCol);
+  if (t.carried > 0) {
+    const int sends = t.carried >= 15 ? 4 : t.carried >= 10 ? 2 : t.carried >= 5 ? 1 : 0;
+    if (online && sends)
+      std::snprintf(buf, sizeof(buf), "BANK NOW TO SEND %d SCREAMER%s ACROSS", sends, sends > 1 ? "S" : "");
+    else
+      std::snprintf(buf, sizeof(buf), "BANK THEM AT THE TAP - %dM", (int)t.tapDist);
+    hud.textCentered(cx, screenH - 124.0f, buf, 1.5f, gold);
+  }
+  // The tap's marker, when it is in front of you.
+  if (t.tapOnScreen && t.carried > 0) {
+    hud.textCentered(t.tapAt.x, t.tapAt.y - 8, "TAP", 1.6f, gold);
+  }
+
+  if (t.respawnIn > 0.0f) {
+    std::snprintf(buf, sizeof(buf), "DOWN  -  UP AGAIN IN %.1f", t.respawnIn);
+    hud.rect(0, screenH * 0.5f - 30, (float)screenW, 60, glm::vec4(0.25f, 0.03f, 0.03f, 0.45f));
+    hud.textCentered(cx, screenH * 0.5f - 10, buf, 2.6f, bright);
+  }
+  if (client && !client->winner().empty()) {
+    const bool won = client->winner() == net::teamName(client->team());
+    hud.rect(0, screenH * 0.36f - 16, (float)screenW, 70, glm::vec4(0.03f, 0.04f, 0.06f, 0.75f));
+    hud.textCentered(cx, screenH * 0.36f, won ? "YOUR TEAM IS IN TUNE - YOU WIN" : client->winner() + " WINS THE TUNING",
+                     3.0f, gold);
+    hud.textCentered(cx, screenH * 0.36f + 34, "NEXT MATCH IN A MOMENT", 1.5f, dim);
+  }
+  hud.end();
+}
+
 }  // namespace netview

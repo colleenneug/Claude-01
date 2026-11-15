@@ -267,8 +267,9 @@ steps out of trouble with the next round primed.
 at a time, five armour pieces, five cosmetics, eight enemy archetypes, an
 eleven-rung rank ladder, eleven crew across two walkable hubs, each with
 their own bounty board and service (thirty-one bounties, sixteen upgrades),
-four ships, thirty missions (the nineteen of THE FIRST ATTACK, seven
-side contracts, the Pit for player-versus-player, and three test fixtures), six destinations —
+four ships, thirty-one missions (the nineteen of THE FIRST ATTACK, seven
+side contracts, the Pit and the Tuning for online play, and three test
+fixtures), six destinations —
 including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
 text files, not a code change (see *Content* below). Online play is in —
@@ -334,6 +335,20 @@ server keeps the score and starts a new match eight seconds after a win.
 Launch it from the mission counter like any side contract; it is
 `content/missions/the_pit.cfg` with `mode = pvp` and `score_limit = 10`, so
 a second arena is a second file.
+
+**The Tuning** is the Gambit-style mode, and not a copy of it: two teams
+of up to four, each fighting the same arena's Cybers in its own copy of it
+(you only ever see your own side, and each side has its own co-op host).
+Every Cyber you put down gives you notes — one for a small one, two for a
+Marauder or Thrall, three for anything heavier — up to fifteen carried.
+Walk into the capped tap in the middle to bank them. A big deposit plays
+back through the other team's tap: five at once drops a screamer (a singing
+Warden) into their arena, ten drops two, fifteen drops four. Go down and the
+notes you were carrying are gone; you are back up three seconds later. First
+team to bank sixty notes wins, and the server starts the next match ten
+seconds on. Offline it is a score attack against the arena.
+`content/missions/the_tuning.cfg` (`mode = tuning`); its waves are the stock
+of Cybers the host keeps on the floor.
 
 **Hosting.** The game *is* the server — no other program:
 

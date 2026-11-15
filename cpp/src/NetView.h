@@ -49,4 +49,14 @@ struct Pvp {
 void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, const glm::mat4& viewProj,
              const glm::vec3& eye, const Social& social, const Pvp& pvp = Pvp{});
 
+// The Tuning's own panel: notes carried, the tap, the two teams' banks.
+// Drawn online or off (offline it is your own total against the limit).
+struct Tuning {
+  int carried = 0, max = 15, bankedSelf = 0, limit = 60;
+  float respawnIn = 0.0f, flash = 0.0f, tapDist = 0.0f;
+  bool tapOnScreen = false;
+  glm::vec2 tapAt{0.0f};
+};
+void drawTuning(Hud& hud, int screenW, int screenH, const net::Client* client, const Tuning& t);
+
 }  // namespace netview

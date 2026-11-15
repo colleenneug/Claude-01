@@ -18,9 +18,9 @@ import time
 
 MAGIC, VERSION = 0x31425245, 1
 (HELLO, STATE, BYE, FIND, FREQ, FACC, WATCH, SINV, SACC, SLEAVE, HIT, KILL,
- HOSTILES, HOSTILE_HIT, ALLY_DAMAGE) = range(1, 16)
+ HOSTILES, HOSTILE_HIT, ALLY_DAMAGE, BANK) = range(1, 17)
 (WELCOME, SNAP, FOUND, FREQ_FROM, FADDED, PRESENCE, SINV_FROM, SQUAD, NOTICE,
- HIT_FROM, SCORE, MATCH_OVER, HOST) = range(64, 77)
+ HIT_FROM, SCORE, MATCH_OVER, HOST, TEAM_SCORE, SCREAMERS) = range(64, 79)
 
 
 def s16(text):
@@ -67,6 +67,9 @@ class Fake:
         self.hostiles = []     # (sender, count)
         self.hostile_hits = []
         self.ally_damage = []
+        self.team = None
+        self.notes = None
+        self.screamers = 0
 
     def send(self, msg, body=b''):
         self.sock.sendto(struct.pack('<IBB', MAGIC, VERSION, msg) + struct.pack('<Q', self.id) + body,
@@ -131,6 +134,12 @@ class Fake:
                 self.winner = r.str()
             elif msg == HOST:
                 self.host = r.take('<Q')
+                self.team = r.take('<B')
+            elif msg == TEAM_SCORE:
+                r.take('<B')
+                self.notes = (r.take('<H'), r.take('<H'))
+            elif msg == SCREAMERS:
+                self.screamers += r.take('<B')
             elif msg == HOSTILES:
                 self.hostiles.append((r.take('<Q'), r.take('<H')))
             elif msg == HOSTILE_HIT:
@@ -320,6 +329,38 @@ def main():
         settle([friend, other], 0.1)
     check('joining a friend lands you in their instance', all(landed), landed)
     for f in [friend, other] + crowd2[1:]:
+        f.send(BYE)
+
+    # The Tuning: two sides, each its own host and its own view; banking
+    # scores for your side; a big deposit sends screamers to the other
+    # side's host; first to the limit wins.
+    t1, t2, t3, t4 = [Fake(port, 8000 + n, 'T%d' % n) for n in range(4)]
+    for f in (t1, t2, t3, t4):
+        f.hello('THE TUNING', 'tuning')
+        settle([t1, t2, t3, t4], 0.15, activity='tuning')
+    settle([t1, t2, t3, t4], 0.4, activity='tuning')
+    teams = [f.team for f in (t1, t2, t3, t4)]
+    check('the Tuning splits players into two even sides', sorted(teams) == [0, 0, 1, 1], teams)
+    same = [f for f in (t2, t3, t4) if f.team == t1.team][0]
+    other = [f for f in (t2, t3, t4) if f.team != t1.team]
+    check('each side sees only its own', t1.seen == {same.id} and same.seen == {t1.id}, (t1.seen, same.seen))
+    check('each side has its own host', t1.host == t1.id and same.host == t1.id and
+          all(f.host == other[0].id for f in other), [f.host for f in (t1, t2, t3, t4)])
+    t1.send(BANK, struct.pack('<BB', 3, 20))
+    settle([t1, t2, t3, t4], 0.3, activity='tuning')
+    mine = t1.notes[t1.team] if t1.notes else None
+    check('banking scores for your side', mine == 3 and other[0].notes == t1.notes, (t1.notes, other[0].notes))
+    check('a small deposit sends nothing', other[0].screamers == 0, other[0].screamers)
+    same.send(BANK, struct.pack('<BB', 10, 20))
+    settle([t1, t2, t3, t4], 0.3, activity='tuning')
+    check('ten at once sends two screamers to the other host', other[0].screamers == 2 and other[1].screamers == 0,
+          (other[0].screamers, other[1].screamers))
+    same.send(BANK, struct.pack('<BB', 7, 20))
+    settle([t1, t2, t3, t4], 0.3, activity='tuning')
+    from_name = {0: 'ANVIL', 1: 'LANTERN'}[t1.team]
+    check('first side to the limit wins the Tuning', all(f.winner == from_name for f in (t1, t2, t3, t4)),
+          [f.winner for f in (t1, t2, t3, t4)])
+    for f in (t1, t2, t3, t4):
         f.send(BYE)
 
     # A story mission is private: two strangers on the same mission do not

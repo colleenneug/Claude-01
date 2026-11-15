@@ -24,6 +24,7 @@ constexpr uint32_t kMagic = 0x31425245u;   // "ERB1"
 constexpr uint8_t kVersion = 1;
 constexpr uint16_t kDefaultPort = 27960;
 constexpr int kInstanceCap = 12;           // players in one instance of a place
+constexpr int kTeamCap = 4;                // a side in the Tuning
 constexpr double kTimeout = 10.0;          // seconds of silence before a player is dropped
 
 enum class Msg : uint8_t {
@@ -45,6 +46,7 @@ enum class Msg : uint8_t {
   Hostiles,         // host -> everyone else: count, (index, pos, yaw, hp, state)...
   HostileHit,       // guest -> host: index, damage, head
   AllyDamage,       // host -> one player: target id, damage (a Cyber hit them)
+  Bank,             // the Tuning: count of notes banked at the tap
   // server -> client
   Welcome = 64,     // the instance you are in
   Snapshot,         // everyone else in your instance
@@ -58,15 +60,20 @@ enum class Msg : uint8_t {
   HitFrom,          // attacker id, damage, head
   Score,            // limit, leader id, count, (id, name, downs)...
   MatchOver,        // winner name; scores reset a few seconds later
-  Host,             // who runs the Cybers in your instance
+  Host,             // who runs the Cybers for you, and your team (0/1)
+  TeamScore,        // the Tuning: limit, team 0 notes, team 1 notes
+  Screamers,        // the Tuning: count — the other team sent them at you
 };
+
+// The Tuning's two sides.
+inline const char* teamName(int t) { return t ? "LANTERN" : "ANVIL"; }
 
 // The most players a squad can hold for what it is doing. A campaign mission
 // is a fireteam of three; open places and the player-versus-player modes
-// take six; a Gambit-style match is four a side.
+// take six; the Tuning (the Gambit-style mode) is four a side.
 inline int squadLimit(const std::string& activity) {
   if (activity == "mission") return 3;
-  if (activity == "gambit") return 4;
+  if (activity == "gambit" || activity == "tuning") return 4;
   return 6;   // hub, station, freeroam, planet, space, pvp
 }
 
@@ -75,6 +82,7 @@ struct NetHostile {
   uint16_t index = 0;
   float x = 0, y = 0, z = 0, yaw = 0, hp = 1.0f;   // hp 0..1 of its maximum
   uint8_t state = 0;                               // HostileState
+  std::string type;                                // enemy id, so a guest can build it
 };
 
 // One player as everyone else sees them.
