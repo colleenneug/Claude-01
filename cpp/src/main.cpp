@@ -770,6 +770,7 @@ int main(int argc, char** argv) {
     }
     game.extras.clear();
     station.extras.clear();
+    space.extras.clear();
     if (netClient.enabled()) {
       std::string place, activity, weaponShape;
       glm::vec3 feet(0.0f);
@@ -798,6 +799,7 @@ int main(int argc, char** argv) {
       } else if (state == AppState::Space) {
         place = "ORBIT";
         activity = "space";
+        feet = space.shipPosition();
       }
       // In a menu (the mission counter, the kit) you are still standing
       // where you were: keep that place, or the server would time you out
@@ -961,6 +963,7 @@ int main(int argc, char** argv) {
       }
       if (state == AppState::Mission) netview::collectRemotes(netClient, (float)now, game.extras);
       else if (state == AppState::Station) netview::collectRemotes(netClient, (float)now, station.extras);
+      else if (state == AppState::Space) netview::collectShips(netClient, (float)now, camera.position, space.extras);
     }
 
     // ---- the kit screen, from anywhere. G opens it over a mission, a
@@ -2205,6 +2208,7 @@ int main(int argc, char** argv) {
         (state == AppState::Station || state == AppState::Mission || state == AppState::Space)) {
       glfwGetFramebufferSize(window, &width, &height);
       netview::Pvp pv;
+      pv.space = state == AppState::Space;
       if (state == AppState::Mission && gameEverStarted && game.pvp()) {
         pv.on = true;
         pv.respawnIn = game.respawnIn();

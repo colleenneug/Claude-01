@@ -304,6 +304,9 @@ you into their instance instead.
   on the panel shows where they are whenever you are both online. **J** on a
   friend who is on a patrol or in the Pit takes you there, into their
   instance of it if it has room.
+- **In orbit.** Space is a place too: other players' ships fly in your
+  instance of orbit, each with a beacon you can see from kilometres off and
+  their name and distance over it.
 - **What you see.** Other Striders in your instance, in their own colour,
   with their name overhead — squad mates in the Division's cyan with a health
   bar, everyone else in amber — and a corner panel with your instance and

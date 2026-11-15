@@ -158,6 +158,32 @@ void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>
   }
 }
 
+void collectShips(const net::Client& client, float time, const glm::vec3& eye, std::vector<DrawItem>& out) {
+  const Mesh& box = HostileGeometry::unitBox();
+  const Mesh& sph = HostileGeometry::unitSphere();
+  for (const net::Remote& r : client.remotes()) {
+    glm::mat4 root = glm::translate(glm::mat4(1.0f), r.pos);
+    root = glm::rotate(root, glm::radians(-(r.yaw + 90.0f)), glm::vec3(0, 1, 0));
+    root = glm::rotate(root, glm::radians(std::clamp(r.pitch, -89.0f, 89.0f)), glm::vec3(1, 0, 0));
+    DrawItem hull;
+    hull.material = MaterialType::Armour;
+    hull.tint = colourFor(r.id);
+    hull.metallic = 0.85f;
+    hull.roughness = 0.3f;
+    hull.castShadow = false;
+    part(out, hull, box, root, {0, 0, 0}, {3.2f, 1.2f, 9.0f});
+    part(out, hull, box, root, {0, -0.2f, 1.6f}, {11.0f, 0.3f, 3.4f});
+    DrawItem lit = hull;
+    lit.material = MaterialType::Emissive;
+    lit.emissive = r.squadmate ? kSquad : kOther;
+    lit.emissiveIntensity = 4.0f + std::sin(time * 4.0f + (float)(r.id % 7));
+    part(out, lit, box, root, {0, 0, 4.7f}, {2.4f, 0.8f, 0.4f});   // engines, at the back
+    const float dist = glm::length(r.pos - eye);
+    const float beacon = std::max(0.8f, dist * 0.004f);
+    part(out, lit, sph, glm::translate(glm::mat4(1.0f), r.pos), {0, 0, 0}, glm::vec3(beacon));
+  }
+}
+
 bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
   if (!client.enabled()) {
     social.open = false;
@@ -225,9 +251,18 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
   // ---- names over heads
   for (const net::Remote& r : client.remotes()) {
     glm::vec2 at;
-    const glm::vec3 head = r.pos + glm::vec3(0, 2.15f, 0);
+    const glm::vec3 head = r.pos + glm::vec3(0, pvp.space ? 4.0f : 2.15f, 0);
     if (!Hud::worldToScreen(viewProj, head, screenW, screenH, at)) continue;
     const float dist = glm::length(head - eye);
+    if (pvp.space) {
+      // In orbit: everyone in the instance, at any range, with how far.
+      const glm::vec4 col = r.squadmate ? glm::vec4(kSquad, 0.95f) : glm::vec4(kOther, 0.9f);
+      hud.textCentered(at.x, at.y - 18, r.name, 1.5f, col);
+      char km[24];
+      std::snprintf(km, sizeof(km), dist > 1000.0f ? "%.1f KM" : "%.0f M", dist > 1000.0f ? dist / 1000.0f : dist);
+      hud.textCentered(at.x, at.y, km, 1.3f, col);
+      continue;
+    }
     // The leader of a PvP match is singing, and the song carries: everyone
     // sees where they are, through walls, at any range.
     if (pvp.on && r.id == client.leader()) {

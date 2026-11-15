@@ -19,6 +19,11 @@ namespace netview {
 // Everyone else in the instance, as draw items for SceneSource::extras.
 void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>& out);
 
+// Other players' ships in orbit, from `eye`: a small hull with an engine
+// glow, and a beacon that grows with distance so a ship ten kilometres off is
+// still a point of light rather than nothing.
+void collectShips(const net::Client& client, float time, const glm::vec3& eye, std::vector<DrawItem>& out);
+
 // The social screen. Open with O; arrows move, keys act on the row.
 struct Social {
   bool open = false;
@@ -42,6 +47,7 @@ struct Pvp {
   bool on = false;
   float respawnIn = 0.0f;   // seconds on the floor left, 0 when up
   float hitMarker = 0.0f;   // a round of yours just reached somebody
+  bool space = false;       // in orbit: names at any range, distances in km
 };
 
 // Nameplates over other players, the corner panel, notices, the PvP
