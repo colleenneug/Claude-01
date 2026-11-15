@@ -40,6 +40,11 @@ enum class Msg : uint8_t {
   SquadLeave,
   Hit,              // target id, damage, head: my round reached them (PvP)
   Kill,             // killer id: they put me down (PvP)
+  // Co-op. The instance's host runs the Cybers; these three are sent to the
+  // server and passed on unchanged (sender id included) to whom they concern.
+  Hostiles,         // host -> everyone else: count, (index, pos, yaw, hp, state)...
+  HostileHit,       // guest -> host: index, damage, head
+  AllyDamage,       // host -> one player: target id, damage (a Cyber hit them)
   // server -> client
   Welcome = 64,     // the instance you are in
   Snapshot,         // everyone else in your instance
@@ -53,6 +58,7 @@ enum class Msg : uint8_t {
   HitFrom,          // attacker id, damage, head
   Score,            // limit, leader id, count, (id, name, downs)...
   MatchOver,        // winner name; scores reset a few seconds later
+  Host,             // who runs the Cybers in your instance
 };
 
 // The most players a squad can hold for what it is doing. A campaign mission
@@ -63,6 +69,13 @@ inline int squadLimit(const std::string& activity) {
   if (activity == "gambit") return 4;
   return 6;   // hub, station, freeroam, planet, space, pvp
 }
+
+// A Cyber as the host sends it.
+struct NetHostile {
+  uint16_t index = 0;
+  float x = 0, y = 0, z = 0, yaw = 0, hp = 1.0f;   // hp 0..1 of its maximum
+  uint8_t state = 0;                               // HostileState
+};
 
 // One player as everyone else sees them.
 struct PlayerState {

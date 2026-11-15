@@ -201,6 +201,43 @@ public:
     return true;
   }
   float respawnIn() const { return respawnT_; }
+  // ---- online co-op: the Cybers of a patrol, shared. One game in the
+  // instance (the host) runs them and chases whichever Strider is nearest;
+  // the others (guests) draw them where the host says, and send the damage
+  // they do to the host rather than applying it. Indices line up because
+  // every game builds the same patrol from the same file.
+  enum class CoopRole { Solo, Host, Guest };
+  struct CoopHostile {
+    uint16_t index = 0;
+    glm::vec3 pos{0.0f};
+    float yaw = 0.0f, hp = 1.0f;   // hp 0..1 of maximum
+    uint8_t state = 0;
+  };
+  struct CoopHit {
+    uint16_t index = 0;
+    float damage = 0.0f;
+    bool head = false;
+  };
+  void setCoop(CoopRole role, const std::vector<NetTarget>& allies) {
+    coopRole_ = role;
+    allies_ = allies;
+  }
+  CoopRole coopRole() const { return coopRole_; }
+  std::vector<CoopHostile> coopSnapshot() const;
+  void applyCoopSnapshot(const std::vector<CoopHostile>& list);
+  std::vector<CoopHit> takeCoopHits() {
+    std::vector<CoopHit> out;
+    out.swap(coopHits_);
+    return out;
+  }
+  void applyCoopHit(uint16_t index, float damage, bool head);
+  std::vector<std::pair<uint64_t, float>> takeAllyDamage() {
+    std::vector<std::pair<uint64_t, float>> out;
+    out.swap(allyDamage_);
+    return out;
+  }
+  void takeCoopDamage(float damage);
+
   // Last confirmed hit on a player, for the hit marker.
   float netHitMarker() const { return netHitT_; }
   // For online play: how bright the muzzle is now (a jump means a shot), and
@@ -492,6 +529,13 @@ private:
   float respawnT_ = 0.0f, netHitT_ = 0.0f;
   unsigned pvpRng_ = 0x9e3779b9u;
   void netShoot(const glm::vec3& origin, const glm::vec3& dir);
+  CoopRole coopRole_ = CoopRole::Solo;
+  std::vector<NetTarget> allies_;
+  std::vector<CoopHit> coopHits_;
+  std::vector<std::pair<uint64_t, float>> allyDamage_;
+  std::vector<glm::vec3> coopPos_;     // guest: where the host last put each Cyber
+  std::vector<float> coopHitAt_;       // guest: when you last hit each one (for kill credit)
+  bool coopQuiet_ = false;             // host: applying someone else's hit
   void netHit(uint64_t id, float damage, bool head);
   void pvpRespawn();
   bool armed_ = true;

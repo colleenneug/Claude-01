@@ -68,6 +68,11 @@ void Client::setWhere(const std::string& place, const std::string& activity) {
   if (moved) {
     score_.clear();
     leader_ = 0;
+    host_ = 0;
+    hostiles_.clear();
+    newHostiles_ = false;
+    hostileHits_.clear();
+    allyDamage_ = 0.0f;
     hits_.clear();
     remotes_.clear();     // whoever was here is not where you are going
     instance_.clear();
@@ -319,6 +324,46 @@ void Client::handle(const uint8_t* data, size_t len) {
       score_ = rows;
       break;
     }
+    case Msg::Host: {
+      const uint64_t h = r.u64();
+      if (r.ok) host_ = h;
+      break;
+    }
+    case Msg::Hostiles: {
+      const uint64_t from = r.u64();
+      if (from != host_) break;     // an old host's last word
+      const uint16_t n = r.u16();
+      std::vector<NetHostile> list;
+      for (uint16_t i = 0; i < n && r.ok && i < 512; i++) {
+        NetHostile h;
+        h.index = r.u16();
+        h.x = r.f32(); h.y = r.f32(); h.z = r.f32();
+        h.yaw = r.f32();
+        h.hp = r.u8() / 255.0f;
+        h.state = r.u8();
+        list.push_back(h);
+      }
+      if (!r.ok) break;
+      hostiles_ = list;
+      newHostiles_ = true;
+      break;
+    }
+    case Msg::HostileHit: {
+      HostileHitIn h;
+      h.from = r.u64();
+      h.index = r.u16();
+      h.damage = r.f32();
+      h.head = r.u8() != 0;
+      if (r.ok && isHost()) hostileHits_.push_back(h);
+      break;
+    }
+    case Msg::AllyDamage: {
+      r.u64();                      // from (the host)
+      const uint64_t target = r.u64();
+      const float dmg = r.f32();
+      if (r.ok && target == id_) allyDamage_ += std::clamp(dmg, 0.0f, 200.0f);
+      break;
+    }
     case Msg::MatchOver: {
       winner_ = r.str();
       winnerT_ = 8.0f;
@@ -405,6 +450,64 @@ void Client::sendKill(uint64_t killer, int limit) {
   w.u64(killer);
   w.u8((uint8_t)std::clamp(limit, 1, 255));
   send(w);
+}
+
+void Client::sendHostiles(const std::vector<NetHostile>& list) {
+  if (!enabled_) return;
+  Writer w;
+  header(w, Msg::Hostiles);
+  w.u64(id_);
+  const size_t n = std::min<size_t>(list.size(), 60);   // one packet's worth
+  w.u16((uint16_t)n);
+  for (size_t i = 0; i < n; i++) {
+    const NetHostile& h = list[i];
+    w.u16(h.index);
+    w.f32(h.x); w.f32(h.y); w.f32(h.z);
+    w.f32(h.yaw);
+    w.u8((uint8_t)std::lround(std::clamp(h.hp, 0.0f, 1.0f) * 255.0f));
+    w.u8(h.state);
+  }
+  send(w);
+}
+
+void Client::sendHostileHit(uint16_t index, float damage, bool head) {
+  if (!enabled_) return;
+  Writer w;
+  header(w, Msg::HostileHit);
+  w.u64(id_);
+  w.u16(index);
+  w.f32(damage);
+  w.u8(head ? 1 : 0);
+  send(w);
+}
+
+void Client::sendAllyDamage(uint64_t target, float damage) {
+  if (!enabled_) return;
+  Writer w;
+  header(w, Msg::AllyDamage);
+  w.u64(id_);
+  w.u64(target);
+  w.f32(damage);
+  send(w);
+}
+
+bool Client::takeHostiles(std::vector<NetHostile>& out) {
+  if (!newHostiles_) return false;
+  newHostiles_ = false;
+  out = hostiles_;
+  return true;
+}
+
+std::vector<Client::HostileHitIn> Client::takeHostileHits() {
+  std::vector<HostileHitIn> out;
+  out.swap(hostileHits_);
+  return out;
+}
+
+float Client::takeAllyDamage() {
+  const float d = allyDamage_;
+  allyDamage_ = 0.0f;
+  return d;
 }
 
 std::vector<IncomingHit> Client::takeHits() {

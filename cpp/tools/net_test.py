@@ -17,9 +17,10 @@ import sys
 import time
 
 MAGIC, VERSION = 0x31425245, 1
-HELLO, STATE, BYE, FIND, FREQ, FACC, WATCH, SINV, SACC, SLEAVE, HIT, KILL = range(1, 13)
+(HELLO, STATE, BYE, FIND, FREQ, FACC, WATCH, SINV, SACC, SLEAVE, HIT, KILL,
+ HOSTILES, HOSTILE_HIT, ALLY_DAMAGE) = range(1, 16)
 (WELCOME, SNAP, FOUND, FREQ_FROM, FADDED, PRESENCE, SINV_FROM, SQUAD, NOTICE,
- HIT_FROM, SCORE, MATCH_OVER) = range(64, 76)
+ HIT_FROM, SCORE, MATCH_OVER, HOST) = range(64, 77)
 
 
 def s16(text):
@@ -62,6 +63,10 @@ class Fake:
         self.score = {}
         self.leader = 0
         self.winner = None
+        self.host = 0
+        self.hostiles = []     # (sender, count)
+        self.hostile_hits = []
+        self.ally_damage = []
 
     def send(self, msg, body=b''):
         self.sock.sendto(struct.pack('<IBB', MAGIC, VERSION, msg) + struct.pack('<Q', self.id) + body,
@@ -124,6 +129,15 @@ class Fake:
                     self.score[pid] = r.take('<H')
             elif msg == MATCH_OVER:
                 self.winner = r.str()
+            elif msg == HOST:
+                self.host = r.take('<Q')
+            elif msg == HOSTILES:
+                self.hostiles.append((r.take('<Q'), r.take('<H')))
+            elif msg == HOSTILE_HIT:
+                self.hostile_hits.append((r.take('<Q'), r.take('<H'), r.take('<f')))
+            elif msg == ALLY_DAMAGE:
+                r.take('<Q')
+                self.ally_damage.append((r.take('<Q'), r.take('<f')))
 
 
 def settle(fakes, seconds=0.4, activity='freeroam'):
@@ -247,6 +261,49 @@ def main():
     settle([e, g], 0.3, activity='pvp')
     check('first to the limit wins the match', e.winner == 'ECHO' and g.winner == 'ECHO', (e.winner, g.winner))
     for f in (e, g, h):
+        f.send(BYE)
+
+    # Co-op: the first in an instance runs the Cybers, only its word on them
+    # is passed on, guests' hits go to it, and it hands over when it leaves.
+    i, j, k = Fake(port, 4001, 'INDIA'), Fake(port, 4002, 'JULIET'), Fake(port, 4003, 'KILO')
+    i.hello('RED MESA', 'freeroam')
+    settle([i], 0.2)
+    j.hello('RED MESA', 'freeroam')
+    k.hello('RED MESA', 'freeroam')
+    settle([i, j, k], 0.4)
+    check('the first one in hosts the Cybers', i.host == i.id and j.host == i.id and k.host == i.id,
+          (i.host, j.host, k.host))
+    blob = struct.pack('<H', 1) + struct.pack('<H5fBB', 0, 1, 0, 2, 0, 1.0, 255, 1)[:2 + 16 + 4] + bytes([255, 1])
+    i.send(HOSTILES, blob)
+    j.send(HOSTILES, blob)
+    settle([i, j, k], 0.3)
+    check('the host\'s Cybers reach everyone else', any(x[0] == i.id for x in k.hostiles) and
+          any(x[0] == i.id for x in j.hostiles), (j.hostiles, k.hostiles))
+    check('and nobody else speaks for them', not any(x[0] == j.id for x in k.hostiles + i.hostiles),
+          (i.hostiles, k.hostiles))
+    j.send(HOSTILE_HIT, struct.pack('<HfB', 3, 42.0, 0))
+    settle([i, j, k], 0.3)
+    check('a guest\'s hit goes to the host', any(x[0] == j.id and x[1] == 3 for x in i.hostile_hits) and
+          not k.hostile_hits, (i.hostile_hits, k.hostile_hits))
+    i.send(ALLY_DAMAGE, struct.pack('<Qf', k.id, 12.0))
+    settle([i, j, k], 0.3)
+    check('a Cyber\'s hit on a guest reaches only them', any(x[0] == k.id for x in k.ally_damage) and
+          not j.ally_damage, (j.ally_damage, k.ally_damage))
+    i.send(BYE)
+    settle([j, k], 0.4)
+    check('the host hands over when it leaves', j.host == j.id and k.host == j.id, (j.host, k.host))
+    for f in (j, k):
+        f.send(BYE)
+
+    # A story mission is private: two strangers on the same mission do not
+    # share an instance.
+    l, m = Fake(port, 5001, 'LIMA'), Fake(port, 5002, 'MIKE')
+    l.hello('THE GREAT CAVE', 'mission')
+    m.hello('THE GREAT CAVE', 'mission')
+    settle([l, m], 0.3, activity='mission')
+    check('strangers never share a story mission', l.instance and m.instance and l.instance != m.instance,
+          (l.instance, m.instance))
+    for f in (l, m):
         f.send(BYE)
     return 1 if fails else 0
 

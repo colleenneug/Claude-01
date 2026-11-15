@@ -692,6 +692,9 @@ int main(int argc, char** argv) {
   bool netInvited = false, netBefriended = false;
   int netPeakRemotes = 0, netPeakSquad = 0;   // most seen at once, for the log
   int netTopScore = 0, netDowns = 0;
+  double netNextHostiles = 0.0;
+  int netCoopSnaps = 0;           // snapshots a guest applied, for the log
+  std::string netCoopRole = "solo";
   std::string netWinner;
   float lastMuzzle = 0.0f;
 
@@ -838,6 +841,60 @@ int main(int argc, char** argv) {
       } else if (gameEverStarted) {
         game.setNetTargets({});
         netClient.takeHits();
+      }
+      // Co-op on a patrol: the instance's host runs the Cybers for everyone.
+      if (state == AppState::Mission && gameEverStarted && !game.pvp() && activity == "freeroam") {
+        std::vector<Game::NetTarget> allies;
+        for (const net::Remote& r : netClient.remotes()) {
+          Game::NetTarget t;
+          t.id = r.id;
+          t.feet = r.pos;
+          t.down = (r.flags & 2u) != 0;
+          allies.push_back(t);
+        }
+        const Game::CoopRole role = allies.empty() || !netClient.host() ? Game::CoopRole::Solo
+                                    : netClient.isHost()                 ? Game::CoopRole::Host
+                                                                         : Game::CoopRole::Guest;
+        game.setCoop(role, allies);
+        if (role == Game::CoopRole::Host) {
+          if (now >= netNextHostiles) {
+            std::vector<net::NetHostile> out;
+            for (const Game::CoopHostile& c : game.coopSnapshot()) {
+              net::NetHostile h;
+              h.index = c.index;
+              h.x = c.pos.x; h.y = c.pos.y; h.z = c.pos.z;
+              h.yaw = c.yaw;
+              h.hp = c.hp;
+              h.state = c.state;
+              out.push_back(h);
+            }
+            netClient.sendHostiles(out);
+            netNextHostiles = now + 0.1;
+          }
+          for (const auto& h : netClient.takeHostileHits()) game.applyCoopHit(h.index, h.damage, h.head);
+          for (const auto& d : game.takeAllyDamage()) netClient.sendAllyDamage(d.first, d.second);
+        } else if (role == Game::CoopRole::Guest) {
+          std::vector<net::NetHostile> in;
+          if (netClient.takeHostiles(in)) {
+            std::vector<Game::CoopHostile> list;
+            for (const net::NetHostile& h : in) {
+              Game::CoopHostile c;
+              c.index = h.index;
+              c.pos = glm::vec3(h.x, h.y, h.z);
+              c.yaw = h.yaw;
+              c.hp = h.hp;
+              c.state = h.state;
+              list.push_back(c);
+            }
+            game.applyCoopSnapshot(list);
+            netCoopSnaps++;
+          }
+          for (const Game::CoopHit& h : game.takeCoopHits()) netClient.sendHostileHit(h.index, h.damage, h.head);
+        }
+        if (role != Game::CoopRole::Solo) netCoopRole = role == Game::CoopRole::Host ? "host" : "guest";
+        game.takeCoopDamage(netClient.takeAllyDamage());
+      } else if (gameEverStarted) {
+        game.setCoop(Game::CoopRole::Solo, {});
       }
       if (state == AppState::Mission) netview::collectRemotes(netClient, (float)now, game.extras);
       else if (state == AppState::Station) netview::collectRemotes(netClient, (float)now, station.extras);
@@ -2073,12 +2130,13 @@ int main(int argc, char** argv) {
       if (FILE* f = std::fopen(netLogPath, "w")) {
         std::fprintf(f, "{\"enabled\":%s,\"connected\":%s,\"place\":\"%s\",\"instance\":\"%s\",\"remotes\":%d,"
                         "\"squad\":%d,\"squadLimit\":%d,\"friends\":%d,\"savedFriends\":%d,\"peakRemotes\":%d,\"peakSquad\":%d,"
-                        "\"topScore\":%d,\"downs\":%d,\"winner\":\"%s\",\"names\":[",
+                        "\"topScore\":%d,\"downs\":%d,\"winner\":\"%s\",\"coopRole\":\"%s\",\"coopSnaps\":%d,"
+                        "\"names\":[",
                      netClient.enabled() ? "true" : "false", netClient.connected() ? "true" : "false",
                      netClient.place().c_str(), netClient.instance().c_str(), (int)netClient.remotes().size(),
                      (int)netClient.squad().size(), netClient.squadLimit(), (int)netClient.friends().size(),
                      (int)profile.friends.size(), netPeakRemotes, netPeakSquad,
-                     netTopScore, netDowns, netWinner.c_str());
+                     netTopScore, netDowns, netWinner.c_str(), netCoopRole.c_str(), netCoopSnaps);
         for (size_t i = 0; i < netClient.remotes().size(); i++)
           std::fprintf(f, "%s\"%s\"", i ? "," : "", netClient.remotes()[i].name.c_str());
         std::fprintf(f, "]}\n");

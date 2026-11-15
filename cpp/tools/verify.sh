@@ -844,6 +844,29 @@ check "the Pit: both players are in the same match" "$OUT/pita.json" \
 check "the Pit: a round put the other player down" "$OUT/pitb.json" "s['downs'] >= 1"
 check "the Pit: the server scored it" "$OUT/pita.json" "s['topScore'] >= 1"
 
+# Co-op: two players on the same patrol share its Cybers. The first to land
+# hosts them; the second mirrors them, sends its hits to the host, and gets
+# the credit for what its rounds finish. Both have to clear the shelf.
+NETPORT=$((NETPORT + 1))
+EREBUS_SERVER_SECONDS=400 "$BIN" --server "$NETPORT" > "$OUT/server4.log" 2>&1 &
+NETSRV=$!
+sleep 0.5
+cp "$OUT/save-pita.txt" "$OUT/save-coopa.txt"; cp "$OUT/save-pitb.txt" "$OUT/save-coopb.txt"
+sed -i '/^net_id/d' "$OUT/save-coopa.txt" "$OUT/save-coopb.txt"
+netrun coopa EREBUS_NET_NAME=ALPHA EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 \
+  EREBUS_MAX_FRAMES=900 EREBUS_LOG_STATE="$OUT/coopa-state.json" -- --mission patrol_dust_shelf &
+NETA=$!
+sleep 2
+netrun coopb EREBUS_NET_NAME=BRAVO EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 \
+  EREBUS_MAX_FRAMES=900 EREBUS_LOG_STATE="$OUT/coopb-state.json" -- --mission patrol_dust_shelf &
+NETB=$!
+wait "$NETA" "$NETB"
+kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
+check "co-op: the second player mirrors the host's Cybers" "$OUT/coopb.json" \
+      "s['coopSnaps'] >= 50 and s['peakRemotes'] >= 1"
+check "co-op: the host clears the shared patrol" "$OUT/coopa-state.json" "s['missionState'] == 'complete'"
+check "co-op: so does the guest" "$OUT/coopb-state.json" "s['missionState'] == 'complete'"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

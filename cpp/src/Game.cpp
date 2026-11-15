@@ -989,7 +989,27 @@ void Game::damageHostile(size_t index, float dmg, bool headshot, const glm::vec3
   if (index >= hostiles_.size()) return;
   Hostile& h = hostiles_[index];
   if (!h.blocksShots()) return;
+  if (coopRole_ == CoopRole::Guest) {
+    // The host decides whether it dies. You see the hit; the host applies it.
+    CoopHit c;
+    c.index = (uint16_t)index;
+    c.damage = dmg;
+    c.head = headshot;
+    coopHits_.push_back(c);
+    if (coopHitAt_.size() < hostiles_.size()) coopHitAt_.resize(hostiles_.size(), -100.0f);
+    coopHitAt_[index] = missionT_;
+    h.hitFlash = 1.0f;
+    hitMarkerT = 0.14f;
+    audio::play(headshot ? Sfx::Headshot : Sfx::Hit);
+    return;
+  }
   const bool killed = h.takeDamage(dmg);
+  if (coopQuiet_) {
+    // Someone else's round: the Cyber takes it, and goes down if it should,
+    // but the marker and the reward are theirs (see applyCoopSnapshot).
+    if (killed) audio::playAt(deathSound(h), h.pos);
+    return;
+  }
   hitMarkerT = 0.14f;
   if (killed) {
     audio::play(Sfx::Kill);
@@ -1655,10 +1675,53 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   // On the range, nothing shoots back until you have been taught to shoot.
   if (mission_.tutorial && tutorialStep_ < TutorialStep::Fire) graced = true;
 
+  if (coopRole_ == CoopRole::Guest) {
+    // Mirror: no AI here. Each Cyber eases toward where the host has it;
+    // its death plays out locally once the host says it is dying.
+    if (coopPos_.size() < hostiles_.size()) {
+      for (size_t i = coopPos_.size(); i < hostiles_.size(); i++) coopPos_.push_back(hostiles_[i].pos);
+    }
+    const float k = 1.0f - std::exp(-10.0f * dt);
+    for (size_t i = 0; i < hostiles_.size(); i++) {
+      Hostile& h = hostiles_[i];
+      h.hitFlash = std::max(0.0f, h.hitFlash - dt * 4.0f);
+      h.singT = std::max(0.0f, h.singT - dt);
+      if (!h.alive()) continue;
+      const glm::vec3 before = h.pos;
+      h.pos += (coopPos_[i] - h.pos) * k;
+      const glm::vec3 moved = h.pos - before;
+      h.vel = dt > 0.0f ? moved / dt : glm::vec3(0.0f);
+      h.bob += dt * (0.6f + glm::length(h.vel) * 0.5f);
+      if (h.state == HostileState::Dying) {
+        h.deathT += dt;
+        if (h.deathT > 1.4f) h.state = HostileState::Gone;
+      }
+    }
+  }
   for (auto& h : hostiles_) {
+    if (coopRole_ == CoopRole::Guest) break;
     if (!h.alive()) continue;
-    bool didAttack = h.update(dt, player_.position, level_);
+    // Host: it goes for whichever Strider is nearest, you or another.
+    glm::vec3 aimAt = player_.position;
+    uint64_t ally = 0;
+    if (coopRole_ == CoopRole::Host) {
+      float best = (player_.alive() && !downed()) ? glm::length(player_.position - h.pos) : 1e9f;
+      for (const NetTarget& a : allies_) {
+        if (a.down) continue;
+        const float d = glm::length(a.feet - h.pos);
+        if (d < best) {
+          best = d;
+          aimAt = a.feet;
+          ally = a.id;
+        }
+      }
+    }
+    bool didAttack = h.update(dt, aimAt, level_);
     if (didAttack) audio::playAt(attackSound(h), h.pos, h.isBoss ? 1.2f : 0.85f);
+    if (didAttack && ally) {
+      if (!graced) allyDamage_.push_back({ally, h.type->damage});
+      continue;
+    }
     // Nothing lands while a cutscene is running either. The world keeps
     // simulating through one on purpose — the alarm keeps sounding, nothing
     // walks into a frozen room — but you cannot move, and thirteen seconds
@@ -2561,4 +2624,75 @@ void Game::pvpRespawn() {
   player_.eyeHeight = 1.68f;
   lastAttacker_ = 0;
   weapon_.ammoInMag = weapon_.magSize;
+}
+
+// ---------------------------------------------------------------- co-op
+
+std::vector<Game::CoopHostile> Game::coopSnapshot() const {
+  std::vector<CoopHostile> out;
+  for (size_t i = 0; i < hostiles_.size() && i < 60; i++) {
+    const Hostile& h = hostiles_[i];
+    CoopHostile c;
+    c.index = (uint16_t)i;
+    c.pos = h.pos;
+    c.yaw = h.yaw;
+    c.hp = h.maxHp > 0.0f ? h.hp / h.maxHp : 0.0f;
+    c.state = (uint8_t)h.state;
+    out.push_back(c);
+  }
+  return out;
+}
+
+void Game::applyCoopSnapshot(const std::vector<CoopHostile>& list) {
+  if (coopPos_.size() < hostiles_.size()) {
+    for (size_t i = coopPos_.size(); i < hostiles_.size(); i++) coopPos_.push_back(hostiles_[i].pos);
+  }
+  if (coopHitAt_.size() < hostiles_.size()) coopHitAt_.resize(hostiles_.size(), -100.0f);
+  for (const CoopHostile& c : list) {
+    if (c.index >= hostiles_.size()) continue;
+    Hostile& h = hostiles_[c.index];
+    const HostileState next = (HostileState)std::min<int>(c.state, (int)HostileState::Gone);
+    const bool wasUp = h.blocksShots();
+    coopPos_[c.index] = c.pos;
+    if (glm::length(c.pos - h.pos) > 6.0f) h.pos = c.pos;   // too far to ease: it moved while you loaded
+    h.yaw = c.yaw;
+    h.hp = c.hp * h.maxHp;
+    // Dying is played out here; the host's Gone only lands once it has.
+    if (next == HostileState::Gone && h.state == HostileState::Dying) continue;
+    if (next == HostileState::Dying && h.state == HostileState::Dying) continue;
+    h.state = next;
+    if (next == HostileState::Dying) h.deathT = 0.0f;
+    if (wasUp && !h.blocksShots()) {
+      // It went down. If your rounds were in it in the last moments, the
+      // kill is yours too: the experience, the resupply, the bounty tally.
+      if (missionT_ - coopHitAt_[c.index] < 1.5f && h.type) {
+        audio::play(Sfx::Kill);
+        audio::playAt(deathSound(h), h.pos);
+        xpEarned_ += (int)std::lround(h.type->xp * upgrades_.xpMul);
+        dropPickup(h.pos, killCount_++);
+        tally_.kills++;
+        tally_.killsOf[h.type->id]++;
+        if (weaponDef_) tally_.killsWith[weaponDef_->shape]++;
+      }
+    }
+  }
+}
+
+void Game::applyCoopHit(uint16_t index, float damage, bool head) {
+  if (coopRole_ != CoopRole::Host) return;
+  coopQuiet_ = true;
+  damageHostile(index, damage, head, index < hostiles_.size() ? hostiles_[index].bodyCentre() : glm::vec3(0.0f));
+  coopQuiet_ = false;
+}
+
+void Game::takeCoopDamage(float damage) {
+  if (damage <= 0.0f || !player_.alive() || downed() || cutscene_.playing()) return;
+  const float dmg = damage * (1.0f - player_.damageReduction);
+  const bool hadShield = player_.overshield > 0.0f;
+  player_.takeDamage(dmg);
+  player_.hp = std::max(0.0f, player_.hp);
+  audio::play(Sfx::Hurt, std::min(1.0f, 0.5f + dmg * 0.03f));
+  if (hadShield && player_.overshield <= 0.0f) audio::play(Sfx::ShieldBreak);
+  damageFlashT = 0.4f;
+  shake_ = std::max(shake_, std::min(0.9f, 0.22f + dmg * 0.012f));
 }

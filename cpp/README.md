@@ -306,10 +306,18 @@ you into their instance instead.
   bar, everyone else in amber — and a corner panel with your instance and
   squad.
 
-What is shared in the open places is *who is where*: positions, aim,
-health, shots fired. Each game still runs its own enemies, so two players in
-the same patrol see each other fight but not the same Cybers — shared
-enemies (real co-op) are the next layer, on top of the same server.
+**Co-op on a patrol.** Everyone in the same instance of a patrol shares its
+Cybers. The first Strider to land *hosts* them: their game runs the AI, and
+each Cyber goes for whichever Strider is nearest, not just the host. Everyone
+else's game draws the host's Cybers where the host says and sends its hits
+to the host, which applies them; a Cyber's hit on a guest is sent to that
+guest. A Cyber your rounds finish is your kill too — the experience, the
+ammo it drops and the bounty count. When the host leaves, the next player
+in takes over and the fight carries on.
+
+**Story missions are private.** A campaign mission's instance belongs to the
+squad that launched it (or to you alone), so strangers never land in it;
+your squad mates do, up to the fireteam of three.
 
 **The Pit** is the first player-versus-player mode, and not quite a
 Crucible: free-for-all under the hideout, first to ten downs, and whoever is

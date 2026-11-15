@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Net.h"
+#include "NetProtocol.h"
 
 #include <glm/glm.hpp>
 
@@ -96,6 +97,23 @@ public:
   const std::vector<ScoreRow>& score() const { return score_; }
   int scoreLimit() const { return scoreLimit_; }
   uint64_t leader() const { return leader_; }
+  // Co-op: who runs the Cybers here, and the traffic about them.
+  uint64_t host() const { return host_; }
+  bool isHost() const { return host_ != 0 && host_ == id_; }
+  void sendHostiles(const std::vector<NetHostile>& list);
+  void sendHostileHit(uint16_t index, float damage, bool head);
+  void sendAllyDamage(uint64_t target, float damage);
+  // The newest snapshot from the host, once (false if none since last time).
+  bool takeHostiles(std::vector<NetHostile>& out);
+  struct HostileHitIn {
+    uint64_t from = 0;
+    uint16_t index = 0;
+    float damage = 0.0f;
+    bool head = false;
+  };
+  std::vector<HostileHitIn> takeHostileHits();
+  float takeAllyDamage();
+
   // The last match's winner, while the result is still up.
   const std::string& winner() const { return winnerT_ > 0.0f ? winner_ : empty_; }
 
@@ -144,6 +162,11 @@ private:
   std::deque<std::pair<std::string, float>> notices_;
   std::vector<std::pair<uint64_t, std::string>> newFriends_;
   std::vector<IncomingHit> hits_;
+  uint64_t host_ = 0;
+  std::vector<NetHostile> hostiles_;
+  bool newHostiles_ = false;
+  std::vector<HostileHitIn> hostileHits_;
+  float allyDamage_ = 0.0f;
   std::vector<ScoreRow> score_;
   int scoreLimit_ = 10;
   uint64_t leader_ = 0;

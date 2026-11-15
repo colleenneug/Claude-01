@@ -40,6 +40,8 @@ struct Instance {
   int limit = 10;
   uint64_t leader = 0;
   double resetAt = 0.0;        // a match just ended: scores clear at this time
+  uint64_t host = 0;           // co-op: whose game runs the Cybers here
+  uint64_t owner = 0;          // a story mission's instance is its squad's alone
 };
 
 std::string upper(std::string s) {
@@ -122,6 +124,10 @@ private:
         if (in->leader == p.id) in->leader = 0;
         sendScore(*in);
       }
+      if (in->host == p.id) {
+        in->host = in->members.empty() ? 0 : in->members[0];
+        sendHost(*in);
+      }
     }
     p.instance = -1;
     // An empty instance goes; the next arrival gets a fresh one.
@@ -136,18 +142,21 @@ private:
   void place(Player& p) {
     leaveInstance(p);
     Instance* target = nullptr;
+    // A story mission is not a public place: its instance belongs to the
+    // squad that launched it (or to you alone), and strangers never land in it.
+    const uint64_t owner = p.activity == "mission" ? (p.squad ? p.squad : p.id) : 0;
     if (p.squad) {
       for (auto& kv : players_) {
         const Player& o = kv.second;
         if (o.id == p.id || o.squad != p.squad || o.place != p.place || o.instance < 0) continue;
         Instance* in = instanceById(o.instance);
-        if (in && (int)in->members.size() < kInstanceCap) { target = in; break; }
+        if (in && in->owner == owner && (int)in->members.size() < kInstanceCap) { target = in; break; }
       }
     }
     if (!target) {
       std::vector<Instance*> open;
       for (Instance& in : instances_) {
-        if (in.place == p.place && (int)in.members.size() < kInstanceCap) open.push_back(&in);
+        if (in.place == p.place && in.owner == owner && (int)in.members.size() < kInstanceCap) open.push_back(&in);
       }
       if (!open.empty()) target = open[roll() % open.size()];
     }
@@ -158,11 +167,13 @@ private:
       int number = 1;
       for (const Instance& o : instances_) if (o.place == p.place) number = std::max(number, o.number + 1);
       in.number = number;
+      in.owner = owner;
       instances_.push_back(in);
       target = &instances_.back();
     }
     target->members.push_back(p.id);
     p.instance = target->id;
+    if (!target->host) target->host = p.id;
     Writer w;
     header(w, Msg::Welcome);
     w.u32((uint32_t)target->id);
@@ -170,6 +181,7 @@ private:
     w.u16((uint16_t)target->members.size());
     send(p, w);
     if (p.activity == "pvp") sendScore(*target);
+    sendHost(*target);
     std::printf("[Server] %s -> %s (%zu here)\n", p.name.c_str(), instanceName(*target).c_str(),
                 target->members.size());
     std::fflush(stdout);
@@ -404,6 +416,31 @@ private:
         send(t->second, w);
         break;
       }
+      case Msg::Hostiles: {
+        Instance* in = instanceById(p.instance);
+        if (!in || in->host != id) break;     // only the host speaks for the Cybers
+        for (uint64_t mid : in->members) {
+          if (mid == id) continue;
+          auto m = players_.find(mid);
+          if (m != players_.end()) sock_.send(m->second.addr, data, len);
+        }
+        break;
+      }
+      case Msg::HostileHit: {
+        Instance* in = instanceById(p.instance);
+        if (!in || !in->host || in->host == id) break;
+        auto h = players_.find(in->host);
+        if (h != players_.end()) sock_.send(h->second.addr, data, len);
+        break;
+      }
+      case Msg::AllyDamage: {
+        Instance* in = instanceById(p.instance);
+        const uint64_t tid = r.u64();
+        auto t = players_.find(tid);
+        if (!r.ok || !in || in->host != id || t == players_.end() || t->second.instance != p.instance) break;
+        sock_.send(t->second.addr, data, len);
+        break;
+      }
       case Msg::Kill: {
         const uint64_t killer = r.u64();
         const int limit = r.u8();
@@ -447,6 +484,16 @@ private:
     for (uint64_t mid : in.members) {
       auto m = players_.find(mid);
       if (m != players_.end()) notice(m->second, text);
+    }
+  }
+
+  void sendHost(const Instance& in) {
+    Writer w;
+    header(w, Msg::Host);
+    w.u64(in.host);
+    for (uint64_t mid : in.members) {
+      auto m = players_.find(mid);
+      if (m != players_.end()) send(m->second, w);
     }
   }
 
