@@ -11,6 +11,10 @@
 #include "Camera.h"
 #include "Renderer.h"
 #include "Game.h"
+#include "NetClient.h"
+#include "NetProtocol.h"
+#include "NetServer.h"
+#include "NetView.h"
 #include "Hud.h"
 #include "Hub.h"
 #include "Loadout.h"
@@ -22,7 +26,9 @@
 #include "Audio.h"
 #include <algorithm>
 #include <cctype>
+#include <cctype>
 #include <cstdio>
+#include <fstream>
 #include <cstdlib>
 #include <cstring>
 #include <set>
@@ -137,6 +143,19 @@ int main(int argc, char** argv) {
       }
     }
     return 0;
+  }
+
+  // --server [port]: run the online server instead of the game. No window,
+  // no GL, so it runs on any machine — a spare PC, a cheap cloud box —
+  // that the players can reach on that UDP port (27960 unless you say).
+  // EREBUS_SERVER_SECONDS stops it after that long, for the test suite.
+  for (int i = 1; i < argc; i++) {
+    if (std::strcmp(argv[i], "--server") != 0) continue;
+    uint16_t port = net::kDefaultPort;
+    if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0])) port = (uint16_t)std::atoi(argv[i + 1]);
+    double seconds = 0.0;
+    if (const char* ss = std::getenv("EREBUS_SERVER_SECONDS")) seconds = std::atof(ss);
+    return net::runServer(port, seconds);
   }
 
   if (!glfwInit()) {
@@ -640,6 +659,40 @@ int main(int argc, char** argv) {
   double lastTime = glfwGetTime();
   int frame = 0;
 
+  // ---- online. Off unless a server is named: EREBUS_SERVER=host[:port],
+  // or `server = host[:port]` in online.cfg next to the saves (with an
+  // optional `name = ...` for what other players see over your head).
+  net::Client netClient;
+  netview::Social social;
+  std::string netServerAddr, netName, netFor;
+  {
+    std::ifstream cfg("online.cfg");
+    std::string line;
+    while (std::getline(cfg, line)) {
+      const size_t eq = line.find('=');
+      if (line.empty() || line[0] == '#' || eq == std::string::npos) continue;
+      auto trim = [](std::string v) {
+        const size_t a = v.find_first_not_of(" \t\r"), b = v.find_last_not_of(" \t\r");
+        return a == std::string::npos ? std::string() : v.substr(a, b - a + 1);
+      };
+      const std::string k = trim(line.substr(0, eq)), v = trim(line.substr(eq + 1));
+      if (k == "server") netServerAddr = v;
+      else if (k == "name") netName = v;
+    }
+  }
+  if (const char* e = std::getenv("EREBUS_SERVER")) netServerAddr = e;
+  if (const char* e = std::getenv("EREBUS_NET_NAME")) netName = e;
+  // Headless hooks for the test suite, which has no hands for the social
+  // screen: invite / befriend the first player seen, and accept whatever
+  // comes in. EREBUS_NET_LOG=<path> writes what the client saw at the end.
+  const bool netAutoInvite = envFlag("EREBUS_NET_AUTO_INVITE");
+  const bool netAutoFriend = envFlag("EREBUS_NET_AUTO_FRIEND");
+  const bool netAutoAccept = envFlag("EREBUS_NET_AUTO_ACCEPT");
+  const char* netLogPath = std::getenv("EREBUS_NET_LOG");
+  bool netInvited = false, netBefriended = false;
+  int netPeakRemotes = 0, netPeakSquad = 0;   // most seen at once, for the log
+  float lastMuzzle = 0.0f;
+
   // The end of a frame: dump a screenshot if this was the last one, and say
   // whether the loop should stop. A lambda rather than inline code because
   // the kit overlay takes its own path through the loop, and the first
@@ -689,6 +742,79 @@ int main(int argc, char** argv) {
       camera.look((float)(mx - lastX), (float)(my - lastY), 0.09f);
     }
     lastX = mx; lastY = my;
+
+    // ---- online: say where you are, hear who else is, and put them in the
+    // world you are about to draw.
+    if (!netServerAddr.empty() && netFor != savePath && state != AppState::SlotSelect &&
+        state != AppState::CreateRecord) {
+      netFor = savePath;
+      if (!profile.netId) {
+        profile.netId = net::freshId();
+        ProfileStore::save(profile, savePath);
+      }
+      std::string nm = netName;
+      if (nm.empty() && profile.name != "Operative") nm = profile.name;
+      if (nm.empty()) {
+        char tag[24];
+        std::snprintf(tag, sizeof(tag), "STRIDER-%04X", (unsigned)(profile.netId & 0xFFFFu));
+        nm = tag;
+      }
+      if (netClient.configure(netServerAddr, profile.netId, nm)) netClient.setFriends(profile.friends);
+    }
+    game.extras.clear();
+    station.extras.clear();
+    if (netClient.enabled()) {
+      std::string place, activity, weaponShape;
+      glm::vec3 feet(0.0f);
+      float hp01 = 1.0f;
+      bool fired = false, downed = false;
+      if (state == AppState::Station) {
+        place = station.layout() == "kourou" ? "DIVISION HIDEOUT" : "THE CRADLE";
+        activity = "hub";
+        feet = station.player().position;
+      } else if (state == AppState::Mission && gameEverStarted) {
+        const MissionDef* md = hubContent.mission(game.missionId());
+        place = md ? md->name : game.missionId();
+        // A planet's patrol is the free-roam space everyone shares; anything
+        // on a campaign ladder is a fireteam's mission.
+        activity = md && md->campaignIndex == 0 ? "freeroam" : "mission";
+        const Player& gp = game.player();
+        feet = gp.position;
+        hp01 = gp.maxHp > 0.0f ? std::max(0.0f, gp.hp / gp.maxHp) : 1.0f;
+        downed = gp.hp <= 0.0f;
+        fired = game.muzzleFlash() > lastMuzzle + 0.2f;
+        lastMuzzle = game.muzzleFlash();
+        weaponShape = game.netWeaponShape();
+      } else if (state == AppState::Space) {
+        place = "ORBIT";
+        activity = "space";
+      }
+      netClient.setWhere(place, activity);
+      netClient.setSelf(feet, camera.yaw, camera.pitch, hp01, fired, downed, weaponShape);
+      netClient.update(dt);
+      for (const auto& f : netClient.takeNewFriends()) {
+        bool have = false;
+        for (const auto& o : profile.friends) have |= o.first == f.first;
+        if (!have) profile.friends.push_back(f);
+        ProfileStore::save(profile, savePath);
+      }
+      if (!netClient.remotes().empty()) {
+        const net::Remote& first = netClient.remotes().front();
+        if (netAutoInvite && !netInvited) { netClient.inviteToSquad(first.id); netInvited = true; }
+        if (netAutoFriend && !netBefriended) { netClient.requestFriend(first.id); netBefriended = true; }
+      }
+      if (netAutoAccept) {
+        while (!netClient.invites().empty()) {
+          netClient.accept(netClient.invites().front());
+          netClient.invites().pop_front();
+        }
+      }
+      netPeakRemotes = std::max(netPeakRemotes, (int)netClient.remotes().size());
+      netPeakSquad = std::max(netPeakSquad, (int)netClient.squad().size());
+      netview::socialInput(window, social, netClient);
+      if (state == AppState::Mission) netview::collectRemotes(netClient, (float)now, game.extras);
+      else if (state == AppState::Station) netview::collectRemotes(netClient, (float)now, station.extras);
+    }
 
     // ---- the kit screen, from anywhere. G opens it over a mission, a
     // station, open space or the hub; while it is up it owns the keyboard and
@@ -1891,11 +2017,32 @@ int main(int argc, char** argv) {
       heardBountyNoteT = bountyNoteT;
     }
 
+    if (netClient.enabled() &&
+        (state == AppState::Station || state == AppState::Mission || state == AppState::Space)) {
+      glfwGetFramebufferSize(window, &width, &height);
+      netview::drawHud(hud, width, height, netClient, renderer.lastViewProj(), camera.position, social);
+    }
+    if (netLogPath && maxFrames > 0 && frame + 1 >= maxFrames) {
+      if (FILE* f = std::fopen(netLogPath, "w")) {
+        std::fprintf(f, "{\"enabled\":%s,\"connected\":%s,\"place\":\"%s\",\"instance\":\"%s\",\"remotes\":%d,"
+                        "\"squad\":%d,\"squadLimit\":%d,\"friends\":%d,\"savedFriends\":%d,\"peakRemotes\":%d,\"peakSquad\":%d,\"names\":[",
+                     netClient.enabled() ? "true" : "false", netClient.connected() ? "true" : "false",
+                     netClient.place().c_str(), netClient.instance().c_str(), (int)netClient.remotes().size(),
+                     (int)netClient.squad().size(), netClient.squadLimit(), (int)netClient.friends().size(),
+                     (int)profile.friends.size(), netPeakRemotes, netPeakSquad);
+        for (size_t i = 0; i < netClient.remotes().size(); i++)
+          std::fprintf(f, "%s\"%s\"", i ? "," : "", netClient.remotes()[i].name.c_str());
+        std::fprintf(f, "]}\n");
+        std::fclose(f);
+      }
+    }
+
     if (finishFrame()) break;
 
     glfwSwapBuffers(window);
   }
 
+  netClient.bye();
   ProfileStore::save(profile, savePath);
   if (gameEverStarted) game.destroy();
   station.destroy();

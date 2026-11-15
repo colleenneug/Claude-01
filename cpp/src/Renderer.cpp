@@ -328,6 +328,7 @@ void Renderer::renderFrame(const SceneSource& scene, const Camera& camera, float
 
   drawList_.clear();
   scene.collect(time, drawList_);
+  drawList_.insert(drawList_.end(), scene.extras.begin(), scene.extras.end());
 
   // Open space is a handful of convex bodies thousands of units apart with
   // nothing to receive their shadows; fitting three cascades around that

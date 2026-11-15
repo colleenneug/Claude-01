@@ -770,6 +770,54 @@ for tier in 0 3; do
         "s['appState'] == 'space' and s['nearest'].startswith('Glacius') and s['frame'] == 400"
 done
 
+# Online. The server's rules first, driven by fake players over UDP — the
+# instance cap, a squad mate pulling you into their instance, the squad limit
+# for a mission, friend requests — then two real game clients in the hideout
+# that have to see each other, link up and become friends.
+NETPORT=$((27970 + RANDOM % 400))
+EREBUS_SERVER_SECONDS=40 "$BIN" --server "$NETPORT" > "$OUT/server.log" 2>&1 &
+NETSRV=$!
+sleep 0.5
+while IFS= read -r line; do
+  echo "$line"
+  case "$line" in *"PASS "*) PASS=$((PASS+1));; *"FAIL "*) FAIL=$((FAIL+1));; esac
+done < <(python3 "$(dirname "$0")/net_test.py" "$NETPORT" 2>&1)
+kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
+
+NETPORT=$((NETPORT + 1))
+EREBUS_SERVER_SECONDS=200 "$BIN" --server "$NETPORT" > "$OUT/server2.log" 2>&1 &
+NETSRV=$!
+sleep 0.5
+cat > "$OUT/save-neta.txt" <<'SEED'
+name = Operative
+class = bulwark
+equipped_weapon = maul_12
+equipped_sidearm = sidearm
+owned_weapon sidearm
+owned_weapon maul_12
+completed tutorial_earth
+SEED
+cp "$OUT/save-neta.txt" "$OUT/save-netb.txt"
+netrun() {  # netrun <name> <env...>
+  local n="$1"; shift
+  xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 EREBUS_FIXED_DT=0.016 EREBUS_MUTE=1 EREBUS_MAX_FRAMES=300 \
+    EREBUS_SERVER=127.0.0.1:$NETPORT EREBUS_SAVE_PATH="$OUT/save-$n.txt" EREBUS_NET_LOG="$OUT/$n.json" \
+    EREBUS_NET_AUTO_ACCEPT=1 "$@" "$BIN" >/dev/null 2>&1
+}
+netrun neta EREBUS_NET_NAME=ALPHA EREBUS_NET_AUTO_INVITE=1 EREBUS_STATION_AT=0,0,20 EREBUS_STATION_YAW=90 &
+NETA=$!
+netrun netb EREBUS_NET_NAME=BRAVO EREBUS_NET_AUTO_FRIEND=1 EREBUS_STATION_AT=0,0,26 EREBUS_STATION_YAW=-90 &
+NETB=$!
+wait "$NETA" "$NETB"
+kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
+check "online: both land in the same hideout instance" "$OUT/neta.json" \
+      "s['connected'] and s['instance'] == 'DIVISION HIDEOUT 1' and s['peakRemotes'] >= 1"
+check "online: the other player is seen" "$OUT/netb.json" "s['peakRemotes'] >= 1"
+check "online: a squad link forms" "$OUT/netb.json" "s['peakSquad'] == 2"
+check "online: the friendship is saved on both records" "$OUT/neta.json" \
+      "s['savedFriends'] == 1 and json.load(open('$OUT/netb.json'))['savedFriends'] == 1"
+checkfile "online: a record keeps its id" "$OUT/save-neta.txt" "^net_id = [0-9a-f]{16}$"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

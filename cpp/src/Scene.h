@@ -18,6 +18,11 @@ public:
   // Fill `out` with everything to draw this frame.
   virtual void collect(float time, std::vector<DrawItem>& out) const = 0;
 
+  // Drawn after collect(), whatever the scene: other players online, set
+  // from outside each frame (see NetView) so no scene has to know about the
+  // network. Mutable because the renderer is handed a const scene.
+  mutable std::vector<DrawItem> extras;
+
   // The one directional light the whole pipeline is built around: the
   // direction light travels along, its colour, and its intensity.
   virtual glm::vec3 sunDirection() const = 0;

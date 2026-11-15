@@ -218,6 +218,21 @@ Profile ProfileStore::load(const std::string& path) {
       addUnique(first == "upgrade" ? p.upgrades : p.bountiesDone, id);
       continue;
     }
+    if (first == "friend") {
+      std::string hex, rest;
+      ls >> hex;
+      std::getline(ls, rest);
+      const size_t b = rest.find_first_not_of(" \t");
+      rest = b == std::string::npos ? std::string() : rest.substr(b);
+      try {
+        const uint64_t id = std::stoull(hex, nullptr, 16);
+        bool have = false;
+        for (auto& f : p.friends) have |= f.first == id;
+        if (id && !have) p.friends.push_back({id, rest.empty() ? std::string("STRIDER") : rest});
+      } catch (...) {
+      }
+      continue;
+    }
     if (first == "owned_ship") {
       std::string id;
       ls >> id;
@@ -249,6 +264,7 @@ Profile ProfileStore::load(const std::string& path) {
       else if (k == "equipped_armor") p.equippedArmor = v;
       else if (k == "equipped_cosmetic") p.equippedCosmetic = v;
       else if (k == "equipped_ship") p.equippedShip = v;
+      else if (k == "net_id") p.netId = std::stoull(v, nullptr, 16);
     } catch (...) {
       std::fprintf(stderr, "[Profile] %s: bad value for '%s' = '%s', ignored\n",
                    path.c_str(), k.c_str(), v.c_str());
@@ -295,6 +311,15 @@ bool ProfileStore::save(const Profile& p, const std::string& path) {
   for (auto& b : p.bounties) f << "bounty " << b.id << " " << b.progress << "\n";
   for (auto& id : p.bountiesDone) f << "bounty_done " << id << "\n";
   for (auto& id : p.upgrades) f << "upgrade " << id << "\n";
+  if (p.netId) {
+    char hex[24];
+    std::snprintf(hex, sizeof(hex), "%016llx", (unsigned long long)p.netId);
+    f << "net_id = " << hex << "\n";
+    for (auto& fr : p.friends) {
+      std::snprintf(hex, sizeof(hex), "%016llx", (unsigned long long)fr.first);
+      f << "friend " << hex << " " << fr.second << "\n";
+    }
+  }
 
   return true;
 }

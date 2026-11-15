@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <utility>
+#include <cstdint>
 
 // A player's persistent progress: currency, what gear is owned vs merely
 // available in content/, what's currently equipped, and which missions
@@ -72,6 +74,12 @@ struct Profile {
   std::vector<std::string> bountiesDone;
   // Permanent improvements bought from somebody's post (content/upgrades).
   std::vector<std::string> upgrades;
+
+  // Online. The id the server knows this record by — made once, the first
+  // time the record goes online, and kept so friends can find it again —
+  // and the friends it has made, by that id, with the name they had then.
+  uint64_t netId = 0;
+  std::vector<std::pair<uint64_t, std::string>> friends;
 
   ActiveBounty* activeBounty(const std::string& id) {
     for (ActiveBounty& b : bounties) if (b.id == id) return &b;

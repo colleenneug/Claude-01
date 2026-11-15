@@ -51,6 +51,10 @@ add_executable(erebus_native
     src/Post.cpp
     src/Audio.cpp
     src/miniaudio_impl.cpp
+  src/Net.cpp
+  src/NetServer.cpp
+  src/NetClient.cpp
+  src/NetView.cpp
   src/Game.cpp
   src/Renderer.cpp
 )
@@ -58,7 +62,7 @@ add_executable(erebus_native
 if(WIN32)
   # vcpkg's config packages give proper imported targets — no manual
   # include/library path plumbing needed.
-  target_link_libraries(erebus_native PRIVATE glfw GLEW::GLEW OpenGL::GL)
+  target_link_libraries(erebus_native PRIVATE glfw GLEW::GLEW OpenGL::GL ws2_32)
 else()
   target_include_directories(erebus_native PRIVATE
     ${GLFW_INCLUDE_DIRS}

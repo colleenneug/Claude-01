@@ -271,8 +271,9 @@ four ships, twenty-nine missions (the nineteen of THE FIRST ATTACK, seven
 side contracts, and three test fixtures), six destinations —
 including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
-text files, not a code change (see *Content* below). What's still not here:
-co-op/netcode (see the note at the bottom of *Roadmap*), the browser
+text files, not a code change (see *Content* below). Online play is in —
+shared places, squads and friends (see *Online* below), though each player's
+game still runs its own fights. What's still not here: the browser
 build's gear rolls, chests and dossier screens, and packaging as an actual installable
 build. Everything that exists here is real, compiled, and was verified by
 actually running it and reading back live game state — not eyeballed
@@ -282,6 +283,61 @@ No texture, model, or asset files ship with this project — every material
 shades procedurally from world position and normal (see
 `shaders/pbr.frag`), the same "nothing to download, nothing to license"
 approach the browser build takes with its canvas-baked textures.
+
+### Online: shared places, squads, friends
+
+Online works like a patrol zone. Every place you can stand — the Division
+hideout, the Cradle, a planet's patrol, a mission's map, orbit — is split
+into **instances** of up to twelve players. Arriving somewhere drops you into
+a random instance of it that has room, so the Striders you run into are
+whoever else happened to land there. A squad mate who is already there pulls
+you into their instance instead.
+
+- **Squad link.** Invite someone you can see, or a friend who is online,
+  from the social screen (**O**). How many fit depends on what the squad's
+  leader is doing: a campaign mission is a fireteam of **3**; a patrol, the
+  hideout, orbit and player-versus-player take **6**; a Gambit-style match
+  is **4**. If the leader leaves, the squad carries on under the next one.
+- **Friends.** Press **F** on someone in the social screen; when they accept,
+  both records keep the other (`friend ...` lines in the save), and from then
+  on the panel shows where they are whenever you are both online.
+- **What you see.** Other Striders in your instance, in their own colour,
+  with their name overhead — squad mates in the Division's cyan with a health
+  bar, everyone else in amber — and a corner panel with your instance and
+  squad.
+
+What is shared today is *who is where*: positions, aim, health, shots fired.
+Each game still runs its own enemies, so two players in the same patrol see
+each other fight but not the same Cybers. Shared enemies (real co-op) and
+the PvP modes are the next layer, on top of the same server.
+
+**Hosting.** The game *is* the server — no other program:
+
+```
+erebus_native --server            # UDP port 27960
+erebus_native --server 28000      # or another
+```
+
+Run it on any machine everyone can reach (forward the UDP port on your
+router if it is at home). Then each player puts an `online.cfg` next to
+their saves:
+
+```
+server = 203.0.113.7          # the host's address, :port if not 27960
+name = NIGHTJAR               # what other players see over your head
+```
+
+or sets `EREBUS_SERVER=host[:port]` instead. With neither, the game is the
+single-player game it always was and opens no socket.
+
+| Input (online) | Action |
+|---|---|
+| O | Open / close the social screen |
+| Up / Down or Tab | Choose a row |
+| I | Squad invite the player on that row |
+| F | Send them a friend request |
+| Enter | Accept an invite / leave the squad |
+| Backspace | Decline an invite |
 
 ## Building
 
@@ -1206,6 +1262,11 @@ src/
   Hostile.{h,cpp}         rig, AI state machine, stuck-avoidance steering
   Hud.{h,cpp}             2D overlay: bars, pips, crosshair, hub swatches
   Game.{h,cpp}            owns and drives all of the above
+  Net.{h,cpp}             UDP sockets (Winsock / BSD), byte writer and reader
+  NetProtocol.h           the messages, the instance cap and squad limits
+  NetServer.{h,cpp}       `--server`: instances, squads, friends, presence
+  NetClient.{h,cpp}       the game's side: where you are, who else is here
+  NetView.{h,cpp}         other Striders drawn, nameplates, the social screen
 shaders/
   pbr.vert / pbr.frag     the one material program every opaque object uses
   depth.vert / depth.frag cascade depth-only pass
