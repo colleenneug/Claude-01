@@ -261,11 +261,11 @@ public:
   // For online play: how bright the muzzle is now (a jump means a shot), and
   // the silhouette of what you are holding, as other players draw it.
   float muzzleFlash() const { return muzzleFlash_; }
+  // The weapon's id: everyone else's game has the same content, so it can
+  // draw your gun in its own colours and silhouette.
   std::string netWeaponShape() const {
     if (!armed_ || !weaponDef_) return std::string();
-    if (!weaponDef_->shape.empty()) return weaponDef_->shape;
-    if (weaponDef_->projectileSpeed > 0.0f) return "launcher";
-    return weaponDef_->magSize <= 14 ? "pistol" : "rifle";
+    return weaponDef_->id;
   }
   // What to put on screen right now, and what it is asking for. Empty once
   // the tutorial is over — or if this mission is not one.

@@ -2,6 +2,7 @@
 
 #include "Gl.h"
 #include "Hostile.h"
+#include "Content.h"
 #include "Hud.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -84,7 +85,7 @@ std::string upper(std::string s) {
 
 }  // namespace
 
-void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>& out) {
+void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>& out, const Content* content) {
   const Mesh& box = HostileGeometry::unitBox();
   const Mesh& sph = HostileGeometry::unitSphere();
   for (const net::Remote& r : client.remotes()) {
@@ -141,14 +142,34 @@ void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>
     glm::mat4 aim = glm::translate(root, glm::vec3(0, 1.36f, 0));
     aim = glm::rotate(aim, glm::radians(std::clamp(r.pitch, -80.0f, 80.0f)), glm::vec3(1, 0, 0));
     for (int s = -1; s <= 1; s += 2) part(out, under, box, aim, {0.20f * s, -0.04f, -0.22f}, {0.09f, 0.09f, 0.40f});
-    const bool big = r.weapon == "launcher" || r.weapon == "lmg";
-    const float len = r.weapon == "sniper" ? 1.05f : big ? 0.95f : r.weapon == "pistol" ? 0.30f : 0.72f;
+    // The gun: the weapon they actually hold, if this game knows it — its
+    // silhouette from its shape, its colours from its look.
+    std::string shape = r.weapon;
+    const WeaponDef* wd = content && !r.weapon.empty() ? content->weapon(r.weapon) : nullptr;
+    if (wd) {
+      shape = wd->shape;
+      if (shape.empty()) shape = wd->projectileSpeed > 0.0f ? "launcher" : wd->magSize <= 14 ? "pistol" : "rifle";
+    }
+    const bool big = shape == "launcher" || shape == "lmg" || shape == "grenade";
+    const float len = shape == "sniper" ? 1.05f : big ? 0.95f : shape == "pistol" ? 0.30f
+                    : shape == "shotgun" ? 0.80f : shape == "smg" ? 0.55f : 0.72f;
     DrawItem gun = under;
-    gun.tint = glm::vec3(0.18f, 0.19f, 0.21f);
-    gun.metallic = 0.85f;
-    gun.roughness = 0.3f;
+    gun.tint = wd ? wd->look.body : glm::vec3(0.18f, 0.19f, 0.21f);
+    gun.metallic = wd ? wd->look.metallic : 0.85f;
+    gun.roughness = wd ? wd->look.roughness : 0.3f;
     const float thick = big ? 0.15f : 0.09f;
     part(out, gun, box, aim, {0.08f, -0.02f, -0.30f - len * 0.5f}, {thick, thick * 1.3f, len});
+    if (wd) {
+      DrawItem trim = gun;
+      trim.tint = wd->look.trim;
+      part(out, trim, box, aim, {0.08f, -0.02f - thick * 0.7f, -0.34f}, {thick * 0.8f, thick * 1.4f, 0.12f});   // grip and mag
+      DrawItem accent = lit;
+      accent.emissive = wd->look.accent;
+      accent.emissiveIntensity = 1.6f;
+      part(out, accent, box, aim, {0.08f, -0.02f + thick * 0.68f, -0.30f - len * 0.5f}, {thick * 0.5f, 0.015f, len * 0.6f});
+      if (wd->look.optic > 0)
+        part(out, trim, box, aim, {0.08f, -0.02f + thick * 0.95f, -0.40f}, {0.05f, 0.05f, 0.16f});
+    }
     if (r.firedT > 0.0f) {
       DrawItem flash = lit;
       flash.emissive = glm::vec3(1.0f, 0.75f, 0.35f);

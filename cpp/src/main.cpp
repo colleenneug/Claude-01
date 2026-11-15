@@ -961,8 +961,8 @@ int main(int argc, char** argv) {
       } else if (gameEverStarted) {
         game.setCoop(Game::CoopRole::Solo, {});
       }
-      if (state == AppState::Mission) netview::collectRemotes(netClient, (float)now, game.extras);
-      else if (state == AppState::Station) netview::collectRemotes(netClient, (float)now, station.extras);
+      if (state == AppState::Mission) netview::collectRemotes(netClient, (float)now, game.extras, &hubContent);
+      else if (state == AppState::Station) netview::collectRemotes(netClient, (float)now, station.extras, &hubContent);
       else if (state == AppState::Space) netview::collectShips(netClient, (float)now, camera.position, space.extras);
     }
 

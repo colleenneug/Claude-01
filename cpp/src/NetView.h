@@ -9,6 +9,7 @@
 #include <vector>
 
 class Hud;
+class Content;
 struct GLFWwindow;
 
 // How online play shows up: the other Striders in your instance drawn in the
@@ -17,7 +18,10 @@ struct GLFWwindow;
 namespace netview {
 
 // Everyone else in the instance, as draw items for SceneSource::extras.
-void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>& out);
+// With `content`, each player's gun is drawn as the weapon they hold, in
+// its own look (see WeaponLook).
+void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>& out,
+                    const Content* content = nullptr);
 
 // Other players' ships in orbit, from `eye`: a small hull with an engine
 // glow, and a beacon that grows with distance so a ship ten kilometres off is
