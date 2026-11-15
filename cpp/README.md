@@ -365,6 +365,15 @@ guest. A Cyber your rounds finish is your kill too — the experience, the
 ammo it drops and the bounty count. When the host leaves, the next player
 in takes over and the fight carries on.
 
+**Enemies are shared everywhere** — patrols, planets, the Tuning, and the
+story missions — except the PvP arenas, and except any mission that says
+`shared = false` in its file (for the moments that should be yours alone).
+In a mission with objectives the host leads: everyone is on the host's
+objective and it ends for all of you at once; a hold counts while any of
+you is in the ring; a data core anyone picks up counts for the squad; the
+puzzle taps sing in the host's order for everybody; the host's boss is
+everybody's boss.
+
 **Story missions are private.** A campaign mission's instance belongs to the
 squad that launched it (or to you alone), so strangers never land in it;
 your squad mates do, up to the fireteam of three.

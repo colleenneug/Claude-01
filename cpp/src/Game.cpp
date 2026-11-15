@@ -650,6 +650,7 @@ void Game::fireTrigger(const std::string& id) {
 
 void Game::spawnReinforcements(const Site::Objective& o) {
   if (o.reinforce.empty()) return;
+  if (coopRole_ == CoopRole::Guest) return;   // the host's arrive in its snapshots
   // From the walls of the area, out of sight lines where it can manage it,
   // and never on top of you: two at a time, a pause, two more.
   // One at a time early in the route, two once it gets serious.
@@ -697,7 +698,11 @@ void Game::updateSite(float dt) {
 
   // The objective ends when its own trigger has fired — or, for the last
   // one, when everything that is awake is down.
+  // A guest follows the host's progress rather than keeping its own: the
+  // squad is on one objective, and it ends for everyone when it ends.
+  const bool following = coopRole_ == CoopRole::Guest;
   while (objectiveIndex_ < site_.objectives.size()) {
+    if (following && objectiveIndex_ >= coopObjective_) break;
     const Site::Objective& o = site_.objectives[objectiveIndex_];
     bool done = false;
     if (o.needsBoss) {
@@ -736,7 +741,7 @@ void Game::updateSite(float dt) {
         seqLastSung_ = -1;
         seqInit_ = true;
       }
-      for (size_t k = 0; k < seqTaps_.size(); k++) {
+      for (size_t k = 0; k < seqTaps_.size() && !following; k++) {
         if (seqDown_[k] || hostiles_[seqTaps_[k]].blocksShots()) continue;
         seqDown_[k] = true;
         if (seqStep_ < seqOrder_.size() && seqOrder_[seqStep_] == (int)k) {
@@ -761,7 +766,7 @@ void Game::updateSite(float dt) {
       }
       seqWrongT_ = std::max(0.0f, seqWrongT_ - dt);
       seqSingT_ -= dt;
-      if (seqSingT_ <= 0.0f && seqStep_ < seqOrder_.size()) {
+      if (!following && seqSingT_ <= 0.0f && seqStep_ < seqOrder_.size()) {
         const size_t remaining = seqOrder_.size() - seqStep_;
         if (seqSingIdx_ < remaining) {
           const int k = seqOrder_[seqStep_ + seqSingIdx_];
@@ -799,7 +804,13 @@ void Game::updateSite(float dt) {
       // coming either way — leaving the ring does not make them stop.
       glm::vec3 d = player_.position - o.zone;
       d.y = 0.0f;
-      const bool inside = glm::length(d) <= o.zoneRadius && player_.alive() && !downed();
+      bool inside = glm::length(d) <= o.zoneRadius && player_.alive() && !downed();
+      // Any squad mate in the ring holds it for the squad.
+      for (const NetTarget& a : allies_) {
+        glm::vec3 da = a.feet - o.zone;
+        da.y = 0.0f;
+        if (!a.down && glm::length(da) <= o.zoneRadius) inside = true;
+      }
       if (inside) {
         // The last five seconds count down out loud.
         const float before = o.seconds - objectiveClock_;
@@ -869,6 +880,7 @@ void Game::updateSite(float dt) {
         break;
       }
     }
+    if (following) done = true;   // the host is past it
     if (!done) break;
     // The first objective is "get here", met the moment you land: nothing
     // to celebrate. Every one after it gets the chime.
@@ -1418,6 +1430,7 @@ void Game::destroy() {
 
 void Game::spawnBossIfReady() {
   if (!bossPending_) return;
+  if (coopRole_ == CoopRole::Guest) return;   // the host's boss arrives in its snapshots
   bool clear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                            [](const Hostile& h) { return h.state == HostileState::Gone; });
   // On an expedition the boss waits for you to walk into its arena, not for
@@ -2690,7 +2703,7 @@ void Game::pvpRespawn() {
 
 std::vector<Game::CoopHostile> Game::coopSnapshot() const {
   std::vector<CoopHostile> out;
-  for (size_t i = 0; i < hostiles_.size() && i < 48; i++) {
+  for (size_t i = 0; i < hostiles_.size() && i < 512; i++) {
     const Hostile& h = hostiles_[i];
     CoopHostile c;
     c.index = (uint16_t)i;
@@ -2699,6 +2712,7 @@ std::vector<Game::CoopHostile> Game::coopSnapshot() const {
     c.yaw = h.yaw;
     c.hp = h.maxHp > 0.0f ? h.hp / h.maxHp : 0.0f;
     c.state = (uint8_t)h.state;
+    c.singing = h.singT > 0.35f;
     out.push_back(c);
   }
   return out;
@@ -2726,11 +2740,22 @@ void Game::applyCoopSnapshot(const std::vector<CoopHostile>& list) {
         if (hostileWakeOn_.size() + 1 == hostiles_.size()) hostileWakeOn_.push_back("");
         if (hostileGroup_.size() + 1 == hostiles_.size()) hostileGroup_.push_back("");
       }
+      const bool boss = !mission_.bossId.empty() && c.type == mission_.bossId;
       if (c.index == hostiles_.size()) {
-        addHostile(t, c.pos);
+        addHostile(t, c.pos, boss ? mission_.bossHpMultiplier : 1.0f);
       } else {
         hostiles_[c.index].spawn(t, c.pos);
         hostiles_[c.index].state = HostileState::Chase;
+      }
+      if (boss) {
+        // The host's boss: built as a boss here too, and the HUD's bar is
+        // this one.
+        Hostile& bh = hostiles_[c.index];
+        bh.spawn(t, c.pos, true, mission_.bossHpMultiplier);
+        bh.state = HostileState::Chase;
+        bossIndex_ = (int)c.index;
+        bossPending_ = false;
+        audio::play(Sfx::BossSpawn);
       }
       coopPos_.resize(hostiles_.size(), c.pos);
       coopHitAt_.resize(hostiles_.size(), -100.0f);
@@ -2744,6 +2769,10 @@ void Game::applyCoopSnapshot(const std::vector<CoopHostile>& list) {
     if (glm::length(c.pos - h.pos) > 6.0f) h.pos = c.pos;   // too far to ease: it moved while you loaded
     h.yaw = c.yaw;
     h.hp = c.hp * h.maxHp;
+    if (c.singing && h.singT <= 0.0f) {
+      h.singT = 0.7f;
+      audio::playAt(Sfx::TapNote, h.pos, 1.0f, 0.85f);
+    }
     // Dying is played out here; the host's Gone only lands once it has.
     if (next == HostileState::Gone && h.state == HostileState::Dying) continue;
     if (next == HostileState::Dying && h.state == HostileState::Dying) continue;
@@ -2764,13 +2793,9 @@ void Game::applyCoopSnapshot(const std::vector<CoopHostile>& list) {
       }
     }
   }
-  size_t listed = 0;
-  for (const CoopHostile& c : list) listed = std::max(listed, (size_t)c.index + 1);
-  dropUnlistedCoop(listed);
 }
 
 void Game::dropUnlistedCoop(size_t listed) {
-  if (listed >= 48) return;   // a full snapshot may not be all of them
   for (size_t i = listed; i < hostiles_.size(); i++) {
     if (hostiles_[i].blocksShots()) hostiles_[i].state = HostileState::Gone;
   }
@@ -2981,4 +3006,60 @@ void Game::worldRespawn() {
   lastAttacker_ = 0;
   pickupNote_ = "BACK ON YOUR FEET";
   pickupNoteT_ = 2.5f;
+}
+
+Game::CoopProgress Game::coopProgress() const {
+  CoopProgress p;
+  p.total = (uint16_t)std::min<size_t>(hostiles_.size(), 512);
+  p.objective = (uint16_t)objectiveIndex_;
+  for (const Pickup& q : pickups_)
+    if (q.kind == PickupKind::Core) p.cores.push_back(q.taken ? 1 : 0);
+  return p;
+}
+
+void Game::applyCoopProgress(const CoopProgress& p) {
+  dropUnlistedCoop(p.total);
+  coopObjective_ = p.objective;
+  size_t k = 0;
+  for (Pickup& q : pickups_) {
+    if (q.kind != PickupKind::Core) continue;
+    if (k < p.cores.size() && p.cores[k] && !q.taken) q.taken = true;   // somebody else has it
+    k++;
+  }
+  if (coreReported_.size() < k) coreReported_.resize(k, false);
+  k = 0;
+  for (const Pickup& q : pickups_) {
+    if (q.kind != PickupKind::Core) continue;
+    if (q.taken) coreReported_[k] = true;   // the host knows about this one
+    k++;
+  }
+}
+
+std::vector<uint16_t> Game::takeCoopCores() {
+  std::vector<uint16_t> out;
+  size_t k = 0;
+  for (const Pickup& q : pickups_) {
+    if (q.kind != PickupKind::Core) continue;
+    if (coreReported_.size() <= k) coreReported_.resize(k + 1, false);
+    if (q.taken && !coreReported_[k]) {
+      coreReported_[k] = true;
+      out.push_back((uint16_t)k);
+    }
+    k++;
+  }
+  return out;
+}
+
+void Game::applyCoopCore(uint16_t ordinal) {
+  size_t k = 0;
+  for (Pickup& q : pickups_) {
+    if (q.kind != PickupKind::Core) continue;
+    if (k == ordinal && !q.taken) {
+      q.taken = true;
+      pickupNote_ = "A SQUAD MATE RECOVERED A CORE";
+      pickupNoteT_ = 2.5f;
+      audio::play(Sfx::PickupCore);
+    }
+    k++;
+  }
 }

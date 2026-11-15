@@ -932,6 +932,27 @@ kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
 check "a planet online: one copy of Glacius, shared Cybers" "$OUT/worldb.json" \
       "s['instance'] == 'GLACIUS 1' and s['peakRemotes'] >= 1 and s['coopSnaps'] >= 20"
 
+# Shared enemies in a mission with objectives: two players run the puzzle
+# fixture (a champion, then taps to break in the order they sing). The host
+# leads the objectives; the guest follows them and both finish.
+NETPORT=$((NETPORT + 1))
+EREBUS_SERVER_SECONDS=500 "$BIN" --server "$NETPORT" > "$OUT/server8.log" 2>&1 &
+NETSRV=$!
+sleep 0.5
+cp "$OUT/save-joina.txt" "$OUT/save-puza.txt"; cp "$OUT/save-joinb.txt" "$OUT/save-puzb.txt"
+netrun puza EREBUS_NET_NAME=ALPHA EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_FIXED_DT=0.033 \
+  EREBUS_MAX_FRAMES=2200 EREBUS_LOG_STATE="$OUT/puza-state.json" -- --mission debug_puzzle &
+NETA=$!
+sleep 2
+netrun puzb EREBUS_NET_NAME=BRAVO EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_FIXED_DT=0.033 \
+  EREBUS_MAX_FRAMES=2200 EREBUS_LOG_STATE="$OUT/puzb-state.json" -- --mission debug_puzzle &
+NETB=$!
+wait "$NETA" "$NETB"
+kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
+check "shared mission: the guest follows the host's Cybers and objectives" "$OUT/puzb.json" "s['coopSnaps'] >= 100"
+check "shared mission: both players finish it" "$OUT/puza-state.json" \
+      "s['missionState'] == 'complete' and json.load(open('$OUT/puzb-state.json'))['missionState'] == 'complete'"
+
 # ...and online: two players land in the same match on opposite sides, each
 # hosting their own side's Cybers.
 NETPORT=$((NETPORT + 1))

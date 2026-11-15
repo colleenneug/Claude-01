@@ -240,7 +240,20 @@ public:
     glm::vec3 pos{0.0f};
     float yaw = 0.0f, hp = 1.0f;   // hp 0..1 of maximum
     uint8_t state = 0;
+    bool singing = false;
   };
+  // How far the host's mission has got: the Cybers it has in all, the
+  // objective it is on, and which data cores are taken.
+  struct CoopProgress {
+    uint16_t total = 0, objective = 0;
+    std::vector<uint8_t> cores;
+  };
+  CoopProgress coopProgress() const;
+  void applyCoopProgress(const CoopProgress& p);
+  // Guest: cores you picked up since the last call (by their order), for
+  // the host. Host: a guest picked this one up.
+  std::vector<uint16_t> takeCoopCores();
+  void applyCoopCore(uint16_t ordinal);
   struct CoopHit {
     uint16_t index = 0;
     float damage = 0.0f;
@@ -565,6 +578,8 @@ private:
   std::vector<glm::vec3> coopPos_;     // guest: where the host last put each Cyber
   std::vector<float> coopHitAt_;       // guest: when you last hit each one (for kill credit)
   bool coopQuiet_ = false;             // host: applying someone else's hit
+  size_t coopObjective_ = 0;           // guest: the objective the host is on
+  std::vector<bool> coreReported_;     // guest: cores already told to the host
   int notesCarried_ = 0, notesBankedTotal_ = 0, bankedPending_ = 0;
   float refillT_ = 0.0f;               // the Tuning: next top-up of the arena's Cybers
   float noteFlashT_ = 0.0f;

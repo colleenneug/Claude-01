@@ -375,6 +375,11 @@ void Client::handle(const uint8_t* data, size_t len) {
     case Msg::Hostiles: {
       const uint64_t from = r.u64();
       if (from != host_) break;     // an old host's last word
+      CoopFrame f;
+      f.total = r.u16();
+      f.objective = r.u16();
+      const uint8_t nc = r.u8();
+      for (uint8_t i = 0; i < nc && r.ok; i++) f.cores.push_back(r.u8());
       const uint16_t n = r.u16();
       std::vector<NetHostile> list;
       for (uint16_t i = 0; i < n && r.ok && i < 512; i++) {
@@ -383,13 +388,24 @@ void Client::handle(const uint8_t* data, size_t len) {
         h.x = r.f32(); h.y = r.f32(); h.z = r.f32();
         h.yaw = r.f32();
         h.hp = r.u8() / 255.0f;
-        h.state = r.u8();
+        const uint8_t st = r.u8();
+        h.state = st & 0x7f;
+        h.singing = (st & 0x80) != 0;
         h.type = r.str();
         list.push_back(h);
       }
       if (!r.ok) break;
-      hostiles_ = list;
+      // Pieces of one frame add up; a new frame starts the list again.
+      if (!newHostiles_) hostiles_.clear();
+      hostiles_.insert(hostiles_.end(), list.begin(), list.end());
+      frame_ = f;
       newHostiles_ = true;
+      break;
+    }
+    case Msg::CoreTaken: {
+      r.u64();
+      const uint16_t ord = r.u16();
+      if (r.ok && isHost()) coresTaken_.push_back(ord);
       break;
     }
     case Msg::HostileHit: {
@@ -512,23 +528,48 @@ void Client::sendKill(uint64_t killer, int limit) {
   send(w);
 }
 
-void Client::sendHostiles(const std::vector<NetHostile>& list) {
+void Client::sendHostiles(const std::vector<NetHostile>& list, const CoopFrame& frame) {
+  if (!enabled_) return;
+  // In pieces of forty, each carrying the frame, so a long mission's worth
+  // of Cybers never makes one packet too big to arrive whole.
+  const size_t per = 40;
+  for (size_t start = 0; start < list.size() || start == 0; start += per) {
+    Writer w;
+    header(w, Msg::Hostiles);
+    w.u64(id_);
+    w.u16(frame.total);
+    w.u16(frame.objective);
+    w.u8((uint8_t)std::min<size_t>(frame.cores.size(), 64));
+    for (size_t i = 0; i < frame.cores.size() && i < 64; i++) w.u8(frame.cores[i]);
+    const size_t n = std::min(per, list.size() - std::min(list.size(), start));
+    w.u16((uint16_t)n);
+    for (size_t i = start; i < start + n; i++) {
+      const NetHostile& h = list[i];
+      w.u16(h.index);
+      w.f32(h.x); w.f32(h.y); w.f32(h.z);
+      w.f32(h.yaw);
+      w.u8((uint8_t)std::lround(std::clamp(h.hp, 0.0f, 1.0f) * 255.0f));
+      w.u8((uint8_t)(h.state | (h.singing ? 0x80 : 0)));
+      w.str(h.type);
+    }
+    send(w);
+    if (list.empty()) break;
+  }
+}
+
+void Client::sendCoreTaken(uint16_t ordinal) {
   if (!enabled_) return;
   Writer w;
-  header(w, Msg::Hostiles);
+  header(w, Msg::CoreTaken);
   w.u64(id_);
-  const size_t n = std::min<size_t>(list.size(), 48);   // one packet's worth
-  w.u16((uint16_t)n);
-  for (size_t i = 0; i < n; i++) {
-    const NetHostile& h = list[i];
-    w.u16(h.index);
-    w.f32(h.x); w.f32(h.y); w.f32(h.z);
-    w.f32(h.yaw);
-    w.u8((uint8_t)std::lround(std::clamp(h.hp, 0.0f, 1.0f) * 255.0f));
-    w.u8(h.state);
-    w.str(h.type);
-  }
+  w.u16(ordinal);
   send(w);
+}
+
+std::vector<uint16_t> Client::takeCoresTaken() {
+  std::vector<uint16_t> out;
+  out.swap(coresTaken_);
+  return out;
 }
 
 void Client::sendHostileHit(uint16_t index, float damage, bool head) {
@@ -562,10 +603,12 @@ void Client::sendBank(int count, int limit) {
   send(w);
 }
 
-bool Client::takeHostiles(std::vector<NetHostile>& out) {
+bool Client::takeHostiles(std::vector<NetHostile>& out, CoopFrame& frame) {
   if (!newHostiles_) return false;
   newHostiles_ = false;
-  out = hostiles_;
+  out.swap(hostiles_);
+  hostiles_.clear();
+  frame = frame_;
   return true;
 }
 

@@ -110,11 +110,13 @@ public:
   // Co-op: who runs the Cybers here, and the traffic about them.
   uint64_t host() const { return host_; }
   bool isHost() const { return host_ != 0 && host_ == id_; }
-  void sendHostiles(const std::vector<NetHostile>& list);
+  void sendHostiles(const std::vector<NetHostile>& list, const CoopFrame& frame);
+  void sendCoreTaken(uint16_t ordinal);
+  std::vector<uint16_t> takeCoresTaken();
   void sendHostileHit(uint16_t index, float damage, bool head);
   void sendAllyDamage(uint64_t target, float damage);
   // The newest snapshot from the host, once (false if none since last time).
-  bool takeHostiles(std::vector<NetHostile>& out);
+  bool takeHostiles(std::vector<NetHostile>& out, CoopFrame& frame);
   struct HostileHitIn {
     uint64_t from = 0;
     uint16_t index = 0;
@@ -195,6 +197,8 @@ private:
   int screamers_ = 0;
   std::vector<NetHostile> hostiles_;
   bool newHostiles_ = false;
+  CoopFrame frame_;
+  std::vector<uint16_t> coresTaken_;
   std::vector<HostileHitIn> hostileHits_;
   float allyDamage_ = 0.0f;
   std::vector<ScoreRow> score_;

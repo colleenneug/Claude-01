@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // What the game and the server say to each other. Every packet starts with
 // the magic and the protocol version, then a message type, then its body.
@@ -47,6 +48,7 @@ enum class Msg : uint8_t {
   HostileHit,       // guest -> host: index, damage, head
   AllyDamage,       // host -> one player: target id, damage (a Cyber hit them)
   Bank,             // the Tuning: count of notes banked at the tap
+  CoreTaken,        // guest -> host: a data core (by its order) was picked up
   // server -> client
   Welcome = 64,     // the instance you are in
   Snapshot,         // everyone else in your instance
@@ -103,7 +105,17 @@ struct NetHostile {
   uint16_t index = 0;
   float x = 0, y = 0, z = 0, yaw = 0, hp = 1.0f;   // hp 0..1 of its maximum
   uint8_t state = 0;                               // HostileState
+  bool singing = false;                            // a puzzle tap singing its note
   std::string type;                                // enemy id, so a guest can build it
+};
+
+// What travels with the host's Cybers: how many there are in all (anything
+// past that a guest has is gone), how far along the objectives the host is,
+// and which data cores have been taken.
+struct CoopFrame {
+  uint16_t total = 0;
+  uint16_t objective = 0;
+  std::vector<uint8_t> cores;
 };
 
 // One player as everyone else sees them.

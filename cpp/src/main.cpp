@@ -960,8 +960,9 @@ int main(int argc, char** argv) {
         netClient.takeHits();
       }
       // Co-op on a patrol: the instance's host runs the Cybers for everyone.
-      if (state == AppState::Mission && gameEverStarted && !game.pvp() &&
-          (activity == "freeroam" || activity == "tuning")) {
+      // Shared everywhere but the PvP modes, unless a mission says
+      // `shared = false`: story missions, patrols, worlds, the Tuning.
+      if (state == AppState::Mission && gameEverStarted && game.sharedEnemies()) {
         std::vector<Game::NetTarget> allies;
         for (const net::Remote& r : netClient.remotes()) {
           Game::NetTarget t;
@@ -984,17 +985,25 @@ int main(int argc, char** argv) {
               h.yaw = c.yaw;
               h.hp = c.hp;
               h.state = c.state;
+              h.singing = c.singing;
               h.type = c.type;
               out.push_back(h);
             }
-            netClient.sendHostiles(out);
+            const Game::CoopProgress gp = game.coopProgress();
+            net::CoopFrame frame;
+            frame.total = gp.total;
+            frame.objective = gp.objective;
+            frame.cores = gp.cores;
+            netClient.sendHostiles(out, frame);
             netNextHostiles = now + 0.1;
           }
           for (const auto& h : netClient.takeHostileHits()) game.applyCoopHit(h.index, h.damage, h.head);
+          for (uint16_t ord : netClient.takeCoresTaken()) game.applyCoopCore(ord);
           for (const auto& d : game.takeAllyDamage()) netClient.sendAllyDamage(d.first, d.second);
         } else if (role == Game::CoopRole::Guest) {
           std::vector<net::NetHostile> in;
-          if (netClient.takeHostiles(in)) {
+          net::CoopFrame frame;
+          if (netClient.takeHostiles(in, frame)) {
             std::vector<Game::CoopHostile> list;
             for (const net::NetHostile& h : in) {
               Game::CoopHostile c;
@@ -1003,13 +1012,20 @@ int main(int argc, char** argv) {
               c.yaw = h.yaw;
               c.hp = h.hp;
               c.state = h.state;
+              c.singing = h.singing;
               c.type = h.type;
               list.push_back(c);
             }
             game.applyCoopSnapshot(list);
+            Game::CoopProgress gp;
+            gp.total = frame.total;
+            gp.objective = frame.objective;
+            gp.cores = frame.cores;
+            game.applyCoopProgress(gp);
             netCoopSnaps++;
           }
           for (const Game::CoopHit& h : game.takeCoopHits()) netClient.sendHostileHit(h.index, h.damage, h.head);
+          for (uint16_t ord : game.takeCoopCores()) netClient.sendCoreTaken(ord);
         }
         if (role != Game::CoopRole::Solo) netCoopRole = role == Game::CoopRole::Host ? "host" : "guest";
         game.takeCoopDamage(netClient.takeAllyDamage());

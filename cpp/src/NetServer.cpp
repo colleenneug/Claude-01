@@ -553,6 +553,7 @@ private:
         }
         break;
       }
+      case Msg::CoreTaken:
       case Msg::HostileHit: {
         Instance* in = instanceById(p.instance);
         if (!in || !in->hosts[p.team] || in->hosts[p.team] == id) break;
