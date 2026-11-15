@@ -1692,11 +1692,20 @@ int main(int argc, char** argv) {
         // encounter when it is out of sight or out of reach. Without it a
         // headless run stands in the first room of a mission that is now a
         // few hundred metres long.
-        if (game.expedition() || game.tuning()) {
+        if (game.expedition() || game.tuning() || game.pvp()) {
           glm::vec3 at;
           std::string label;
           bool place = false;
           bool have = game.expedition() && game.waypoint(at, label, place);
+          // The Pit: nobody in sight means they are behind something. Go
+          // round to them rather than shooting the cover all match.
+          if (game.pvp() && bestVisible > 1e8f) {
+            float near = 1e9f;
+            for (const net::Remote& r : netClient.remotes()) {
+              const float d = glm::length(r.pos - game.player().position);
+              if (d < near && !(r.flags & 2u)) { near = d; at = glm::vec3(r.pos.x, 0.0f, r.pos.z); place = true; have = true; }
+            }
+          }
           // Running dry: the nearest box of rounds first, whatever the arrow
           // says. A player would; a bot that does not loses every hold.
           {
