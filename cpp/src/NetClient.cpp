@@ -68,6 +68,7 @@ void Client::setWhere(const std::string& place, const std::string& activity) {
   place_ = place;
   activity_ = activity;
   if (moved) {
+    instanceServer_ = Address{};
     score_.clear();
     leader_ = 0;
     host_ = 0;
@@ -142,7 +143,7 @@ void Client::update(float dt) {
     w.u8(flags_);
     w.str(weapon_);
     w.str(activity_);
-    send(w);
+    sendInstance(w);
     flags_ &= ~1u;
     nextState_ = t + 1.0 / 15.0;
   }
@@ -151,7 +152,7 @@ void Client::update(float dt) {
   Address from;
   int n;
   while ((n = sock_.recv(from, buf, sizeof(buf))) > 0) {
-    if (from != server_) continue;
+    if (from != server_ && !(instanceServer_.valid() && from == instanceServer_)) continue;
     handle(buf, (size_t)n);
   }
 
@@ -184,6 +185,13 @@ void Client::handle(const uint8_t* data, size_t len) {
       const std::string name = r.str();
       const uint16_t here = r.u16();
       if (!r.ok) return;
+      const uint32_t ip = r.u32();
+      const uint16_t port = r.u16();
+      instanceServer_ = Address{};
+      if (r.ok && port) {
+        instanceServer_.ip = ip ? ip : server_.ip;
+        instanceServer_.port = port;
+      }
       follow_ = 0;
       if (name != instance_) {
         welcomedAt_ = now();
@@ -515,7 +523,7 @@ void Client::sendHit(uint64_t target, float damage, bool head) {
   w.u64(target);
   w.f32(damage);
   w.u8(head ? 1 : 0);
-  send(w);
+  sendInstance(w);
 }
 
 void Client::sendKill(uint64_t killer, int limit) {
@@ -525,7 +533,7 @@ void Client::sendKill(uint64_t killer, int limit) {
   w.u64(id_);
   w.u64(killer);
   w.u8((uint8_t)std::clamp(limit, 1, 255));
-  send(w);
+  sendInstance(w);
 }
 
 void Client::sendHostiles(const std::vector<NetHostile>& list, const CoopFrame& frame) {
@@ -552,7 +560,7 @@ void Client::sendHostiles(const std::vector<NetHostile>& list, const CoopFrame& 
       w.u8((uint8_t)(h.state | (h.singing ? 0x80 : 0)));
       w.str(h.type);
     }
-    send(w);
+    sendInstance(w);
     if (list.empty()) break;
   }
 }
@@ -563,7 +571,7 @@ void Client::sendCoreTaken(uint16_t ordinal) {
   header(w, Msg::CoreTaken);
   w.u64(id_);
   w.u16(ordinal);
-  send(w);
+  sendInstance(w);
 }
 
 std::vector<uint16_t> Client::takeCoresTaken() {
@@ -580,7 +588,7 @@ void Client::sendHostileHit(uint16_t index, float damage, bool head) {
   w.u16(index);
   w.f32(damage);
   w.u8(head ? 1 : 0);
-  send(w);
+  sendInstance(w);
 }
 
 void Client::sendAllyDamage(uint64_t target, float damage) {
@@ -590,7 +598,7 @@ void Client::sendAllyDamage(uint64_t target, float damage) {
   w.u64(id_);
   w.u64(target);
   w.f32(damage);
-  send(w);
+  sendInstance(w);
 }
 
 void Client::sendBank(int count, int limit) {
@@ -600,7 +608,7 @@ void Client::sendBank(int count, int limit) {
   w.u64(id_);
   w.u8((uint8_t)std::clamp(count, 1, 255));
   w.u8((uint8_t)std::clamp(limit, 1, 255));
-  send(w);
+  sendInstance(w);
 }
 
 bool Client::takeHostiles(std::vector<NetHostile>& out, CoopFrame& frame) {

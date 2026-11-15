@@ -49,6 +49,16 @@ struct Instance {
   uint64_t owner = 0;          // a story mission's instance is its squad's alone
   bool teams = false;          // the Tuning: two sides, each in its own copy
   int notes[2] = {0, 0};       // the Tuning: banked per team
+  int shard = -1;              // main server: which instance server runs it (-1: this one)
+};
+
+// An instance server, as the main server knows it.
+struct Shard {
+  Address addr;                // where it talks from
+  Address reach;               // where players should send to
+  double lastHeard = 0.0;
+  int load = 0;                // players it is running
+  bool alive = true;
 };
 
 std::string upper(std::string s) {
@@ -58,9 +68,15 @@ std::string upper(std::string s) {
 
 class Server {
 public:
-  explicit Server(uint16_t port) : port_(port) {
+  explicit Server(const ServerOptions& o) : port_(o.port), key_(o.key) {
     if (const char* t = std::getenv("EREBUS_SERVER_TAGS")) tagsPath_ = t;
-    loadTags();
+    if (!o.join.empty()) {
+      isShard_ = true;
+      if (!resolve(o.join, kDefaultPort, master_)) std::fprintf(stderr, "[Server] cannot find main server '%s'\n", o.join.c_str());
+      if (!o.publicAddr.empty()) resolve(o.publicAddr, o.port, public_);
+    } else {
+      loadTags();
+    }
   }
 
   bool start() {
@@ -68,7 +84,8 @@ public:
       std::fprintf(stderr, "[Server] could not open UDP port %u\n", (unsigned)port_);
       return false;
     }
-    std::printf("[Server] listening on UDP port %u\n", (unsigned)sock_.localPort());
+    std::printf("[Server] listening on UDP port %u%s\n", (unsigned)sock_.localPort(),
+                isShard_ ? (" as an instance server for " + master_.str()).c_str() : "");
     std::fflush(stdout);
     return true;
   }
@@ -90,6 +107,8 @@ public:
         presence();
         dropSilent(t);
         resetMatches(t);
+        if (isShard_) shardHello();
+        else dropSilentShards(t);
         nextPresence = t + 1.0;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -99,6 +118,154 @@ public:
 private:
   uint16_t port_;
   Socket sock_;
+  std::string key_;
+  bool isShard_ = false;
+  Address master_, public_;
+  std::vector<Shard> shards_;
+
+  // ---- instance server side
+  void shardHello() {
+    Writer w;
+    header(w, Msg::ShardHello);
+    w.u64(0);
+    w.str(key_);
+    w.u32(public_.ip);
+    w.u16(public_.port ? public_.port : sock_.localPort());
+    w.u16((uint16_t)std::min<size_t>(players_.size(), 65535));
+    sock_.send(master_, w.b.data(), w.b.size());
+  }
+
+  // ---- main server side
+  int pickShard() {
+    int best = -1;
+    for (size_t i = 0; i < shards_.size(); i++) {
+      if (!shards_[i].alive) continue;
+      if (best < 0 || shards_[i].load < shards_[(size_t)best].load) best = (int)i;
+    }
+    return best;
+  }
+
+  void sendAssign(const Player& p, const Instance& in) {
+    if (in.shard < 0 || (size_t)in.shard >= shards_.size()) return;
+    Writer w;
+    header(w, Msg::ShardAssign);
+    w.u64(0);
+    w.u64(p.id);
+    w.str(p.name);
+    w.str(p.place);
+    w.str(p.activity);
+    w.u64(p.squad);
+    w.u32((uint32_t)in.id);
+    w.u16((uint16_t)in.number);
+    sock_.send(shards_[(size_t)in.shard].addr, w.b.data(), w.b.size());
+    shards_[(size_t)in.shard].load++;   // until its next hello says otherwise
+  }
+
+  void sendRelease(uint64_t id, const Instance& in) {
+    if (in.shard < 0 || (size_t)in.shard >= shards_.size()) return;
+    Writer w;
+    header(w, Msg::ShardRelease);
+    w.u64(0);
+    w.u64(id);
+    sock_.send(shards_[(size_t)in.shard].addr, w.b.data(), w.b.size());
+  }
+
+  // An instance server that has gone quiet: everyone it was running is
+  // placed again, on another one or here.
+  void dropSilentShards(double t) {
+    for (size_t i = 0; i < shards_.size(); i++) {
+      Shard& sh = shards_[i];
+      if (!sh.alive || t - sh.lastHeard <= kTimeout) continue;
+      sh.alive = false;
+      std::printf("[Server] instance server %s went quiet; moving its players\n", sh.addr.str().c_str());
+      std::fflush(stdout);
+      std::vector<uint64_t> moving;
+      for (Instance& in : instances_) {
+        if (in.shard != (int)i) continue;
+        moving.insert(moving.end(), in.members.begin(), in.members.end());
+        in.shard = -2;   // gone: nobody is placed here again
+      }
+      for (uint64_t id : moving) {
+        auto it = players_.find(id);
+        if (it != players_.end()) place_(it->second);
+      }
+    }
+  }
+
+  // Server-to-server traffic. True if the packet was one.
+  bool handleShard(const Address& from, Msg m, Reader& r) {
+    if (m == Msg::ShardHello && !isShard_) {
+      r.u64();
+      const std::string key = r.str();
+      const uint32_t ip = r.u32();
+      const uint16_t port = r.u16();
+      const uint16_t load = r.u16();
+      if (!r.ok || key != key_) return true;
+      Shard* sh = nullptr;
+      for (Shard& x : shards_) if (x.addr == from) sh = &x;
+      if (!sh) {
+        shards_.push_back(Shard{});
+        sh = &shards_.back();
+        sh->addr = from;
+      }
+      sh->reach.ip = ip ? ip : from.ip;
+      sh->reach.port = port;
+      if (!sh->alive || sh->lastHeard == 0.0)
+        std::printf("[Server] instance server joined: %s (players reach it at %s)\n", from.str().c_str(),
+                    sh->reach.str().c_str());
+      std::fflush(stdout);
+      sh->alive = true;
+      sh->lastHeard = now();
+      sh->load = load;
+      return true;
+    }
+    if (!isShard_ || from != master_) return m == Msg::ShardHello || m == Msg::ShardAssign || m == Msg::ShardRelease;
+    if (m == Msg::ShardAssign) {
+      r.u64();
+      const uint64_t id = r.u64();
+      const std::string name = r.str(), place = r.str(), activity = r.str();
+      const uint64_t squad = r.u64();
+      const int instanceId = (int)r.u32();
+      const int number = r.u16();
+      if (!r.ok || !id) return true;
+      Player& p = players_[id];
+      const bool fresh = p.id == 0;
+      p.id = id;
+      p.name = name;
+      p.state.id = id;
+      p.state.name = name;
+      p.activity = activity;
+      p.squad = squad;
+      if (fresh) p.lastHeard = now();
+      if (fresh || p.instance != instanceId || p.place != place) {
+        leaveInstance(p);
+        p.place = place;
+        Instance* in = instanceById(instanceId);
+        if (!in) {
+          Instance fresh2;
+          fresh2.id = instanceId;
+          fresh2.place = place;
+          fresh2.number = number;
+          fresh2.teams = activity == "tuning";
+          instances_.push_back(fresh2);
+          in = &instances_.back();
+        }
+        seat(p, *in, false);
+      }
+      return true;
+    }
+    if (m == Msg::ShardRelease) {
+      r.u64();
+      const uint64_t id = r.u64();
+      auto it = players_.find(id);
+      if (r.ok && it != players_.end()) {
+        leaveInstance(it->second);
+        players_.erase(it);
+      }
+      return true;
+    }
+    return false;
+  }
   std::map<uint64_t, Player> players_;
   std::vector<Instance> instances_;
   int nextInstance_ = 1;
@@ -206,11 +373,12 @@ private:
   void leaveInstance(Player& p) {
     if (Instance* in = instanceById(p.instance)) {
       in->members.erase(std::remove(in->members.begin(), in->members.end(), p.id), in->members.end());
-      if (in->score.erase(p.id)) {
+      if (in->shard >= 0) sendRelease(p.id, *in);
+      if (in->shard < 0 && in->score.erase(p.id)) {
         if (in->leader == p.id) in->leader = 0;
         sendScore(*in);
       }
-      if (in->hosts[p.team] == p.id) {
+      if (in->shard < 0 && in->hosts[p.team] == p.id) {
         in->hosts[p.team] = 0;
         for (uint64_t mid : in->members) {
           auto m = players_.find(mid);
@@ -240,7 +408,7 @@ private:
       auto f = players_.find(p.follow);
       if (f != players_.end() && f->second.place == p.place) {
         Instance* in = instanceById(f->second.instance);
-        if (in && in->owner == 0 && hasRoom(*in)) target = in;
+        if (in && in->owner == 0 && in->shard != -2 && hasRoom(*in)) target = in;
       }
     }
     if (!target && p.squad) {
@@ -248,13 +416,13 @@ private:
         const Player& o = kv.second;
         if (o.id == p.id || o.squad != p.squad || o.place != p.place || o.instance < 0) continue;
         Instance* in = instanceById(o.instance);
-        if (in && in->owner == owner && hasRoom(*in)) { target = in; break; }
+        if (in && in->owner == owner && in->shard != -2 && hasRoom(*in)) { target = in; break; }
       }
     }
     if (!target) {
       std::vector<Instance*> open;
       for (Instance& in : instances_) {
-        if (in.place == p.place && in.owner == owner && hasRoom(in)) open.push_back(&in);
+        if (in.place == p.place && in.owner == owner && in.shard != -2 && hasRoom(in)) open.push_back(&in);
       }
       if (!open.empty()) target = open[roll() % open.size()];
     }
@@ -267,9 +435,18 @@ private:
       in.number = number;
       in.owner = owner;
       in.teams = p.activity == "tuning";
+      in.shard = pickShard();
       instances_.push_back(in);
       target = &instances_.back();
     }
+    seat(p, *target, true);
+  }
+
+  // Into this instance: a side, the host role if nobody has it, and the
+  // welcome. On the main server, a copy run by an instance server is only
+  // counted here — the instance server does the rest.
+  void seat(Player& p, Instance& in, bool welcome) {
+    Instance* target = &in;
     // A side for the Tuning: a squad mate's if they are here, else the
     // smaller one.
     p.team = 0;
@@ -286,12 +463,28 @@ private:
     target->members.push_back(p.id);
     p.instance = target->id;
     if (!target->hosts[p.team]) target->hosts[p.team] = p.id;
-    Writer w;
-    header(w, Msg::Welcome);
-    w.u32((uint32_t)target->id);
-    w.str(instanceName(*target));
-    w.u16((uint16_t)target->members.size());
-    send(p, w);
+    if (welcome) {
+      Writer w;
+      header(w, Msg::Welcome);
+      w.u32((uint32_t)target->id);
+      w.str(instanceName(*target));
+      w.u16((uint16_t)target->members.size());
+      // Which server runs this copy: zero for this one.
+      const bool remote = target->shard >= 0 && (size_t)target->shard < shards_.size();
+      w.u32(remote ? shards_[(size_t)target->shard].reach.ip : 0);
+      w.u16(remote ? shards_[(size_t)target->shard].reach.port : 0);
+      send(p, w);
+      if (remote) {
+        sendAssign(p, *target);
+        std::printf("[Server] %s -> %s on %s (%zu here)\n", p.name.c_str(), instanceName(*target).c_str(),
+                    shards_[(size_t)target->shard].reach.str().c_str(), target->members.size());
+        std::fflush(stdout);
+        return;
+      }
+    }
+    // On an instance server the player's address is not known until their
+    // first state arrives; these go out then (see Msg::State).
+    if (!p.addr.valid()) return;
     if (p.activity == "pvp") sendScore(*target);
     sendHost(*target);
     if (target->teams) sendTeamScore(*target);
@@ -311,6 +504,10 @@ private:
   // leader (the squad's id) is doing.
   void squadUpdate(uint64_t squad) {
     std::vector<Player*> members = squadMembers(squad);
+    // Copies on instance servers need the squad too (for who is a squad mate).
+    for (Player* m : members) {
+      if (Instance* in = instanceById(m->instance)) sendAssign(*m, *in);
+    }
     if (members.size() == 1) {   // a squad of one is no squad
       Player& last = *members[0];
       last.squad = 0;
@@ -374,10 +571,15 @@ private:
     Reader r(data, len);
     Msg m;
     if (!header(r, m)) return;
+    {
+      Reader rs = r;
+      if (handleShard(from, m, rs)) return;
+    }
     const uint64_t id = r.u64();
     if (!r.ok || id == 0) return;
 
     if (m == Msg::Hello) {
+      if (isShard_) return;   // players say hello to the main server
       Player& p = players_[id];
       const bool fresh = p.id == 0;
       p.id = id;
@@ -409,8 +611,18 @@ private:
     auto it = players_.find(id);
     if (it == players_.end()) return;   // say hello first
     Player& p = it->second;
+    const bool firstWord = !p.addr.valid();
     p.addr = from;
     p.lastHeard = now();
+    // An instance server meets a player on their first state: now it can
+    // tell them who hosts, and the score.
+    if (firstWord && isShard_) {
+      if (Instance* in = instanceById(p.instance)) {
+        if (p.activity == "pvp") sendScore(*in);
+        sendHost(*in);
+        if (in->teams) sendTeamScore(*in);
+      }
+    }
 
     switch (m) {
       case Msg::State: {
@@ -728,6 +940,7 @@ private:
 
   void snapshots() {
     for (const Instance& in : instances_) {
+      if (in.shard >= 0) continue;   // an instance server is sending these
       for (uint64_t viewerId : in.members) {
         auto v = players_.find(viewerId);
         if (v == players_.end()) continue;
@@ -793,11 +1006,19 @@ private:
 
 }  // namespace
 
-int runServer(uint16_t port, double seconds) {
-  Server s(port);
+int runServer(const ServerOptions& options) {
+  Server s(options);
   if (!s.start()) return 1;
-  s.run(seconds);
+  s.run(options.seconds);
   return 0;
+}
+
+int runServer(uint16_t port, double seconds) {
+  ServerOptions o;
+  o.port = port;
+  o.seconds = seconds;
+  if (const char* k = std::getenv("EREBUS_SHARD_KEY")) o.key = k;
+  return runServer(o);
 }
 
 }  // namespace net

@@ -801,6 +801,14 @@ while IFS= read -r line; do
 done < <(python3 "$(dirname "$0")/net_test.py" "$NETPORT" 2>&1)
 kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
 
+# Many servers for one game: a main server and two instance servers. New
+# copies spread over them, a copy works through its instance server, squads
+# work across them, and a dead instance server's players are moved.
+while IFS= read -r line; do
+  echo "$line"
+  case "$line" in *"PASS "*) PASS=$((PASS+1));; *"FAIL "*) FAIL=$((FAIL+1));; esac
+done < <(python3 "$(dirname "$0")/net_shard_test.py" "$BIN" 2>&1)
+
 NETPORT=$((NETPORT + 1))
 EREBUS_SERVER_SECONDS=200 "$BIN" --server "$NETPORT" > "$OUT/server2.log" 2>&1 &
 NETSRV=$!

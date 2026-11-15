@@ -18,7 +18,9 @@ import time
 
 MAGIC, VERSION = 0x31425245, 1
 (HELLO, STATE, BYE, FIND, FREQ, FACC, WATCH, SINV, SACC, SLEAVE, HIT, KILL,
- HOSTILES, HOSTILE_HIT, ALLY_DAMAGE, BANK) = range(1, 17)
+ HOSTILES, HOSTILE_HIT, ALLY_DAMAGE, BANK, CORE_TAKEN) = range(1, 18)
+# What goes to the server running your copy of a place, not the main one.
+INSTANCE_MSGS = {STATE, HIT, KILL, HOSTILES, HOSTILE_HIT, ALLY_DAMAGE, BANK, CORE_TAKEN}
 (WELCOME, SNAP, FOUND, FREQ_FROM, FADDED, PRESENCE, SINV_FROM, SQUAD, NOTICE,
  HIT_FROM, SCORE, MATCH_OVER, HOST, TAG, TEAM_SCORE, SCREAMERS) = range(64, 80)
 
@@ -72,12 +74,15 @@ class Fake:
         self.screamers = 0
         self.tag = None
         self.found = None
+        self.inst = None        # (host, port) of the instance server, if not the main one
 
     def send(self, msg, body=b''):
-        self.sock.sendto(struct.pack('<IBB', MAGIC, VERSION, msg) + struct.pack('<Q', self.id) + body,
-                         self.server)
+        to = self.inst if (self.inst and msg in INSTANCE_MSGS) else self.server
+        self.sock.sendto(struct.pack('<IBB', MAGIC, VERSION, msg) + struct.pack('<Q', self.id) + body, to)
 
     def hello(self, place, activity, follow=0, number=0):
+        self.where = (place, activity)
+        self.last_hello = time.time()
         self.send(HELLO, s16(self.name) + s16(place) + s16(activity) + struct.pack('<QH', follow, number))
 
     def state(self, activity):
@@ -96,6 +101,9 @@ class Fake:
             if msg == WELCOME:
                 r.take('<I')
                 self.instance = r.str()
+                r.take('<H')
+                ip, port = r.take('<I'), r.take('<H')
+                self.inst = (socket.inet_ntoa(struct.pack('>I', ip)) if ip else '127.0.0.1', port) if port else None
             elif msg == SNAP:
                 self.seen = set()
                 for _ in range(r.take('<B')):
@@ -159,6 +167,10 @@ def settle(fakes, seconds=0.4, activity='freeroam'):
     end = time.time() + seconds
     while time.time() < end:
         for f in fakes:
+            # Like the game: a hello to the main server every couple of
+            # seconds, whoever runs your copy.
+            if getattr(f, 'where', None) and time.time() - f.last_hello > 2.0:
+                f.hello(*f.where)
             f.state(activity)
             f.pump()
         time.sleep(0.03)

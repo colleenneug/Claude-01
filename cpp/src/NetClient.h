@@ -213,6 +213,13 @@ private:
   void sendHello();
   void sendWatch();
   void send(const Writer& w) { sock_.send(server_, w.b.data(), w.b.size()); }
+  // The busy traffic — where you are, shots, Cybers — goes to whichever
+  // server runs your copy of the place (the main server unless it said
+  // otherwise in its welcome).
+  void sendInstance(const Writer& w) {
+    sock_.send(instanceServer_.valid() ? instanceServer_ : server_, w.b.data(), w.b.size());
+  }
+  Address instanceServer_;
   void handle(const uint8_t* data, size_t len);
 };
 

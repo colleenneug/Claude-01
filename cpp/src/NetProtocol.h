@@ -49,8 +49,13 @@ enum class Msg : uint8_t {
   AllyDamage,       // host -> one player: target id, damage (a Cyber hit them)
   Bank,             // the Tuning: count of notes banked at the tap
   CoreTaken,        // guest -> host: a data core (by its order) was picked up
+  // Server to server, when one planet's copies are spread over several
+  // machines (see NetServer.h).
+  ShardHello,       // instance server -> main: key, public ip, port, load
+  ShardAssign,      // main -> instance server: this player is in this copy
+  ShardRelease,     // main -> instance server: this player has left it
   // server -> client
-  Welcome = 64,     // the instance you are in
+  Welcome = 64,     // the instance you are in, and the server running it
   Snapshot,         // everyone else in your instance
   PlayerFound,      // id, name
   FriendRequestFrom,// id, name

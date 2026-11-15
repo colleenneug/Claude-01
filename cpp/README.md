@@ -426,6 +426,24 @@ name = NIGHTJAR               # a starting gamer tag name, if your account has n
 or sets `EREBUS_SERVER=host[:port]` instead. With neither, the game is the
 single-player game it always was and opens no socket.
 
+**More than one server.** One server runs everything for a group of
+friends. For a lot of players, spread the copies over several machines: one
+**main server** (tags, friends, squads, and which copy of a planet each
+player goes to) and any number of **instance servers** that run the copies
+themselves — positions, Cybers, scores, the busy traffic:
+
+```
+EREBUS_SHARD_KEY=pick-a-secret erebus_native --server                  # the main one
+EREBUS_SHARD_KEY=pick-a-secret erebus_native --server 27961 --join main.host --public this.host:27961
+EREBUS_SHARD_KEY=pick-a-secret erebus_native --server 27962 --join main.host --public other.host:27962
+```
+
+Players only ever put the main server in `online.cfg`; it tells each game
+which instance server runs its copy. New copies go to the least busy
+instance server, squad mates still land together, and if an instance server
+goes quiet its players are moved to another copy within about ten seconds.
+Add instance servers while it runs and new copies start going to them.
+
 To try it on one PC: open two terminals in the `cpp` folder. In the first,
 run the server (`build\Release\erebus_native.exe --server` on Windows —
 allow it through the firewall when Windows asks). Put `server = 127.0.0.1`
@@ -1371,7 +1389,7 @@ src/
   Game.{h,cpp}            owns and drives all of the above
   Net.{h,cpp}             UDP sockets (Winsock / BSD), byte writer and reader
   NetProtocol.h           the messages, the instance cap and squad limits
-  NetServer.{h,cpp}       `--server`: instances, squads, friends, presence
+  NetServer.{h,cpp}       `--server`: instances, squads, friends, tags; main/instance servers
   NetClient.{h,cpp}       the game's side: where you are, who else is here
   NetView.{h,cpp}         other Striders drawn, nameplates, the social screen
 shaders/

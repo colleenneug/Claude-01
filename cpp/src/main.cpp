@@ -179,13 +179,21 @@ int main(int argc, char** argv) {
   // no GL, so it runs on any machine — a spare PC, a cheap cloud box —
   // that the players can reach on that UDP port (27960 unless you say).
   // EREBUS_SERVER_SECONDS stops it after that long, for the test suite.
+  //   --join host[:port]    run as an instance server for that main server
+  //   --public host[:port]  the address players use to reach this one
+  // EREBUS_SHARD_KEY must be the same on the main and instance servers.
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "--server") != 0) continue;
-    uint16_t port = net::kDefaultPort;
-    if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0])) port = (uint16_t)std::atoi(argv[i + 1]);
-    double seconds = 0.0;
-    if (const char* ss = std::getenv("EREBUS_SERVER_SECONDS")) seconds = std::atof(ss);
-    return net::runServer(port, seconds);
+    net::ServerOptions o;
+    o.port = net::kDefaultPort;
+    if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0])) o.port = (uint16_t)std::atoi(argv[i + 1]);
+    for (int k = 1; k + 1 < argc; k++) {
+      if (std::strcmp(argv[k], "--join") == 0) o.join = argv[k + 1];
+      if (std::strcmp(argv[k], "--public") == 0) o.publicAddr = argv[k + 1];
+    }
+    if (const char* ss = std::getenv("EREBUS_SERVER_SECONDS")) o.seconds = std::atof(ss);
+    if (const char* sk = std::getenv("EREBUS_SHARD_KEY")) o.key = sk;
+    return net::runServer(o);
   }
 
   if (!glfwInit()) {
