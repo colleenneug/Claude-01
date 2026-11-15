@@ -55,6 +55,7 @@ add_executable(erebus_native
   src/NetServer.cpp
   src/NetClient.cpp
   src/NetView.cpp
+  src/World.cpp
   src/Game.cpp
   src/Renderer.cpp
 )

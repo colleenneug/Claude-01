@@ -107,6 +107,20 @@ void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>
   const Mesh& sph = HostileGeometry::unitSphere();
   for (const net::Remote& r : client.remotes()) {
     const bool downed = (r.flags & 2u) != 0 || r.hp <= 0.0f;
+    if (r.arriveT > 0.0f) {
+      // The drop beam: a column of light that narrows and fades as they
+      // land in it.
+      const float k = r.arriveT / 2.5f;
+      DrawItem beam;
+      beam.material = MaterialType::Emissive;
+      beam.emissive = r.squadmate ? kSquad : glm::vec3(0.85f, 0.92f, 1.0f);
+      beam.emissiveIntensity = 3.0f + 5.0f * k;
+      beam.castShadow = false;
+      part(out, beam, HostileGeometry::unitCylinder(), glm::translate(glm::mat4(1.0f), r.pos), {0, 30.0f, 0},
+           {0.4f + 1.4f * k, 60.0f, 0.4f + 1.4f * k});
+      part(out, beam, HostileGeometry::unitCylinder(), glm::translate(glm::mat4(1.0f), r.pos), {0, 0.05f, 0},
+           {3.0f * k + 0.5f, 0.05f, 3.0f * k + 0.5f});
+    }
     glm::mat4 root = glm::translate(glm::mat4(1.0f), r.pos);
     root = glm::rotate(root, glm::radians(-(r.yaw + 90.0f)), glm::vec3(0, 1, 0));
     if (downed) {

@@ -11,6 +11,7 @@
 #include "Site.h"
 #include "Cutscene.h"
 #include "Scene.h"
+#include "World.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -189,6 +190,15 @@ public:
   // in the middle of the arena, first team to the limit wins. Like the Pit,
   // a down is not a failure — but whatever notes you were carrying are gone.
   bool tuning() const { return mission_.mode == "tuning"; }
+  // A planet's open world (mode = world, see World.h): no end, Cybers
+  // turning up at random near whoever is about, named regions.
+  bool world() const { return mission_.mode == "world"; }
+  bool sharedEnemies() const { return mission_.shared && !pvp(); }
+  // Nothing ends these: a down is three seconds and up again.
+  bool endless() const { return pvp() || tuning() || world(); }
+  const World& worldMap() const { return world_; }
+  const std::string& regionName() const { return regionName_; }
+  float viewDistance() const override { return world() ? 900.0f : SceneSource::viewDistance(); }
   int notesCarried() const { return notesCarried_; }
   int notesBankedTotal() const { return notesBankedTotal_; }
   static constexpr int kNotesMax = 15;
@@ -249,6 +259,7 @@ public:
     return out;
   }
   void applyCoopHit(uint16_t index, float damage, bool head);
+  void dropUnlistedCoop(size_t listed);
   std::vector<std::pair<uint64_t, float>> takeAllyDamage() {
     std::vector<std::pair<uint64_t, float>> out;
     out.swap(allyDamage_);
@@ -561,6 +572,12 @@ private:
   glm::vec3 ringSpawn(float radiusFrac);
   void creditNotes(const Hostile& h);
   void updateTuning(float dt);
+  World world_;
+  std::string regionName_;
+  float worldSpawnT_ = 0.0f;
+  void updateWorld(float dt);
+  void spawnWorldGroup(const glm::vec3& near, float minDist, float maxDist);
+  void worldRespawn();
   void netHit(uint64_t id, float damage, bool head);
   void pvpRespawn();
   bool armed_ = true;

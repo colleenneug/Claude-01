@@ -317,6 +317,16 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
       continue;
     }
 
+    if (tokens[0] == "region" && tokens.size() >= 3) {
+      const size_t at = line.find(tokens[1], line.find("region") + 6) + tokens[1].size();
+      std::string name = line.substr(at);
+      const size_t a = name.find_first_not_of(" \t");
+      name = a == std::string::npos ? std::string() : name.substr(a);
+      while (!name.empty() && (name.back() == '\r' || name.back() == ' ')) name.pop_back();
+      m.regions.push_back({tokens[1], name});
+      continue;
+    }
+
     if (tokens[0] == "wave" && tokens.size() >= 3) {
       WaveSpawn w;
       w.enemyId = tokens[1];
@@ -358,6 +368,11 @@ MissionDef parseMission(const std::string& id, const fs::path& path) {
         else if (k == "arena") { try { m.arenaSize = std::stof(v); } catch (...) {} }
         else if (k == "reward") { try { m.rewardChits = std::stoi(v); } catch (...) {} }
         else if (k == "mode") m.mode = v;
+        else if (k == "biome") m.biome = v;
+        else if (k == "landing") m.landingName = v;
+        else if (k == "shared") m.shared = !(v == "false" || v == "no" || v == "0");
+        else if (k == "world_size") { try { m.worldHalf = std::stof(v); } catch (...) {} }
+        else if (k == "world_alive") { try { m.worldAlive = std::stoi(v); } catch (...) {} }
         else if (k == "score_limit") { try { m.scoreLimit = std::stoi(v); } catch (...) {} }
         else if (k == "reward_xp") { try { m.rewardXp = std::stoi(v); } catch (...) {} }
         else if (k == "reward_weapon") m.rewardWeapon = v;

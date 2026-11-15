@@ -15,6 +15,7 @@
 #include "NetProtocol.h"
 #include "NetServer.h"
 #include "NetView.h"
+#include "World.h"
 #include "Hud.h"
 #include "Hub.h"
 #include "Loadout.h"
@@ -108,6 +109,35 @@ int main(int argc, char** argv) {
     if (!c.loadAll(dirEnv ? dirEnv : "content")) return 1;
     for (const std::string& id : c.weaponIds()) {
       if (const WeaponDef* w = c.weapon(id)) std::printf("%s|%s\n", id.c_str(), weaponLookKey(*w).c_str());
+    }
+    return 0;
+  }
+
+  // --worlds: build every open world twice and print its size and a hash of
+  // its geometry. The suite checks the two builds agree: every player's game
+  // has to build the same planet, or shared Cybers walk through walls.
+  for (int i = 1; i < argc; i++) {
+    if (std::strcmp(argv[i], "--worlds") != 0) continue;
+    const char* dirEnv = std::getenv("EREBUS_CONTENT_DIR");
+    Content content;
+    if (!content.loadAll(dirEnv ? dirEnv : "content")) return 1;
+    for (const std::string& id : content.missionIds()) {
+      const MissionDef* md = content.mission(id);
+      if (!md || md->mode != "world") continue;
+      unsigned long long hash[2] = {1469598103934665603ull, 1469598103934665603ull};
+      size_t parts = 0, regions = 0, zones = 0;
+      for (int k = 0; k < 2; k++) {
+        World w;
+        buildWorld(*md, w);
+        for (const Level::Part& p : w.parts) {
+          const float v[6] = {p.min.x, p.min.y, p.min.z, p.max.x, p.max.y, p.max.z};
+          for (float f : v) hash[k] = (hash[k] ^ (unsigned long long)(long long)std::lround(f * 100.0f)) * 1099511628211ull;
+        }
+        parts = w.parts.size();
+        regions = w.regions.size();
+        zones = w.landingZones.size();
+      }
+      std::printf("%s|%zu|%zu|%zu|%s\n", id.c_str(), parts, regions, zones, hash[0] == hash[1] ? "same" : "DIFFERENT");
     }
     return 0;
   }
@@ -1728,11 +1758,20 @@ int main(int argc, char** argv) {
         // encounter when it is out of sight or out of reach. Without it a
         // headless run stands in the first room of a mission that is now a
         // few hundred metres long.
-        if (game.expedition() || game.tuning() || game.pvp()) {
+        if (game.expedition() || game.tuning() || game.pvp() || game.world()) {
           glm::vec3 at;
           std::string label;
           bool place = false;
           bool have = game.expedition() && game.waypoint(at, label, place);
+          // A world: nothing in sight, so go and find the nearest Cybers.
+          if (game.world() && bestVisible > 1e8f) {
+            float near = 1e9f;
+            for (const Hostile& h : game.hostiles()) {
+              if (!h.blocksShots()) continue;
+              const float d = glm::length(h.pos - game.player().position);
+              if (d < near) { near = d; at = glm::vec3(h.pos.x, 0.0f, h.pos.z); place = true; have = true; }
+            }
+          }
           // The Pit: nobody in sight means they are behind something. Go
           // round to them rather than shooting the cover all match.
           if (game.pvp() && bestVisible > 1e8f) {
@@ -1944,7 +1983,7 @@ int main(int argc, char** argv) {
       hs.hitMarkerT = game.hitMarkerT;
       hs.damageFlashT = game.damageFlashT;
       hs.missionName = game.missionName();
-      hs.hideProgress = game.pvp() || game.tuning();
+      hs.hideProgress = game.endless();
       hs.waveFrac = game.waveProgress();
       hs.bossAlive = game.bossAlive();
       hs.bossHpFrac = game.bossHpFraction();

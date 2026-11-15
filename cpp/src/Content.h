@@ -216,6 +216,18 @@ struct MissionDef {
   // to `score_limit` downs.
   std::string mode;
   int scoreLimit = 10;
+  // `mode = world`: a planet's open world (see World.h). `biome` picks the
+  // look (ice, ash, dust, earth), `world_size` is half its width in metres,
+  // `world_alive` the most Cybers about at once, `landing` the name of the
+  // ground in the middle, and each `region <style> <NAME>` line one named
+  // place round it. The waves are the planet's Cybers, by how often they
+  // turn up. Enemies are shared online unless `shared = false`.
+  std::string biome;
+  float worldHalf = 260.0f;
+  int worldAlive = 24;
+  std::string landingName;
+  std::vector<std::pair<std::string, std::string>> regions;
+  bool shared = true;
   // Where aboard the ark it happens. Missions that share a zone share a look.
   std::string zone;
 

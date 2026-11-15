@@ -124,6 +124,23 @@ PYCHECK
 then echo "  PASS every campaign mission is a different route to the Conductor"; PASS=$((PASS+1))
 else echo "  FAIL every campaign mission is a different route  ($(head -c 400 "$OUT/routes.txt"))"; FAIL=$((FAIL+1)); fi
 
+# Open worlds: every planet's world builds, big enough to be a world, with
+# its regions and landing zones, and identically every time (two players'
+# games must build the same planet).
+( cd "$BUILD" && "$BIN" --worlds 2>/dev/null ) > "$OUT/worlds.txt"
+if [ "$(grep -c '|' "$OUT/worlds.txt")" -ge 4 ] && ! grep -q DIFFERENT "$OUT/worlds.txt" && \
+   awk -F'|' 'NF == 5 && ($2 < 300 || $3 < 5 || $4 < 5) {bad=1} END {exit bad}' "$OUT/worlds.txt"; then
+  echo "  PASS every planet's open world builds, the same every time"; PASS=$((PASS+1))
+else
+  echo "  FAIL every planet's open world builds  ($(tr '\n' ' ' < "$OUT/worlds.txt"))"; FAIL=$((FAIL+1))
+fi
+printf 'name = Operative\nclass = bulwark\nequipped_weapon = cw_torrent\nequipped_sidearm = sidearm\nowned_weapon sidearm\nowned_weapon cw_torrent\ncompleted tutorial_earth\n' > "$OUT/save-world.txt"
+run "$OUT/world.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAIM=1 EREBUS_CLASS=bulwark \
+    EREBUS_MAX_FRAMES=1200 -- --mission dust_world
+check "an open world: Cybers turn up, you hunt them down, it never ends" "$OUT/world.json" \
+      "s['missionState'] == 'in_progress' and s['xp'] > 0 and 3 <= s['hostiles'] <= 48"
+check "an open world names the region you are in" "$OUT/world.json" "len(s['objectiveText']) > 2"
+
 # Every gun looks different: no two weapons in the armoury share a colour
 # scheme and set of fittings.
 ( cd "$BUILD" && "$BIN" --looks 2>/dev/null ) > "$OUT/looks.txt"
@@ -897,6 +914,23 @@ run "$OUT/tuning.json" EREBUS_SKIP_HUB=1 EREBUS_FORCE_FIRE=1 EREBUS_DEBUG_AUTOAI
     EREBUS_MAX_FRAMES=1200 -- --mission the_tuning
 check "the Tuning: notes are banked at the tap" "$OUT/tuning.json" "s['notesBanked'] >= 5"
 check "the Tuning: the arena restocks without growing" "$OUT/tuning.json" "10 <= s['hostiles'] <= 30"
+
+# A planet online: two players land on Glacius, in the same copy of it, and
+# the second sees the first's Cybers.
+NETPORT=$((NETPORT + 1))
+EREBUS_SERVER_SECONDS=200 "$BIN" --server "$NETPORT" > "$OUT/server7.log" 2>&1 &
+NETSRV=$!
+sleep 0.5
+cp "$OUT/save-joina.txt" "$OUT/save-worlda.txt"; cp "$OUT/save-joinb.txt" "$OUT/save-worldb.txt"
+netrun worlda EREBUS_NET_NAME=ALPHA EREBUS_SKIP_HUB=1 EREBUS_MAX_FRAMES=400 -- --mission glacius_world &
+NETA=$!
+sleep 2
+netrun worldb EREBUS_NET_NAME=BRAVO EREBUS_SKIP_HUB=1 EREBUS_MAX_FRAMES=300 -- --mission glacius_world &
+NETB=$!
+wait "$NETA" "$NETB"
+kill "$NETSRV" 2>/dev/null; wait "$NETSRV" 2>/dev/null
+check "a planet online: one copy of Glacius, shared Cybers" "$OUT/worldb.json" \
+      "s['instance'] == 'GLACIUS 1' and s['peakRemotes'] >= 1 and s['coopSnaps'] >= 20"
 
 # ...and online: two players land in the same match on opposite sides, each
 # hosting their own side's Cybers.

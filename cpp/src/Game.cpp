@@ -108,7 +108,10 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // expedition: the same mission, as a long route through a place instead
   // of one walled field. Side contracts stay arenas — a contract is a job,
   // not a journey.
-  if (mission_.layout.empty() && mission_.expedition &&
+  if (world()) {
+    buildWorld(mission_, world_);
+    level_.buildFromParts(world_.parts, 0.0f);
+  } else if (mission_.layout.empty() && mission_.expedition &&
       (mission_.campaignIndex > 0 || mission_.expeditionSet)) {
     buildExpedition(mission_, site_);
     usingSite_ = true;
@@ -237,6 +240,22 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   player_.position = usingSite_ ? site_.playerSpawn
                                 : glm::vec3(0.0f, level_.floorY(), 0.0f);
   player_.hp = player_.maxHp;
+  if (world()) {
+    // Down at one of the landing zones, picked at random so a squad landing
+    // together does not land on top of one another.
+    pvpRng_ ^= (unsigned)std::time(nullptr) * 2654435761u ^ (unsigned)(uintptr_t)this;
+    pvpRng_ = pvpRng_ * 1664525u + 1013904223u;
+    const glm::vec3 lz = world_.landingZones[(pvpRng_ >> 8) % world_.landingZones.size()];
+    player_.position = lz + glm::vec3(((pvpRng_ >> 4) % 5) - 2.0f, 0.0f, ((pvpRng_ >> 12) % 5) - 2.0f);
+    respawnT_ = 0.0f;
+    worldSpawnT_ = 0.0f;
+    regionName_.clear();
+    // A world is never empty when you arrive: a few groups already about,
+    // spread round the regions, waiting.
+    for (size_t r = 1; r < world_.regions.size(); r++) {
+      spawnWorldGroup(world_.regions[r].centre, 0.0f, world_.regions[r].radius * 0.6f);
+    }
+  }
   if (pvp()) {
     // Everyone loads into the Pit at once; nobody should load into the same
     // square metre, so the first spawn is as random as the later ones.
@@ -316,6 +335,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // regular hostile is Gone — see spawnBossIfReady().
   for (auto& w : mission_.waves) {
     if (usingSite_ && site_.consumesWaves) break;   // already placed, area by area
+    if (world()) break;                              // a world spawns as you go (updateWorld)
     const EnemyType* t = content_.enemy(w.enemyId);
     if (!t) {
       std::fprintf(stderr, "[Game] mission '%s' references unknown enemy '%s', skipping wave\n",
@@ -339,7 +359,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
       hostiles_.push_back(h);
     }
   }
-  waveTotal_ = (int)hostiles_.size();
+  waveTotal_ = world() ? 0 : (int)hostiles_.size();
   bossPending_ = !mission_.bossId.empty() && content_.enemy(mission_.bossId) != nullptr;
   if (!mission_.bossId.empty() && !content_.enemy(mission_.bossId)) {
     std::fprintf(stderr, "[Game] mission '%s' boss '%s' not found, mission has no boss\n",
@@ -1764,7 +1784,7 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   if (waveProgress() >= 0.5f) fireComms(CommsTrigger::HalfCleared);
 
   netHitT_ = std::max(0.0f, netHitT_ - dt);
-  if (pvp() || tuning()) {
+  if (endless()) {
     // In the Pit a down is a point to whoever did it and three seconds on
     // the floor, then up again somewhere else. Never a failed mission. In
     // the Tuning the notes you were carrying go with you.
@@ -1785,7 +1805,8 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
       player_.velocity = glm::vec3(0.0f);
       if (respawnT_ <= 0.0f) {
         respawnT_ = 0.0f;
-        pvpRespawn();
+        if (world()) worldRespawn();
+        else pvpRespawn();
       }
     }
   } else if (!player_.alive() && !downed()) {
@@ -1814,7 +1835,8 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
   }
 
   if (tuning()) updateTuning(dt);
-  if (!pvp() && !tuning() && player_.alive() && !downed()) {
+  if (world()) updateWorld(dt);
+  if (!endless() && player_.alive() && !downed()) {
     bool wavesClear = std::all_of(hostiles_.begin(), hostiles_.begin() + waveTotal_,
                                   [](const Hostile& h) { return h.state == HostileState::Gone; });
     bool bossClear = bossIndex_ < 0 || hostiles_[bossIndex_].state == HostileState::Gone;
@@ -2742,6 +2764,16 @@ void Game::applyCoopSnapshot(const std::vector<CoopHostile>& list) {
       }
     }
   }
+  size_t listed = 0;
+  for (const CoopHostile& c : list) listed = std::max(listed, (size_t)c.index + 1);
+  dropUnlistedCoop(listed);
+}
+
+void Game::dropUnlistedCoop(size_t listed) {
+  if (listed >= 48) return;   // a full snapshot may not be all of them
+  for (size_t i = listed; i < hostiles_.size(); i++) {
+    if (hostiles_[i].blocksShots()) hostiles_[i].state = HostileState::Gone;
+  }
 }
 
 void Game::applyCoopHit(uint16_t index, float damage, bool head) {
@@ -2851,4 +2883,102 @@ void Game::updateTuning(float dt) {
   lootRng_ = lootRng_ * 1664525u + 1013904223u;
   const WaveSpawn& w = mission_.waves[(lootRng_ >> 8) % mission_.waves.size()];
   if (const EnemyType* t = content_.enemy(w.enemyId)) addHostile(t, ringSpawn(0.38f));
+}
+
+// ---------------------------------------------------------------- worlds
+
+// A group of the planet's Cybers somewhere between minDist and maxDist from
+// `near`, standing together, asleep until somebody comes close.
+void Game::spawnWorldGroup(const glm::vec3& near, float minDist, float maxDist) {
+  if (mission_.waves.empty()) return;
+  lootRng_ = lootRng_ * 1664525u + 1013904223u;
+  const WaveSpawn& w = mission_.waves[(lootRng_ >> 8) % mission_.waves.size()];
+  const EnemyType* t = content_.enemy(w.enemyId);
+  if (!t) return;
+  glm::vec3 at = near;
+  for (int tries = 0; tries < 8; tries++) {
+    lootRng_ = lootRng_ * 1664525u + 1013904223u;
+    const float a = (float)(lootRng_ >> 8) / 16777216.0f * 6.2832f;
+    lootRng_ = lootRng_ * 1664525u + 1013904223u;
+    const float d = minDist + (maxDist - minDist) * (float)(lootRng_ >> 8) / 16777216.0f;
+    at = near + glm::vec3(std::cos(a) * d, 0.0f, std::sin(a) * d);
+    const float lim = world_.half - 8.0f;
+    at.x = std::clamp(at.x, -lim, lim);
+    at.z = std::clamp(at.z, -lim, lim);
+    bool tooClose = glm::length(at - player_.position) < 28.0f;
+    for (const NetTarget& a2 : allies_) tooClose |= glm::length(at - a2.feet) < 28.0f;
+    if (!tooClose || minDist <= 0.0f) break;
+  }
+  lootRng_ = lootRng_ * 1664525u + 1013904223u;
+  const int count = 1 + (int)((lootRng_ >> 8) % (uint32_t)std::max(1, w.count));
+  for (int i = 0; i < count; i++) {
+    glm::vec3 p = at + glm::vec3(std::cos((float)i * 2.1f) * 2.5f, 0.0f, std::sin((float)i * 2.1f) * 2.5f);
+    p.y = level_.floorY();
+    level_.resolve(p, t->radius, t->height);
+    const size_t slot = addHostile(t, p);
+    hostiles_[slot].state = HostileState::Idle;
+  }
+}
+
+void Game::updateWorld(float dt) {
+  // Where you are: the region you are standing in, named as you walk in.
+  {
+    std::string here;
+    float best = 1e9f;
+    for (const WorldRegion& g : world_.regions) {
+      const float d = glm::length(glm::vec2(player_.position.x - g.centre.x, player_.position.z - g.centre.z));
+      if (d < g.radius * 1.05f && d < best) {
+        best = d;
+        here = g.name;
+      }
+    }
+    if (here.empty()) here = mission_.name;
+    if (here != regionName_) {
+      regionName_ = here;
+      objectiveText_ = here;
+      objectiveHint_ = mission_.objective;
+      pickupNote_ = here;
+      pickupNoteT_ = 3.0f;
+    }
+  }
+  if (coopRole_ == CoopRole::Guest) return;   // the host decides what is about
+
+  // Cybers nobody is near any more go; the slot is used again.
+  for (Hostile& h : hostiles_) {
+    if (!h.blocksShots() || h.state != HostileState::Idle) continue;
+    float nearest = glm::length(h.pos - player_.position);
+    for (const NetTarget& a : allies_) nearest = std::min(nearest, glm::length(h.pos - a.feet));
+    if (nearest > 190.0f) h.state = HostileState::Gone;
+  }
+  // ...and new ones turn up, near somebody, out of arm's reach.
+  worldSpawnT_ -= dt;
+  if (worldSpawnT_ > 0.0f) return;
+  lootRng_ = lootRng_ * 1664525u + 1013904223u;
+  worldSpawnT_ = 5.0f + (float)((lootRng_ >> 8) % 6u);
+  int up = 0;
+  for (const Hostile& h : hostiles_) up += h.blocksShots() ? 1 : 0;
+  if (up >= std::min(mission_.worldAlive, 40)) return;
+  glm::vec3 who = player_.position;
+  if (!allies_.empty()) {
+    lootRng_ = lootRng_ * 1664525u + 1013904223u;
+    const size_t k = (lootRng_ >> 8) % (allies_.size() + 1);
+    if (k < allies_.size()) who = allies_[k].feet;
+  }
+  spawnWorldGroup(who, 40.0f, 75.0f);
+}
+
+// Back up at the landing zone nearest where you fell.
+void Game::worldRespawn() {
+  glm::vec3 best = world_.landingZones.empty() ? glm::vec3(0.0f) : world_.landingZones[0];
+  for (const glm::vec3& lz : world_.landingZones) {
+    if (glm::length(lz - player_.position) < glm::length(best - player_.position)) best = lz;
+  }
+  player_.position = best;
+  player_.velocity = glm::vec3(0.0f);
+  player_.hp = player_.maxHp;
+  player_.overshield = 0.0f;
+  player_.eyeHeight = 1.68f;
+  lastAttacker_ = 0;
+  pickupNote_ = "BACK ON YOUR FEET";
+  pickupNoteT_ = 2.5f;
 }

@@ -285,6 +285,41 @@ shades procedurally from world position and normal (see
 `shaders/pbr.frag`), the same "nothing to download, nothing to license"
 approach the browser build takes with its canvas-baked textures.
 
+### Planets are open worlds
+
+Landing on a planet puts you in its **open world**: one big place, not an
+arena or a route. Glacius, Karrash and the Dust Shelf are worlds now, and
+Earth has **the Outskirts** (launched from the hideout's pad), the ruined edge
+of the city. Each is about half a kilometre across:
+
+- a **landing ground** in the middle, with landing zones round it — where you
+  come down, and where you get back up three seconds after going down;
+- five **named regions** round it, each its own terrain — mesas with stairs
+  up their sides, canyons with ledges, boulder fields, ruined streets with
+  wrecks and dead lamps, craters round a glowing impact, ice spires and
+  smokestacks, dunes, lines of lava or meltwater in the ground. Walk into one
+  and its name comes up;
+- **cliffs** all the way round the edge.
+
+Cybers **turn up at random**: groups of the planet's own mix appear 40-75 m
+from whoever is about, out of arm's reach, waiting until someone comes near;
+groups nobody is near any more are dropped, and the planet tops itself up to
+its limit (`world_alive`). There is no objective and no end — hunt, explore,
+leave when you like (Esc).
+
+Online, a planet is one place: everyone who lands there goes into one of its
+copies (twelve to a copy), the Cybers are shared, and somebody landing after
+you comes down in a **column of light** with their name in the corner.
+Every world is built from a seed taken from its mission id, so every player's
+game builds exactly the same planet (`erebus_native --worlds` checks it).
+
+A world is a mission file with `mode = world` — `biome` (ice, ash, dust,
+earth), `world_size`, `world_alive`, `landing`, one `region <style> <NAME>`
+line per region (mesas, canyon, boulders, ruins, crater, spires, dunes,
+fissures) and the planet's Cybers as `wave` lines. A new planet is a new
+file. The old single-arena missions (the Ice Fields, the Burning Flats, the
+Dust Shelf patrol) are still there as side contracts.
+
 ### Online: shared places, squads, friends
 
 Online works like a patrol zone. Every place you can stand — the Division

@@ -30,6 +30,7 @@ struct Remote {
   double heard = 0.0;
   float firedT = 0.0f;       // muzzle flash left to show, seconds
   float walk = 0.0f;         // stride phase, from how far they moved
+  float arriveT = 0.0f;      // they just landed here: the drop beam, seconds left
 };
 
 struct Friend {
@@ -188,6 +189,7 @@ private:
   uint64_t host_ = 0;
   uint64_t follow_ = 0;
   int team_ = 0;
+  double welcomedAt_ = 0.0;   // when you arrived in this instance
   int teamNotes_[2] = {0, 0};
   int teamLimit_ = 60;
   int screamers_ = 0;

@@ -166,6 +166,7 @@ void Client::update(float dt) {
     const glm::vec3 moved = r.pos - before;
     r.walk += std::sqrt(moved.x * moved.x + moved.z * moved.z) * 2.2f;
     r.firedT = std::max(0.0f, r.firedT - dt);
+    r.arriveT = std::max(0.0f, r.arriveT - dt);
   }
   remotes_.erase(std::remove_if(remotes_.begin(), remotes_.end(),
                                 [t](const Remote& r) { return t - r.heard > 1.5; }),
@@ -185,6 +186,7 @@ void Client::handle(const uint8_t* data, size_t len) {
       if (!r.ok) return;
       follow_ = 0;
       if (name != instance_) {
+        welcomedAt_ = now();
         instance_ = name;
         notice(here > 1 ? name + " - " + std::to_string(here - 1) + " OTHER STRIDER" + (here > 2 ? "S" : "") + " HERE"
                         : name);
@@ -209,6 +211,12 @@ void Client::handle(const uint8_t* data, size_t len) {
           Remote nr;
           nr.id = id;
           nr.pos = p;
+          // Somebody new after you got here has just landed: they come down
+          // in a column of light, the way a ship drops a Strider.
+          if (t - welcomedAt_ > 2.0) {
+            nr.arriveT = 2.5f;
+            notice(tagName(name) + " LANDED");
+          }
           remotes_.push_back(nr);
           it = remotes_.end() - 1;
         }
