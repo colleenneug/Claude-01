@@ -1,0 +1,6 @@
+
+# Online: the server's tag registry and each computer's account
+server_tags.txt
+account.dat
+*.account
+online.cfg
