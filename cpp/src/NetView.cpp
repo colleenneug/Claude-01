@@ -295,7 +295,15 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
       hud.textCentered(at.x, at.y + 18, m, 1.3f, gold);
       continue;
     }
-    if (dist > 120.0f) continue;
+    // Squad mates are never lost: past normal range they shrink to a marker
+    // with their distance, the way a fireteam shows on the edge of a patrol.
+    if (dist > 120.0f) {
+      if (!r.squadmate) continue;
+      char m[32];
+      std::snprintf(m, sizeof(m), "%s  %dM", r.name.c_str(), (int)dist);
+      hud.textCentered(at.x, at.y, m, 1.3f, glm::vec4(kSquad, 0.85f));
+      continue;
+    }
     const float a = 1.0f - std::clamp((dist - 20.0f) / 100.0f, 0.0f, 0.7f);
     const float scale = dist > 30.0f ? 1.4f : 1.8f;
     const glm::vec4 col = r.squadmate ? glm::vec4(kSquad, a) : glm::vec4(kOther, a);

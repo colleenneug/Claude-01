@@ -267,8 +267,8 @@ steps out of trouble with the next round primed.
 at a time, five armour pieces, five cosmetics, eight enemy archetypes, an
 eleven-rung rank ladder, eleven crew across two walkable hubs, each with
 their own bounty board and service (thirty-one bounties, sixteen upgrades),
-four ships, thirty-one missions (the nineteen of THE FIRST ATTACK, seven
-side contracts, the Pit and the Tuning for online play, and three test
+four ships, thirty-two missions (the nineteen of THE FIRST ATTACK, seven
+side contracts, the Pit, the Sump and the Tuning for online play, and three test
 fixtures), six destinations —
 including an ice world and a desert one. All of it is real, data-driven content under
 `content/`, not hardcoded — a monthly drop of new gear or a new mission is
@@ -337,7 +337,8 @@ on the floor and up again as far from everyone as a few tries can find. The
 server keeps the score and starts a new match eight seconds after a win.
 Launch it from the mission counter like any side contract; it is
 `content/missions/the_pit.cfg` with `mode = pvp` and `score_limit = 10`, so
-a second arena is a second file.
+a second arena is a second file — and there is one: **the Sump**, the flooded
+deck below it, bigger and darker with heavy cover, first to fifteen.
 
 **The Tuning** is the Gambit-style mode, and not a copy of it: two teams
 of up to four, each fighting the same arena's Cybers in its own copy of it
