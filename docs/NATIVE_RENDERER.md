@@ -485,9 +485,9 @@ Still no textures; still one program. What changed:
 ### Temporal anti-aliasing
 
 The scene is drawn offset by a different sub-pixel amount each frame (an
-eight-point Halton sequence) and blended with the previous result,
-reprojected through the depth buffer and clipped to the range of colours in
-the current frame's 3x3 neighbourhood. Besides edges, this is what averages
+eight-point Halton sequence) and blended with the previous result, read
+from where each surface was a frame ago and clipped to the range of colours
+in the current frame's 3x3 neighbourhood. Besides edges, this is what averages
 away the grain the shadow, occlusion and shaft passes deliberately produce.
 History is read with a Catmull-Rom filter, because bilinear applied to its
 own output thirty times a second is a blur. The composite puts a little
@@ -496,9 +496,16 @@ edge back with a sharpen clamped to the local range.
 Open space opts out: a field of one-pixel stars is exactly what jitter and
 history handle worst.
 
-Known weakness: there are no per-object motion vectors. A moving hostile is
-handled by the neighbourhood clip alone, and whatever is within arm's
-reach is assumed to be the weapon and to move with the camera.
+"Where each surface was" is a per-pixel velocity the scene pass writes into
+a second colour attachment: the vertex stage projects every vertex twice,
+once with this frame's camera and model matrix and once with last frame's.
+The first version of this pass had no such thing and reprojected through
+the depth buffer alone, which is right for a wall and wrong for anything
+that moves by itself — a crew member crossing the concourse came out as a
+pale smear with no face. Last frame's model matrices are matched to this
+frame's draw items by position in the list (every scene builds it in the
+same order), and a match that is a different mesh or more than three metres
+away is thrown out and the item treated as still.
 
 ### Exposure
 
@@ -524,6 +531,58 @@ adaptive-quality tiers (`Renderer::kTiers`; table in `cpp/README.md`). The
 - **Local lights cast no shadows**, so a strip light shines through a wall.
 - **No screen-space reflections.** A puddle reflects the sky probe, not the
   crate standing next to it.
-- **No motion vectors**, as above.
 - **The geometry is the geometry.** Enemies, crew and weapons are still
   assemblies of boxes, cylinders and spheres. They are better lit boxes.
+
+## People, and which way things face
+
+The mesh fix above made every figure in the game visible from the outside
+for the first time, and what was there was reported, exactly, as "owl and
+Michael Jackson mode". Both were real. Neither was new.
+
+- **Hostiles faced away from the player.** Both hostile rigs are built
+  facing -Z; the browser build turns them with `atan2(x, z) + Math.PI` and
+  the port dropped the half turn. They had been advancing backwards and
+  firing weapons that pointed the other way. Drawn inside out, the inside
+  of a thing's back looks a good deal like its front.
+- **Crew walked sideways.** Their walk yaw was `atan2(d.z, d.x)`, the
+  formula for a figure facing +X.
+- **Knees bent forward** on crew and hostiles alike, and the hostiles leaned
+  back from the direction they were going. On these rigs a positive
+  rotation about X is forward for every limb, so an elbow folds positive
+  and a knee has to fold negative; the ported values had them the other
+  way round.
+- **Bystanders stood with their backs to the rails** they were written as
+  leaning on: their yaws came across from the browser build unflipped.
+
+The comments that used to sit on these lines said things like "the sign that
+reads as backward here is not the one the arithmetic suggests, and this was
+settled by looking at it". The arithmetic was right. The looking was at a
+render with front and back exchanged. The conventions are now written down
+once, above `Crew::collect` and in `collectWalker`, as arithmetic.
+
+What else changed for the crew, since they are what you stand next to:
+
+- **The walk is a walk.** The step cycle advances with distance covered, at
+  exactly the rate legs of that length swinging that far cover it, so a
+  planted foot stays planted. The body rides over the standing leg as an
+  inverted pendulum — lowest with both feet down, not highest — the
+  swinging leg folds to clear the floor, and the ankle keeps a foot on the
+  ground flat. Feet used to hang 6cm in the air.
+- **Proportions are measured, not eyeballed**: ankle, knee, hip, shoulder
+  and chin at 0.04, 0.28, 0.52, 0.81 and 0.87 of height. The figure had
+  been a tenth shorter than the height it was given, all leg, with a small
+  head. The trunk is an egg, not a box, and limbs are thickest at the body
+  end.
+- **Eyes have lids.** With none, the whole white shows round the iris, which
+  on a face means terror. They sit in the socket between two lids now, with
+  a coloured iris, eyebrows, and a blink.
+- **Cloth and Skin are materials.** A coat shaded as painted plate had panel
+  seams and chipped edges. Cloth has weave, creases and a pale fuzz at
+  glancing angles; skin has uneven tone and a subsurface term — diffuse
+  light allowed to wrap a little past the terminator, and the part that
+  only exists because of the wrap tinted red, which is why the shadow edge
+  on a face is a soft warm band and not a line.
+
+They are still assemblies of spheres and tapers. They are now assembled the
+right way round.

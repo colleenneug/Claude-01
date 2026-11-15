@@ -365,7 +365,7 @@ Surface shadeBuilt(vec3 p, vec3 n, vec3 fp, float edgeDist, float rise, float dr
   vec3 w = triplanarWeights(n);
   float pix = dot(w, fp);
   // Something that moves is a smaller thing with smaller plates on it.
-  float cell = uLocalShading == 1 ? 0.19 : 0.55;
+  float cell = uLocalShading == 1 ? 0.34 : 0.55;
 
   // ---- the panel grid: seams, and which panel this is
   float seamDist = 0.0, panelId = 0.0;

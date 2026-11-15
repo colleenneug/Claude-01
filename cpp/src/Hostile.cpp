@@ -38,6 +38,20 @@ const Mesh& HostileGeometry::unitTaper() { return g_unitTaper; }
 
 // ------------------------------------------------------------------- spawn
 
+namespace {
+// The yaw that points a rig at `dir`. Both rigs are built facing -Z — the
+// visor, the toes and the muzzle of the cannon are all on that side — and a
+// rotation of `yaw` about Y carries -Z to (-sin yaw, -cos yaw), so it takes
+// the half turn. The browser build has it (`atan2(x, z) + Math.PI`); the
+// port dropped it. Every hostile has therefore been walking at the player
+// backwards, firing a weapon that pointed the other way. Nobody saw, because
+// every solid was also being drawn inside out, and the inside of something's
+// back looks a good deal like its front.
+float facingYaw(const glm::vec3& dir) {
+  return std::atan2(dir.x, dir.z) + 3.14159265f;
+}
+}  // namespace
+
 void Hostile::spawn(const EnemyType* t, glm::vec3 at, bool boss, float hpMult) {
   type = t;
   pos = at;
@@ -144,14 +158,14 @@ bool Hostile::update(float dt, const glm::vec3& playerPos, const Level& level) {
       level.resolve(pos, type->radius, type->height);
       float moved = glm::length(glm::vec2(pos.x, pos.z) - glm::vec2(before.x, before.z));
       if (moved < speed * dt * 0.35f) stuckT += dt; else stuckT = std::max(0.0f, stuckT - dt * 2.0f);
-      yaw = std::atan2(dir.x, dir.z);
+      yaw = facingYaw(dir);
       break;
     }
 
     case HostileState::Attack: {
       // face the player and, for a ranged type, keep a little distance;
       // a melee type keeps closing so it actually lands the hit.
-      yaw = std::atan2(dir.x, dir.z);
+      yaw = facingYaw(dir);
       if (dist > type->attackRange * 1.15f) { state = HostileState::Chase; break; }
       if (!type->ranged && dist > type->radius + 0.6f) {
         glm::vec3 steerDir = dir;
@@ -358,16 +372,27 @@ void Hostile::collectWalker(std::vector<DrawItem>& out, const DrawItem& base,
   }
 
   // Rise and fall twice per stride: a body that stays at one height while its
-  // legs swing is the other half of why a fake walk looks fake.
-  const float hipLift = std::fabs(std::sin(bob)) * h * 0.02f * stride;
+  // legs swing is the other half of why a fake walk looks fake. It is lowest
+  // when the legs are furthest apart and highest as one passes the other —
+  // this used to be the other way up, a body bouncing on each footfall.
+  const float hipLift = -std::fabs(std::sin(bob)) * h * 0.02f * stride;
   glm::mat4 hips = joint(root, {0, h * 0.46f + hipLift, 0}, 0.0f, swing * 0.10f);
   part(out, base, box, hips, {0, 0, 0}, {0, 0, 0}, {r * 1.5f * w, h * 0.10f, r * 1.0f});
 
   // Lean into the movement, with a slow breath when standing still so an
   // idle enemy is not a statue.
+  //
+  // Signs, for everything on this rig: its front is -Z, a limb hangs along
+  // -Y, and a positive rotation about X carries -Y toward -Z. So positive is
+  // FORWARD for a thigh or an arm, an elbow folds positive, a knee folds
+  // negative, and a trunk leaning into its stride — its top going forward —
+  // is a negative rotation. The values ported from the browser build had
+  // the knee positive and the elbow and the lean the other way: legs that
+  // folded forward like a bird's, on a body leaning back from where it was
+  // going.
   const float lean = stride < 0.05f ? 0.07f + std::sin(bob * 0.6f) * 0.012f
                                     : 0.07f + stride * 0.11f;
-  glm::mat4 spine = joint(hips, {0, h * 0.05f, 0}, lean);
+  glm::mat4 spine = joint(hips, {0, h * 0.05f, 0}, -lean);
   part(out, base, box, spine, {0, h * 0.055f, 0}, {0, 0, 0}, {r * 1.30f * w, h * 0.13f, r * 0.92f});
 
   // The torso counter-rotates against the legs.
@@ -411,7 +436,10 @@ void Hostile::collectWalker(std::vector<DrawItem>& out, const DrawItem& base,
   glm::mat4 headJ = joint(neck, {0, h * 0.125f - hipLift, 0}, 0.0f, -swing * 0.17f);
   part(out, base, box, headJ, {0, 0, 0}, {0, 0, 0}, {r * 0.94f, r * 0.86f, r * 0.98f});
   part(out, base, box, headJ, {0, r * 0.30f, -r * 0.34f}, {0, 0, 0}, {r * 1.00f, r * 0.18f, r * 0.34f});
-  part(out, glow, box, headJ, {0, r * 0.02f, -r * 0.45f}, {0, 0, 0}, {r * 0.58f, r * 0.11f, r * 0.06f});
+  // Proud of the face plate by a couple of centimetres. It used to sit
+  // just *inside* the skull, which nobody could tell while the skull was
+  // being drawn inside out; drawn properly, the head had no eye at all.
+  part(out, glow, box, headJ, {0, r * 0.02f, -r * 0.47f}, {0, 0, 0}, {r * 0.58f, r * 0.11f, r * 0.10f});
   part(out, base, box, headJ, {0, -r * 0.30f, -r * 0.12f}, {0, 0, 0}, {r * 0.62f, r * 0.24f, r * 0.66f});
 
   // Arms and legs. The right elbow is kept so a forearm cannon can hang off
@@ -427,20 +455,23 @@ void Hostile::collectWalker(std::vector<DrawItem>& out, const DrawItem& base,
          {r * 1.06f, r * 0.81f, r * 1.09f});                                        // pauldron
     part(out, base, tpr, shoulder, {0, -h * 0.095f, 0}, {0, 0, 0}, {r * 0.34f, h * 0.19f, r * 0.34f});
 
-    glm::mat4 elbow = joint(shoulder, {0, -h * 0.19f, 0}, -0.32f - std::max(0.0f, leg) * 0.55f);
+    // The elbow folds forward, and further as the arm swings to the front
+    // (which is when the leg on the same side is behind).
+    glm::mat4 elbow = joint(shoulder, {0, -h * 0.19f, 0}, 0.32f + std::max(0.0f, -leg) * 0.55f);
     part(out, base, sph, elbow, {0, 0, 0}, {0, 0, 0}, {r * 0.34f, r * 0.34f, r * 0.34f});
     part(out, base, tpr, elbow, {0, -h * 0.09f, 0}, {0, 0, 0}, {r * 0.30f, h * 0.18f, r * 0.30f});
     part(out, base, box, elbow, {0, -h * 0.195f, -r * 0.04f}, {0, 0, 0},
          {r * 0.22f, r * 0.26f, r * 0.20f});                                        // hand
     if (side > 0) rightElbow = elbow;
 
-    // A knee that bends backwards is the single clearest tell of a fake walk,
-    // so the bend is clamped to one direction and never goes fully straight.
+    // A knee that bends the wrong way is the single clearest tell of a fake
+    // walk, so the bend is clamped to one direction — the shin folding back
+    // under the thigh — and never goes fully straight.
     glm::mat4 hip = joint(hips, {s * r * 0.45f, -h * 0.02f, 0}, leg);
     part(out, base, sph, hip, {0, 0, 0}, {0, 0, 0}, {r * 0.52f, r * 0.52f, r * 0.52f});
     part(out, base, tpr, hip, {0, -h * 0.115f, 0}, {0, 0, 0}, {r * 0.48f, h * 0.23f, r * 0.48f});
 
-    glm::mat4 knee = joint(hip, {0, -h * 0.23f, 0}, std::max(0.0f, -leg) * 1.7f + 0.06f);
+    glm::mat4 knee = joint(hip, {0, -h * 0.23f, 0}, -(std::max(0.0f, -leg) * 1.7f + 0.06f));
     part(out, base, sph, knee, {0, 0, 0}, {0, 0, 0}, {r * 0.42f, r * 0.42f, r * 0.42f});
     part(out, base, tpr, knee, {0, -h * 0.115f, 0}, {0, 0, 0}, {r * 0.40f, h * 0.23f, r * 0.40f});
     part(out, base, box, knee, {0, -h * 0.195f, -r * 0.14f}, {0, 0, 0},
@@ -498,8 +529,10 @@ void Hostile::collectFlyer(std::vector<DrawItem>& out, const DrawItem& base,
   // It hovers rather than stands, so it hangs off one joint at 62% of height
   // and rolls a little as it drifts. That is also where headCentre() is
   // closest to, which keeps a shot at the optic landing on the hit sphere.
+  // Nose down as it gathers speed — negative, by the same rule as the
+  // walker's lean.
   glm::mat4 core = joint(root, {0, h * 0.62f, 0},
-                         0.06f + std::min(0.3f, speedFrac * 0.24f), 0.0f,
+                         -(0.06f + std::min(0.3f, speedFrac * 0.24f)), 0.0f,
                          std::sin(bob * 0.7f) * 0.10f);
 
   part(out, base, sph, core, {0, 0, 0}, {0, 0, 0}, {r * 1.24f, r * 1.07f, r * 1.39f});

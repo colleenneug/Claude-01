@@ -489,10 +489,6 @@ void Crew::collect(std::vector<DrawItem>& out) const {
     part(out, skin, tpr, head, {0, -hy * 0.50f, -hz * 0.10f},
          {hw * 0.92f, hh * 0.30f, hd * 0.84f}, {180.0f, 0, 0});
 
-    // Brow ridge, sitting just under the surface.
-    part(out, shade, box, head, {0, hy * 0.30f, -hz * 0.78f},
-         {hw * 0.60f, hh * 0.05f, hd * 0.16f});
-
     // A blink: about a tenth of a second, every few seconds, never two
     // people at once. An eye that never closes is the single most unnerving
     // thing a face can do, and it is free to fix.
