@@ -1,5 +1,5 @@
 #pragma once
-#include "Gl.h"
+#include "Math.h"
 #include <vector>
 
 // Every material in this project shades procedurally from world position and
@@ -32,6 +32,7 @@ public:
   static Mesh terrainPlane(float size, int segments, float noiseScale);
 
 private:
-  GLuint vao_ = 0, vbo_ = 0, ebo_ = 0;
-  GLsizei indexCount_ = 0;
+  // GPU handles (OpenGL names today), opaque to everything but Mesh.cpp.
+  unsigned int vao_ = 0, vbo_ = 0, ebo_ = 0;
+  int indexCount_ = 0;
 };

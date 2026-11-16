@@ -1,4 +1,6 @@
 #include "Hud.h"
+#include "Gl.h"
+#include "Shader.h"
 #include "Content.h"
 #include "Font.h"
 #include "Hub.h"
@@ -9,8 +11,16 @@
 #include <cmath>
 #include <cstdio>
 
+struct Hud::Shaders {
+  Shader quad, text;
+};
+
+Hud::Hud() = default;
+Hud::~Hud() = default;
+
 void Hud::create() {
-  shader_.load("shaders/hud.vert", "shaders/hud.frag");
+  shaders_ = std::make_unique<Shaders>();
+  shaders_->quad.load("shaders/hud.vert", "shaders/hud.frag");
   float verts[] = {0, 0, 1, 0, 1, 1, 0, 1};
   unsigned idx[] = {0, 1, 2, 0, 2, 3};
   GLuint ebo;
@@ -26,7 +36,7 @@ void Hud::create() {
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
   glBindVertexArray(0);
 
-  textShader_.load("shaders/hud_text.vert", "shaders/hud_text.frag");
+  shaders_->text.load("shaders/hud_text.vert", "shaders/hud_text.frag");
   glGenVertexArrays(1, &textVao_);
   glGenBuffers(1, &textVbo_);
   glBindVertexArray(textVao_);
@@ -152,8 +162,8 @@ void Hud::textCentered(float cx, float y, const std::string& s, float scale, glm
 void Hud::flushText() {
   if (textVerts_.empty()) return;
 
-  textShader_.use();
-  textShader_.set("uScreen", glm::vec2((float)screenW_, (float)screenH_));
+  shaders_->text.use();
+  shaders_->text.set("uScreen", glm::vec2((float)screenW_, (float)screenH_));
   glBindVertexArray(textVao_);
   glBindBuffer(GL_ARRAY_BUFFER, textVbo_);
   // Grow the buffer when a frame needs more room than the last one did, but
@@ -170,7 +180,7 @@ void Hud::flushText() {
 
   // Leave the rect shader bound: callers may still queue rect()s after a
   // flush in a later frame, and begin() rebinds anyway.
-  shader_.use();
+  shaders_->quad.use();
   glBindVertexArray(vao_);
 }
 
@@ -193,14 +203,14 @@ void Hud::begin(int screenW, int screenH) {
   glDisable(GL_CULL_FACE);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  shader_.use();
-  shader_.set("uScreen", glm::vec2((float)screenW, (float)screenH));
+  shaders_->quad.use();
+  shaders_->quad.set("uScreen", glm::vec2((float)screenW, (float)screenH));
   glBindVertexArray(vao_);
 }
 
 void Hud::rect(float x, float y, float w, float h, glm::vec4 colour) {
-  shader_.set("uRect", glm::vec4(x, y, w, h));
-  shader_.set("uColor", colour);
+  shaders_->quad.set("uRect", glm::vec4(x, y, w, h));
+  shaders_->quad.set("uColor", colour);
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
 }
 

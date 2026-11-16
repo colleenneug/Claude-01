@@ -1,5 +1,5 @@
 #pragma once
-#include "Gl.h"
+#include "Math.h"
 #include "Hostile.h"
 #include "Level.h"
 #include <vector>

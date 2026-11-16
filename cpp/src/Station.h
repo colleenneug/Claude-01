@@ -1,6 +1,6 @@
 #pragma once
 #include "Input.h"
-#include "Gl.h"
+#include "Math.h"
 #include "Scene.h"
 #include "Level.h"
 #include "Player.h"
@@ -107,7 +107,7 @@ public:
   glm::vec3 sunDirection() const override { return sunDir_; }
   glm::vec3 sunColour() const override { return sunColour_; }
   float sunIntensity() const override { return sunIntensity_; }
-  GLuint moteVao() const override { return 0; }
+  const std::vector<float>* motePoints() const override { return nullptr; }
   float moteBoxSize() const override { return 0.0f; }
   int moteCount() const override { return 0; }
   // The Cradle is pressurised and clean — no haze, lit by its own strips and

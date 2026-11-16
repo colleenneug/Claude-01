@@ -1,4 +1,7 @@
-// Single include point for the GL loader + windowing + math libraries.
+// The renderer side's include point: the GL loader and windowing, plus the
+// math. Only rendering code (Renderer, Mesh.cpp, Hud.cpp, Shader, the
+// post-processing passes) and the platform layer include this; gameplay
+// includes Math.h.
 // GLEW must be included before GLFW's own GL header pulls in gl.h, or the
 // symbols collide.
 #pragma once
@@ -7,10 +10,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/quaternion.hpp>
+#include "Math.h"
 
 #include <cstdio>
 

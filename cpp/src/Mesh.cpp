@@ -1,4 +1,5 @@
 #include "Mesh.h"
+#include "Gl.h"
 #include <cmath>
 
 void Mesh::upload(const std::vector<Vertex>& verts, const std::vector<unsigned>& indices) {

@@ -81,6 +81,12 @@ public:
   int shadowDrawCalls = 0;  // filled in each frame, for the on-screen HUD
 
 private:
+  // The dust/star points, uploaded from the scene's plain data.
+  GLuint moteVao_ = 0, moteVbo_ = 0;
+  const std::vector<float>* moteSource_ = nullptr;
+  unsigned moteVersion_ = ~0u;
+  size_t moteSize_ = 0;
+
   void renderShadowCascades(const SceneSource& scene, const Camera& camera);
   void renderSceneToHdr(const SceneSource& scene, const Camera& camera);
   void renderMotes(const SceneSource& scene, const Camera& camera, float time);

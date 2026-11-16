@@ -1,6 +1,6 @@
 #pragma once
 #include "Input.h"
-#include "Gl.h"
+#include "Math.h"
 
 // A free-fly FPS camera: WASD + mouse look, Shift to sprint, right mouse to
 // aim (pulls the FOV in and hands the renderer a 0..1 blend it uses to drive

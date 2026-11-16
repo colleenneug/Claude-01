@@ -1,6 +1,6 @@
 #pragma once
 #include "Input.h"
-#include "Gl.h"
+#include "Math.h"
 #include "Camera.h"
 #include "Content.h"
 #include "Mesh.h"
@@ -52,7 +52,7 @@ public:
   glm::vec3 sunDirection() const override { return sunDirection_; }
   glm::vec3 sunColour() const override { return glm::vec3(1.0f, 0.95f, 0.88f); }
   float sunIntensity() const override { return 3.4f; }
-  GLuint moteVao() const override { return starVao_; }
+  const std::vector<float>* motePoints() const override { return &starPoints_; }
   float moteBoxSize() const override { return starBox_; }
   int moteCount() const override { return starCount_; }
   glm::vec3 moteColour() const override { return glm::vec3(0.86f, 0.90f, 1.0f); }
@@ -142,7 +142,7 @@ private:
   int nearest_ = -1;
   float nearestDist_ = 0.0f;
 
-  GLuint starVao_ = 0, starVbo_ = 0;
+  std::vector<float> starPoints_;
   int starCount_ = 3000;
   float starBox_ = 40000.0f;
 

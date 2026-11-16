@@ -1,6 +1,6 @@
 #pragma once
 #include "Input.h"
-#include "Gl.h"
+#include "Math.h"
 #include "Content.h"
 #include "Level.h"
 #include "Player.h"
@@ -99,7 +99,7 @@ public:
     if (mission_.ambientSet) return mission_.ambient;
     return mission_.skyHorizon * 0.070f + mission_.skyZenith * 0.055f;
   }
-  GLuint moteVao() const override { return moteVao_; }
+  const std::vector<float>* motePoints() const override { return &motePoints_; }
   float moteBoxSize() const override { return moteBox_; }
   int moteCount() const override { return moteCount_; }
 
@@ -644,7 +644,7 @@ private:
 
   glm::vec3 sunDirection_{0.0f};
 
-  GLuint moteVao_ = 0, moteVbo_ = 0;
+  std::vector<float> motePoints_;
   int moteCount_ = 2400;
   float moteBox_ = 30.0f;
 

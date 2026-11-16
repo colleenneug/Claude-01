@@ -1,6 +1,6 @@
 #pragma once
 #include "Input.h"
-#include "Gl.h"
+#include "Math.h"
 #include "Content.h"
 #include "Profile.h"
 #include <string>

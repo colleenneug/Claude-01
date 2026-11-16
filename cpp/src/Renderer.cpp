@@ -80,6 +80,10 @@ void Renderer::resize(int width, int height) {
 }
 
 void Renderer::destroy() {
+  if (moteVbo_) glDeleteBuffers(1, &moteVbo_);
+  if (moteVao_) glDeleteVertexArrays(1, &moteVao_);
+  moteVbo_ = moteVao_ = 0;
+  moteSource_ = nullptr;
   sceneHdr_.destroy();
   dofBuffer_.destroy();
   csm_.destroy();
@@ -172,8 +176,31 @@ void Renderer::renderMotes(const SceneSource& scene, const Camera& camera, float
   // a draw with none bound is GL_INVALID_OPERATION in a core profile even at
   // a count of zero — one per frame, every frame, for as long as you stood in
   // the Cradle.
-  const int moteCount = std::max(0, (int)(scene.moteCount() * motesFraction_));
-  if (scene.moteVao() == 0 || moteCount == 0) return;
+  const std::vector<float>* points = scene.motePoints();
+  const int available = points ? (int)(points->size() / 5) : 0;
+  const int moteCount = std::min(available, std::max(0, (int)(scene.moteCount() * motesFraction_)));
+  if (moteCount == 0) return;
+  // The scene hands over plain points; the GPU copy is the renderer's, made
+  // again only when the scene (or its points) change.
+  if (points != moteSource_ || scene.moteVersion() != moteVersion_ || points->size() != moteSize_) {
+    if (!moteVao_) {
+      glGenVertexArrays(1, &moteVao_);
+      glGenBuffers(1, &moteVbo_);
+    }
+    glBindVertexArray(moteVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, moteVbo_);
+    glBufferData(GL_ARRAY_BUFFER, points->size() * sizeof(float), points->data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
+    glBindVertexArray(0);
+    moteSource_ = points;
+    moteVersion_ = scene.moteVersion();
+    moteSize_ = points->size();
+  }
 
   sceneHdr_.bind();  // still bound from the scene pass, but explicit is cheap
   glDepthMask(GL_FALSE);
@@ -193,7 +220,7 @@ void Renderer::renderMotes(const SceneSource& scene, const Camera& camera, float
   motesShader_.set("uColour", scene.moteColour());
   motesShader_.set("uOpacity", scene.moteOpacity());
 
-  glBindVertexArray(scene.moteVao());
+  glBindVertexArray(moteVao_);
   glDrawArrays(GL_POINTS, 0, moteCount);
 
   glDisable(GL_PROGRAM_POINT_SIZE);

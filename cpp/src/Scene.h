@@ -1,5 +1,5 @@
 #pragma once
-#include "Gl.h"
+#include "Math.h"
 #include "Draw.h"
 #include <vector>
 
@@ -31,7 +31,11 @@ public:
 
   // Camera-relative particles (dust in a mission, stars in space). A scene
   // with none returns an empty VAO and a count of zero.
-  virtual GLuint moteVao() const = 0;
+  // Each point is five floats: x, y, z (inside a box of moteBoxSize centred
+  // on the camera), a phase, and a size. Plain data: the renderer uploads it
+  // (and again whenever moteVersion() changes).
+  virtual const std::vector<float>* motePoints() const = 0;
+  virtual unsigned moteVersion() const { return 0; }
   virtual float moteBoxSize() const = 0;
   virtual int moteCount() const = 0;
   virtual glm::vec3 moteColour() const { return glm::vec3(0.75f, 0.85f, 0.95f); }

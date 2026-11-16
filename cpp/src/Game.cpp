@@ -374,8 +374,8 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
   // The dust motes don't depend on anything mission-specific (fixed box,
   // fixed count, fixed seed), so they're built once and reused across
   // however many missions the Hub launches in one process rather than
-  // leaking a VAO/VBO pair every relaunch.
-  if (moteVao_ == 0) {
+  // rebuilding them every relaunch.
+  if (motePoints_.empty()) {
     srand(99);
     auto rnd = [](float lo, float hi) { return lo + (hi - lo) * (float)rand() / (float)RAND_MAX; };
     std::vector<float> data;
@@ -387,18 +387,7 @@ bool Game::init(const std::string& contentDir, const std::string& missionId, Pro
       data.push_back(rnd(0.0f, 1.0f));
       data.push_back(0.35f + std::pow(rnd(0.0f, 1.0f), 3.0f) * 1.9f);
     }
-    glGenVertexArrays(1, &moteVao_);
-    glGenBuffers(1, &moteVbo_);
-    glBindVertexArray(moteVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, moteVbo_);
-    glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
-    glBindVertexArray(0);
+    motePoints_ = std::move(data);
   }
 
   if (const EnemyType* bt = content_.enemy(mission_.bossId)) bossName_ = bt->name;
@@ -1422,9 +1411,7 @@ void Game::destroy() {
   // deleted vertex array after the first mission — invisible on most drivers
   // and a GL_INVALID_OPERATION every frame on all of them. They live until
   // the program exits (see the end of main).
-  if (moteVbo_) glDeleteBuffers(1, &moteVbo_);
-  if (moteVao_) glDeleteVertexArrays(1, &moteVao_);
-  moteVbo_ = moteVao_ = 0;   // so a later init() (Hub -> another mission) rebuilds them
+  // The motes are plain data the renderer owns the GPU copy of; nothing to free.
   loaded_ = false;
 }
 

@@ -1,6 +1,6 @@
 #pragma once
-#include "Gl.h"
-#include "Shader.h"
+#include "Math.h"
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -17,6 +17,8 @@ struct Profile;
 // to live game state — actual HP, actual ammo, actual mission names.
 class Hud {
 public:
+  Hud();
+  ~Hud();
   void create();
   void destroy();
 
@@ -302,8 +304,11 @@ private:
   // axis-aligned quads, and an arrow is not one.
   void triangle(glm::vec2 a, glm::vec2 b, glm::vec2 c, glm::vec4 colour);
 
-  Shader shader_;
-  GLuint vao_ = 0, vbo_ = 0;
+  // The GPU side (shaders and buffers) lives in Hud.cpp, so nothing that
+  // draws a HUD has to see OpenGL.
+  struct Shaders;
+  std::unique_ptr<Shaders> shaders_;
+  unsigned int vao_ = 0, vbo_ = 0;   // GL names, used only in Hud.cpp
   int screenW_ = 1, screenH_ = 1;
 
   // Text batch: every lit font pixel from every text() call this frame,
@@ -317,8 +322,7 @@ private:
   // per frame. That's cheap next to the 3D pass and the hub has no 3D pass
   // at all, so it hasn't been worth optimizing; instancing one quad with a
   // per-instance position/colour would cut it about sixfold if it ever is.
-  Shader textShader_;
-  GLuint textVao_ = 0, textVbo_ = 0;
+  unsigned int textVao_ = 0, textVbo_ = 0;
   size_t textVboCapacity_ = 0;
   std::vector<float> textVerts_;
 };

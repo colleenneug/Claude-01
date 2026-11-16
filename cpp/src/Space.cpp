@@ -59,26 +59,12 @@ void Space::buildStars() {
     data.push_back(rnd(0.0f, 1.0f));
     data.push_back(0.6f + std::pow(rnd(0.0f, 1.0f), 3.0f) * 2.6f);
   }
-  glGenVertexArrays(1, &starVao_);
-  glGenBuffers(1, &starVbo_);
-  glBindVertexArray(starVao_);
-  glBindBuffer(GL_ARRAY_BUFFER, starVbo_);
-  glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
-  glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-  glEnableVertexAttribArray(1);
-  glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-  glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(4 * sizeof(float)));
-  glBindVertexArray(0);
+  starPoints_ = std::move(data);
 }
 
 void Space::destroy() {
   planetMesh_.destroy();
   stationMesh_.destroy();
-  if (starVbo_) glDeleteBuffers(1, &starVbo_);
-  if (starVao_) glDeleteVertexArrays(1, &starVao_);
-  starVbo_ = starVao_ = 0;
   loaded_ = false;
 }
 
