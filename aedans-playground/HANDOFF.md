@@ -77,8 +77,9 @@ validation layer is installed, and GLFW reports the surface extensions
 `VK_KHR_surface` and `VK_KHR_xcb_surface` under Xvfb. Milestone 1's
 "zero validation messages" test can therefore run in the container.
 
-**Packages installed in the container this session** (they disappear when the
-container is reclaimed unless saved in the environment's setup script):
+**Packages installed in the container this session.** These commands are now
+saved as the cloud environment's setup script, so new sessions install them
+automatically (not yet proven: it first runs when a fresh container is built):
 
 ```bash
 apt-get update && apt-get install -y libglfw3-dev libglm-dev libspdlog-dev doctest-dev mesa-vulkan-drivers vulkan-tools libvulkan-dev vulkan-validationlayers glslc
@@ -198,8 +199,6 @@ No known bugs.
 - **The update step is variable-rate.** The fixed-timestep loop from
   `engine/` (`erebus::GameLoop`) replaces it at roadmap Milestone 3, inside
   `Application::run`.
-- **Container packages not saved.** The apt packages above must be reinstalled
-  in a new container unless they are added to the environment's setup script.
 
 **Open, not yet decided**
 - Whether tested code from `engine/` is moved or copied into the Playground
@@ -235,5 +234,5 @@ surviving resize and minimise, with a clean shutdown. Order:
    llvmpipe and fails on any validation message.
 
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
-branch `claude/relaxed-cray-5kc2fl`, reinstall the packages it lists, confirm
+branch `claude/relaxed-cray-5kc2fl`, reinstall the packages it lists if the setup script did not, confirm
 `xvfb-run -a ctest --preset debug` passes, then start Milestone 1 at step 1."
