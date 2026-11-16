@@ -8,7 +8,7 @@ code exists yet.** Next session starts Milestone 0 (project skeleton).
 
 - Repository: `colleenneug/Claude-01`
 - Branch: `claude/relaxed-cray-5kc2fl` (pushed, up to date with origin, no pull request open)
-- Last commit: `d065ae6` "Aedan's Playground: architecture roadmap"
+- Commits this session: `d065ae6` (roadmap), then the commit that adds this file
 
 Standing coding guidelines for this project: modern C++20 (smart pointers,
 RAII, `std::span`, designated initialisers); no over-engineering, subsystems
