@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 
@@ -24,6 +25,9 @@ struct ServerOptions {
   std::string join;        // empty: a main (or only) server
   std::string publicAddr;  // host[:port] players should use to reach this one
   std::string key;
+  // Set from another thread to stop it: the game runs a server of its own
+  // in the background when there is none to join.
+  const std::atomic<bool>* stop = nullptr;
 };
 int runServer(const ServerOptions& options);
 

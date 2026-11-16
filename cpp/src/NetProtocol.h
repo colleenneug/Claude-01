@@ -54,6 +54,7 @@ enum class Msg : uint8_t {
   ShardHello,       // instance server -> main: key, public ip, port, load
   ShardAssign,      // main -> instance server: this player is in this copy
   ShardRelease,     // main -> instance server: this player has left it
+  Discover = 21,    // broadcast on the local network: is a server here?
   // server -> client
   Welcome = 64,     // the instance you are in, and the server running it
   Snapshot,         // everyone else in your instance
@@ -71,6 +72,7 @@ enum class Msg : uint8_t {
   Tag,              // your gamer tag as the server settled it: "NAME#1234", number
   TeamScore,        // the Tuning: limit, team 0 notes, team 1 notes
   Screamers,        // the Tuning: count — the other team sent them at you
+  DiscoverReply = 90,  // "here": the port to talk to
 };
 
 // Gamer tags. A name you choose plus four digits the server picks so that no

@@ -38,6 +38,8 @@ public:
 
   // Port 0 picks any free one (a client); a server names its own.
   bool open(uint16_t port = 0);
+  // Lets send() reach 255.255.255.255 — everyone on the local network.
+  bool enableBroadcast();
   void close();
   bool isOpen() const { return fd_ >= 0; }
   bool send(const Address& to, const void* data, size_t len);
@@ -76,6 +78,10 @@ struct Reader {
   float f32();
   std::string str();
 };
+
+// Looks for a game server on the local network for up to `seconds`: true
+// with its address if one answered.
+bool discover(uint16_t port, double seconds, Address& out);
 
 // Wall-clock seconds, for timeouts. Monotonic.
 double now();

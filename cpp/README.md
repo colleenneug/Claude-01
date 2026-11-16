@@ -407,6 +407,14 @@ seconds on. Offline it is a score attack against the arena.
 `content/missions/the_tuning.cfg` (`mode = tuning`); its waves are the stock
 of Cybers the host keeps on the floor.
 
+**It just works.** Online is on by itself. When the game starts it looks
+for a server on the local network (same Wi-Fi or router) and joins it; if
+there is none, it quietly runs one in the background and every other copy on
+the network finds that one. If the copy running it closes, another copy
+takes over within a few seconds. Nothing to set up. To play offline put
+`server = off` in `online.cfg`; to play with friends over the internet, one
+of you hosts (below) and the others put that address in `online.cfg`.
+
 **Hosting.** The game *is* the server — no other program:
 
 ```

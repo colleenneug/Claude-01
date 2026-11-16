@@ -32,7 +32,9 @@
 #include <fstream>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
 #include <set>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -697,9 +699,12 @@ int main(int argc, char** argv) {
   double lastTime = glfwGetTime();
   int frame = 0;
 
-  // ---- online. Off unless a server is named: EREBUS_SERVER=host[:port],
-  // or `server = host[:port]` in online.cfg next to the saves (with an
-  // optional `name = ...` for what other players see over your head).
+  // ---- online. On by itself: the game looks for a server on the local
+  // network and joins it, and if there is none it runs one of its own in
+  // the background, which every other copy on the network then finds. A
+  // server somewhere else (friends over the internet) goes in online.cfg as
+  // `server = host[:port]`, or EREBUS_SERVER; `server = off` plays offline.
+  // Headless runs (the test suite) stay offline unless they name a server.
   net::Client netClient;
   netview::Social social;
   std::string netServerAddr, netName, netFor;
@@ -719,6 +724,46 @@ int main(int argc, char** argv) {
     }
   }
   if (const char* e = std::getenv("EREBUS_SERVER")) netServerAddr = e;
+  // EREBUS_NET_AUTO=1 turns the automatic mode on for a headless run too.
+  bool netAuto = netServerAddr.empty() && (maxFrames <= 0 || envFlag("EREBUS_NET_AUTO")) && !envFlag("EREBUS_OFFLINE");
+  if (netServerAddr == "off" || netServerAddr == "none") netServerAddr.clear();
+  // The server this game runs itself, when it is the first one about.
+  std::atomic<bool> hostStop{false};
+  std::thread hostThread;
+  bool hosting = false;
+  // However the game ends, the server it was running stops with it.
+  struct HostGuard {
+    std::atomic<bool>& stop;
+    std::thread& t;
+    ~HostGuard() {
+      stop = true;
+      if (t.joinable()) t.join();
+    }
+  } hostGuard{hostStop, hostThread};
+  float netLostT = 0.0f;
+  auto findOrHost = [&]() -> std::string {
+    net::Address found;
+    if (net::discover(net::kDefaultPort, 0.6, found)) {
+      std::printf("[Net] found a server on the local network at %s\n", found.str().c_str());
+      return found.str();
+    }
+    if (!hosting) {
+      net::Socket probe;
+      if (probe.open(net::kDefaultPort)) {
+        probe.close();
+        hostStop = false;
+        hostThread = std::thread([&hostStop]() {
+          net::ServerOptions o;
+          o.port = net::kDefaultPort;
+          o.stop = &hostStop;
+          net::runServer(o);
+        });
+        hosting = true;
+        std::printf("[Net] no server about: running one here, for anyone on this network\n");
+      }
+    }
+    return "127.0.0.1:" + std::to_string(net::kDefaultPort);
+  };
   // The account (see AccountStore): one per computer, shared by every slot.
   // EREBUS_SAVE_PATH runs (the test suite) each get their own beside the
   // save, so two test players are two accounts.
@@ -800,9 +845,10 @@ int main(int argc, char** argv) {
 
     // ---- online: say where you are, hear who else is, and put them in the
     // world you are about to draw.
-    if (!netServerAddr.empty() && netFor != savePath && state != AppState::SlotSelect &&
+    if ((netAuto || !netServerAddr.empty()) && netFor != savePath && state != AppState::SlotSelect &&
         state != AppState::CreateRecord) {
       netFor = savePath;
+      if (netAuto && netServerAddr.empty()) netServerAddr = findOrHost();
       // A save from before accounts carried its own identity: the first one
       // seen becomes the account's, so nobody loses their tag or friends.
       if (!account.netId && profile.netId) {
@@ -825,6 +871,17 @@ int main(int argc, char** argv) {
       if (netClient.configure(netServerAddr, account.netId, nm, account.tagNumber)) {
         netClient.setFriends(account.friends);
         if (askForTag) netview::promptForTag(social);
+      }
+    }
+    // Automatic online: if whoever was running the server has gone, look
+    // again — another copy may have taken over — or take over here.
+    if (netAuto && netClient.enabled()) {
+      netLostT = netClient.connected() ? 0.0f : netLostT + dt;
+      if (netLostT > 6.0f) {
+        netLostT = 0.0f;
+        const std::string addr = findOrHost();
+        if (netClient.configure(addr, account.netId, netClient.name(), account.tagNumber))
+          netClient.setFriends(account.friends);
       }
     }
     game.extras.clear();
@@ -2326,11 +2383,12 @@ int main(int argc, char** argv) {
     }
     if (netLogPath && maxFrames > 0 && frame + 1 >= maxFrames) {
       if (FILE* f = std::fopen(netLogPath, "w")) {
-        std::fprintf(f, "{\"enabled\":%s,\"connected\":%s,\"place\":\"%s\",\"instance\":\"%s\",\"remotes\":%d,"
+        std::fprintf(f, "{\"enabled\":%s,\"connected\":%s,\"hosting\":%s,\"place\":\"%s\",\"instance\":\"%s\",\"remotes\":%d,"
                         "\"squad\":%d,\"squadLimit\":%d,\"friends\":%d,\"savedFriends\":%d,\"peakRemotes\":%d,\"peakSquad\":%d,"
                         "\"topScore\":%d,\"downs\":%d,\"winner\":\"%s\",\"coopRole\":\"%s\",\"coopSnaps\":%d,"
                         "\"team\":%d,\"banked\":%d,\"screamers\":%d,\"teamNotes\":[%d,%d],\"names\":[",
                      netClient.enabled() ? "true" : "false", netClient.connected() ? "true" : "false",
+                     hosting ? "true" : "false",
                      netClient.place().c_str(), netClient.instance().c_str(), (int)netClient.remotes().size(),
                      (int)netClient.squad().size(), netClient.squadLimit(), (int)netClient.friends().size(),
                      (int)account.friends.size(), netPeakRemotes, netPeakSquad,
@@ -2350,6 +2408,10 @@ int main(int argc, char** argv) {
   }
 
   netClient.bye();
+  if (hosting) {
+    hostStop = true;
+    if (hostThread.joinable()) hostThread.join();
+  }
   ProfileStore::save(profile, savePath);
   if (gameEverStarted) game.destroy();
   station.destroy();

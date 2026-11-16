@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -118,6 +119,12 @@ bool Socket::open(uint16_t port) {
   return true;
 }
 
+bool Socket::enableBroadcast() {
+  if (fd_ < 0) return false;
+  int on = 1;
+  return setsockopt((decltype(::socket(0, 0, 0)))fd_, SOL_SOCKET, SO_BROADCAST, (const char*)&on, sizeof(on)) == 0;
+}
+
 void Socket::close() {
   if (fd_ < 0) return;
 #ifdef _WIN32
@@ -176,6 +183,40 @@ std::string Reader::str() {
   std::string s((const char*)p + at, len);
   at += len;
   return s;
+}
+
+bool discover(uint16_t port, double seconds, Address& out) {
+  Socket s;
+  if (!s.open(0)) return false;
+  s.enableBroadcast();
+  // magic "ERB1", version, Discover (see NetProtocol.h), and a zero id.
+  const uint8_t ask[14] = {0x45, 0x52, 0x42, 0x31, 1, 21, 0, 0, 0, 0, 0, 0, 0, 0};
+  Address everyone;
+  everyone.ip = 0xFFFFFFFFu;
+  everyone.port = port;
+  Address local;
+  local.ip = 0x7F000001u;
+  local.port = port;
+  const double end = now() + seconds;
+  double nextAsk = 0.0;
+  while (now() < end) {
+    if (now() >= nextAsk) {
+      s.send(everyone, ask, sizeof(ask));
+      s.send(local, ask, sizeof(ask));   // a copy on this machine, if broadcast does not loop back
+      nextAsk = now() + 0.2;
+    }
+    uint8_t buf[256];
+    Address from;
+    const int n = s.recv(from, buf, sizeof(buf));
+    // The answer: magic, version, DiscoverReply (90), then the port.
+    if (n >= 8 && buf[0] == 0x45 && buf[1] == 0x52 && buf[2] == 0x42 && buf[3] == 0x31 && buf[5] == 90) {
+      out.ip = from.ip;
+      out.port = (uint16_t)(buf[6] | (buf[7] << 8));
+      return true;
+    }
+    if (n <= 0) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return false;
 }
 
 double now() {

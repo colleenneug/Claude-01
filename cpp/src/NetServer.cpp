@@ -90,11 +90,11 @@ public:
     return true;
   }
 
-  void run(double seconds) {
+  void run(double seconds, const std::atomic<bool>* stop) {
     const double end = seconds > 0.0 ? now() + seconds : 1e300;
     double nextSnap = 0.0, nextPresence = 0.0;
     uint8_t buf[2048];
-    while (now() < end) {
+    while (now() < end && !(stop && stop->load())) {
       Address from;
       int n;
       while ((n = sock_.recv(from, buf, sizeof(buf))) > 0) handle(from, buf, (size_t)n);
@@ -571,6 +571,16 @@ private:
     Reader r(data, len);
     Msg m;
     if (!header(r, m)) return;
+    // "Is a server here?" from a game looking on the local network.
+    if (m == Msg::Discover) {
+      if (!isShard_) {
+        Writer w;
+        header(w, Msg::DiscoverReply);
+        w.u16(sock_.localPort());
+        sock_.send(from, w.b.data(), w.b.size());
+      }
+      return;
+    }
     {
       Reader rs = r;
       if (handleShard(from, m, rs)) return;
@@ -1009,7 +1019,7 @@ private:
 int runServer(const ServerOptions& options) {
   Server s(options);
   if (!s.start()) return 1;
-  s.run(options.seconds);
+  s.run(options.seconds, options.stop);
   return 0;
 }
 
