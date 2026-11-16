@@ -51,24 +51,24 @@ constexpr float WALL_JUMP_OUT = 6.6f;
 constexpr float WALL_COOLDOWN = 0.25f;
 }  // namespace
 
-void Player::update(GLFWwindow* window, float dt, float yawRadians, bool sprint, const Level& level,
+void Player::update(const Input& in, float dt, float yawRadians, bool sprint, const Level& level,
                      const ScriptedInput& scripted) {
   glm::vec3 fwd(std::cos(yawRadians), 0.0f, std::sin(yawRadians));
   glm::vec3 right(-fwd.z, 0.0f, fwd.x);
 
-  auto held = [&](int key) { return glfwGetKey(window, key) == GLFW_PRESS; };
+  auto held = [&](Key key) { return in.held(key); };
   // Crouch is on either Ctrl or C, and the arrow keys stand in for W and S,
   // exactly as the browser build binds them.
-  const bool crouchHeld = scripted.crouch || held(GLFW_KEY_LEFT_CONTROL) ||
-                          held(GLFW_KEY_RIGHT_CONTROL) || held(GLFW_KEY_C);
-  const bool forwardHeld = scripted.forward || held(GLFW_KEY_W) || held(GLFW_KEY_UP);
-  const bool jumpHeld = scripted.jump || held(GLFW_KEY_SPACE);
+  const bool crouchHeld = scripted.crouch || held(Key::LeftControl) ||
+                          held(Key::RightControl) || held(Key::C);
+  const bool forwardHeld = scripted.forward || held(Key::W) || held(Key::Up);
+  const bool jumpHeld = scripted.jump || held(Key::Space);
 
   glm::vec3 wish(0.0f);
   if (forwardHeld) wish += fwd;
-  if (held(GLFW_KEY_S) || held(GLFW_KEY_DOWN)) wish -= fwd;
-  if (held(GLFW_KEY_D) || held(GLFW_KEY_RIGHT)) wish += right;
-  if (held(GLFW_KEY_A) || held(GLFW_KEY_LEFT)) wish -= right;
+  if (held(Key::S) || held(Key::Down)) wish -= fwd;
+  if (held(Key::D) || held(Key::Right)) wish += right;
+  if (held(Key::A) || held(Key::Left)) wish -= right;
   const bool moving = glm::length(wish) > 1e-4f;
   if (moving) wish = glm::normalize(wish);
 

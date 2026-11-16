@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Draw.h"
+#include "Input.h"
 #include "NetClient.h"
 
 #include <glm/glm.hpp>
@@ -10,7 +11,6 @@
 
 class Hud;
 class Content;
-struct GLFWwindow;
 
 // How online play shows up: the other Striders in your instance drawn in the
 // world, their names over their heads, a corner panel with your instance and
@@ -44,6 +44,7 @@ struct Social {
   // The last lookup's answer.
   uint64_t foundId = 0;
   std::string foundTag;
+  double clock = 0.0;    // for the text cursor's blink
   std::string message;   // "PRESS F TO ADD ..." hints change with the row
 };
 
@@ -51,10 +52,8 @@ struct Social {
 // choose a row, Enter accepts, Backspace declines, F adds a friend, I sends
 // a squad invite, J joins a friend where they are). Returns true while the
 // screen is open.
-bool socialInput(GLFWwindow* window, Social& social, net::Client& client);
+bool socialInput(const Input& in, Social& social, net::Client& client);
 
-// Typed characters, for the tag fields: installs a GLFW char callback once.
-void installTextInput(GLFWwindow* window);
 // Opens the social screen straight on "choose your tag" (a record with none).
 void promptForTag(Social& social);
 

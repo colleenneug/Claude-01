@@ -1,4 +1,5 @@
 #pragma once
+#include "Input.h"
 #include "Gl.h"
 #include "Scene.h"
 #include "Level.h"
@@ -62,7 +63,7 @@ public:
 
   // Walks the player. `scriptedForward` stands in for holding W, the same
   // hook Player::update takes, so a headless run can cross the concourse.
-  void update(GLFWwindow* window, Camera& camera, float dt,
+  void update(const Input& in, Camera& camera, float dt,
               const ScriptedInput& scripted = ScriptedInput{});
 
   // Same as Game::setInputFrozen: the kit screen navigates on W A S D, and

@@ -597,10 +597,10 @@ void Station::placeAt(Camera& camera, glm::vec3 at, float yawDegrees) {
   camera.position = player_.eyePosition();
 }
 
-void Station::update(GLFWwindow* window, Camera& camera, float dt,
+void Station::update(const Input& in, Camera& camera, float dt,
                      const ScriptedInput& scripted) {
-  bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-  if (!inputFrozen_) player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scripted);
+  bool sprint = in.held(Key::LeftShift);
+  if (!inputFrozen_) player_.update(in, dt, glm::radians(camera.yaw), sprint, level_, scripted);
   camera.position = player_.eyePosition();
   crew_.update(dt);
 }

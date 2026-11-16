@@ -20,23 +20,23 @@ void Camera::look(float dxPixels, float dyPixels, float sensitivity) {
   pitch = std::clamp(pitch, -89.0f, 89.0f);
 }
 
-void Camera::update(GLFWwindow* window, float dt, bool aiming) {
+void Camera::update(const Input& in, float dt, bool aiming) {
   float target = aiming ? 1.0f : 0.0f;
   aim += (target - aim) * std::min(1.0f, dt * 10.0f);
 
-  bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && !aiming;
+  bool sprint = in.held(Key::LeftShift) && !aiming;
   float speed = (sprint ? 8.5f : aiming ? 2.6f : 4.6f) * dt;
 
   glm::vec3 f = forward(), r = right();
   f.y = 0.0f; if (glm::length(f) > 1e-4f) f = glm::normalize(f);
   glm::vec3 move(0.0f);
-  if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move += f;
-  if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move -= f;
-  if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move += r;
-  if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= r;
+  if (in.held(Key::W)) move += f;
+  if (in.held(Key::S)) move -= f;
+  if (in.held(Key::D)) move += r;
+  if (in.held(Key::A)) move -= r;
   if (glm::length(move) > 1e-4f) position += glm::normalize(move) * speed;
 
-  if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) position.y += speed;
-  if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) position.y -= speed;
+  if (in.held(Key::Space)) position.y += speed;
+  if (in.held(Key::LeftControl)) position.y -= speed;
   position.y = std::max(position.y, 1.2f);
 }

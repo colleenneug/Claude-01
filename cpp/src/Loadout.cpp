@@ -233,13 +233,12 @@ bool Loadout::equipSelected() {
   return true;
 }
 
-bool Loadout::update(GLFWwindow* window, const char* scripted) {
+bool Loadout::update(const Input& in, const char* scripted) {
   if (!open_) return false;
   noticeT_ += 1.0f / 60.0f;   // only drives a fade; exactness buys nothing
 
-  auto edge = [&](int a, int b, bool& prev, const char* token) {
-    bool down = (window && (glfwGetKey(window, a) == GLFW_PRESS ||
-                            (b && glfwGetKey(window, b) == GLFW_PRESS))) ||
+  auto edge = [&](Key a, Key b, bool& prev, const char* token) {
+    bool down = in.held(a, b) ||
                 (scripted && std::strcmp(scripted, token) == 0);
     bool fired = down && !prev;
     prev = down;
@@ -247,34 +246,34 @@ bool Loadout::update(GLFWwindow* window, const char* scripted) {
   };
 
   const int cols = (int)Column::Count;
-  if (edge(GLFW_KEY_LEFT, GLFW_KEY_A, prevLeft_, "left")) {
+  if (edge(Key::Left, Key::A, prevLeft_, "left")) {
     column_ = (Column)(((int)column_ + cols - 1) % cols);
     audio::play(Sfx::UiMove);
   }
-  if (edge(GLFW_KEY_RIGHT, GLFW_KEY_D, prevRight_, "right")) {
+  if (edge(Key::Right, Key::D, prevRight_, "right")) {
     column_ = (Column)(((int)column_ + 1) % cols);
     audio::play(Sfx::UiMove);
   }
 
   const int n = (int)ids_[(int)column_].size();
   if (n > 0) {
-    if (edge(GLFW_KEY_UP, GLFW_KEY_W, prevUp_, "up")) {
+    if (edge(Key::Up, Key::W, prevUp_, "up")) {
       rows_[(int)column_] = (rows_[(int)column_] + n - 1) % n;
       audio::play(Sfx::UiMove);
     }
-    if (edge(GLFW_KEY_DOWN, GLFW_KEY_S, prevDown_, "down")) {
+    if (edge(Key::Down, Key::S, prevDown_, "down")) {
       rows_[(int)column_] = (rows_[(int)column_] + 1) % n;
       audio::play(Sfx::UiMove);
     }
   }
 
-  if (edge(GLFW_KEY_ENTER, GLFW_KEY_F, prevEquip_, "equip")) {
+  if (edge(Key::Enter, Key::F, prevEquip_, "equip")) {
     const int before = profile_ ? profile_->chits : 0;
     const bool ok = equipSelected();
     audio::play(!ok ? Sfx::UiDeny : (profile_ && profile_->chits < before) ? Sfx::Buy : Sfx::PickupWeapon);
   }
 
-  if (edge(GLFW_KEY_G, GLFW_KEY_ESCAPE, prevClose_, "close")) {
+  if (edge(Key::G, Key::Escape, prevClose_, "close")) {
     open_ = false;
     audio::play(Sfx::UiBack);
     return true;   // the one frame on which the caller re-reads the profile

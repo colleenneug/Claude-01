@@ -1,4 +1,5 @@
 #pragma once
+#include "Input.h"
 #include "Gl.h"
 #include "Camera.h"
 #include "Content.h"
@@ -43,7 +44,7 @@ public:
   // forceThrust exists only for headless verification (EREBUS_FORCE_FORWARD
   // in main.cpp): a run with no keyboard has no way to hold W, and without
   // it a test can never prove the ship moves at all.
-  void update(GLFWwindow* window, Camera& camera, float dt, bool boost,
+  void update(const Input& in, Camera& camera, float dt, bool boost,
               bool forceThrust = false);
 
   // ---------- SceneSource ----------

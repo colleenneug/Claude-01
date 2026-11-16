@@ -1,4 +1,5 @@
 #pragma once
+#include "Input.h"
 #include "Gl.h"
 #include "Content.h"
 #include "Level.h"
@@ -65,7 +66,7 @@ public:
 
   // window/dt drive the player; camera is both read (for aim direction)
   // and written (position synced to the player's eye every frame).
-  void update(GLFWwindow* window, Camera& camera, float dt, bool firePressed, bool reloadHeld,
+  void update(const Input& in, Camera& camera, float dt, bool firePressed, bool reloadHeld,
               const ScriptedInput& scripted = ScriptedInput{});
 
   // Stops the player reading the keyboard while something else owns it — the

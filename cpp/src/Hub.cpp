@@ -250,7 +250,7 @@ void Hub::cycleMission() {
   }
 }
 
-bool Hub::update(GLFWwindow* window, const char* scriptedKey) {
+bool Hub::update(const Input& in, const char* scriptedKey) {
   if (scriptedKey) {
     if (std::strcmp(scriptedKey, "1") == 0) cycleWeapon();
     else if (std::strcmp(scriptedKey, "2") == 0) cycleArmor();
@@ -260,19 +260,19 @@ bool Hub::update(GLFWwindow* window, const char* scriptedKey) {
     return false;
   }
 
-  auto edge = [&](int key, bool& prev) {
-    bool now = glfwGetKey(window, key) == GLFW_PRESS;
+  auto edge = [&](Key key, bool& prev) {
+    bool now = in.held(key);
     bool pressedNow = now && !prev;
     prev = now;
     return pressedNow;
   };
 
-  if (edge(GLFW_KEY_1, prev1_)) { cycleWeapon(); audio::play(Sfx::UiMove); }
-  if (edge(GLFW_KEY_2, prev2_)) { cycleArmor(); audio::play(Sfx::UiMove); }
-  if (edge(GLFW_KEY_3, prev3_)) { cycleCosmetic(); audio::play(Sfx::UiMove); }
-  if (edge(GLFW_KEY_TAB, prevTab_)) { cycleMission(); audio::play(Sfx::UiMove); }
-  bool enter = edge(GLFW_KEY_ENTER, prevEnter_);
-  bool space = edge(GLFW_KEY_SPACE, prevSpace_);
+  if (edge(Key::Num1, prev1_)) { cycleWeapon(); audio::play(Sfx::UiMove); }
+  if (edge(Key::Num2, prev2_)) { cycleArmor(); audio::play(Sfx::UiMove); }
+  if (edge(Key::Num3, prev3_)) { cycleCosmetic(); audio::play(Sfx::UiMove); }
+  if (edge(Key::Tab, prevTab_)) { cycleMission(); audio::play(Sfx::UiMove); }
+  bool enter = edge(Key::Enter, prevEnter_);
+  bool space = edge(Key::Space, prevSpace_);
   // The route is flown in order. A locked sector is on the list so you can
   // see what is ahead, and that is all it is for.
   if (missionLocked(missionIndex_)) {

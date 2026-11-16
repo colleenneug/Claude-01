@@ -1,4 +1,5 @@
 #pragma once
+#include "Input.h"
 #include "Gl.h"
 #include "Level.h"
 #include <algorithm>
@@ -73,7 +74,7 @@ public:
 
   // yawRadians comes from the camera's look direction: the player walks
   // relative to wherever you're facing, not relative to a fixed axis.
-  void update(GLFWwindow* window, float dt, float yawRadians, bool sprint, const Level& level,
+  void update(const Input& in, float dt, float yawRadians, bool sprint, const Level& level,
               const ScriptedInput& scripted = ScriptedInput{});
 
   // Ground speed, ignoring any fall or jump. What decides whether a crouch

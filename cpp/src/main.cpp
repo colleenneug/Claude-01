@@ -15,6 +15,7 @@
 #include "NetProtocol.h"
 #include "NetServer.h"
 #include "NetView.h"
+#include "PlatformInput.h"
 #include "World.h"
 #include "Hud.h"
 #include "Hub.h"
@@ -773,7 +774,7 @@ int main(int argc, char** argv) {
   Account account = AccountStore::load(accountPath);
   std::string netNameEnv;
   if (const char* e = std::getenv("EREBUS_NET_NAME")) netNameEnv = e;
-  netview::installTextInput(window);
+  installTextCapture(window);
   bool socialWasOpen = false;
   // Headless hooks for the test suite, which has no hands for the social
   // screen: invite / befriend the first player seen, and accept whatever
@@ -824,6 +825,10 @@ int main(int argc, char** argv) {
     lastTime = now;
 
     glfwPollEvents();
+    // Everything the game reads of the keyboard this frame, in its own terms
+    // (Input.h). Gameplay never sees GLFW.
+    Input input;
+    sampleInput(window, input);
 
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && mouseCaptured) {
       glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -955,7 +960,7 @@ int main(int argc, char** argv) {
           AccountStore::save(account, accountPath);
         }
       }
-      netview::socialInput(window, social, netClient);
+      netview::socialInput(input, social, netClient);
       // The social screen owns the keyboard while it is up (it has a text
       // field): the world underneath keeps running, you just stop walking.
       if (social.open != socialWasOpen) {
@@ -1140,7 +1145,7 @@ int main(int argc, char** argv) {
       if (kitScriptPos < kitScriptTokens.size() && frame % 10 == 0) {
         kitScript = kitScriptTokens[kitScriptPos++].c_str();
       }
-      const bool closed = loadout.update(window, kitScript);
+      const bool closed = loadout.update(input, kitScript);
 
       // The world underneath keeps rendering and keeps simulating, which is
       // the whole design: a menu that freezes a firefight while you shop
@@ -1148,11 +1153,11 @@ int main(int argc, char** argv) {
       glfwGetFramebufferSize(window, &width, &height);
       if (state == AppState::Mission && gameEverStarted) {
         game.setInputFrozen(true);
-        game.update(window, camera, dt, false, false, ScriptedInput{});
+        game.update(input, camera, dt, false, false, ScriptedInput{});
         renderer.renderFrame(game, camera, (float)now, dt);
       } else if (state == AppState::Station) {
         station.setInputFrozen(true);
-        station.update(window, camera, dt, ScriptedInput{});
+        station.update(input, camera, dt, ScriptedInput{});
         renderer.renderFrame(station, camera, (float)now, dt);
       } else if (state == AppState::Space) {
         // The ship is not updated at all: nothing out here is going to shoot
@@ -1208,11 +1213,11 @@ int main(int argc, char** argv) {
       // The scripted E keeps pulsing at the desk only when no script is
       // driving it; a run that writes its own keys should get only those.
       const bool pulse = forceEngage && postScriptTokens.empty() && (frame % 16 < 8);
-      const Post::Result r = post.update(window, postScript, pulse);
+      const Post::Result r = post.update(input, postScript, pulse);
 
       glfwGetFramebufferSize(window, &width, &height);
       station.setInputFrozen(true);
-      station.update(window, camera, dt, ScriptedInput{});
+      station.update(input, camera, dt, ScriptedInput{});
       renderer.renderFrame(station, camera, (float)now, dt);
       hud.drawPost(width, height, hubContent, profile, post);
 
@@ -1407,7 +1412,7 @@ int main(int argc, char** argv) {
       // Cradle and docking is not the only way back out here.
       space.setShip(hubContent.ship(profile.equippedShip));
       bool boost = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-      space.update(window, camera, dt, boost, forceForward);
+      space.update(input, camera, dt, boost, forceForward);
 
       // E engages whatever you're close to: a world drops you into its
       // mission, the Cradle opens the hub.
@@ -1523,7 +1528,7 @@ int main(int argc, char** argv) {
       // to is standing right in front of you, and the scripted walk would
       // shove past them and out of range of their own dialogue.
       stationInput.forward = forceForward && talkingTo == nullptr;
-      station.update(window, camera, dt, stationInput);
+      station.update(input, camera, dt, stationInput);
       renderer.renderFrame(station, camera, (float)now, dt);
 
       const Crew::Person* person = station.nearestPerson();
@@ -1734,7 +1739,7 @@ int main(int argc, char** argv) {
         scriptedStorage = hubScript[hubScriptPos++];
         scripted = scriptedStorage.c_str();
       }
-      bool launch = hub.update(window, scripted);
+      bool launch = hub.update(input, scripted);
       if (launch) {
         if (game.init(contentDir, hub.selectedMission(), profile)) {
           gameEverStarted = true;
@@ -1999,7 +2004,7 @@ int main(int argc, char** argv) {
         }
       }
       if (autoReload) reloadHeld = true;
-      game.update(window, camera, dt, firePressed, reloadHeld, playerInput);
+      game.update(input, camera, dt, firePressed, reloadHeld, playerInput);
 
       // The field ability is on Q or E, the same two keys the browser build
       // accepts (src/js/fps/game.js). On the press, not the hold.

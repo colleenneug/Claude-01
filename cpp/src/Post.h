@@ -1,4 +1,5 @@
 #pragma once
+#include "Input.h"
 #include "Gl.h"
 #include "Bounty.h"
 #include "Content.h"
@@ -47,7 +48,7 @@ public:
   // "right", "up", "down", "use", "close" — and is used only by headless
   // verification. `engagePulse` is the station's scripted E, so a run that
   // talks its way up to a desk can also act at it.
-  Result update(GLFWwindow* window, const char* scripted = nullptr, bool engagePulse = false);
+  Result update(const Input& in, const char* scripted = nullptr, bool engagePulse = false);
 
   // ---- what the renderer needs
   [[nodiscard]] const CrewDef* host() const { return host_; }

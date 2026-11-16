@@ -1,4 +1,5 @@
 #pragma once
+#include "Input.h"
 #include "Gl.h"
 
 // A free-fly FPS camera: WASD + mouse look, Shift to sprint, right mouse to
@@ -14,7 +15,7 @@ public:
   float aim = 0.0f;      // smoothed 0..1, 1 = fully aimed
 
   void look(float dxPixels, float dyPixels, float sensitivity);
-  void update(GLFWwindow* window, float dt, bool aiming);
+  void update(const Input& in, float dt, bool aiming);
 
   glm::vec3 forward() const;
   glm::vec3 right() const;

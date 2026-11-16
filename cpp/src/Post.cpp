@@ -171,13 +171,12 @@ Post::Result Post::act() {
   return Result::None;
 }
 
-Post::Result Post::update(GLFWwindow* window, const char* scripted, bool engagePulse) {
+Post::Result Post::update(const Input& in, const char* scripted, bool engagePulse) {
   if (!open_) return Result::None;
   noticeT_ += 1.0f / 60.0f;   // only drives a fade
 
-  auto down = [&](int a, int b, const char* token) {
-    return (window && (glfwGetKey(window, a) == GLFW_PRESS ||
-                       (b && glfwGetKey(window, b) == GLFW_PRESS))) ||
+  auto down = [&](Key a, Key b, const char* token) {
+    return in.held(a, b) ||
            (scripted && std::strcmp(scripted, token) == 0);
   };
   auto edge = [&](bool now, bool& prev) {
@@ -187,9 +186,9 @@ Post::Result Post::update(GLFWwindow* window, const char* scripted, bool engageP
   };
 
   // Tab and the two arrow pairs all switch halves: there are only two.
-  const bool tabKey = window && glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS;
-  if (edge(down(GLFW_KEY_LEFT, GLFW_KEY_A, "left"), prevLeft_) |
-      edge(down(GLFW_KEY_RIGHT, GLFW_KEY_D, "right"), prevRight_) |
+  const bool tabKey = in.held(Key::Tab);
+  if (edge(down(Key::Left, Key::A, "left"), prevLeft_) |
+      edge(down(Key::Right, Key::D, "right"), prevRight_) |
       edge(tabKey, prevTab_)) {
     tab_ = tab_ == Tab::Service ? Tab::Bounties : Tab::Service;
     audio::play(Sfx::UiMove);
@@ -198,14 +197,14 @@ Post::Result Post::update(GLFWwindow* window, const char* scripted, bool engageP
   const int n = tab_ == Tab::Service ? serviceRows() : (int)bountyIds_.size();
   if (n > 0) {
     int& r = rows_[(int)tab_];
-    if (edge(down(GLFW_KEY_UP, GLFW_KEY_W, "up"), prevUp_)) { r = (r + n - 1) % n; audio::play(Sfx::UiMove); }
-    if (edge(down(GLFW_KEY_DOWN, GLFW_KEY_S, "down"), prevDown_)) { r = (r + 1) % n; audio::play(Sfx::UiMove); }
+    if (edge(down(Key::Up, Key::W, "up"), prevUp_)) { r = (r + n - 1) % n; audio::play(Sfx::UiMove); }
+    if (edge(down(Key::Down, Key::S, "down"), prevDown_)) { r = (r + 1) % n; audio::play(Sfx::UiMove); }
   }
 
   // Enter, F or E acts. E as well because it is the key you walked up and
   // talked with, and reaching for another one to take a job is friction.
-  const bool use = down(GLFW_KEY_ENTER, GLFW_KEY_F, "use") ||
-                   (window && glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) || engagePulse;
+  const bool use = down(Key::Enter, Key::F, "use") ||
+                   in.held(Key::E) || engagePulse;
   if (edge(use, prevUse_)) {
     // What the press did decides what it sounds like: money out is a
     // purchase, money in a sale or a paid bounty, a new job taken a
@@ -228,7 +227,7 @@ Post::Result Post::update(GLFWwindow* window, const char* scripted, bool engageP
   // Escape or Backspace leaves. Not Q: Q undocks in the station underneath,
   // and a close key shared with "leave the station" is one press away from
   // walking you out of an airlock.
-  if (edge(down(GLFW_KEY_ESCAPE, GLFW_KEY_BACKSPACE, "close"), prevClose_)) {
+  if (edge(down(Key::Escape, Key::Backspace, "close"), prevClose_)) {
     open_ = false;
     audio::play(Sfx::UiBack);
     return Result::Closed;

@@ -1,6 +1,5 @@
 #include "NetView.h"
 
-#include "Gl.h"
 #include "Hostile.h"
 #include "Content.h"
 #include "Hud.h"
@@ -86,20 +85,12 @@ std::string upper(std::string s) {
   return s;
 }
 
-std::string g_typed;   // characters typed since the last frame
-void onChar(GLFWwindow*, unsigned int cp) {
-  if (cp < 128 && g_typed.size() < 64) g_typed += (char)cp;
-}
-
 }  // namespace
-
-void installTextInput(GLFWwindow* window) { glfwSetCharCallback(window, onChar); }
 
 void promptForTag(Social& social) {
   social.open = true;
   social.typing = Social::Typing::Tag;
   social.text.clear();
-  g_typed.clear();
 }
 
 void collectRemotes(const net::Client& client, float time, std::vector<DrawItem>& out, const Content* content) {
@@ -236,7 +227,8 @@ void collectShips(const net::Client& client, float time, const glm::vec3& eye, s
   }
 }
 
-bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
+bool socialInput(const Input& in, Social& social, net::Client& client) {
+  social.clock = in.time;
   if (!client.enabled()) {
     social.open = false;
     return false;
@@ -252,15 +244,14 @@ bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
   // ---- typing: everything typed goes in the field; Enter takes it, Escape
   // drops it. No other key means anything until it is done.
   if (social.typing != Social::Typing::None) {
-    for (char c : g_typed) {
+    for (char c : in.typed) {
       const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' ||
                       c == '-' || c == '_' || (c == '#' && social.typing == Social::Typing::Find);
       if (ok && social.text.size() < 21) social.text += (char)std::toupper((unsigned char)c);
     }
-    g_typed.clear();
-    const bool bs = glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
-    const bool en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
-    const bool es = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool bs = in.held(Key::Backspace);
+    const bool en = in.held(Key::Enter, Key::KeypadEnter);
+    const bool es = in.held(Key::Escape);
     if (bs && !social.prevBackspace && !social.text.empty()) social.text.pop_back();
     if (en && !social.prevEnter && !social.text.empty()) {
       if (social.typing == Social::Typing::Tag) client.setTagName(social.text);
@@ -276,24 +267,20 @@ bool socialInput(GLFWwindow* window, Social& social, net::Client& client) {
     social.prevEnter = en;
     social.prevEsc = es;
     // Keep the edge memory of the other keys honest while typing.
-    const int keys[9] = {GLFW_KEY_O, GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_ENTER,
-                         GLFW_KEY_F, GLFW_KEY_I, GLFW_KEY_BACKSPACE, GLFW_KEY_TAB, GLFW_KEY_J};
-    for (int k = 0; k < 9; k++) social.prev[k] = glfwGetKey(window, keys[k]) == GLFW_PRESS;
+    const Key keys[9] = {Key::O, Key::Up, Key::Down, Key::Enter, Key::F, Key::I, Key::Backspace, Key::Tab, Key::J};
+    for (int k = 0; k < 9; k++) social.prev[k] = in.held(keys[k]);
     return true;
   }
-  g_typed.clear();
-
-  const int keys[9] = {GLFW_KEY_O, GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_ENTER,
-                       GLFW_KEY_F, GLFW_KEY_I, GLFW_KEY_BACKSPACE, GLFW_KEY_TAB, GLFW_KEY_J};
+  const Key keys[9] = {Key::O, Key::Up, Key::Down, Key::Enter, Key::F, Key::I, Key::Backspace, Key::Tab, Key::J};
   bool hit[9];
   for (int k = 0; k < 9; k++) {
-    const bool down = glfwGetKey(window, keys[k]) == GLFW_PRESS;
+    const bool down = in.held(keys[k]);
     hit[k] = down && !social.prev[k];
     social.prev[k] = down;
   }
-  social.prevEnter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
-  social.prevBackspace = glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
-  const bool es = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+  social.prevEnter = in.held(Key::Enter);
+  social.prevBackspace = in.held(Key::Backspace);
+  const bool es = in.held(Key::Escape);
   if (es && !social.prevEsc && social.open) social.open = false;
   social.prevEsc = es;
   if (hit[0]) social.open = !social.open;
@@ -521,7 +508,7 @@ void drawHud(Hud& hud, int screenW, int screenH, const net::Client& client, cons
                        tag ? "TWO TO SIXTEEN LETTERS OR NUMBERS - THE SERVER ADDS YOUR FOUR DIGITS"
                            : "THE WHOLE TAG, LIKE NIGHTJAR#4821, OR JUST THE NAME",
                        1.3f, dim);
-      const bool blink = std::fmod(glfwGetTime(), 1.0) < 0.6;
+      const bool blink = std::fmod(social.clock, 1.0) < 0.6;
       hud.rect(bx + 30, by + 74, bw - 60, 36, glm::vec4(0.08f, 0.10f, 0.13f, 1.0f));
       hud.text(bx + 42, by + 82, social.text + (blink ? "_" : " ") + (tag ? "#----" : ""), 2.2f, bright);
       hud.textCentered(screenW * 0.5f, by + bh - 26, "ENTER  DONE      ESC  CANCEL", 1.4f, dim);

@@ -114,7 +114,7 @@ bool Space::withinReach(const Body& b) const {
   return glm::length(b.pos - home) <= reach_;
 }
 
-void Space::update(GLFWwindow* window, Camera& camera, float dt, bool boost,
+void Space::update(const Input& in, Camera& camera, float dt, bool boost,
                    bool forceThrust) {
   if (!loaded_) return;
 
@@ -124,12 +124,12 @@ void Space::update(GLFWwindow* window, Camera& camera, float dt, bool boost,
   glm::vec3 up = glm::normalize(glm::cross(right, fwd));
 
   glm::vec3 wish(0.0f);
-  if (forceThrust || glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wish += fwd;
-  if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wish -= fwd;
-  if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wish += right;
-  if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wish -= right;
-  if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) wish += up;
-  if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) wish -= up;
+  if (forceThrust || in.held(Key::W)) wish += fwd;
+  if (in.held(Key::S)) wish -= fwd;
+  if (in.held(Key::D)) wish += right;
+  if (in.held(Key::A)) wish -= right;
+  if (in.held(Key::Space)) wish += up;
+  if (in.held(Key::LeftControl)) wish -= up;
 
   float topSpeed = maxSpeed_ * (boost ? boost_ : 1.0f);
   if (glm::length(wish) > 1e-4f) {

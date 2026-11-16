@@ -1,4 +1,5 @@
 #pragma once
+#include "Input.h"
 #include "Gl.h"
 #include "Content.h"
 #include "Profile.h"
@@ -23,7 +24,7 @@ public:
   // used only by headless verification (EREBUS_HUB_SCRIPT in main.cpp);
   // ordinary play always passes nullptr and this polls `window` instead.
   // Returns true exactly on the frame the player commits to a mission.
-  bool update(GLFWwindow* window, const char* scriptedKey = nullptr);
+  bool update(const Input& in, const char* scriptedKey = nullptr);
 
   const std::string& selectedMission() const { return missionIds_[missionIndex_]; }
 

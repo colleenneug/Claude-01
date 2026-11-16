@@ -1465,7 +1465,7 @@ void Game::spawnBossIfReady() {
   fireComms(CommsTrigger::BossSpawn);
 }
 
-void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed, bool reloadHeld,
+void Game::update(const Input& in, Camera& camera, float dt, bool firePressed, bool reloadHeld,
                    const ScriptedInput& scripted) {
   if (!loaded_) return;
   // Advanced here, once per frame, rather than inside updateComms: both the
@@ -1507,8 +1507,8 @@ void Game::update(GLFWwindow* window, Camera& camera, float dt, bool firePressed
 
   const bool onTheGround = downed();
   if (!onTheGround && !inputFrozen_) {
-    bool sprint = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-    player_.update(window, dt, glm::radians(camera.yaw), sprint, level_, scripted);
+    bool sprint = in.held(Key::LeftShift);
+    player_.update(in, dt, glm::radians(camera.yaw), sprint, level_, scripted);
   } else {
     // Down: the camera drops to the floor and stays where you fell. You can
     // still look around, which is the difference between being downed and

@@ -1,4 +1,5 @@
 #pragma once
+#include "Input.h"
 #include "Gl.h"
 #include "Content.h"
 #include "Profile.h"
@@ -35,7 +36,7 @@ public:
   // the caller knows to re-read the profile exactly once. `scripted`, when
   // non-null, substitutes for the keyboard — one of "up", "down", "left",
   // "right", "equip", "close" — and is used only by headless verification.
-  bool update(GLFWwindow* window, const char* scripted = nullptr);
+  bool update(const Input& in, const char* scripted = nullptr);
 
   // ---- what the renderer needs
   [[nodiscard]] Column column() const { return column_; }
