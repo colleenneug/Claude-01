@@ -1,258 +1,239 @@
-# Aedan's Playground — session handoff (weekend of 2026-11-15)
+# Aedan's Playground — session handoff
 
-Paste this whole file into a new session to resume. The full plan it refers to
-is `aedans-playground/ROADMAP.md` in the same folder.
+Paste this file into a new session to resume. The plan it refers to is
+`aedans-playground/ROADMAP.md`; build instructions are in `README.md`.
 
-**One-line status:** planning is finished and committed; **no Playground engine
-code exists yet.** Next session starts Milestone 0 (project skeleton).
+**Status:** the application shell (roadmap Milestone 0) is built, tested and
+committed. The window opens, the loop runs, shutdown is clean, and there is a
+`Renderer` slot. Nothing is drawn yet. **Next: the Vulkan renderer (roadmap
+Milestone 1), starting with Vulkan instance creation.**
 
-- Repository: `colleenneug/Claude-01`
-- Branch: `claude/relaxed-cray-5kc2fl` (pushed, up to date with origin, no pull request open)
-- Commits this session: `d065ae6` (roadmap), then the commit that adds this file
-
-Standing coding guidelines for this project: modern C++20 (smart pointers,
-RAII, `std::span`, designated initialisers); no over-engineering, subsystems
-decoupled and simple; clean, well-commented, production-ready code; strict
-error handling and logging for graphics API initialisation.
+- Repository `colleenneug/Claude-01`, branch `claude/relaxed-cray-5kc2fl`, no pull request open.
+- Standing guidelines: modern C++20 (smart pointers, RAII, `std::span`,
+  designated initialisers); no over-engineering; clean, commented,
+  production-ready code; strict error handling and logging for graphics
+  initialisation.
+- Decisions accepted: C++20 with `tl::expected`; Windows and Linux only;
+  Playground lives in this repository; minimum GPU is Vulkan 1.3 with
+  descriptor indexing; namespace `playground`, targets `playground_*`.
 
 ---
 
 ## 1. Current Architecture State
 
-### What the Playground is
-
-A C++20 / Vulkan engine that will host the game Erebus Cradle. Today it is a
-folder with two documents. Nothing compiles from it yet.
-
-### What already works in the repository (not written this session)
-
-| Tree | State | Verified this session |
-|---|---|---|
-| `cpp/` | The working game. ~22,500 lines of C++17 on OpenGL 4.1 with GLFW, GLEW, GLM and miniaudio. Campaign, hub, open space, co-op over its own UDP layer, content in `.cfg` files under `cpp/content/`. | Read, not built. |
-| `engine/` | Earlier C++20 blueprint, namespace `erebus`. Fixed-timestep loop, sparse-set ECS, player controller, weapon model and CPU clustered-light binner. No third-party dependencies. | Built with CMake 3.28 / GCC 13.3 and `erebus_engine_smoke` ran with 0 failures. |
-| `engine/src/render/vulkan/VulkanDevice.cpp` | A bring-up checklist in comments. No Vulkan device exists. | Read. |
-| `engine/shaders/*` | PBR, cluster-assign and volumetric shaders, written but never run on a GPU. | Not run. |
-
-### How the existing pieces connect
-
-- In `cpp/`, gameplay fills a `std::vector<DrawItem>` through the abstract
-  `SceneSource` (`cpp/src/Scene.h`, `cpp/src/Draw.h`), and
-  `Renderer::renderFrame(scene, camera, time, dt)` draws it. This is the seam
-  the port will follow.
-- That seam leaks in two ways, which are the real work of the port:
-  `cpp/src/Gl.h` is included by nearly every header, and ten gameplay files
-  call GLFW directly for input.
-- `engine/` is not wired into `cpp/` at all.
-
-### Planned Playground layering (decided, not built)
-
 ```
-game/      Erebus Cradle: missions, hub, space, HUD, networking
-engine/    ecs · scene · physics · audio · assets · input
-render/    frame passes · materials · render world
-gpu/       Vulkan: device, swapchain, resources, commands
-platform/  window · raw input events · clock · filesystem
-core/      log · assert · result · memory · handles · math
+app/main.cpp                 parses options, starts logging, creates the Application, runs it
+  └─ engine/  Application    owns Platform -> Window -> Renderer; runs the loop
+              Renderer       abstract interface: name, onFramebufferResized, renderFrame
+       └─ platform/ Platform GLFW init/terminate (RAII), GLFW errors -> log, Ctrl+C flag
+                    Window   RAII GLFW window, GLFW_NO_API, resize flag, no GLFW in header
+            └─ core/ Result  tl::expected<T, Error>; Error = {Errc, sentence}
+                     Log     spdlog behind std::format; console + file; Session (RAII)
+                     Assert  PG_ASSERT (debug), PG_VERIFY (always), fatal()
+                     FrameClock  steady_clock deltas, clamped to 0.25 s
 ```
 
-Dependencies point downward only. Each layer is a static library with its own
-public include folder.
+Each layer is a static library with its own include folder; each may include
+only the layers below it. spdlog and GLFW are private dependencies: no public
+header includes them.
 
-### Decisions already made
+**The loop** (`Application::run`), once per frame:
+1. Events. With a renderer attached and the window visible, events are polled
+   and the loop runs flat out; the renderer's present will set the pace. With
+   no renderer, or while minimised, the loop sleeps in the OS event wait until
+   the next 60 fps deadline.
+2. Stop check, in priority order: Ctrl+C or SIGTERM, then `requestQuit()`,
+   then the window closing.
+3. `FrameClock::tick()` produces a `FrameTime`: delta (clamped), raw delta,
+   elapsed time, frame index.
+4. `UpdateFn(frameTime)`. Keeps running while minimised, because co-op
+   clients must keep simulating.
+5. Render, if a renderer is attached and the window is not minimised. A
+   pending resize is delivered first. A renderer error stops the loop, and
+   `run()` returns it.
+6. Stop after `maxFrames`, if set.
 
-- Vulkan only; no cross-API layer (the D3D12-shaped `RHI.h` in `engine/` is not carried over).
-- Vulkan 1.3 baseline: dynamic rendering, synchronization2, bindless textures.
-- Reverse-Z 32-bit float depth, infinite far plane; Y-flip by negative viewport height.
-- C Vulkan API with our own thin RAII wrappers; no Vulkan-Hpp.
-- RAII for long-lived GPU objects; handles plus a deferred deletion queue for the rest.
-- Keep the existing sparse-set ECS; no EnTT.
-- Fixed-timestep simulation with interpolated rendering, taken from `engine/`.
-- Physics in two stages: existing box colliders behind a query interface, then Jolt behind the same interface.
-- Networking stays in `game/`, using the game's own UDP code.
-- Memory: arenas per frame and per mission, handle-addressed pools, `std::unique_ptr` for subsystems, no `std::shared_ptr`.
-- Errors: fallible functions return a `Result`; every `VkResult` checked; validation errors assert in debug builds.
-- Libraries from the start: GLFW, GLM, volk, vk-bootstrap, Vulkan Memory Allocator, glslc, spdlog, tl::expected, Dear ImGui, miniaudio, doctest.
-- Libraries added later on need: Tracy, Jolt, cgltf or fastgltf, stb_image, KTX-Software, meshoptimizer, SPIRV-Reflect, enkiTS.
-- Build: CMake presets plus a vcpkg manifest.
+**Shutdown** (`Application::shutdown`, also called by the destructor) destroys
+the renderer, then the window, then GLFW, logging each step. The renderer goes
+first so that a Vulkan surface never outlives its window.
 
-### Milestones
+**Verified this session** (GCC 13.3 and Clang 18.1, Debug; plus ASan + UBSan):
 
-| # | Milestone | Exit test | Status |
-|---|---|---|---|
-| 0 | Skeleton | Window opens, logs, closes cleanly; tests run | **Next** |
-| 1 | Vulkan bring-up | One triangle, zero validation messages, survives resize | Not started |
-| 2 | Renderer foundations | Thousands of meshes with a fly camera | Not started |
-| 3 | Engine core | ECS scene at a fixed simulation rate | Not started |
-| 4 | Visual parity | A mission scene matches the `cpp/` build | Not started |
-| 5 | Host Erebus Cradle | Mission 1 (HOME), then hub, then co-op | Not started |
-| 6 | Better results | Clustered lights, volumetrics, TAA, contact shadows, reflections | Not started |
+| Check | Result |
+|---|---|
+| Build with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror` | 0 warnings, GCC and Clang |
+| `xvfb-run -a ctest`: core_tests, app_tests, app_smoke, app_no_display | 4/4 pass, all three builds |
+| `ctest` with no display | core and no-display tests pass; window tests reported as skipped |
+| Idle pacing | 120 frames in 1.98 s (60 fps), no busy spin |
+| Ctrl+C during a run | "interrupted", clean shutdown, exit code 0 |
+| No display | exit code 1, log line "start-up failed (platform failure): GLFW could not initialise: X11: The DISPLAY environment variable is missing" |
+| Sanitizers | no reports, including the failure path |
 
----
+**Vulkan works in the cloud container.** Mesa's software driver (llvmpipe)
+provides a Vulkan 1.4 device with every feature the roadmap requires (dynamic
+rendering, synchronization2, timeline semaphores, descriptor indexing, runtime
+descriptor arrays, partially bound descriptors, buffer device address). The
+validation layer is installed, and GLFW reports the surface extensions
+`VK_KHR_surface` and `VK_KHR_xcb_surface` under Xvfb. Milestone 1's
+"zero validation messages" test can therefore run in the container.
+
+**Packages installed in the container this session** (they disappear when the
+container is reclaimed unless saved in the environment's setup script):
+
+```bash
+apt-get update && apt-get install -y libglfw3-dev libglm-dev libspdlog-dev doctest-dev mesa-vulkan-drivers vulkan-tools libvulkan-dev vulkan-validationlayers glslc
+```
+
+`xvfb-run` was already installed.
 
 ## 2. Exact Files & Classes Modified
 
-Created this session:
+All new, under `aedans-playground/`:
 
 | File | Contents |
 |---|---|
-| `aedans-playground/ROADMAP.md` | The architecture roadmap (385 lines). |
-| `aedans-playground/HANDOFF.md` | This file. |
+| `CMakeLists.txt` | Root project: C++20, options for warnings-as-errors, sanitizers and tests; finds glfw3, spdlog and doctest |
+| `cmake/ProjectOptions.cmake` | `playground_configure_target()`: warning flags per compiler; global sanitizer flags |
+| `CMakePresets.json` | `debug`, `release`, `asan` (Ninja, system packages); `windows` (VS 2022 + vcpkg) |
+| `vcpkg.json` | glfw3, spdlog, doctest; baseline `8f363bdc…` |
+| `README.md` | Layout, build and run instructions |
+| `third_party/tl/expected.hpp`, `README.md` | tl::expected v1.3.1, unmodified, CC0, with its SHA-256 recorded |
+| `core/include/playground/core/Types.h` | `u8`…`u64`, `i8`…`i64`, `f32`, `f64`, `usize` |
+| `core/include/playground/core/Result.h` | `Errc`, `describe(Errc)`, `Error`, `Result<T>`, `Status`, `fail()` |
+| `core/include/playground/core/Log.h`, `core/src/Log.cpp` | `log::Level`, `Category`, `Config`, `Session`, `init()`, `trace()`…`critical()`, `flush()` |
+| `core/include/playground/core/Assert.h`, `core/src/Assert.cpp` | `PG_ASSERT`, `PG_VERIFY`, `fatal()`, `debuggerAttached()` |
+| `core/include/playground/core/FrameClock.h`, `core/src/FrameClock.cpp` | `FrameTime`, `FrameClock` |
+| `platform/include/playground/platform/Platform.h`, `platform/src/Platform.cpp` | `Platform` |
+| `platform/include/playground/platform/Window.h`, `platform/src/Window.cpp` | `Extent2D`, `WindowDesc`, `Window` |
+| `engine/include/playground/engine/Renderer.h` | `Renderer` (abstract) |
+| `engine/include/playground/engine/Application.h`, `engine/src/Application.cpp` | `ApplicationConfig`, `UpdateFn`, `StopReason`, `describe(StopReason)`, `Application` |
+| `app/main.cpp` | Option parsing, `TitleFpsCounter` (frame rate in the title bar) |
+| `tests/core_tests.cpp` | 14 tests: Result, FrameClock, Log, Assert |
+| `tests/app_tests.cpp` | 9 tests with a `FakeRenderer`: frame limit, update order, quit, renderer error, shutdown order, single Platform, bad config |
+| `tests/CMakeLists.txt` | CTest: core_tests, app_tests (skip code 77), app_smoke, app_no_display |
+| `CMakeLists.txt` files in `core/`, `platform/`, `engine/`, `app/` | One library or executable each |
 
-No source files, classes, shaders or build files were created or changed.
-Nothing under `cpp/`, `engine/`, `src/`, `server/` or `docs/` was touched.
-
-Files read to ground the plan, and worth re-reading before writing code:
-
-- `engine/include/erebus/core/GameLoop.h`, `engine/src/core/GameLoop.cpp`
-- `engine/include/erebus/render/RHI.h`
-- `engine/src/render/vulkan/VulkanDevice.cpp`
-- `engine/README.md`, `engine/CMakeLists.txt`
-- `cpp/src/Scene.h`, `cpp/src/Draw.h`, `cpp/src/Renderer.h`
-- `cpp/CMakeLists.txt`, `cpp/README.md`
-
----
+Also changed: the repository's `.gitignore` now ignores `aedans-playground/build/`.
 
 ## 3. Code Snippet of the Core Loop/Active Component
 
-No code was finalised this session. The block below is the **existing, tested**
-loop from `engine/src/core/GameLoop.cpp` (class `erebus::GameLoop`), which the
-roadmap carries into the Playground unchanged at Milestone 3. It is the closest
-thing to an active core loop.
+The heart of `Application::run()` in `engine/src/Application.cpp`:
 
 ```cpp
-FrameStats GameLoop::tick() {
-  const Clock::time_point now = Clock::now();
-
-  // The first tick has no previous timestamp. Treating it as "zero elapsed"
-  // rather than "elapsed since epoch" is what stops the first frame after a
-  // level load from running a thousand catch-up steps.
-  if (!started_) {
-    previous_ = now;
-    started_  = true;
+while (true) {
+  // 1. Events.
+  const bool idle = !renderer_ || window_->isMinimized();
+  if (idle) {
+    waitForEventsUntil(nextIdleFrame);
+    nextIdleFrame = std::max(nextIdleFrame + idleInterval, Clock::now());
+  } else {
+    platform_->pollEvents();
   }
 
-  const f64 real = std::chrono::duration<f64>(now - previous_).count();
-  previous_ = now;
+  // 2. Stop?
+  if (const StopReason reason = pendingStopReason(); reason != StopReason::None) {
+    stopReason_ = reason;
+    break;
+  }
 
-  stats_ = FrameStats{};
-  stats_.realDeltaSeconds = real;
+  // 3. Clock.
+  const FrameTime time = clock_.tick();
 
-  // Clamp a single frame's contribution before it ever reaches the
-  // accumulator. A breakpoint in a debugger produces an elapsed time of
-  // minutes; without this the next tick tries to simulate all of it.
-  const f32 clampedReal = std::min(static_cast<f32>(real), 0.25f);
-  accumulator_ += clampedReal * timeScale_;
+  // 4. Update.
+  if (update_) update_(time);
 
-  u32 steps = 0;
-  while (accumulator_ >= kFixedDelta) {
-    if (steps >= maxSteps_) {
-      // Catch-up cap reached. Drop the surplus: running slow is recoverable,
-      // teleporting after a hitch is not.
-      accumulator_ = 0.0f;
-      stats_.clamped = true;
+  // 5. Render.
+  if (renderer_ && !window_->isMinimized()) {
+    if (Status frame = renderFrame(time); !frame) {
+      log::error(Category::Engine, "renderer \"{}\" failed on frame {}: {}", renderer_->name(), time.frameIndex,
+                 frame.error().message);
+      stopReason_ = StopReason::RendererError;
+      result = std::move(frame);
+      ++framesRun_;
       break;
     }
-    if (simulate_) simulate_(kFixedDelta);
-    accumulator_ -= kFixedDelta;
-    ++steps;
   }
 
-  stats_.simulationSteps = steps;
-  // How far past the last simulated state the display is. Render systems
-  // interpolate previous->current transforms by this.
-  stats_.interpolation = accumulator_ / kFixedDelta;
+  ++framesRun_;
+  recordFrameStats(time);
 
-  if (render_) render_(stats_.interpolation, stats_);
-  return stats_;
-}
-
-void GameLoop::run(const std::function<bool()>& shouldContinue) {
-  while (running_) {
-    if (shouldContinue && !shouldContinue()) break;
-    tick();
+  // 6. Frame limit.
+  if (config_.maxFrames != 0 && framesRun_ >= config_.maxFrames) {
+    stopReason_ = StopReason::FrameLimit;
+    break;
   }
 }
 ```
 
-Facts about it: `kFixedDelta` is 1/120 s; `maxSteps_` defaults to 8;
-`setTimeScale(0)` pauses simulation while rendering continues; `simulate_` and
-`render_` are `std::function` callbacks passed to the constructor.
+The renderer contract it calls (`engine/include/playground/engine/Renderer.h`):
 
-The planned per-frame order in the Playground is:
-input snapshot → fixed updates (zero or more) → extract render world → render.
-
----
+```cpp
+class Renderer {
+ public:
+  virtual ~Renderer() = default;
+  [[nodiscard]] virtual std::string_view name() const noexcept = 0;
+  [[nodiscard]] virtual Status onFramebufferResized(platform::Extent2D size) = 0;  // never empty
+  [[nodiscard]] virtual Status renderFrame(const FrameTime& time) = 0;
+};
+```
 
 ## 4. Known Bugs & Incomplete Tasks
 
-No bugs were introduced; no code changed. What is open:
-
-**Not built**
-
-- Everything in the Playground. All seven milestones are ahead.
+No known bugs.
 
 **Not verified**
+- **The Windows build.** The `windows` presets and `vcpkg.json` have never
+  been run. vcpkg will supply GLFW 3.4 rather than 3.3; only APIs present in
+  both versions are used, but MSVC may raise warnings GCC and Clang did not,
+  and `/WX` turns those into errors. Turn off `PLAYGROUND_WARNINGS_AS_ERRORS`
+  if that blocks a first build, and report the warnings.
+- **Resize delivery to the renderer.** The code path exists, but no test
+  covers it: Xvfb has no window manager to resize a window with. It will be
+  exercised by Milestone 1's swapchain recreation on a real desktop.
 
-- Whether Vulkan code can run in the cloud container used for these sessions.
-  `apt-cache` showed no install candidate for `mesa-vulkan-drivers` or
-  `libvulkan-dev`, but the package lists had not been refreshed, so this is
-  unresolved either way. Until it is settled, GPU milestones need confirming on
-  a real machine.
-- `glslc`, `glslangValidator` and `vulkaninfo` are not installed in the container.
-- The `cpp/` game was not built this session.
-- Whether vcpkg is available in the container (the Windows build of `cpp/` uses it).
+**Deliberately not done yet**
+- **No renderer**, so nothing is drawn; `main.cpp` has a comment where the
+  Vulkan renderer attaches.
+- **No input layer.** Gameplay cannot read the keyboard or mouse yet (roadmap §4.3).
+- **The update step is variable-rate.** The fixed-timestep loop from
+  `engine/` (`erebus::GameLoop`) replaces it at roadmap Milestone 3, inside
+  `Application::run`.
+- **Container packages not saved.** The apt packages above must be reinstalled
+  in a new container unless they are added to the environment's setup script.
 
-**Decisions waiting on the owner** (roadmap recommendations in brackets)
-
-1. Language level: strict C++20 with `tl::expected`, or C++23 for `std::expected`? [C++20]
-2. Is macOS a target? `cpp/` targets OpenGL 4.1, the newest macOS supports;
-   Vulkan there means MoltenVK and a feature check before Milestone 1. [Windows and Linux only]
-3. Does the Playground stay in this repository or move to its own? [stay here]
-4. Minimum GPU: Vulkan 1.3 with descriptor indexing. [accept]
-
-**Not yet decided at all**
-
-- The Playground's C++ namespace and CMake target prefix. Proposed: `playground`.
-- Whether tested code from `engine/` is moved or copied into the Playground.
-
----
+**Open, not yet decided**
+- Whether tested code from `engine/` is moved or copied into the Playground
+  (matters at Milestone 3).
 
 ## 5. Immediate Next Steps for Next Weekend
 
-Milestone 0, in this order. Exit test: a window opens, logs its start-up,
-closes cleanly, and the test target runs.
+Roadmap Milestone 1: one triangle on screen with zero validation messages,
+surviving resize and minimise, with a clean shutdown. Order:
 
-1. **Answer the four open decisions in §4** (or accept the recommendations).
-2. **`aedans-playground/CMakeLists.txt`** — root project, C++20 with extensions
-   off, warnings on, one static library per layer. Start with `core` and
-   `platform` only.
-3. **`aedans-playground/CMakePresets.json`** — `debug`, `release`, and a debug
-   preset with address and undefined-behaviour sanitizers.
-4. **`aedans-playground/vcpkg.json`** — manifest with only what Milestone 0
-   needs: `glfw3`, `glm`, `spdlog`, `tl-expected`, `doctest`. Vulkan packages
-   wait for Milestone 1.
-5. **`core/include/playground/core/Log.h`** + `core/src/Log.cpp` — the first
-   real code. Thin wrapper over spdlog: severity levels, a category per
-   subsystem, console and file sinks. Vulkan validation output will be routed
-   here in Milestone 1.
-6. **`core/include/playground/core/Assert.h`** — assert with
-   `std::source_location`, a debugger break, and a fatal path that logs,
-   flushes and exits.
-7. **`core/include/playground/core/Result.h`** — `Result<T>` alias over
-   `tl::expected<T, Error>`, where `Error` carries a code and a message.
-8. **`platform/include/playground/platform/Window.h`** + `platform/src/Window.cpp`
-   — RAII GLFW window created with `GLFW_NO_API`, returning `Result`. No GLFW
-   type appears in the header.
-9. **`app/main.cpp`** — initialise logging, create the window, pump events
-   until close, shut down in reverse order.
-10. **`tests/core_tests.cpp`** — doctest target covering `Result` and the
-    assert-free parts of `core`.
+1. **Dependencies.** Add `vulkan-headers`, `vulkan-loader`, `volk`,
+   `vk-bootstrap` and `vulkan-memory-allocator` to `vcpkg.json`, and
+   `find_package(Vulkan REQUIRED)` to the root `CMakeLists.txt`. On Linux,
+   check which of volk, vk-bootstrap and VMA are packaged; vendor or fetch
+   the rest, pinned.
+2. **New layer `gpu/`** (`playground_gpu`, depends on platform). First file:
+   `gpu/include/playground/gpu/VulkanCheck.h` — a helper that turns a
+   `VkResult` into a `Status` naming the call, the result code as text and the
+   call site.
+3. **`gpu/src/Instance.cpp`** — `Instance::create()` returning
+   `Result<Instance>`: Vulkan 1.3, the GLFW surface extensions from
+   `Platform::requiredVulkanInstanceExtensions()`, the validation layer and
+   debug messenger in debug builds, and validation messages routed into
+   `log::Category::Gpu`. In debug builds a validation error is a `PG_ASSERT`
+   failure.
+4. Then surface, physical-device selection (logging why each rejected device
+   failed), logical device and queues, swapchain with recreation, per-frame
+   command buffers and synchronisation, and the triangle shader compiled by
+   `glslc` at build time.
+5. **`gpu/VulkanRenderer`** implementing `engine::Renderer`, attached in
+   `app/main.cpp` where the comment marks it.
+6. Extend the tests: a Vulkan smoke test that renders N frames under Xvfb on
+   llvmpipe and fails on any validation message.
 
-Then, before Milestone 1 begins: settle how Vulkan code will be verified
-(try installing a software Vulkan driver in the container; otherwise plan to
-confirm on a real machine), and install the Vulkan SDK pieces (`glslc`,
-validation layers).
-
-**To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` and
-`aedans-playground/ROADMAP.md` on branch `claude/relaxed-cray-5kc2fl`, then
-start Milestone 0 at step 2."
+**To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
+branch `claude/relaxed-cray-5kc2fl`, reinstall the packages it lists, confirm
+`xvfb-run -a ctest --preset debug` passes, then start Milestone 1 at step 1."

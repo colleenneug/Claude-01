@@ -1,0 +1,3 @@
+add_executable(playground_app main.cpp)
+target_link_libraries(playground_app PRIVATE playground::engine)
+playground_configure_target(playground_app)

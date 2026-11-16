@@ -3,3 +3,6 @@ cpp/build/
 
 # Engine blueprint build output
 engine/build/
+
+# Aedan's Playground build output
+aedans-playground/build/
