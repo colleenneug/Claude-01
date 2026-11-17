@@ -36,6 +36,7 @@ enum class Errc : u8 {
   Unsupported,         // this machine lacks something we require
   IoFailure,           // a file could not be read or written
   RendererFailure,     // the renderer could not produce a frame
+  GpuFailure,          // a graphics API call failed (the message names the call)
 };
 
 // Named describe(), not toString(): doctest (and other libraries) look up an
@@ -51,6 +52,7 @@ enum class Errc : u8 {
     case Errc::Unsupported:        return "unsupported";
     case Errc::IoFailure:          return "I/O failure";
     case Errc::RendererFailure:    return "renderer failure";
+    case Errc::GpuFailure:         return "GPU failure";
   }
   return "unknown";
 }

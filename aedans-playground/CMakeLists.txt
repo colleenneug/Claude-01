@@ -6,12 +6,11 @@
 #
 #    playground_core      logging, asserts, Result, frame clock   (no deps up)
 #    playground_platform  GLFW window, events, Ctrl+C handling    -> core
+#    playground_gpu       Vulkan instance, surface, GPU choice,
+#                         logical device and queues              -> platform
 #    playground_engine    Application: owns the loop and the
 #                         renderer slot                           -> platform
-#    playground_app       the executable                          -> engine
-#
-#  The gpu/ and render/ layers arrive with the Vulkan renderer (roadmap
-#  Milestone 1) and slot in between platform and engine.
+#    playground_app       the executable                    -> engine, gpu
 # =============================================================================
 cmake_minimum_required(VERSION 3.24)
 project(aedans_playground VERSION 0.1.0 LANGUAGES CXX)
@@ -39,6 +38,9 @@ include(cmake/ProjectOptions.cmake)
 # time, so a configure never depends on the network.
 find_package(glfw3 3.3 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+# Vulkan headers and loader: the Vulkan SDK on Windows (VULKAN_SDK is set by
+# its installer), libvulkan-dev on Ubuntu.
+find_package(Vulkan 1.3 REQUIRED)
 
 # tl::expected is a single vendored header (see third_party/tl/README.md).
 # SYSTEM, so its internals are not held to our warning flags.
@@ -48,6 +50,7 @@ target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRE
 # --- Layers ------------------------------------------------------------------
 add_subdirectory(core)
 add_subdirectory(platform)
+add_subdirectory(gpu)
 add_subdirectory(engine)
 add_subdirectory(app)
 

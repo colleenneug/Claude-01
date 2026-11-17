@@ -1,21 +1,25 @@
 // =============================================================================
 //  Aedan's Playground — entry point.
 //
-//  Start-up order: logging -> application (platform, window) -> loop.
-//  Shutdown is the reverse, by scope. Logging comes first and goes last so
-//  that every other step, including a failed start-up, is recorded.
+//  Start-up order: logging -> application (platform, window) -> GPU -> loop.
+//  Shutdown is the reverse. Logging comes first and goes last so that every
+//  other step, including a failed start-up, is recorded.
 //
 //  Usage: playground_app [--frames N] [--verbose] [--log-file PATH]
+//                        [--validation | --no-validation]
 //
-//  Exit codes: 0 clean exit, 1 start-up or runtime failure, 2 bad arguments.
+//  Exit codes: 0 clean exit, 1 start-up or runtime failure (including any
+//  Vulkan validation error), 2 bad arguments.
 // =============================================================================
 
 #include "playground/core/Log.h"
 #include "playground/engine/Application.h"
+#include "playground/gpu/Context.h"
 
 #include <charconv>
 #include <cstdio>
 #include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -29,14 +33,17 @@ struct Options {
   u64 frames = 0;  // 0 = until the window is closed
   bool verbose = false;
   std::string logFile = "playground.log";
+  bool validation = gpu::kValidationByDefault;  // on in debug builds
 };
 
 void printUsage() {
   std::puts(
-      "usage: playground_app [--frames N] [--verbose] [--log-file PATH]\n"
+      "usage: playground_app [--frames N] [--verbose] [--log-file PATH] [--validation | --no-validation]\n"
       "  --frames N       run N frames, then exit (used by the automated tests)\n"
       "  --verbose        log at debug level, including frame-time statistics\n"
-      "  --log-file PATH  where to write the log (default: playground.log)");
+      "  --log-file PATH  where to write the log (default: playground.log)\n"
+      "  --validation     turn Vulkan validation on (default in debug builds)\n"
+      "  --no-validation  turn Vulkan validation off (default in release builds)");
 }
 
 Result<Options> parseOptions(std::span<char*> args) {
@@ -55,6 +62,10 @@ Result<Options> parseOptions(std::span<char*> args) {
       if (ec != std::errc{} || end != value->data() + value->size()) {
         return fail(Errc::InvalidArgument, "--frames expects a whole number, got \"{}\"", *value);
       }
+    } else if (arg == "--validation") {
+      options.validation = true;
+    } else if (arg == "--no-validation") {
+      options.validation = false;
     } else if (arg == "--verbose") {
       options.verbose = true;
     } else if (arg == "--log-file") {
@@ -119,20 +130,47 @@ int main(int argc, char** argv) {
   }
   engine::Application& application = **app;
 
-  // No renderer yet: roadmap Milestone 1 attaches the Vulkan one here, e.g.
-  //   auto renderer = gpu::VulkanRenderer::create(application.platform(), application.window());
-  //   if (!renderer) { ...log...; return 1; }
-  //   application.setRenderer(std::move(*renderer));
+  // Vulkan bring-up: instance, surface, GPU, logical device, graphics queue.
+  // Each step logs what it found; a failure names the step and the reason.
+  //
+  // For now the context is owned here. Once the swapchain exists, it moves
+  // into a VulkanRenderer attached with application.setRenderer(), and the
+  // Application takes over the destruction order below.
+  std::optional<gpu::Context> gpuContext;
+  {
+    auto created = gpu::Context::create(application.platform(), application.window(),
+                                        {.applicationName = "Aedan's Playground", .enableValidation = options->validation});
+    if (!created) {
+      log::critical(Category::Gpu, "GPU start-up failed ({}): {}", describe(created.error().code),
+                    created.error().message);
+      return 1;
+    }
+    gpuContext.emplace(std::move(*created));
+  }
+
   TitleFpsCounter fpsCounter(application.window());
   application.setUpdate([&fpsCounter](const FrameTime& time) { fpsCounter.update(time); });
 
   const Status status = application.run();
+
+  // The GPU context goes BEFORE the window: its surface belongs to the
+  // window. shutdown() destroys the window, so the order here matters.
+  gpuContext.reset();
   application.shutdown();
 
   if (!status) {
     log::critical(Category::Engine, "stopped on error ({}): {}", describe(status.error().code),
                   status.error().message);
     return 1;
+  }
+  // Validation errors also arrive during teardown (leaked objects are
+  // reported when the instance is destroyed), so this is checked last.
+  if (const gpu::ValidationCounts counts = gpu::validationCounts(); counts.errors > 0) {
+    log::error(Category::Gpu, "{} Vulkan validation error(s) and {} warning(s) this run; see the log above",
+               counts.errors, counts.warnings);
+    return 1;
+  } else if (counts.warnings > 0) {
+    log::warn(Category::Gpu, "{} Vulkan validation warning(s) this run; see the log above", counts.warnings);
   }
   log::info(Category::Engine, "clean exit");
   return 0;

@@ -12,6 +12,13 @@ add_test(NAME app_tests COMMAND playground_app_tests)
 # Exit code 77 means "no display here": reported as skipped, not failed.
 set_tests_properties(app_tests PROPERTIES SKIP_RETURN_CODE 77 LABELS display)
 
+# --- Vulkan bring-up tests: need a display and a Vulkan driver --------------
+add_executable(playground_gpu_tests gpu_tests.cpp)
+target_link_libraries(playground_gpu_tests PRIVATE playground::gpu doctest::doctest)
+playground_configure_target(playground_gpu_tests)
+add_test(NAME gpu_tests COMMAND playground_gpu_tests)
+set_tests_properties(gpu_tests PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;gpu")
+
 # --- The real executable -----------------------------------------------------
 # Opens a window, runs 120 frames, exits 0.
 add_test(NAME app_smoke COMMAND playground_app --frames 120 --verbose --log-file app_smoke.log)

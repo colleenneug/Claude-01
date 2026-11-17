@@ -35,7 +35,14 @@ function(playground_configure_target target)
       -Wconversion             # implicit narrowing, e.g. double -> float
       -Wnon-virtual-dtor       # deleting through a base pointer must be safe
       -Wold-style-cast
-      -Wnull-dereference)
+      -Wnull-dereference
+      # Vulkan is used with C++20 designated initialisers that name only the
+      # fields that matter: `VkApplicationInfo{.sType = ..., .apiVersion = ...}`.
+      # The standard zero-initialises every field left out, which is exactly
+      # what Vulkan expects, but GCC 13 still warns about each omitted field
+      # (GCC 14 no longer does for designated initialisers). Turned off so
+      # those warnings do not bury real ones.
+      -Wno-missing-field-initializers)
     if(PLAYGROUND_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE -Werror)
     endif()

@@ -1,238 +1,213 @@
 # Aedan's Playground — session handoff
 
-Paste this file into a new session to resume. The plan it refers to is
-`aedans-playground/ROADMAP.md`; build instructions are in `README.md`.
+Paste this file into a new session to resume. The plan is `ROADMAP.md`;
+build, run and troubleshooting instructions are in `README.md`.
 
-**Status:** the application shell (roadmap Milestone 0) is built, tested and
-committed. The window opens, the loop runs, shutdown is clean, and there is a
-`Renderer` slot. Nothing is drawn yet. **Next: the Vulkan renderer (roadmap
-Milestone 1), starting with Vulkan instance creation.**
+**Status:** the application shell and the first half of Vulkan bring-up are
+built, tested and committed: instance (with validation), window surface,
+physical-device selection, logical device, graphics queue. Nothing is drawn
+yet. **Next: the swapchain**, then the first triangle (the rest of roadmap
+Milestone 1).
 
 - Repository `colleenneug/Claude-01`, branch `claude/relaxed-cray-5kc2fl`, no pull request open.
 - Standing guidelines: modern C++20 (smart pointers, RAII, `std::span`,
   designated initialisers); no over-engineering; clean, commented,
   production-ready code; strict error handling and logging for graphics
   initialisation.
-- Decisions accepted: C++20 with `tl::expected`; Windows and Linux only;
-  Playground lives in this repository; minimum GPU is Vulkan 1.3 with
-  descriptor indexing; namespace `playground`, targets `playground_*`.
+- Decisions: C++20 with `tl::expected`; Windows and Linux only; the
+  Playground lives in this repository; minimum GPU Vulkan 1.3 with descriptor
+  indexing; namespace `playground`, targets `playground_*`.
+- Numbering: the user calls this work "Milestone 2"; in `ROADMAP.md` it is
+  the first half of Milestone 1. Same work, different count.
 
 ---
 
 ## 1. Current Architecture State
 
 ```
-app/main.cpp                 parses options, starts logging, creates the Application, runs it
-  └─ engine/  Application    owns Platform -> Window -> Renderer; runs the loop
-              Renderer       abstract interface: name, onFramebufferResized, renderFrame
-       └─ platform/ Platform GLFW init/terminate (RAII), GLFW errors -> log, Ctrl+C flag
-                    Window   RAII GLFW window, GLFW_NO_API, resize flag, no GLFW in header
-            └─ core/ Result  tl::expected<T, Error>; Error = {Errc, sentence}
-                     Log     spdlog behind std::format; console + file; Session (RAII)
-                     Assert  PG_ASSERT (debug), PG_VERIFY (always), fatal()
-                     FrameClock  steady_clock deltas, clamped to 0.25 s
+app/main.cpp      logging -> Application (platform, window) -> gpu::Context -> run
+                  shutdown: gpu::Context, then Application::shutdown(), then log
+  engine/         Application: loop, renderer slot (still empty)
+  gpu/            Context = Instance -> Surface -> PhysicalDeviceInfo -> Device
+  platform/       Platform (GLFW, Ctrl+C), Window (no GL context)
+  core/           Result, Log, Assert, FrameClock
 ```
 
-Each layer is a static library with its own include folder; each may include
-only the layers below it. spdlog and GLFW are private dependencies: no public
-header includes them.
+**Vulkan bring-up** (`gpu::Context::create`), each step logged, each failure
+prefixed with its step ("step 3 (choosing a GPU): ..."):
 
-**The loop** (`Application::run`), once per frame:
-1. Events. With a renderer attached and the window visible, events are polled
-   and the loop runs flat out; the renderer's present will set the pace. With
-   no renderer, or while minimised, the loop sleeps in the OS event wait until
-   the next 60 fps deadline.
-2. Stop check, in priority order: Ctrl+C or SIGTERM, then `requestQuit()`,
-   then the window closing.
-3. `FrameClock::tick()` produces a `FrameTime`: delta (clamped), raw delta,
-   elapsed time, frame index.
-4. `UpdateFn(frameTime)`. Keeps running while minimised, because co-op
-   clients must keep simulating.
-5. Render, if a renderer is attached and the window is not minimised. A
-   pending resize is delivered first. A renderer error stops the loop, and
-   `run()` returns it.
-6. Stop after `maxFrames`, if set.
+1. **Instance** (`Instance.cpp`). Requires loader ≥ 1.3, checks every
+   requested extension (names the missing ones), enables
+   `VK_LAYER_KHRONOS_validation` + `VK_EXT_debug_utils` when validation is on
+   (default in debug builds), and chains a messenger into `vkCreateInstance` so
+   create/destroy messages are caught. If the layer is not installed it warns
+   and continues without it.
+2. **Surface** (`Surface.cpp`) via `glfwCreateWindowSurface`.
+3. **Physical device** (`PhysicalDevice.cpp`). Logs every GPU (name, type,
+   Vulkan version, driver name/version); rejects any lacking Vulkan 1.3,
+   `VK_KHR_swapchain`, the required features, a graphics queue, present
+   support for this window, or surface formats/present modes, listing every
+   reason; scores discrete 1000 > integrated 500 > virtual 200 > CPU 10, +50
+   for one queue family doing both graphics and present. A CPU device is
+   accepted with a warning.
+4. **Logical device** (`Device.cpp`). One queue per distinct family; enables
+   exactly the features from `Requirements.h`; fetches graphics and present
+   queues; destructor waits for idle.
 
-**Shutdown** (`Application::shutdown`, also called by the destructor) destroys
-the renderer, then the window, then GLFW, logging each step. The renderer goes
-first so that a Vulkan surface never outlives its window.
+`gpu/src/Requirements.h` holds the required device extensions and features
+(dynamicRendering, synchronization2, timelineSemaphore, descriptorIndexing,
+runtimeDescriptorArray, descriptorBindingPartiallyBound,
+shaderSampledImageArrayNonUniformIndexing, bufferDeviceAddress) and is used
+by both step 3 (check) and step 4 (enable).
 
-**Verified this session** (GCC 13.3 and Clang 18.1, Debug; plus ASan + UBSan):
+**Validation messages** go to the log under `[gpu]` (error → error, warning →
+warn, info → debug, verbose → trace) and are counted in process-wide
+counters (`gpu::validationCounts()`). `main` exits 1 if any validation error
+occurred during the run, including teardown, so `app_smoke` fails on one.
+
+**Ownership today:** `main.cpp` owns the `gpu::Context` in a
+`std::optional` and resets it before `Application::shutdown()` (the surface
+must die before the window). This is temporary: it moves into a
+`VulkanRenderer` in the renderer slot once there is a swapchain to present
+with. Until then no renderer is attached, so the loop paces itself at 60 fps.
+
+**Verified this session** (GCC 13.3, Clang 18.1, and GCC with ASan + UBSan):
 
 | Check | Result |
 |---|---|
-| Build with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror` | 0 warnings, GCC and Clang |
-| `xvfb-run -a ctest`: core_tests, app_tests, app_smoke, app_no_display | 4/4 pass, all three builds |
-| `ctest` with no display | core and no-display tests pass; window tests reported as skipped |
-| Idle pacing | 120 frames in 1.98 s (60 fps), no busy spin |
-| Ctrl+C during a run | "interrupted", clean shutdown, exit code 0 |
-| No display | exit code 1, log line "start-up failed (platform failure): GLFW could not initialise: X11: The DISPLAY environment variable is missing" |
-| Sanitizers | no reports, including the failure path |
+| Build, warnings as errors | 0 warnings, GCC and Clang |
+| `xvfb-run -a ctest`: core, app, gpu, app_smoke, app_no_display | 5/5 pass in all three builds |
+| `ctest` without a display | core and no-display pass; app, gpu and smoke skipped |
+| Validation messenger | an injected error and warning are logged and counted |
+| A real run, validation on | 0 validation messages; teardown device → surface → instance → window → GLFW |
+| `--no-validation` | instance created with validation off |
+| Validation layer hidden (`VK_LOADER_LAYERS_DISABLE=~all~`) | warning, runs without validation, exit 0 |
 
-**Vulkan works in the cloud container.** Mesa's software driver (llvmpipe)
-provides a Vulkan 1.4 device with every feature the roadmap requires (dynamic
-rendering, synchronization2, timeline semaphores, descriptor indexing, runtime
-descriptor arrays, partially bound descriptors, buffer device address). The
-validation layer is installed, and GLFW reports the surface extensions
-`VK_KHR_surface` and `VK_KHR_xcb_surface` under Xvfb. Milestone 1's
-"zero validation messages" test can therefore run in the container.
-
-**Packages installed in the container this session.** These commands are now
-saved as the cloud environment's setup script, so new sessions install them
-automatically (not yet proven: it first runs when a fresh container is built):
-
-```bash
-apt-get update && apt-get install -y libglfw3-dev libglm-dev libspdlog-dev doctest-dev mesa-vulkan-drivers vulkan-tools libvulkan-dev vulkan-validationlayers glslc
-```
-
-`xvfb-run` was already installed.
+All on Mesa llvmpipe (software Vulkan 1.4) under Xvfb. **Not yet run on a
+real GPU, and not on Windows.**
 
 ## 2. Exact Files & Classes Modified
 
-All new, under `aedans-playground/`:
+New this session, under `aedans-playground/`:
 
 | File | Contents |
 |---|---|
-| `CMakeLists.txt` | Root project: C++20, options for warnings-as-errors, sanitizers and tests; finds glfw3, spdlog and doctest |
-| `cmake/ProjectOptions.cmake` | `playground_configure_target()`: warning flags per compiler; global sanitizer flags |
-| `CMakePresets.json` | `debug`, `release`, `asan` (Ninja, system packages); `windows` (VS 2022 + vcpkg) |
-| `vcpkg.json` | glfw3, spdlog, doctest; baseline `8f363bdc…` |
-| `README.md` | Layout, build and run instructions |
-| `third_party/tl/expected.hpp`, `README.md` | tl::expected v1.3.1, unmodified, CC0, with its SHA-256 recorded |
-| `core/include/playground/core/Types.h` | `u8`…`u64`, `i8`…`i64`, `f32`, `f64`, `usize` |
-| `core/include/playground/core/Result.h` | `Errc`, `describe(Errc)`, `Error`, `Result<T>`, `Status`, `fail()` |
-| `core/include/playground/core/Log.h`, `core/src/Log.cpp` | `log::Level`, `Category`, `Config`, `Session`, `init()`, `trace()`…`critical()`, `flush()` |
-| `core/include/playground/core/Assert.h`, `core/src/Assert.cpp` | `PG_ASSERT`, `PG_VERIFY`, `fatal()`, `debuggerAttached()` |
-| `core/include/playground/core/FrameClock.h`, `core/src/FrameClock.cpp` | `FrameTime`, `FrameClock` |
-| `platform/include/playground/platform/Platform.h`, `platform/src/Platform.cpp` | `Platform` |
-| `platform/include/playground/platform/Window.h`, `platform/src/Window.cpp` | `Extent2D`, `WindowDesc`, `Window` |
-| `engine/include/playground/engine/Renderer.h` | `Renderer` (abstract) |
-| `engine/include/playground/engine/Application.h`, `engine/src/Application.cpp` | `ApplicationConfig`, `UpdateFn`, `StopReason`, `describe(StopReason)`, `Application` |
-| `app/main.cpp` | Option parsing, `TitleFpsCounter` (frame rate in the title bar) |
-| `tests/core_tests.cpp` | 14 tests: Result, FrameClock, Log, Assert |
-| `tests/app_tests.cpp` | 9 tests with a `FakeRenderer`: frame limit, update order, quit, renderer error, shutdown order, single Platform, bad config |
-| `tests/CMakeLists.txt` | CTest: core_tests, app_tests (skip code 77), app_smoke, app_no_display |
-| `CMakeLists.txt` files in `core/`, `platform/`, `engine/`, `app/` | One library or executable each |
+| `gpu/include/playground/gpu/VulkanCheck.h`, `gpu/src/VulkanCheck.cpp` | `check(VkResult, call)` → `Status`; `resultName`, `resultHint`, `versionString` |
+| `gpu/include/playground/gpu/Instance.h`, `gpu/src/Instance.cpp` | `InstanceDesc`, `Instance`, `ValidationCounts`, `validationCounts()`, `resetValidationCounts()`, `kRequiredApiVersion`, `kValidationByDefault` |
+| `gpu/include/playground/gpu/Surface.h`, `gpu/src/Surface.cpp` | `Surface` |
+| `gpu/src/Requirements.h` | `detail::kRequiredDeviceExtensions`, `detail::FeatureChain`, `requestEngineFeatures`, `missingFeatures` |
+| `gpu/include/playground/gpu/PhysicalDevice.h`, `gpu/src/PhysicalDevice.cpp` | `QueueFamilies`, `PhysicalDeviceInfo`, `selectPhysicalDevice()`, `describe(VkPhysicalDeviceType)` |
+| `gpu/include/playground/gpu/Device.h`, `gpu/src/Device.cpp` | `Device` |
+| `gpu/include/playground/gpu/Context.h`, `gpu/src/Context.cpp` | `ContextDesc`, `Context` |
+| `gpu/CMakeLists.txt` | `playground_gpu`: PUBLIC platform + `Vulkan::Vulkan`, PRIVATE glfw |
+| `tests/gpu_tests.cpp` | 7 tests: `check()`, missing extension, messenger counting, validation off, full bring-up, repeated bring-up, step-named failure |
 
-Also changed: the repository's `.gitignore` now ignores `aedans-playground/build/`.
+Changed:
+
+| File | Change |
+|---|---|
+| `CMakeLists.txt` | `find_package(Vulkan 1.3 REQUIRED)`; `add_subdirectory(gpu)` |
+| `cmake/ProjectOptions.cmake` | `-Wno-missing-field-initializers` (GCC 13 warns on every partial designated initialiser of a Vulkan struct) |
+| `core/include/playground/core/Result.h` | `Errc::GpuFailure` |
+| `app/main.cpp` | creates and destroys `gpu::Context`; `--validation` / `--no-validation`; exit 1 on validation errors |
+| `app/CMakeLists.txt` | links `playground::gpu` |
+| `tests/CMakeLists.txt` | `gpu_tests` (skip code 77, labels display;gpu) |
+| `README.md` | Windows and Linux setup, expected log, failure table |
 
 ## 3. Code Snippet of the Core Loop/Active Component
 
-The heart of `Application::run()` in `engine/src/Application.cpp`:
+`gpu::Context::create` in `gpu/src/Context.cpp`, the bring-up sequence:
 
 ```cpp
-while (true) {
-  // 1. Events.
-  const bool idle = !renderer_ || window_->isMinimized();
-  if (idle) {
-    waitForEventsUntil(nextIdleFrame);
-    nextIdleFrame = std::max(nextIdleFrame + idleInterval, Clock::now());
-  } else {
-    platform_->pollEvents();
+Result<Context> Context::create(platform::Platform& platform, platform::Window& window, const ContextDesc& desc) {
+  if (!platform.vulkanSupported()) {
+    return fail(Errc::Unsupported,
+                "no Vulkan loader or driver was found on this machine; install or update the GPU driver");
   }
 
-  // 2. Stop?
-  if (const StopReason reason = pendingStopReason(); reason != StopReason::None) {
-    stopReason_ = reason;
-    break;
-  }
+  // 1. Instance, with the extensions GLFW needs to make a window surface.
+  const auto platformExtensions = platform.requiredVulkanInstanceExtensions();
+  auto instance = Instance::create({
+      .applicationName = desc.applicationName,
+      .enableValidation = desc.enableValidation,
+      .requiredExtensions = {platformExtensions.begin(), platformExtensions.end()},
+  });
+  if (!instance) return tl::unexpected(atStep(1, "Vulkan instance", std::move(instance.error())));
 
-  // 3. Clock.
-  const FrameTime time = clock_.tick();
+  // 2. Surface.
+  auto surface = Surface::create(instance->handle(), window);
+  if (!surface) return tl::unexpected(atStep(2, "window surface", std::move(surface.error())));
 
-  // 4. Update.
-  if (update_) update_(time);
+  // 3. Physical device.
+  auto physicalDevice = selectPhysicalDevice(instance->handle(), surface->handle());
+  if (!physicalDevice) return tl::unexpected(atStep(3, "choosing a GPU", std::move(physicalDevice.error())));
 
-  // 5. Render.
-  if (renderer_ && !window_->isMinimized()) {
-    if (Status frame = renderFrame(time); !frame) {
-      log::error(Category::Engine, "renderer \"{}\" failed on frame {}: {}", renderer_->name(), time.frameIndex,
-                 frame.error().message);
-      stopReason_ = StopReason::RendererError;
-      result = std::move(frame);
-      ++framesRun_;
-      break;
-    }
-  }
+  // 4. Logical device and queues.
+  auto device = Device::create(*physicalDevice);
+  if (!device) return tl::unexpected(atStep(4, "logical device", std::move(device.error())));
 
-  ++framesRun_;
-  recordFrameStats(time);
-
-  // 6. Frame limit.
-  if (config_.maxFrames != 0 && framesRun_ >= config_.maxFrames) {
-    stopReason_ = StopReason::FrameLimit;
-    break;
-  }
+  log::info(Category::Gpu, "GPU ready: {} with Vulkan {}", physicalDevice->name,
+            versionString(physicalDevice->apiVersion));
+  return Context(std::move(*instance), std::move(*surface), std::move(*physicalDevice), std::move(*device));
 }
 ```
 
-The renderer contract it calls (`engine/include/playground/engine/Renderer.h`):
-
-```cpp
-class Renderer {
- public:
-  virtual ~Renderer() = default;
-  [[nodiscard]] virtual std::string_view name() const noexcept = 0;
-  [[nodiscard]] virtual Status onFramebufferResized(platform::Extent2D size) = 0;  // never empty
-  [[nodiscard]] virtual Status renderFrame(const FrameTime& time) = 0;
-};
-```
+`Context` declares its members `instance_, surface_, physicalDevice_, device_`
+in that order, so they are destroyed device → surface → instance. Its move
+assignment is deleted because a defaulted one would assign in declaration
+order and destroy the old instance before the old device.
 
 ## 4. Known Bugs & Incomplete Tasks
 
 No known bugs.
 
 **Not verified**
-- **The Windows build.** The `windows` presets and `vcpkg.json` have never
-  been run. vcpkg will supply GLFW 3.4 rather than 3.3; only APIs present in
-  both versions are used, but MSVC may raise warnings GCC and Clang did not,
-  and `/WX` turns those into errors. Turn off `PLAYGROUND_WARNINGS_AS_ERRORS`
-  if that blocks a first build, and report the warnings.
-- **Resize delivery to the renderer.** The code path exists, but no test
-  covers it: Xvfb has no window manager to resize a window with. It will be
-  exercised by Milestone 1's swapchain recreation on a real desktop.
+- **A real GPU.** Only Mesa's software driver has run this code. Discrete
+  and integrated GPUs, two-GPU laptops, and separate graphics/present queue
+  families are untested.
+- **Windows.** Neither the presets, vcpkg, the Vulkan SDK path, nor MSVC's
+  warnings have been tried.
 
 **Deliberately not done yet**
-- **No renderer**, so nothing is drawn; `main.cpp` has a comment where the
-  Vulkan renderer attaches.
-- **No input layer.** Gameplay cannot read the keyboard or mouse yet (roadmap §4.3).
-- **The update step is variable-rate.** The fixed-timestep loop from
-  `engine/` (`erebus::GameLoop`) replaces it at roadmap Milestone 3, inside
-  `Application::run`.
-
-**Open, not yet decided**
-- Whether tested code from `engine/` is moved or copied into the Playground
-  (matters at Milestone 3).
+- **No swapchain**, so nothing is presented and no renderer is attached.
+- **No debug names** on Vulkan objects (`vkSetDebugUtilsObjectNameEXT`); the
+  roadmap wants them on every object, for RenderDoc. Add with the swapchain.
+- **No memory allocator.** VMA arrives with the first buffer or image.
+- **`main.cpp` owns the GPU context**, and gets the destruction order right
+  by hand. Moves into a `VulkanRenderer` with the swapchain.
+- **`app/` includes a Vulkan header** (through `gpu/Context.h`). Goes away
+  when the context moves into the renderer.
+- **Layering question.** `engine::Renderer` lives in the engine layer, so a
+  `VulkanRenderer` implementing it would make gpu/render depend on engine —
+  the opposite of the roadmap's diagram. Decide before writing
+  `VulkanRenderer`: move the `Renderer` interface down (e.g. into a small
+  `render` layer), or accept the dependency.
 
 ## 5. Immediate Next Steps for Next Weekend
 
-Roadmap Milestone 1: one triangle on screen with zero validation messages,
-surviving resize and minimise, with a clean shutdown. Order:
-
-1. **Dependencies.** Add `vulkan-headers`, `vulkan-loader`, `volk`,
-   `vk-bootstrap` and `vulkan-memory-allocator` to `vcpkg.json`, and
-   `find_package(Vulkan REQUIRED)` to the root `CMakeLists.txt`. On Linux,
-   check which of volk, vk-bootstrap and VMA are packaged; vendor or fetch
-   the rest, pinned.
-2. **New layer `gpu/`** (`playground_gpu`, depends on platform). First file:
-   `gpu/include/playground/gpu/VulkanCheck.h` — a helper that turns a
-   `VkResult` into a `Status` naming the call, the result code as text and the
-   call site.
-3. **`gpu/src/Instance.cpp`** — `Instance::create()` returning
-   `Result<Instance>`: Vulkan 1.3, the GLFW surface extensions from
-   `Platform::requiredVulkanInstanceExtensions()`, the validation layer and
-   debug messenger in debug builds, and validation messages routed into
-   `log::Category::Gpu`. In debug builds a validation error is a `PG_ASSERT`
-   failure.
-4. Then surface, physical-device selection (logging why each rejected device
-   failed), logical device and queues, swapchain with recreation, per-frame
-   command buffers and synchronisation, and the triangle shader compiled by
-   `glslc` at build time.
-5. **`gpu/VulkanRenderer`** implementing `engine::Renderer`, attached in
-   `app/main.cpp` where the comment marks it.
-6. Extend the tests: a Vulkan smoke test that renders N frames under Xvfb on
-   llvmpipe and fails on any validation message.
+1. Decide the layering question above.
+2. **`gpu/include/playground/gpu/Swapchain.h` + `gpu/src/Swapchain.cpp`**:
+   choose surface format (prefer `B8G8R8A8_SRGB` + `SRGB_NONLINEAR`), present
+   mode (FIFO always exists; MAILBOX if available and wanted), extent from the
+   framebuffer, image count; create the swapchain and image views; recreate on
+   `VK_ERROR_OUT_OF_DATE_KHR` / `VK_SUBOPTIMAL_KHR` and on
+   `Renderer::onFramebufferResized`. Handle `imageSharingMode` CONCURRENT when
+   graphics and present families differ.
+3. **Per-frame resources** (frames in flight = 2): command pool and buffer,
+   acquire semaphore, render-finished semaphore, and a timeline semaphore for
+   CPU waits.
+4. **`VulkanRenderer`** implementing `engine::Renderer`: owns `gpu::Context`
+   and the swapchain; `renderFrame` acquires, records a dynamic-rendering pass
+   that clears to a colour, transitions with synchronization2 barriers,
+   submits, presents. Attach it in `main.cpp` and delete the hand-ordered
+   teardown there.
+5. Then the triangle: `shaders/triangle.vert/.frag`, compiled by `glslc` from
+   CMake (`find_package(Vulkan COMPONENTS glslc)`), a graphics pipeline with
+   dynamic rendering, one draw.
+6. Extend `gpu_tests`: render N frames with zero validation messages; resize
+   path via `onFramebufferResized`.
 
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
-branch `claude/relaxed-cray-5kc2fl`, reinstall the packages it lists if the setup script did not, confirm
-`xvfb-run -a ctest --preset debug` passes, then start Milestone 1 at step 1."
+branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
+debug` passes (reinstall the packages in `README.md` if the setup script did
+not), then decide the layering question and start the swapchain."
