@@ -113,6 +113,12 @@ void Window::setTitle(const std::string& title) noexcept {
   if (isOpen()) glfwSetWindowTitle(state_->handle, title.c_str());
 }
 
+void Window::setSize(u32 width, u32 height) noexcept {
+  if (isOpen() && width > 0 && height > 0) {
+    glfwSetWindowSize(state_->handle, static_cast<int>(width), static_cast<int>(height));
+  }
+}
+
 GLFWwindow* Window::nativeHandle() const noexcept { return state_ ? state_->handle : nullptr; }
 
 }  // namespace playground::platform

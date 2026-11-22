@@ -5,8 +5,12 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 [`HANDOFF.md`](HANDOFF.md).
 
 **Current state:** a window, a main loop with a `std::chrono` frame clock, and
-Vulkan brought up as far as a logical device with a graphics queue. Nothing is
-drawn yet: the swapchain is next.
+a Vulkan renderer that draws one hardcoded triangle every frame, with
+validation on in debug builds and the swapchain rebuilt on resize.
+
+![The first triangle](docs/first-triangle.png)
+
+*Captured from the running app on Mesa's software Vulkan driver.*
 
 ## Layout
 
@@ -14,13 +18,16 @@ drawn yet: the swapchain is next.
 |---|---|---|
 | `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock` |
 | `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
-| `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Context` |
-| `engine/` | `playground_engine` | `Application` (main loop), `Renderer` (interface) |
+| `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Context`, `Swapchain`, `DeviceHandle` |
+| `render/` | `playground_render` | `Renderer` (interface), the Vulkan renderer, the shaders |
+| `engine/` | `playground_engine` | `Application` (main loop) |
 | `app/` | `playground_app` | `main.cpp` |
-| `tests/` | | doctest suites for core, application and GPU |
+| `tests/` | | doctest suites for core, application, GPU and renderer |
 | `third_party/` | | vendored `tl::expected` |
 
-Each layer may include only the layers below it.
+Each layer may include only the layers below it. Vulkan types stop at the
+render layer: its public headers have none, so the engine and the game build
+without Vulkan headers.
 
 ## Vulkan bring-up, in order
 
@@ -36,6 +43,25 @@ failure says which step failed and why.
 
 The requirements both step 3 and step 4 use live in one place,
 `gpu/src/Requirements.h`.
+
+## Drawing a frame
+
+`render/src/VulkanRenderer.cpp`, once per frame:
+
+1. **Wait** for the GPU to finish the frame that last used this slot (two
+   frames in flight).
+2. **Acquire** a swapchain image to draw into.
+3. **Record:** move the image into the drawing layout, clear it, bind the
+   triangle pipeline, `vkCmdDraw(3 vertices)`, move it into the present
+   layout.
+4. **Submit** to the graphics queue.
+5. **Present** the image to the window.
+
+The triangle's corners and colours are in `render/shaders/triangle.vert`; no
+vertex buffer yet. The shaders are compiled by `glslc` during the build and
+embedded in the executable (see `cmake/Shaders.cmake`), so there are no shader
+files to ship. When the window is resized, or present reports the swapchain is
+out of date, the swapchain is rebuilt at the new size.
 
 ## Getting it running on Windows
 
@@ -142,14 +168,22 @@ On this project's test machine (software Vulkan driver), start-up logs:
 [gpu     ] logical device created: extensions VK_KHR_swapchain; features dynamicRendering, ...
 [gpu     ] graphics queue ready: family 0, also used for present
 [gpu     ] GPU ready: llvmpipe (LLVM 20.1.2, 256 bits) with Vulkan 1.4.318
+[gpu     ] swapchain created: 1600x900, 4 images, B8G8R8A8_SRGB, FIFO (vsync)
+[render  ] triangle pipeline built for B8G8R8A8_SRGB
+[render  ] Vulkan renderer ready: 2 frames in flight
+[engine  ] renderer "vulkan" attached
 ```
+
+And the window shows the triangle above: red at the top, green bottom left,
+blue bottom right, on a very dark blue background.
 
 On a desktop you will see your own GPU, `discrete GPU` or `integrated GPU`,
 and on Windows `VK_KHR_win32_surface` instead of `VK_KHR_xcb_surface`. A
 laptop with two GPUs lists both; the discrete one wins.
 
-Closing the window shuts down in the reverse order — device, surface,
-instance, window, GLFW — and ends with `clean exit`.
+Closing the window shuts down in the reverse order — renderer (pipeline,
+swapchain, device, surface, instance), window, GLFW — and ends with
+`clean exit`.
 
 ## When it does not start
 
@@ -162,6 +196,7 @@ Every failure is one `critical` line naming the step and the reason.
 | `the Vulkan loader on this machine supports 1.2` | Driver too old | Update the GPU driver |
 | `step 3 (choosing a GPU): no GPU meets the engine's requirements` | Every GPU lacks something; the message lists what, per GPU | Update the driver; if it still fails, the GPU is older than the engine's minimum (Vulkan 1.3 with descriptor indexing) |
 | `validation was requested but VK_LAYER_KHRONOS_validation is not installed` (warning) | The program still runs, without validation | Install the Vulkan SDK (Windows) or `vulkan-validationlayers` (Linux) |
+| Window opens but stays black or dark blue with no triangle | The draw is not reaching the screen | Run with `--verbose` and send the log; check for `[gpu] [error]` lines |
 | `N Vulkan validation error(s)` at exit, exit code 1 | A real bug: the engine used Vulkan incorrectly | Read the `[gpu] [error]` lines above it; each names the rule broken (`VUID-...`) |
 
 ## Options

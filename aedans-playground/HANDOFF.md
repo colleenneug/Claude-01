@@ -3,11 +3,12 @@
 Paste this file into a new session to resume. The plan is `ROADMAP.md`;
 build, run and troubleshooting instructions are in `README.md`.
 
-**Status:** the application shell and the first half of Vulkan bring-up are
-built, tested and committed: instance (with validation), window surface,
-physical-device selection, logical device, graphics queue. Nothing is drawn
-yet. **Next: the swapchain**, then the first triangle (the rest of roadmap
-Milestone 1).
+**Status:** the first triangle is on screen. A Vulkan renderer draws one
+hardcoded triangle every frame, with validation on in debug builds and the
+swapchain rebuilt on resize. That completes roadmap Milestone 1 (the user
+calls it Milestone 3). Screenshot: `docs/first-triangle.png`. **Next:**
+roadmap Milestone 2, renderer foundations: GPU memory (VMA), vertex and
+index buffers, a depth buffer, a camera, and many meshes.
 
 - Repository `colleenneug/Claude-01`, branch `claude/relaxed-cray-5kc2fl`, no pull request open.
 - Standing guidelines: modern C++20 (smart pointers, RAII, `std::span`,
@@ -16,198 +17,199 @@ Milestone 1).
   initialisation.
 - Decisions: C++20 with `tl::expected`; Windows and Linux only; the
   Playground lives in this repository; minimum GPU Vulkan 1.3 with descriptor
-  indexing; namespace `playground`, targets `playground_*`.
-- Numbering: the user calls this work "Milestone 2"; in `ROADMAP.md` it is
-  the first half of Milestone 1. Same work, different count.
+  indexing; namespace `playground`, targets `playground_*`; the `Renderer`
+  interface lives in a `render` layer below the engine.
+- Numbering: the user's milestone numbers run one or two ahead of
+  `ROADMAP.md`'s. Same work, different count.
+- The user may be young or new to this: when asked to explain, keep it short
+  and plain; one simple idea at a time.
 
 ---
 
 ## 1. Current Architecture State
 
 ```
-app/main.cpp      logging -> Application (platform, window) -> gpu::Context -> run
-                  shutdown: gpu::Context, then Application::shutdown(), then log
-  engine/         Application: loop, renderer slot (still empty)
-  gpu/            Context = Instance -> Surface -> PhysicalDeviceInfo -> Device
-  platform/       Platform (GLFW, Ctrl+C), Window (no GL context)
+app/main.cpp      logging -> Application (platform, window) -> createVulkanRenderer -> setRenderer -> run
+  engine/         Application: loop, renderer slot; destroys renderer -> window -> GLFW
+  render/         Renderer (interface); VulkanRenderer (private class, src/); shaders/
+  gpu/            Context (Instance, Surface, GPU choice, Device), Swapchain, DeviceHandle
+  platform/       Platform (GLFW, Ctrl+C), Window (no GL context, setSize)
   core/           Result, Log, Assert, FrameClock
 ```
 
-**Vulkan bring-up** (`gpu::Context::create`), each step logged, each failure
-prefixed with its step ("step 3 (choosing a GPU): ..."):
+Vulkan types stop at `render`: its public headers
+(`render/Renderer.h`, `render/VulkanRenderer.h`) have none, and
+`playground_render` links `playground_gpu` PRIVATE, so engine and app build
+without Vulkan include paths.
 
-1. **Instance** (`Instance.cpp`). Requires loader ≥ 1.3, checks every
-   requested extension (names the missing ones), enables
-   `VK_LAYER_KHRONOS_validation` + `VK_EXT_debug_utils` when validation is on
-   (default in debug builds), and chains a messenger into `vkCreateInstance` so
-   create/destroy messages are caught. If the layer is not installed it warns
-   and continues without it.
-2. **Surface** (`Surface.cpp`) via `glfwCreateWindowSurface`.
-3. **Physical device** (`PhysicalDevice.cpp`). Logs every GPU (name, type,
-   Vulkan version, driver name/version); rejects any lacking Vulkan 1.3,
-   `VK_KHR_swapchain`, the required features, a graphics queue, present
-   support for this window, or surface formats/present modes, listing every
-   reason; scores discrete 1000 > integrated 500 > virtual 200 > CPU 10, +50
-   for one queue family doing both graphics and present. A CPU device is
-   accepted with a warning.
-4. **Logical device** (`Device.cpp`). One queue per distinct family; enables
-   exactly the features from `Requirements.h`; fetches graphics and present
-   queues; destructor waits for idle.
+**One frame** (`VulkanRenderer::renderFrame`), 2 frames in flight:
+1. Wait on this slot's fence (5 s timeout → "GPU probably hung" error).
+2. `vkAcquireNextImageKHR` → `imageAcquired` semaphore. `OUT_OF_DATE` → mark
+   stale and skip the frame; `SUBOPTIMAL` → draw, then rebuild.
+3. Reset the fence only after a successful acquire (else the next wait hangs).
+4. Record: sync2 barrier UNDEFINED → COLOR_ATTACHMENT_OPTIMAL; `vkCmdBeginRendering`
+   (clear); bind pipeline; viewport with negative height (y up); scissor;
+   `vkCmdDraw(3, 1, 0, 0)`; end; barrier → PRESENT_SRC_KHR.
+5. `vkQueueSubmit2`: wait `imageAcquired` at COLOR_ATTACHMENT_OUTPUT, signal
+   `renderFinished[imageIndex]` and the fence.
+6. `vkQueuePresentKHR` waiting `renderFinished[imageIndex]`.
 
-`gpu/src/Requirements.h` holds the required device extensions and features
-(dynamicRendering, synchronization2, timelineSemaphore, descriptorIndexing,
-runtimeDescriptorArray, descriptorBindingPartiallyBound,
-shaderSampledImageArrayNonUniformIndexing, bufferDeviceAddress) and is used
-by both step 3 (check) and step 4 (enable).
+`renderFinished` semaphores are per swapchain **image**, not per frame in
+flight (present holds them until the image is shown).
 
-**Validation messages** go to the log under `[gpu]` (error → error, warning →
-warn, info → debug, verbose → trace) and are counted in process-wide
-counters (`gpu::validationCounts()`). `main` exits 1 if any validation error
-occurred during the run, including teardown, so `app_smoke` fails on one.
+**Swapchain** (`gpu/src/Swapchain.cpp`): B8G8R8A8_SRGB or R8G8B8A8_SRGB with
+SRGB_NONLINEAR (warns if neither); FIFO by default (vsync), MAILBOX then
+IMMEDIATE with vsync off; extent from the surface or the clamped framebuffer
+size; minImageCount + 1 within the max; CONCURRENT sharing when graphics and
+present families differ; rebuilt with `oldSwapchain` after `vkDeviceWaitIdle`.
+The pipeline is rebuilt only if the format changes.
 
-**Ownership today:** `main.cpp` owns the `gpu::Context` in a
-`std::optional` and resets it before `Application::shutdown()` (the surface
-must die before the window). This is temporary: it moves into a
-`VulkanRenderer` in the renderer slot once there is a swapchain to present
-with. Until then no renderer is attached, so the loop paces itself at 60 fps.
+**Shaders**: `render/shaders/triangle.vert` has the three positions and
+colours as constant arrays indexed by `gl_VertexIndex`; `triangle.frag`
+outputs the interpolated colour. Vertex output location 0 → fragment input
+location 0; fragment output location 0 → colour attachment 0. Compiled by
+`glslc --target-env=vulkan1.3 -Werror -O -mfmt=num` at build time
+(`cmake/Shaders.cmake`) and `#include`d into `const u32[]` arrays.
 
-**Verified this session** (GCC 13.3, Clang 18.1, and GCC with ASan + UBSan):
+**Pipeline**: no vertex input, triangle list, dynamic viewport and scissor,
+no culling, no blending, no depth, empty layout,
+`VkPipelineRenderingCreateInfo` with the swapchain format (no VkRenderPass).
+
+**Verified this session** (GCC 13.3, Clang 18.1, GCC + ASan + UBSan, Mesa
+llvmpipe under Xvfb):
 
 | Check | Result |
 |---|---|
 | Build, warnings as errors | 0 warnings, GCC and Clang |
-| `xvfb-run -a ctest`: core, app, gpu, app_smoke, app_no_display | 5/5 pass in all three builds |
-| `ctest` without a display | core and no-display pass; app, gpu and smoke skipped |
-| Validation messenger | an injected error and warning are logged and counted |
-| A real run, validation on | 0 validation messages; teardown device → surface → instance → window → GLFW |
-| `--no-validation` | instance created with validation off |
-| Validation layer hidden (`VK_LOADER_LAYERS_DISABLE=~all~`) | warning, runs without validation, exit 0 |
+| `xvfb-run -a ctest`: core, app, gpu, render, app_smoke, app_no_display | 6/6 in all three builds |
+| Screenshot of the running app | triangle visible: red top, green bottom-left, blue bottom-right; background (25,25,48) = sRGB of the linear clear colour |
+| Real window resize to 480×360 | swapchain rebuilt at 480×360, no validation errors |
+| Replacing the renderer mid-run | no validation errors |
+| Ctrl+C | clean shutdown, exit 0 |
+| ASan leak check | still catches a deliberately planted leak in our code |
 
-All on Mesa llvmpipe (software Vulkan 1.4) under Xvfb. **Not yet run on a
-real GPU, and not on Windows.**
+**Not yet run on a real GPU, and not on Windows.**
 
 ## 2. Exact Files & Classes Modified
 
-New this session, under `aedans-playground/`:
+New:
 
 | File | Contents |
 |---|---|
-| `gpu/include/playground/gpu/VulkanCheck.h`, `gpu/src/VulkanCheck.cpp` | `check(VkResult, call)` → `Status`; `resultName`, `resultHint`, `versionString` |
-| `gpu/include/playground/gpu/Instance.h`, `gpu/src/Instance.cpp` | `InstanceDesc`, `Instance`, `ValidationCounts`, `validationCounts()`, `resetValidationCounts()`, `kRequiredApiVersion`, `kValidationByDefault` |
-| `gpu/include/playground/gpu/Surface.h`, `gpu/src/Surface.cpp` | `Surface` |
-| `gpu/src/Requirements.h` | `detail::kRequiredDeviceExtensions`, `detail::FeatureChain`, `requestEngineFeatures`, `missingFeatures` |
-| `gpu/include/playground/gpu/PhysicalDevice.h`, `gpu/src/PhysicalDevice.cpp` | `QueueFamilies`, `PhysicalDeviceInfo`, `selectPhysicalDevice()`, `describe(VkPhysicalDeviceType)` |
-| `gpu/include/playground/gpu/Device.h`, `gpu/src/Device.cpp` | `Device` |
-| `gpu/include/playground/gpu/Context.h`, `gpu/src/Context.cpp` | `ContextDesc`, `Context` |
-| `gpu/CMakeLists.txt` | `playground_gpu`: PUBLIC platform + `Vulkan::Vulkan`, PRIVATE glfw |
-| `tests/gpu_tests.cpp` | 7 tests: `check()`, missing extension, messenger counting, validation off, full bring-up, repeated bring-up, step-named failure |
+| `gpu/include/playground/gpu/DeviceHandle.h` | `DeviceHandle<Handle, Destroy>`; aliases `Semaphore`, `Fence`, `ImageView`, `ShaderModule`, `PipelineLayout`, `Pipeline`, `CommandPool` |
+| `gpu/include/playground/gpu/Swapchain.h`, `gpu/src/Swapchain.cpp` | `SwapchainDesc`, `Swapchain`, `describe(VkFormat)`, `describe(VkPresentModeKHR)` |
+| `render/include/playground/render/VulkanRenderer.h` | `VulkanRendererDesc`, `createVulkanRenderer()`, `GpuValidationCounts`, `gpuValidationCounts()` (no Vulkan types) |
+| `render/src/VulkanRenderer.h`, `render/src/VulkanRenderer.cpp` | `VulkanRenderer` (private), `kFramesInFlight` |
+| `render/shaders/triangle.vert`, `render/shaders/triangle.frag` | The hardcoded triangle |
+| `render/CMakeLists.txt` | `playground_render`; compiles the shaders |
+| `cmake/Shaders.cmake` | `playground_compile_shader(target shader)` |
+| `tests/render_tests.cpp` | 4 tests: frames presented with no validation errors, real resize, renderer replacement, public factory |
+| `docs/first-triangle.png` | Screenshot of the running app |
 
-Changed:
+Moved: `engine/include/playground/engine/Renderer.h` →
+`render/include/playground/render/Renderer.h` (namespace `render`).
 
-| File | Change |
-|---|---|
-| `CMakeLists.txt` | `find_package(Vulkan 1.3 REQUIRED)`; `add_subdirectory(gpu)` |
-| `cmake/ProjectOptions.cmake` | `-Wno-missing-field-initializers` (GCC 13 warns on every partial designated initialiser of a Vulkan struct) |
-| `core/include/playground/core/Result.h` | `Errc::GpuFailure` |
-| `app/main.cpp` | creates and destroys `gpu::Context`; `--validation` / `--no-validation`; exit 1 on validation errors |
-| `app/CMakeLists.txt` | links `playground::gpu` |
-| `tests/CMakeLists.txt` | `gpu_tests` (skip code 77, labels display;gpu) |
-| `README.md` | Windows and Linux setup, expected log, failure table |
+Changed: root `CMakeLists.txt` (glslc component, Shaders.cmake, render
+subdirectory); `gpu/CMakeLists.txt` (Swapchain.cpp); `engine/CMakeLists.txt`
+(links render); `app/CMakeLists.txt` (links engine only);
+`engine/.../Application.h/.cpp` and `tests/app_tests.cpp` (`render::Renderer`);
+`platform/.../Window.h/.cpp` (`setSize`); `app/main.cpp` (creates and
+attaches the renderer, no hand-ordered teardown); `tests/CMakeLists.txt`
+(render_tests; sanitizer-build preload, see §4); `README.md`.
 
 ## 3. Code Snippet of the Core Loop/Active Component
 
-`gpu::Context::create` in `gpu/src/Context.cpp`, the bring-up sequence:
+`VulkanRenderer::recordCommands` in `render/src/VulkanRenderer.cpp`:
 
 ```cpp
-Result<Context> Context::create(platform::Platform& platform, platform::Window& window, const ContextDesc& desc) {
-  if (!platform.vulkanSupported()) {
-    return fail(Errc::Unsupported,
-                "no Vulkan loader or driver was found on this machine; install or update the GPU driver");
-  }
+transitionImage(commands, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-  // 1. Instance, with the extensions GLFW needs to make a window surface.
-  const auto platformExtensions = platform.requiredVulkanInstanceExtensions();
-  auto instance = Instance::create({
-      .applicationName = desc.applicationName,
-      .enableValidation = desc.enableValidation,
-      .requiredExtensions = {platformExtensions.begin(), platformExtensions.end()},
-  });
-  if (!instance) return tl::unexpected(atStep(1, "Vulkan instance", std::move(instance.error())));
+const VkRenderingAttachmentInfo colour{
+    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+    .imageView = swapchain_->imageView(imageIndex),
+    .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+    .clearValue = {.color = {.float32 = {/* desc_.clearColour */}}},
+};
+const VkRenderingInfo rendering{
+    .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+    .renderArea = {.offset = {0, 0}, .extent = extent},
+    .layerCount = 1,
+    .colorAttachmentCount = 1,
+    .pColorAttachments = &colour,
+};
+vkCmdBeginRendering(commands, &rendering);
+vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_.get());
 
-  // 2. Surface.
-  auto surface = Surface::create(instance->handle(), window);
-  if (!surface) return tl::unexpected(atStep(2, "window surface", std::move(surface.error())));
+const VkViewport viewport{.x = 0.0f, .y = height, .width = width, .height = -height,
+                          .minDepth = 0.0f, .maxDepth = 1.0f};   // y up
+const VkRect2D scissor{.offset = {0, 0}, .extent = extent};
+vkCmdSetViewport(commands, 0, 1, &viewport);
+vkCmdSetScissor(commands, 0, 1, &scissor);
 
-  // 3. Physical device.
-  auto physicalDevice = selectPhysicalDevice(instance->handle(), surface->handle());
-  if (!physicalDevice) return tl::unexpected(atStep(3, "choosing a GPU", std::move(physicalDevice.error())));
+vkCmdDraw(commands, 3, 1, 0, 0);   // the triangle
 
-  // 4. Logical device and queues.
-  auto device = Device::create(*physicalDevice);
-  if (!device) return tl::unexpected(atStep(4, "logical device", std::move(device.error())));
-
-  log::info(Category::Gpu, "GPU ready: {} with Vulkan {}", physicalDevice->name,
-            versionString(physicalDevice->apiVersion));
-  return Context(std::move(*instance), std::move(*surface), std::move(*physicalDevice), std::move(*device));
-}
+vkCmdEndRendering(commands);
+transitionImage(commands, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
 ```
-
-`Context` declares its members `instance_, surface_, physicalDevice_, device_`
-in that order, so they are destroyed device → surface → instance. Its move
-assignment is deleted because a defaulted one would assign in declaration
-order and destroy the old instance before the old device.
 
 ## 4. Known Bugs & Incomplete Tasks
 
-No known bugs.
+No known bugs in our code.
+
+**Worked around, not ours:** with ASan, Mesa's software driver produces a
+~112-byte LeakSanitizer report once the Vulkan loader unloads it at
+`vkDestroyInstance` (its presentation thread's allocations were referenced
+only from the unloaded library). Proven: keeping the driver loaded removes
+the report. In GCC sanitizer builds, `tests/CMakeLists.txt` preloads
+`libasan.so` and `libvulkan_lvp.so` for gpu_tests, render_tests and
+app_smoke. A deliberately planted leak in our code is still reported. Running
+`build/asan/app/playground_app` by hand without that preload shows the
+report; it is expected.
 
 **Not verified**
-- **A real GPU.** Only Mesa's software driver has run this code. Discrete
-  and integrated GPUs, two-GPU laptops, and separate graphics/present queue
-  families are untested.
-- **Windows.** Neither the presets, vcpkg, the Vulkan SDK path, nor MSVC's
-  warnings have been tried.
+- A real GPU, two-GPU laptops, separate graphics/present queue families.
+- Windows (presets, vcpkg, Vulkan SDK, MSVC warnings).
+- An automated pixel check. The triangle was verified by screenshot; a test
+  that reads back the swapchain image and checks colours is not written.
+- Minimise and restore on a real desktop (Xvfb has no window manager).
 
-**Deliberately not done yet**
-- **No swapchain**, so nothing is presented and no renderer is attached.
-- **No debug names** on Vulkan objects (`vkSetDebugUtilsObjectNameEXT`); the
-  roadmap wants them on every object, for RenderDoc. Add with the swapchain.
-- **No memory allocator.** VMA arrives with the first buffer or image.
-- **`main.cpp` owns the GPU context**, and gets the destruction order right
-  by hand. Moves into a `VulkanRenderer` with the swapchain.
-- **`app/` includes a Vulkan header** (through `gpu/Context.h`). Goes away
-  when the context moves into the renderer.
-- **Layering question.** `engine::Renderer` lives in the engine layer, so a
-  `VulkanRenderer` implementing it would make gpu/render depend on engine —
-  the opposite of the roadmap's diagram. Decide before writing
-  `VulkanRenderer`: move the `Renderer` interface down (e.g. into a small
-  `render` layer), or accept the dependency.
+**Known simplifications, acceptable for now**
+- Swapchain recreation waits for the whole device to go idle
+  (`vkDeviceWaitIdle`) and reuses no semaphores. Fine at window-resize rates.
+  Strictly, `vkDeviceWaitIdle` does not cover pending presents; the clean
+  fix is `VK_EXT_swapchain_maintenance1` present fences, later.
+- Fences, not timeline semaphores, for CPU waits. The roadmap wants timeline
+  semaphores; switch when there is more than one queue.
+- No debug names on Vulkan objects (RenderDoc shows numbered handles).
+- No pipeline cache on disk.
 
 ## 5. Immediate Next Steps for Next Weekend
 
-1. Decide the layering question above.
-2. **`gpu/include/playground/gpu/Swapchain.h` + `gpu/src/Swapchain.cpp`**:
-   choose surface format (prefer `B8G8R8A8_SRGB` + `SRGB_NONLINEAR`), present
-   mode (FIFO always exists; MAILBOX if available and wanted), extent from the
-   framebuffer, image count; create the swapchain and image views; recreate on
-   `VK_ERROR_OUT_OF_DATE_KHR` / `VK_SUBOPTIMAL_KHR` and on
-   `Renderer::onFramebufferResized`. Handle `imageSharingMode` CONCURRENT when
-   graphics and present families differ.
-3. **Per-frame resources** (frames in flight = 2): command pool and buffer,
-   acquire semaphore, render-finished semaphore, and a timeline semaphore for
-   CPU waits.
-4. **`VulkanRenderer`** implementing `engine::Renderer`: owns `gpu::Context`
-   and the swapchain; `renderFrame` acquires, records a dynamic-rendering pass
-   that clears to a colour, transitions with synchronization2 barriers,
-   submits, presents. Attach it in `main.cpp` and delete the hand-ordered
-   teardown there.
-5. Then the triangle: `shaders/triangle.vert/.frag`, compiled by `glslc` from
-   CMake (`find_package(Vulkan COMPONENTS glslc)`), a graphics pipeline with
-   dynamic rendering, one draw.
-6. Extend `gpu_tests`: render N frames with zero validation messages; resize
-   path via `onFramebufferResized`.
+Roadmap Milestone 2: renderer foundations. Order:
+
+1. **GPU memory.** Add Vulkan Memory Allocator (vcpkg `vulkan-memory-allocator`;
+   on Ubuntu `libvma-dev` if packaged, else vendor the single header, pinned).
+   New `gpu/Allocator.h/.cpp`: RAII `VmaAllocator` owned by the Context, and
+   `gpu::Buffer` / `gpu::Image` RAII types.
+2. **Upload path.** A staging buffer and a one-shot command buffer to copy
+   data to device-local memory.
+3. **Vertex and index buffers.** Move the triangle's corners out of the shader
+   into a vertex buffer; add `VkVertexInputBindingDescription` /
+   attribute descriptions. Then a cube.
+4. **Depth buffer** (reverse-Z, D32_SFLOAT), rebuilt with the swapchain.
+5. **Camera**: GLM (`GLM_FORCE_DEPTH_ZERO_TO_ONE`), view-projection via push
+   constants. Keep the negative-viewport y-flip.
+6. **Debug names** on every Vulkan object, and a pipeline cache.
+7. **Tests**: add a pixel read-back test (render, copy the image to a
+   host-visible buffer, check the centre colour) now that buffers exist.
 
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
 debug` passes (reinstall the packages in `README.md` if the setup script did
-not), then decide the layering question and start the swapchain."
+not), then start Milestone 2 at step 1."

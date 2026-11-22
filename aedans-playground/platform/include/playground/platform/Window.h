@@ -84,6 +84,11 @@ class Window {
 
   void setTitle(const std::string& title) noexcept;
 
+  // Asks the window system for a new size in window coordinates. It takes
+  // effect when events are next processed, and arrives as a framebuffer
+  // resize like any other.
+  void setSize(u32 width, u32 height) noexcept;
+
   // For the gpu layer's surface creation (glfwCreateWindowSurface). Nothing
   // outside the platform and gpu layers should need it.
   [[nodiscard]] GLFWwindow* nativeHandle() const noexcept;

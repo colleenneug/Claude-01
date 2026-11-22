@@ -1,4 +1,5 @@
-# gpu: Vulkan bring-up (instance, surface, GPU selection, device, queues).
+# gpu: Vulkan bring-up (instance, surface, GPU selection, device, queues)
+# and the swapchain.
 # Depends on platform for the window. Vulkan types appear in this layer's
 # public headers by design; nothing above the renderer should include them.
 add_library(playground_gpu STATIC
@@ -7,6 +8,7 @@ add_library(playground_gpu STATIC
   src/Instance.cpp
   src/PhysicalDevice.cpp
   src/Surface.cpp
+  src/Swapchain.cpp
   src/VulkanCheck.cpp)
 add_library(playground::gpu ALIAS playground_gpu)
 

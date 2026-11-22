@@ -7,10 +7,12 @@
 #    playground_core      logging, asserts, Result, frame clock   (no deps up)
 #    playground_platform  GLFW window, events, Ctrl+C handling    -> core
 #    playground_gpu       Vulkan instance, surface, GPU choice,
-#                         logical device and queues              -> platform
+#                         device, queues, swapchain              -> platform
+#    playground_render    Renderer interface + the Vulkan
+#                         renderer (Vulkan stays private)        -> gpu
 #    playground_engine    Application: owns the loop and the
-#                         renderer slot                           -> platform
-#    playground_app       the executable                    -> engine, gpu
+#                         renderer slot                           -> render
+#    playground_app       the executable                         -> engine
 # =============================================================================
 cmake_minimum_required(VERSION 3.24)
 project(aedans_playground VERSION 0.1.0 LANGUAGES CXX)
@@ -31,6 +33,7 @@ option(PLAYGROUND_SANITIZERS "Build with AddressSanitizer and UndefinedBehaviorS
 option(PLAYGROUND_BUILD_TESTS "Build the test executables" ON)
 
 include(cmake/ProjectOptions.cmake)
+include(cmake/Shaders.cmake)
 
 # --- Third-party -------------------------------------------------------------
 # Found as CMake config packages: from system packages on Linux, from the
@@ -40,7 +43,7 @@ find_package(glfw3 3.3 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 # Vulkan headers and loader: the Vulkan SDK on Windows (VULKAN_SDK is set by
 # its installer), libvulkan-dev on Ubuntu.
-find_package(Vulkan 1.3 REQUIRED)
+find_package(Vulkan 1.3 REQUIRED COMPONENTS glslc)   # glslc compiles the shaders
 
 # tl::expected is a single vendored header (see third_party/tl/README.md).
 # SYSTEM, so its internals are not held to our warning flags.
@@ -51,6 +54,7 @@ target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRE
 add_subdirectory(core)
 add_subdirectory(platform)
 add_subdirectory(gpu)
+add_subdirectory(render)
 add_subdirectory(engine)
 add_subdirectory(app)
 

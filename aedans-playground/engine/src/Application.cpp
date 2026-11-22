@@ -100,7 +100,7 @@ void Application::shutdown() noexcept {
 
 // --- Configuration -----------------------------------------------------------
 
-void Application::setRenderer(std::unique_ptr<Renderer> renderer) {
+void Application::setRenderer(std::unique_ptr<render::Renderer> renderer) {
   PG_VERIFY(!isShutDown_, "setRenderer() called after shutdown()");
   if (renderer_) log::info(Category::Engine, "replacing renderer \"{}\"", renderer_->name());
   renderer_ = std::move(renderer);

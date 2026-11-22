@@ -1,7 +1,7 @@
 // =============================================================================
 //  Aedan's Playground — entry point.
 //
-//  Start-up order: logging -> application (platform, window) -> GPU -> loop.
+//  Start-up order: logging -> application (platform, window) -> renderer -> loop.
 //  Shutdown is the reverse. Logging comes first and goes last so that every
 //  other step, including a failed start-up, is recorded.
 //
@@ -14,12 +14,11 @@
 
 #include "playground/core/Log.h"
 #include "playground/engine/Application.h"
-#include "playground/gpu/Context.h"
+#include "playground/render/VulkanRenderer.h"
 
 #include <charconv>
 #include <cstdio>
 #include <format>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -33,7 +32,7 @@ struct Options {
   u64 frames = 0;  // 0 = until the window is closed
   bool verbose = false;
   std::string logFile = "playground.log";
-  bool validation = gpu::kValidationByDefault;  // on in debug builds
+  bool validation = render::VulkanRendererDesc{}.enableValidation;  // on in debug builds
 };
 
 void printUsage() {
@@ -130,33 +129,23 @@ int main(int argc, char** argv) {
   }
   engine::Application& application = **app;
 
-  // Vulkan bring-up: instance, surface, GPU, logical device, graphics queue.
-  // Each step logs what it found; a failure names the step and the reason.
-  //
-  // For now the context is owned here. Once the swapchain exists, it moves
-  // into a VulkanRenderer attached with application.setRenderer(), and the
-  // Application takes over the destruction order below.
-  std::optional<gpu::Context> gpuContext;
-  {
-    auto created = gpu::Context::create(application.platform(), application.window(),
-                                        {.applicationName = "Aedan's Playground", .enableValidation = options->validation});
-    if (!created) {
-      log::critical(Category::Gpu, "GPU start-up failed ({}): {}", describe(created.error().code),
-                    created.error().message);
-      return 1;
-    }
-    gpuContext.emplace(std::move(*created));
+  // The Vulkan renderer: brings up the GPU (each step logged, a failure
+  // names the step), then the swapchain and the triangle pipeline. Once
+  // attached, the Application owns it and destroys it before the window.
+  auto renderer = render::createVulkanRenderer(application.platform(), application.window(),
+                                               {.enableValidation = options->validation});
+  if (!renderer) {
+    log::critical(Category::Render, "renderer start-up failed ({}): {}", describe(renderer.error().code),
+                  renderer.error().message);
+    return 1;
   }
+  application.setRenderer(std::move(*renderer));
 
   TitleFpsCounter fpsCounter(application.window());
   application.setUpdate([&fpsCounter](const FrameTime& time) { fpsCounter.update(time); });
 
   const Status status = application.run();
-
-  // The GPU context goes BEFORE the window: its surface belongs to the
-  // window. shutdown() destroys the window, so the order here matters.
-  gpuContext.reset();
-  application.shutdown();
+  application.shutdown();  // renderer, then window, then GLFW
 
   if (!status) {
     log::critical(Category::Engine, "stopped on error ({}): {}", describe(status.error().code),
@@ -165,7 +154,7 @@ int main(int argc, char** argv) {
   }
   // Validation errors also arrive during teardown (leaked objects are
   // reported when the instance is destroyed), so this is checked last.
-  if (const gpu::ValidationCounts counts = gpu::validationCounts(); counts.errors > 0) {
+  if (const render::GpuValidationCounts counts = render::gpuValidationCounts(); counts.errors > 0) {
     log::error(Category::Gpu, "{} Vulkan validation error(s) and {} warning(s) this run; see the log above",
                counts.errors, counts.warnings);
     return 1;

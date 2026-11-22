@@ -31,7 +31,7 @@ struct RendererLog {
 
 // Stands in for the Vulkan renderer: counts calls, can fail on demand, and
 // checks on destruction that the window it depends on is still there.
-class FakeRenderer final : public engine::Renderer {
+class FakeRenderer final : public render::Renderer {
  public:
   FakeRenderer(platform::Window& window, RendererLog& record, int failOnFrame = 0)
       : window_(window), record_(record), failOnFrame_(failOnFrame) {}

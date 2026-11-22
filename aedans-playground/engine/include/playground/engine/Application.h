@@ -45,7 +45,7 @@
 #include "playground/core/FrameClock.h"
 #include "playground/core/Result.h"
 #include "playground/core/Types.h"
-#include "playground/engine/Renderer.h"
+#include "playground/render/Renderer.h"
 #include "playground/platform/Platform.h"
 #include "playground/platform/Window.h"
 
@@ -92,7 +92,7 @@ class Application {
 
   // Attach (or replace, or with nullptr remove) the renderer. Not during
   // renderFrame(): a renderer must not replace itself.
-  void setRenderer(std::unique_ptr<Renderer> renderer);
+  void setRenderer(std::unique_ptr<render::Renderer> renderer);
 
   void setUpdate(UpdateFn update);
 
@@ -136,7 +136,7 @@ class Application {
   ApplicationConfig config_;
   std::unique_ptr<platform::Platform> platform_;
   std::optional<platform::Window> window_;
-  std::unique_ptr<Renderer> renderer_;
+  std::unique_ptr<render::Renderer> renderer_;
   UpdateFn update_;
 
   FrameClock clock_;
