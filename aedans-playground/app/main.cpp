@@ -193,16 +193,24 @@ int main(int argc, char** argv) {
   spawnBouncingSprites(world, options->sprites, halfSizeOf(application.window().framebufferSize()));
   log::info(Category::Game, "spawned {} sprites ({} entities)", world.count<engine::Sprite>(), world.entityCount());
 
-  // Each frame: run the systems, then let the renderer see the result.
-  TitleFpsCounter fpsCounter(application.window());
-  application.setUpdate([&](const FrameTime& time) {
-    const auto deltaSeconds = static_cast<f32>(time.deltaSeconds);
-    engine::movementSystem(world, deltaSeconds);
+  // The simulation: fixed 1/120 s steps, 0..n per frame (core/FixedStep.h).
+  // Snapshot first, so extraction can blend from where things were.
+  application.setFixedUpdate([&](const FixedStep& step) {
+    engine::snapshotTransforms(world);
+    engine::movementSystem(world, static_cast<f32>(step.deltaSeconds));
     engine::bounceSystem(world, halfSizeOf(application.window().framebufferSize()));
     world.flush();  // apply any destroys the systems queued
-    fpsCounter.update(time);
   });
-  application.setExtract([&world](render::FrameData& frame) { engine::extractSprites(world, frame); });
+
+  // Once per frame, at the display's rate: the FPS in the title bar.
+  TitleFpsCounter fpsCounter(application.window());
+  application.setUpdate([&fpsCounter](const FrameTime& time) { fpsCounter.update(time); });
+
+  // Once per rendered frame: copy the sprites out, blended `alpha` of the way
+  // from the previous step to the current one, so motion is smooth at any
+  // display rate.
+  application.setExtract(
+      [&world](render::FrameData& frame, f64 alpha) { engine::extractSprites(world, frame, alpha); });
 
   const Status status = application.run();
   application.shutdown();  // renderer, then window, then GLFW

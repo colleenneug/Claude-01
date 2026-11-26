@@ -57,7 +57,7 @@ TEST_CASE("renders and presents every frame of sprites, with no validation error
     CHECK(swapchain.imageCount() >= 2);
 
     // Something to draw, including overlap (blending) and rotation.
-    app->setExtract([](render::FrameData& frame) {
+    app->setExtract([](render::FrameData& frame, f64) {
       frame.sprites.push_back({.position = {0.0f, 0.0f}, .size = {64.0f, 64.0f}, .rotation = 0.3f});
       frame.sprites.push_back({.position = {20.0f, 10.0f}, .size = {40.0f, 20.0f}, .colour = {1, 0, 0, 0.5f}});
     });

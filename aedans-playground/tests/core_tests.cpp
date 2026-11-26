@@ -4,6 +4,7 @@
 #include <doctest/doctest.h>
 
 #include "playground/core/Assert.h"
+#include "playground/core/FixedStep.h"
 #include "playground/core/FrameClock.h"
 #include "playground/core/Log.h"
 #include "playground/core/Result.h"
@@ -123,6 +124,99 @@ TEST_CASE("FrameClock: the real clock gives a non-negative delta") {
   CHECK(clock.tick().rawDeltaSeconds >= 0.0);
 }
 
+// --- FixedStepAccumulator ----------------------------------------------------
+// Step sizes here are powers of two (0.25 s) or exact halvings of 1/120, so
+// the arithmetic is exact in binary floating point and the expected values
+// can be exact too.
+
+TEST_CASE("FixedStep: 60 fps frames at 120 Hz run exactly two steps each") {
+  FixedStepAccumulator accumulator(1.0 / 120.0);
+  for (int frame = 0; frame < 10; ++frame) {
+    const FixedStepPlan plan = accumulator.advance(1.0 / 60.0);
+    CHECK(plan.steps == 2);
+    CHECK(plan.alpha == 0.0);
+    CHECK(plan.droppedSeconds == 0.0);
+  }
+}
+
+TEST_CASE("FixedStep: a 240 Hz display steps every other frame, alpha alternates 0.5 / 0") {
+  FixedStepAccumulator accumulator(1.0 / 120.0);
+  for (int pair = 0; pair < 5; ++pair) {
+    const FixedStepPlan first = accumulator.advance(1.0 / 240.0);
+    CHECK(first.steps == 0);
+    CHECK(first.alpha == 0.5);  // half way to the next step
+    const FixedStepPlan second = accumulator.advance(1.0 / 240.0);
+    CHECK(second.steps == 1);
+    CHECK(second.alpha == 0.0);
+  }
+}
+
+TEST_CASE("FixedStep: leftover time carries over and becomes alpha") {
+  // A frame clamp well above the 0.625 s frame below, so only carry-over is tested.
+  FixedStepAccumulator accumulator(0.25, /*maxStepsPerFrame=*/8, /*maxFrameSeconds=*/10.0);
+  const FixedStepPlan plan = accumulator.advance(0.625);  // 2 steps + half a step
+  CHECK(plan.steps == 2);
+  CHECK(plan.alpha == 0.5);
+  CHECK(accumulator.accumulatedSeconds() == 0.125);
+
+  const FixedStepPlan next = accumulator.advance(0.125);  // the other half
+  CHECK(next.steps == 1);
+  CHECK(next.alpha == 0.0);
+}
+
+TEST_CASE("FixedStep: a stalled frame is clamped before it is accumulated") {
+  // Room for 100 steps per frame, so only the clamp limits this frame.
+  FixedStepAccumulator accumulator(0.25 / 16.0, /*maxStepsPerFrame=*/100, /*maxFrameSeconds=*/0.25);
+  const FixedStepPlan plan = accumulator.advance(10.0);  // a 10-second breakpoint
+  CHECK(plan.steps == 16);                // 0.25 s worth, not 10 s worth
+  CHECK(plan.droppedSeconds == 9.75);
+  CHECK(plan.alpha == 0.0);
+}
+
+TEST_CASE("FixedStep: the catch-up cap drops whole steps but keeps the fraction") {
+  FixedStepAccumulator accumulator(0.25, /*maxStepsPerFrame=*/2, /*maxFrameSeconds=*/10.0);
+  const FixedStepPlan plan = accumulator.advance(1.625);  // owes 6.5 steps
+  CHECK(plan.steps == 2);               // the cap
+  CHECK(plan.droppedSeconds == 1.0);    // 4 whole steps thrown away
+  CHECK(plan.alpha == 0.5);             // the half step is kept
+  CHECK(accumulator.advance(0.0).steps == 0);  // and nothing more is owed afterwards
+}
+
+TEST_CASE("FixedStep: no time is lost or invented over many uneven frames") {
+  FixedStepAccumulator accumulator(1.0 / 120.0, 8, 0.25);
+  const double frames[] = {0.016, 0.007, 0.033, 0.0, 0.051, 0.002, 0.016, 0.1, 0.004, 0.019};
+  double fed = 0.0;
+  double simulated = 0.0;
+  double dropped = 0.0;
+  for (int lap = 0; lap < 20; ++lap) {
+    for (double frame : frames) {
+      const FixedStepPlan plan = accumulator.advance(frame);
+      CHECK(plan.alpha >= 0.0);
+      CHECK(plan.alpha < 1.0);
+      fed += frame;
+      simulated += plan.steps * accumulator.stepSeconds();
+      dropped += plan.droppedSeconds;
+    }
+  }
+  // Every second fed in was simulated, dropped, or is still waiting.
+  CHECK(simulated + dropped + accumulator.accumulatedSeconds() == doctest::Approx(fed).epsilon(1e-12));
+}
+
+TEST_CASE("FixedStep: negative frames count as zero; reset empties; bad settings fall back") {
+  FixedStepAccumulator accumulator(0.25);
+  CHECK(accumulator.advance(-1.0).steps == 0);
+  CHECK(accumulator.accumulatedSeconds() == 0.0);
+
+  (void)accumulator.advance(0.125);
+  accumulator.reset();
+  CHECK(accumulator.accumulatedSeconds() == 0.0);
+
+  const FixedStepAccumulator fallback(0.0, 0, -1.0);
+  CHECK(fallback.stepSeconds() == FixedStepAccumulator::kDefaultStepSeconds);
+  CHECK(fallback.maxStepsPerFrame() == FixedStepAccumulator::kDefaultMaxStepsPerFrame);
+  CHECK(fallback.maxFrameSeconds() == FixedStepAccumulator::kDefaultMaxFrameSeconds);
+}
+
 // --- Log ---------------------------------------------------------------------
 
 TEST_CASE("Log writes to its file, filters by level, and refuses a second init") {
@@ -147,6 +241,18 @@ TEST_CASE("Log writes to its file, filters by level, and refuses a second init")
   CHECK(contents.find("visible line 42") != std::string::npos);
   CHECK(contents.find("[platform]") != std::string::npos);
   CHECK(contents.find("hidden line") == std::string::npos);
+}
+
+TEST_CASE("Log lines reach the file immediately, while the session is still open") {
+  const auto path = scratchPath("live.log");
+  std::filesystem::remove(path);
+  auto session = log::init({.filePath = path, .level = log::Level::Info, .console = false,
+                            .flushLevel = log::Level::Info});
+  REQUIRE(session.has_value());
+
+  log::info(log::Category::Engine, "written at once");
+  // Read while logging is still running: what `tail -f` would see.
+  CHECK(readFile(path).find("written at once") != std::string::npos);
 }
 
 TEST_CASE("Log reports a log file it cannot create") {

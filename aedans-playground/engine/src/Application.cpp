@@ -47,11 +47,20 @@ std::string_view describe(StopReason reason) noexcept {
 // --- Creation and shutdown ---------------------------------------------------
 
 Application::Application(const ApplicationConfig& config)
-    : config_(config), clock_(config.maxDeltaSeconds) {}
+    : config_(config),
+      clock_(config.maxDeltaSeconds),
+      accumulator_(config.fixedStepSeconds, config.maxFixedStepsPerFrame, config.maxDeltaSeconds) {}
 
 Result<std::unique_ptr<Application>> Application::create(const ApplicationConfig& config) {
   if (config.maxDeltaSeconds <= 0.0) {
     return fail(Errc::InvalidArgument, "maxDeltaSeconds must be positive, got {}", config.maxDeltaSeconds);
+  }
+  if (config.fixedStepSeconds <= 0.0 || config.fixedStepSeconds > config.maxDeltaSeconds) {
+    return fail(Errc::InvalidArgument, "fixedStepSeconds must be in (0, maxDeltaSeconds = {}], got {}",
+                config.maxDeltaSeconds, config.fixedStepSeconds);
+  }
+  if (config.maxFixedStepsPerFrame == 0) {
+    return fail(Errc::InvalidArgument, "maxFixedStepsPerFrame must be at least 1");
   }
 
   log::info(Category::Engine, "Aedan's Playground starting ({} build, {})", PLAYGROUND_BUILD_CONFIG,
@@ -88,7 +97,8 @@ void Application::shutdown() noexcept {
     log::info(Category::Engine, "destroying renderer \"{}\"", renderer_->name());
     renderer_.reset();
   }
-  update_ = nullptr;  // may capture references to things about to go away
+  fixedUpdate_ = nullptr;  // these may capture references to things about to go away
+  update_ = nullptr;
   extract_ = nullptr;
   if (window_) {
     window_.reset();
@@ -107,6 +117,8 @@ void Application::setRenderer(std::unique_ptr<render::Renderer> renderer) {
   renderer_ = std::move(renderer);
   if (renderer_) log::info(Category::Engine, "renderer \"{}\" attached", renderer_->name());
 }
+
+void Application::setFixedUpdate(FixedUpdateFn fixedUpdate) { fixedUpdate_ = std::move(fixedUpdate); }
 
 void Application::setUpdate(UpdateFn update) { update_ = std::move(update); }
 
@@ -134,13 +146,16 @@ Status Application::run() {
           ? std::chrono::duration_cast<Clock::duration>(std::chrono::duration<f64>(1.0 / config_.idleFrameRate))
           : Clock::duration::zero();
 
-  log::info(Category::Engine, "entering main loop (renderer: {}, frame limit: {})",
-            renderer_ ? renderer_->name() : std::string_view{"none"},
+  log::info(Category::Engine, "entering main loop (renderer: {}, simulation {:.0f} Hz, frame limit: {})",
+            renderer_ ? renderer_->name() : std::string_view{"none"}, 1.0 / accumulator_.stepSeconds(),
             config_.maxFrames == 0 ? std::string{"none"} : std::to_string(config_.maxFrames));
 
   clock_.reset();
+  accumulator_.reset();
   stats_ = {};
   framesRun_ = 0;
+  fixedStepsRun_ = 0;
+  lastAlpha_ = 0.0;
   stopReason_ = StopReason::None;
   Status result{};
   auto nextIdleFrame = Clock::now();
@@ -166,12 +181,21 @@ Status Application::run() {
     // 3. Clock.
     const FrameTime time = clock_.tick();
 
-    // 4. Update.
+    // 4. Simulate: as many fixed steps as real time has paid for. The
+    // accumulator clamps the frame and caps the catch-up (core/FixedStep.h).
+    const FixedStepPlan plan = accumulator_.advance(time.rawDeltaSeconds);
+    for (u32 i = 0; i < plan.steps; ++i) {
+      if (fixedUpdate_) fixedUpdate_(FixedStep{.deltaSeconds = accumulator_.stepSeconds(), .index = fixedStepsRun_});
+      ++fixedStepsRun_;
+    }
+    lastAlpha_ = plan.alpha;
+
+    // 5. Update, once per frame.
     if (update_) update_(time);
 
-    // 5 and 6. Extract and render.
+    // 6 and 7. Extract (interpolated by alpha) and render.
     if (renderer_ && !window_->isMinimized()) {
-      if (Status frame = renderFrame(time); !frame) {
+      if (Status frame = renderFrame(time, plan.alpha); !frame) {
         log::error(Category::Engine, "renderer \"{}\" failed on frame {}: {}", renderer_->name(), time.frameIndex,
                    frame.error().message);
         stopReason_ = StopReason::RendererError;
@@ -182,16 +206,17 @@ Status Application::run() {
     }
 
     ++framesRun_;
-    recordFrameStats(time);
+    recordFrameStats(time, plan);
 
-    // 7. Frame limit.
+    // 8. Frame limit.
     if (config_.maxFrames != 0 && framesRun_ >= config_.maxFrames) {
       stopReason_ = StopReason::FrameLimit;
       break;
     }
   }
 
-  log::info(Category::Engine, "left main loop after {} frames: {}", framesRun_, describe(stopReason_));
+  log::info(Category::Engine, "left main loop after {} frames and {} simulation steps: {}", framesRun_,
+            fixedStepsRun_, describe(stopReason_));
   return result;
 }
 
@@ -213,18 +238,20 @@ void Application::waitForEventsUntil(Clock::time_point deadline) noexcept {
   }
 }
 
-Status Application::renderFrame(const FrameTime& time) {
+Status Application::renderFrame(const FrameTime& time, f64 alpha) {
   if (window_->consumeFramebufferResized()) {
     const platform::Extent2D size = window_->framebufferSize();
     log::debug(Category::Engine, "telling renderer about new framebuffer size {}x{}", size.width, size.height);
     if (Status resized = renderer_->onFramebufferResized(size); !resized) return resized;
   }
   frameData_.clear();
-  if (extract_) extract_(frameData_);
+  if (extract_) extract_(frameData_, alpha);
   return renderer_->renderFrame(time, frameData_);
 }
 
-void Application::recordFrameStats(const FrameTime& time) noexcept {
+void Application::recordFrameStats(const FrameTime& time, const FixedStepPlan& plan) noexcept {
+  stats_.fixedSteps += plan.steps;
+  stats_.droppedSeconds += plan.droppedSeconds;
   if (time.frameIndex == 0) return;  // the first frame has no delta to measure
 
   const f64 delta = time.rawDeltaSeconds;
@@ -240,9 +267,17 @@ void Application::recordFrameStats(const FrameTime& time) noexcept {
 
   if (config_.statsIntervalSeconds > 0.0 && stats_.seconds >= config_.statsIntervalSeconds) {
     const f64 averageMs = 1000.0 * stats_.seconds / static_cast<f64>(stats_.frames);
-    log::debug(Category::Engine, "{} frames in {:.2f} s: average {:.2f} ms ({:.1f} fps), min {:.2f} ms, max {:.2f} ms",
+    log::debug(Category::Engine,
+               "{} frames in {:.2f} s: average {:.2f} ms ({:.1f} fps), min {:.2f} ms, max {:.2f} ms; {} simulation "
+               "steps ({:.1f} per second)",
                stats_.frames, stats_.seconds, averageMs, 1000.0 / averageMs, 1000.0 * stats_.minDelta,
-               1000.0 * stats_.maxDelta);
+               1000.0 * stats_.maxDelta, stats_.fixedSteps, static_cast<f64>(stats_.fixedSteps) / stats_.seconds);
+    if (stats_.droppedSeconds > 0.0) {
+      // The simulation could not keep up (or a stall was clamped): the game
+      // ran slower than real time for a moment. Worth knowing; not an error.
+      log::warn(Category::Engine, "simulation dropped {:.0f} ms of real time in the last {:.1f} s to stay responsive",
+                1000.0 * stats_.droppedSeconds, stats_.seconds);
+    }
     stats_ = {};
   }
 }

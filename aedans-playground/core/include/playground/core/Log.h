@@ -6,8 +6,9 @@
 //    - Severity levels, and a category per subsystem so a line says where it
 //      came from: [platform], [gpu], [engine]...
 //    - Output to a coloured console and to a file overwritten each run.
-//    - The file is flushed on every warning and above, so a crash never
-//      loses the lines that explain it.
+//    - Lines are written to disk as they are logged (see Config::flushLevel),
+//      so `tail -f playground.log` is live and a crash never loses the
+//      lines that explain it.
 //    - Lines logged before init() or after shutdown go to stderr, never
 //      nowhere. Start-up is exactly when things fail.
 //
@@ -43,10 +44,21 @@ enum class Level : u8 { Trace, Debug, Info, Warn, Error, Critical, Off };
 // not before.
 enum class Category : u8 { Core, Platform, Gpu, Render, Engine, Game, Count };
 
+// Lines at or above this level are pushed to disk immediately. In debug
+// builds that is every line; in release, info and above (trace and debug
+// lines, if enabled, are buffered: they can come by the thousand, and a disk
+// write per line would show up in the frame time).
+#if defined(NDEBUG)
+inline constexpr Level kDefaultFlushLevel = Level::Info;
+#else
+inline constexpr Level kDefaultFlushLevel = Level::Trace;
+#endif
+
 struct Config {
   std::filesystem::path filePath = "playground.log";  // empty: no log file
   Level level = Level::Info;                          // lines below this are dropped
   bool console = true;                                // also write to stdout
+  Level flushLevel = kDefaultFlushLevel;              // lines at or above this are flushed at once
 };
 
 // RAII handle for the logging system. Move-only; destroying the active

@@ -60,7 +60,7 @@ ecs::Entity ship = world.create();
 world.add<engine::Transform>(ship, engine::Transform{.position = {0, 0}});
 world.add<engine::Velocity>(ship, engine::Velocity{.linear = {40, 0}});
 
-engine::movementSystem(world, dt);   // every Transform + Velocity
+engine::movementSystem(world, step.deltaSeconds);   // every Transform + Velocity
 world.flush();                       // apply destroys queued during the systems
 ```
 
@@ -73,10 +73,27 @@ world.flush();                       // apply destroys queued during the systems
 - Speed (release build): `movementSystem` over 100,000 entities takes about
   0.46 ms.
 
-Each frame, the Application calls the game's update (systems), then its
-extract step (`engine::extractSprites` copies Transform + Sprite into a plain
-`render::FrameData`), then the renderer draws that list. The renderer never
-touches the ECS.
+## The frame: fixed simulation steps, smooth drawing
+
+The simulation runs in fixed steps of exactly 1/120 s, so it behaves the same
+at any frame rate (a test checks that 30 fps and 144 fps give bit-identical
+positions). Each frame, `Application::run`:
+
+1. adds the frame's real duration (clamped to 0.25 s) to an accumulator and
+   runs as many fixed steps as it holds: `setFixedUpdate`, 0..n times
+   (`core/FixedStep.h`). At most 8 steps run per frame; if the game cannot
+   keep up, it slows down briefly rather than freezing;
+2. runs `setUpdate` once, with the real frame time (the FPS counter);
+3. runs `setExtract` with `alpha`, the leftover fraction of a step in
+   [0, 1): `engine::extractSprites` draws each sprite `alpha` of the way from
+   its previous position to its current one, so motion is smooth at any
+   display rate;
+4. renders that list. The renderer never touches the ECS.
+
+In each fixed step the demo runs `snapshotTransforms` (previous = current)
+first, then movement and bounce. A newly spawned entity has no previous
+state yet and is drawn where it is, so it never streaks in from the origin;
+`Transform::teleport()` moves an entity without blending across the jump.
 
 ## Drawing a frame
 
@@ -186,6 +203,8 @@ Other presets: `release`, and `asan` (AddressSanitizer + UBSan).
 ## What a good start looks like
 
 The log goes to the console and to `playground.log` next to where you ran it.
+Lines are written to the file as they happen (every line in debug builds,
+info and above in release), so `tail -f playground.log` is live.
 On this project's test machine (software Vulkan driver), start-up logs:
 
 ```

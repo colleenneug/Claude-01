@@ -4,11 +4,14 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "playground/core/FixedStep.h"
 #include "playground/ecs/World.h"
 #include "playground/engine/Components.h"
 #include "playground/engine/Systems.h"
 
 #include <chrono>
+#include <cmath>
+#include <numbers>
 #include <cstdio>
 #include <set>
 #include <vector>
@@ -228,7 +231,7 @@ TEST_CASE("extractSprites copies every Transform + Sprite into the frame") {
   world.add<Transform>(world.create());  // no Sprite: not drawn
 
   render::FrameData frame;
-  engine::extractSprites(world, frame);
+  engine::extractSprites(world, frame, 1.0);
   REQUIRE(frame.sprites.size() == 1);
   const render::SpriteInstance& s = frame.sprites[0];
   CHECK(s.position.x == 3.0f);
@@ -236,6 +239,123 @@ TEST_CASE("extractSprites copies every Transform + Sprite into the frame") {
   CHECK(s.size.y == 10.0f);
   CHECK(s.rotation == 0.5f);
   CHECK(s.colour.r == 1.0f);
+}
+
+// --- Fixed steps and interpolation -------------------------------------------
+
+TEST_CASE("snapshotTransforms copies current into previous and marks it") {
+  ecs::World world;
+  const ecs::Entity e = world.create();
+  world.add<Transform>(e, Transform{.position = {4.0f, 5.0f}, .rotation = 0.25f});
+  CHECK_FALSE(world.get<Transform>(e).hasPrevious);
+
+  engine::snapshotTransforms(world);
+  const Transform& t = world.get<Transform>(e);
+  CHECK(t.hasPrevious);
+  CHECK(t.previousPosition == glm::vec2{4.0f, 5.0f});
+  CHECK(t.previousRotation == 0.25f);
+}
+
+TEST_CASE("one step later, extraction blends previous -> current by alpha") {
+  ecs::World world;
+  const ecs::Entity e = world.create();
+  world.add<Transform>(e, Transform{.position = {0.0f, 0.0f}});
+  world.add<Velocity>(e, Velocity{.linear = {120.0f, -60.0f}, .angular = 1.2f});
+  world.add<Sprite>(e);
+
+  // One 1/120 s step: snapshot (previous = 0,0), then move to (1, -0.5).
+  engine::snapshotTransforms(world);
+  engine::movementSystem(world, 1.0f / 120.0f);
+
+  for (const double alpha : {0.0, 0.25, 0.5, 1.0}) {
+    render::FrameData frame;
+    engine::extractSprites(world, frame, alpha);
+    REQUIRE(frame.sprites.size() == 1);
+    CHECK(frame.sprites[0].position.x == doctest::Approx(1.0 * alpha));
+    CHECK(frame.sprites[0].position.y == doctest::Approx(-0.5 * alpha));
+    CHECK(frame.sprites[0].rotation == doctest::Approx(0.01 * alpha));
+  }
+}
+
+TEST_CASE("a newly spawned sprite is drawn where it is, not streaked from the origin") {
+  ecs::World world;
+  const ecs::Entity e = world.create();
+  // Made the ordinary way, with no snapshot yet: previousPosition is (0, 0).
+  world.add<Transform>(e, Transform{.position = {300.0f, -200.0f}, .rotation = 1.0f});
+  world.add<Sprite>(e);
+
+  for (const double alpha : {0.0, 0.5, 0.99}) {
+    render::FrameData frame;
+    engine::extractSprites(world, frame, alpha);
+    REQUIRE(frame.sprites.size() == 1);
+    CHECK(frame.sprites[0].position == glm::vec2{300.0f, -200.0f});  // not (150, -100) at alpha 0.5
+    CHECK(frame.sprites[0].rotation == 1.0f);
+  }
+}
+
+TEST_CASE("teleport moves without blending across the jump") {
+  ecs::World world;
+  const ecs::Entity e = world.create();
+  world.add<Transform>(e, Transform{.position = {0.0f, 0.0f}});
+  world.add<Sprite>(e);
+  engine::snapshotTransforms(world);
+
+  world.get<Transform>(e).teleport({500.0f, 500.0f}, 2.0f);
+  render::FrameData frame;
+  engine::extractSprites(world, frame, 0.5);
+  CHECK(frame.sprites[0].position == glm::vec2{500.0f, 500.0f});
+  CHECK(frame.sprites[0].rotation == 2.0f);
+}
+
+TEST_CASE("rotation blends the short way round across the +pi / -pi wrap") {
+  constexpr float kPi = std::numbers::pi_v<float>;
+  Transform t;
+  t.previousRotation = kPi - 0.05f;   // just under +180 degrees
+  t.rotation = -kPi + 0.05f;          // just over -180 degrees: a 0.1 rad turn, wrapped
+  t.hasPrevious = true;
+  const float halfway = engine::interpolateRotation(t, 0.5f);
+  // The short way passes through 180 degrees; a plain lerp would give ~0 (facing backwards).
+  CHECK(std::cos(halfway) == doctest::Approx(-1.0f).epsilon(1e-4));
+  CHECK(std::fabs(std::sin(halfway)) < 1e-4f);
+}
+
+TEST_CASE("the fixed-step simulation is identical at 30 fps and at 144 fps") {
+  // Run the real pipeline (accumulator + snapshot + movement + bounce) for
+  // exactly 120 steps at two very different frame rates. Same steps in the
+  // same order: the positions must match to the last bit.
+  auto simulate = [](double frameSeconds) {
+    ecs::World world;
+    for (int i = 0; i < 50; ++i) {
+      const ecs::Entity e = world.create();
+      const auto n = static_cast<float>(i);
+      const auto mod5 = static_cast<float>(i % 5);
+      const auto mod7 = static_cast<float>(i % 7);
+      world.add<Transform>(e, Transform{.position = {static_cast<float>(i * 7 % 300) - 150.0f, 10.0f * n - 250.0f}});
+      world.add<Velocity>(e, Velocity{.linear = {37.0f * mod5 - 80.0f, 91.0f - 13.0f * mod7}, .angular = 0.3f});
+      world.add<Sprite>(e, Sprite{.size = {10.0f, 10.0f}});
+    }
+    FixedStepAccumulator accumulator(1.0 / 120.0);
+    u64 steps = 0;
+    while (steps < 120) {
+      const FixedStepPlan plan = accumulator.advance(frameSeconds);
+      for (u32 i = 0; i < plan.steps && steps < 120; ++i, ++steps) {
+        engine::snapshotTransforms(world);
+        engine::movementSystem(world, static_cast<f32>(accumulator.stepSeconds()));
+        engine::bounceSystem(world, {200.0f, 150.0f});
+      }
+    }
+    std::vector<glm::vec2> positions;
+    world.each<Transform>([&](ecs::Entity, Transform& t) { positions.push_back(t.position); });
+    return positions;
+  };
+
+  const std::vector<glm::vec2> at30 = simulate(1.0 / 30.0);
+  const std::vector<glm::vec2> at144 = simulate(1.0 / 144.0);
+  REQUIRE(at30.size() == at144.size());
+  for (std::size_t i = 0; i < at30.size(); ++i) {
+    CHECK(at30[i].x == at144[i].x);  // exact equality, on purpose
+    CHECK(at30[i].y == at144[i].y);
+  }
 }
 
 TEST_CASE("movement over 100,000 entities (timing printed, not asserted)") {

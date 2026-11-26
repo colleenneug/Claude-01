@@ -135,7 +135,7 @@ Result<Session> init(const Config& config) {
       auto logger = std::make_shared<spdlog::logger>(std::string(kCategoryNames[i]), sinks.begin(), sinks.end());
       logger->set_pattern(kPattern);
       logger->set_level(spdlog::level::trace);
-      logger->flush_on(spdlog::level::warn);
+      logger->flush_on(toSpdlog(config.flushLevel));
       loggers[i] = std::move(logger);
     }
   } catch (const std::exception& e) {

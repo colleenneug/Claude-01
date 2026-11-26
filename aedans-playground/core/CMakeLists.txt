@@ -1,6 +1,7 @@
 # core: the layer everything stands on. Depends on nothing of ours.
 add_library(playground_core STATIC
   src/Assert.cpp
+  src/FixedStep.cpp
   src/FrameClock.cpp
   src/Log.cpp)
 add_library(playground::core ALIAS playground_core)

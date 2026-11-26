@@ -11,6 +11,7 @@
 #include "playground/core/Log.h"
 #include "playground/engine/Application.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <vector>
@@ -181,6 +182,82 @@ TEST_CASE("a non-positive delta clamp is rejected") {
   const auto app = engine::Application::create(config);
   REQUIRE_FALSE(app.has_value());
   CHECK(app.error().code == Errc::InvalidArgument);
+}
+
+// --- Fixed timestep ------------------------------------------------------------
+
+TEST_CASE("fixed update runs in exact 1/120 s steps, numbered without gaps") {
+  // No renderer: the loop paces itself at 60 fps, so about 2 steps a frame.
+  // The catch-up cap is raised so a slow test machine cannot drop steps and
+  // make the bookkeeping below inexact.
+  auto config = smallWindow(30);
+  config.maxFixedStepsPerFrame = 1000;
+  auto app = engine::Application::create(config);
+  REQUIRE(app.has_value());
+
+  std::vector<FixedStep> steps;
+  f64 realSeconds = 0.0;
+  (*app)->setFixedUpdate([&](const FixedStep& step) { steps.push_back(step); });
+  (*app)->setUpdate([&](const FrameTime& time) { realSeconds += std::min(time.rawDeltaSeconds, config.maxDeltaSeconds); });
+
+  REQUIRE((*app)->run().has_value());
+  REQUIRE_FALSE(steps.empty());
+  CHECK(steps.size() == (*app)->fixedStepsRun());
+  for (usize i = 0; i < steps.size(); ++i) {
+    CHECK(steps[i].index == i);
+    CHECK(steps[i].deltaSeconds == FixedStepAccumulator::kDefaultStepSeconds);
+  }
+  // Real time in = simulated time out + the fraction still waiting.
+  const f64 simulated = static_cast<f64>(steps.size()) * FixedStepAccumulator::kDefaultStepSeconds;
+  const f64 waiting = (*app)->lastAlpha() * FixedStepAccumulator::kDefaultStepSeconds;
+  CHECK(simulated + waiting == doctest::Approx(realSeconds).epsilon(1e-9));
+}
+
+TEST_CASE("each frame: fixed steps, then update, then extract with alpha in [0, 1)") {
+  RendererLog record;
+  auto app = makeApp(40);
+  app->setRenderer(std::make_unique<FakeRenderer>(app->window(), record));
+
+  std::vector<char> order;  // 'f' fixed step, 'u' update, 'e' extract
+  std::vector<f64> alphas;
+  app->setFixedUpdate([&](const FixedStep&) { order.push_back('f'); });
+  app->setUpdate([&](const FrameTime&) { order.push_back('u'); });
+  app->setExtract([&](render::FrameData&, f64 alpha) {
+    order.push_back('e');
+    alphas.push_back(alpha);
+  });
+
+  REQUIRE(app->run().has_value());
+  REQUIRE(alphas.size() == 40);
+  for (const f64 alpha : alphas) {
+    CHECK(alpha >= 0.0);
+    CHECK(alpha < 1.0);
+  }
+  CHECK(alphas.back() == app->lastAlpha());
+  // Within every frame, all fixed steps come before update, update before extract.
+  std::size_t i = 0;
+  for (int frame = 0; frame < 40; ++frame) {
+    while (i < order.size() && order[i] == 'f') ++i;
+    REQUIRE(i + 1 < order.size());
+    CHECK(order[i] == 'u');
+    CHECK(order[i + 1] == 'e');
+    i += 2;
+  }
+  CHECK(i == order.size());
+}
+
+TEST_CASE("unusable fixed-step settings are rejected with a reason") {
+  auto zeroStep = smallWindow(1);
+  zeroStep.fixedStepSeconds = 0.0;
+  const auto a = engine::Application::create(zeroStep);
+  REQUIRE_FALSE(a.has_value());
+  CHECK(a.error().code == Errc::InvalidArgument);
+
+  auto noSteps = smallWindow(1);
+  noSteps.maxFixedStepsPerFrame = 0;
+  const auto b = engine::Application::create(noSteps);
+  REQUIRE_FALSE(b.has_value());
+  CHECK(b.error().code == Errc::InvalidArgument);
 }
 
 int main(int argc, char** argv) {

@@ -6,16 +6,22 @@
 //    1. events   pump OS events (wait for them, when idle; see PACING)
 //    2. stop?    Ctrl+C, requestQuit(), or the window's close button
 //    3. clock    FrameClock::tick() -> FrameTime (delta, elapsed, index)
-//    4. update   the UpdateFn, if set: gameplay goes here
-//    5. extract  the ExtractFn, if set: copies what is visible (e.g. sprites
-//                from the ECS) into a render::FrameData
-//    6. render   the Renderer, if set and the window is not minimised,
-//                drawing that FrameData
-//    7. limit    stop after config.maxFrames, if set (tests, --frames)
+//    4. simulate the FixedUpdateFn, 0..n times, each a step of exactly
+//                config.fixedStepSeconds (1/120 s): gameplay and physics.
+//                How many is decided by a FixedStepAccumulator from the
+//                frame's real duration (see core/FixedStep.h).
+//    5. update   the UpdateFn, once, with the real frame time: things that
+//                follow the display, not the simulation (an FPS counter, UI)
+//    6. extract  the ExtractFn, with alpha = how far real time is past the
+//                last step, in [0, 1): copies what is visible into a
+//                render::FrameData, blending previous and current state
+//    7. render   the Renderer, if set and the window is not minimised
+//    8. limit    stop after config.maxFrames, if set (tests, --frames)
 //
-//  Roadmap Milestone 3 replaces step 4's single variable-rate call with the
-//  fixed-timestep loop from engine/ (erebus::GameLoop); this class is where
-//  that goes, and nothing outside it has to change.
+//  A frame may run zero fixed steps (a 240 Hz display with a 120 Hz
+//  simulation does every other frame) or several (a 30 fps frame runs about
+//  four). That is the point: the simulation advances at its own fixed rate,
+//  and the display shows wherever it has got to.
 //
 //  PACING
 //    With a renderer attached and visible, the loop runs flat out and the
@@ -24,9 +30,9 @@
 //    CPU core at 100%, so it sleeps in the OS event wait until the next
 //    `idleFrameRate` deadline instead.
 //
-//    Update keeps running while minimised, at the idle rate. Erebus Cradle
-//    has co-op: a minimised client that stopped simulating would stop
-//    answering the server.
+//    The simulation keeps running while minimised (the idle rate still
+//    feeds the accumulator). Erebus Cradle has co-op: a minimised client
+//    that stopped simulating would stop answering the server.
 //
 //  OWNERSHIP AND SHUTDOWN ORDER
 //    Platform -> Window -> Renderer are created in that order and destroyed
@@ -41,10 +47,12 @@
 //    auto app = engine::Application::create({.window = {.title = "Erebus Cradle"}});
 //    if (!app) { log the error; return 1; }
 //    (*app)->setRenderer(std::move(renderer));   // later: Vulkan
-//    (*app)->setUpdate([&](const FrameTime& t) { game.update(t); });
+//    (*app)->setFixedUpdate([&](const FixedStep& step) { game.simulate(step); });
+//    (*app)->setExtract([&](render::FrameData& frame, f64 alpha) { game.draw(frame, alpha); });
 //    Status status = (*app)->run();
 // =============================================================================
 
+#include "playground/core/FixedStep.h"
 #include "playground/core/FrameClock.h"
 #include "playground/core/Result.h"
 #include "playground/core/Types.h"
@@ -62,17 +70,25 @@ namespace playground::engine {
 
 struct ApplicationConfig {
   platform::WindowDesc window{};
-  f64 maxDeltaSeconds = FrameClock::kDefaultMaxDeltaSeconds;  // see FrameClock.h: CLAMPING
+  f64 maxDeltaSeconds = FrameClock::kDefaultMaxDeltaSeconds;  // a frame longer than this counts as this long
+  f64 fixedStepSeconds = FixedStepAccumulator::kDefaultStepSeconds;      // 1/120 s: 120 simulation steps a second
+  u32 maxFixedStepsPerFrame = FixedStepAccumulator::kDefaultMaxStepsPerFrame;  // catch-up cap (see core/FixedStep.h)
   u32 idleFrameRate = 60;            // loop rate with no renderer or while minimised; 0 = don't sleep
   u64 maxFrames = 0;                 // stop after this many frames; 0 = run until closed
   f64 statsIntervalSeconds = 5.0;    // how often frame-time statistics are logged (debug level)
 };
 
+// One simulation step of exactly step.deltaSeconds. Called 0..n times a frame.
+using FixedUpdateFn = std::function<void(const FixedStep&)>;
+
+// Once a frame, with the real (clamped) frame time.
 using UpdateFn = std::function<void(const FrameTime&)>;
 
 // Fills the (already cleared) FrameData the renderer will draw this frame.
+// `alpha` in [0, 1) is how far real time has moved past the last simulation
+// step, as a fraction of a step: draw previous + (current - previous) * alpha.
 // Runs only on frames that are rendered.
-using ExtractFn = std::function<void(render::FrameData&)>;
+using ExtractFn = std::function<void(render::FrameData&, f64 alpha)>;
 
 enum class StopReason : u8 {
   None,           // still running, or never ran
@@ -101,6 +117,7 @@ class Application {
   // renderFrame(): a renderer must not replace itself.
   void setRenderer(std::unique_ptr<render::Renderer> renderer);
 
+  void setFixedUpdate(FixedUpdateFn fixedUpdate);
   void setUpdate(UpdateFn update);
   void setExtract(ExtractFn extract);
 
@@ -121,6 +138,8 @@ class Application {
   [[nodiscard]] platform::Platform& platform() noexcept;
   [[nodiscard]] StopReason stopReason() const noexcept { return stopReason_; }
   [[nodiscard]] u64 framesRun() const noexcept { return framesRun_; }
+  [[nodiscard]] u64 fixedStepsRun() const noexcept { return fixedStepsRun_; }
+  [[nodiscard]] f64 lastAlpha() const noexcept { return lastAlpha_; }
 
  private:
   using Clock = FrameClock::Clock;
@@ -129,14 +148,16 @@ class Application {
 
   [[nodiscard]] StopReason pendingStopReason() const noexcept;
   void waitForEventsUntil(Clock::time_point deadline) noexcept;
-  [[nodiscard]] Status renderFrame(const FrameTime& time);
-  void recordFrameStats(const FrameTime& time) noexcept;
+  [[nodiscard]] Status renderFrame(const FrameTime& time, f64 alpha);
+  void recordFrameStats(const FrameTime& time, const FixedStepPlan& plan) noexcept;
 
   struct FrameStats {
     u64 frames = 0;
     f64 seconds = 0.0;
     f64 minDelta = 0.0;
     f64 maxDelta = 0.0;
+    u64 fixedSteps = 0;
+    f64 droppedSeconds = 0.0;
   };
 
   // Declared in creation order, so that even without shutdown() the
@@ -145,13 +166,17 @@ class Application {
   std::unique_ptr<platform::Platform> platform_;
   std::optional<platform::Window> window_;
   std::unique_ptr<render::Renderer> renderer_;
+  FixedUpdateFn fixedUpdate_;
   UpdateFn update_;
   ExtractFn extract_;
   render::FrameData frameData_;  // reused every frame, so its memory is too
 
   FrameClock clock_;
+  FixedStepAccumulator accumulator_;
   FrameStats stats_{};
   u64 framesRun_ = 0;
+  u64 fixedStepsRun_ = 0;
+  f64 lastAlpha_ = 0.0;
   std::atomic<bool> quitRequested_{false};
   StopReason stopReason_ = StopReason::None;
   bool isShutDown_ = false;
