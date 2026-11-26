@@ -4,6 +4,12 @@ target_link_libraries(playground_core_tests PRIVATE playground::core doctest::do
 playground_configure_target(playground_core_tests)
 add_test(NAME core_tests COMMAND playground_core_tests)
 
+# --- ECS and systems: no window, no GPU --------------------------------------
+add_executable(playground_ecs_tests ecs_tests.cpp)
+target_link_libraries(playground_ecs_tests PRIVATE playground::engine doctest::doctest)
+playground_configure_target(playground_ecs_tests)
+add_test(NAME ecs_tests COMMAND playground_ecs_tests)
+
 # --- Application tests: open real windows -----------------------------------
 add_executable(playground_app_tests app_tests.cpp)
 target_link_libraries(playground_app_tests PRIVATE playground::engine doctest::doctest)

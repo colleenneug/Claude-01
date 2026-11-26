@@ -16,7 +16,8 @@
 //                          Result<std::unique_ptr<Renderer>>). Constructors
 //                          cannot return errors; factories can.
 //    onFramebufferResized  Rebuild size-dependent resources (the swapchain).
-//    renderFrame           Record, submit and present one frame.
+//    renderFrame           Record, submit and present one frame, drawing
+//                          what the game extracted into FrameData.
 //    destruction           Release every GPU resource. Runs while the window
 //                          still exists, because a Vulkan surface must be
 //                          destroyed before the window it belongs to.
@@ -31,6 +32,7 @@
 #include "playground/core/FrameClock.h"
 #include "playground/core/Result.h"
 #include "playground/platform/Window.h"
+#include "playground/render/FrameData.h"
 
 #include <string_view>
 
@@ -52,8 +54,9 @@ class Renderer {
   // size. `size` is never empty.
   [[nodiscard]] virtual Status onFramebufferResized(platform::Extent2D size) = 0;
 
-  // Produces one frame. `time` is the same FrameTime the update step saw.
-  [[nodiscard]] virtual Status renderFrame(const FrameTime& time) = 0;
+  // Produces one frame showing `frame`. `time` is the same FrameTime the
+  // update step saw. `frame` is only valid during the call.
+  [[nodiscard]] virtual Status renderFrame(const FrameTime& time, const FrameData& frame) = 0;
 
  protected:
   Renderer() = default;

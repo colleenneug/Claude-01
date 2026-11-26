@@ -1,5 +1,11 @@
 // =============================================================================
-//  VulkanRenderer.cpp — draws one triangle per frame.
+//  VulkanRenderer.cpp — draws the frame's sprites.
+//
+//  WHAT IT DRAWS: every SpriteInstance in the FrameData the game extracted,
+//  in order, as a coloured rectangle. Each sprite is one vkCmdDraw of 6
+//  vertices with its data in push constants (sprite.vert). Simple and
+//  plenty for hundreds of sprites; thousands want one instanced draw from
+//  a buffer, which needs the GPU memory work of roadmap Milestone 2.
 //
 //  ONE FRAME (renderFrame), in order:
 //
@@ -11,7 +17,7 @@
 //                  barrier: image -> COLOR_ATTACHMENT_OPTIMAL
 //                  begin rendering (clear to the background colour)
 //                  bind pipeline, set viewport and scissor
-//                  draw 3 vertices                       <- the triangle
+//                  per sprite: push constants, draw 6 vertices
 //                  end rendering
 //                  barrier: image -> PRESENT_SRC_KHR
 //    4. SUBMIT   to the graphics queue: wait on `imageAcquired`, signal
@@ -33,9 +39,14 @@
 #include "playground/gpu/Instance.h"
 #include "playground/gpu/VulkanCheck.h"
 
+#include <cmath>
+#include <cstddef>
 #include <format>
 #include <span>
 #include <utility>
+
+#include <glm/vec2.hpp>
+#include <glm/vec4.hpp>
 
 namespace playground::render {
 namespace {
@@ -44,12 +55,30 @@ using log::Category;
 
 // SPIR-V compiled from render/shaders/ by glslc at build time and embedded
 // here, so there are no shader files to find at run time.
-constexpr u32 kTriangleVertSpirv[] = {
-#include "triangle.vert.spv.inc"
+constexpr u32 kSpriteVertSpirv[] = {
+#include "sprite.vert.spv.inc"
 };
-constexpr u32 kTriangleFragSpirv[] = {
-#include "triangle.frag.spv.inc"
+constexpr u32 kSpriteFragSpirv[] = {
+#include "sprite.frag.spv.inc"
 };
+
+// Must match the push_constant block in sprite.vert byte for byte. glm::vec2
+// is two floats and glm::vec4 four, so these offsets are the GLSL ones; the
+// static_asserts make a mismatch a build error instead of garbled sprites.
+struct SpritePushConstants {
+  glm::vec2 position;
+  glm::vec2 halfSize;
+  glm::vec2 rotation;      // (cos, sin)
+  glm::vec2 viewportHalf;
+  glm::vec4 colour;
+};
+static_assert(offsetof(SpritePushConstants, position) == 0);
+static_assert(offsetof(SpritePushConstants, halfSize) == 8);
+static_assert(offsetof(SpritePushConstants, rotation) == 16);
+static_assert(offsetof(SpritePushConstants, viewportHalf) == 24);
+static_assert(offsetof(SpritePushConstants, colour) == 32);
+static_assert(sizeof(SpritePushConstants) == 48);
+// Vulkan guarantees at least 128 bytes of push constants on every device.
 
 // How long to wait for the GPU before calling it hung. Generous: a frame
 // that takes this long is a bug, not a slow frame.
@@ -195,9 +224,9 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
   const VkDevice device = context_.device().handle();
 
   // --- Shaders -------------------------------------------------------------
-  auto vertex = createShaderModule(device, kTriangleVertSpirv, "triangle.vert");
+  auto vertex = createShaderModule(device, kSpriteVertSpirv, "sprite.vert");
   if (!vertex) return tl::unexpected(std::move(vertex.error()));
-  auto fragment = createShaderModule(device, kTriangleFragSpirv, "triangle.frag");
+  auto fragment = createShaderModule(device, kSpriteFragSpirv, "sprite.frag");
   if (!fragment) return tl::unexpected(std::move(fragment.error()));
 
   const std::array<VkPipelineShaderStageCreateInfo, 2> stages{{
@@ -212,7 +241,7 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
   }};
 
   // --- Fixed-function state -------------------------------------------------
-  // No vertex buffers: the triangle's corners are in the vertex shader.
+  // No vertex buffers: the quad's corners are in the vertex shader.
   const VkPipelineVertexInputStateCreateInfo vertexInput{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
   const VkPipelineInputAssemblyStateCreateInfo inputAssembly{
@@ -229,7 +258,7 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
   const VkPipelineRasterizationStateCreateInfo rasterization{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
       .polygonMode = VK_POLYGON_MODE_FILL,
-      .cullMode = VK_CULL_MODE_NONE,  // one triangle: draw it whichever way it faces
+      .cullMode = VK_CULL_MODE_NONE,  // 2D: draw quads whichever way they face
       .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
       .lineWidth = 1.0f,
   };
@@ -237,8 +266,15 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
       .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
   };
+  // Standard alpha blending: colour = src * srcAlpha + dst * (1 - srcAlpha).
   const VkPipelineColorBlendAttachmentState blendAttachment{
-      .blendEnable = VK_FALSE,  // opaque: the triangle replaces the background
+      .blendEnable = VK_TRUE,
+      .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+      .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+      .colorBlendOp = VK_BLEND_OP_ADD,
+      .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+      .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+      .alphaBlendOp = VK_BLEND_OP_ADD,
       .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
                         VK_COLOR_COMPONENT_A_BIT,
   };
@@ -254,9 +290,19 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .pDynamicStates = dynamicStates.data(),
   };
 
-  // --- Layout: what the shaders read besides vertices (nothing yet) --------
+  // --- Layout: what the shaders read besides vertices: one push-constant
+  // block, read by the vertex shader.
   if (!pipelineLayout_) {
-    const VkPipelineLayoutCreateInfo layoutInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    const VkPushConstantRange pushRange{
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .offset = 0,
+        .size = sizeof(SpritePushConstants),
+    };
+    const VkPipelineLayoutCreateInfo layoutInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushRange,
+    };
     VkPipelineLayout layout = VK_NULL_HANDLE;
     if (Status s = gpu::check(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout), "vkCreatePipelineLayout");
         !s) {
@@ -297,7 +343,7 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
   }
   pipeline_ = gpu::Pipeline(device, pipeline);  // replaces (and destroys) any old one
   pipelineFormat_ = colourFormat;
-  log::info(Category::Render, "triangle pipeline built for {}", gpu::describe(colourFormat));
+  log::info(Category::Render, "sprite pipeline built for {}", gpu::describe(colourFormat));
   return {};  // the shader modules are destroyed here: the pipeline no longer needs them
 }
 
@@ -353,7 +399,7 @@ Status VulkanRenderer::onFramebufferResized(platform::Extent2D size) {
   return createSwapchain(size);
 }
 
-Status VulkanRenderer::renderFrame(const FrameTime& /*time*/) {
+Status VulkanRenderer::renderFrame(const FrameTime& /*time*/, const FrameData& frameData) {
   if (swapchainOutOfDate_) {
     const platform::Extent2D size = window_.framebufferSize();
     if (size.isEmpty()) return {};  // minimised: nothing to draw into
@@ -397,7 +443,7 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/) {
 
   // 3. RECORD.
   if (Status s = gpu::check(vkResetCommandBuffer(frame.commandBuffer, 0), "vkResetCommandBuffer"); !s) return s;
-  if (Status s = recordCommands(frame.commandBuffer, imageIndex); !s) return s;
+  if (Status s = recordCommands(frame.commandBuffer, imageIndex, frameData); !s) return s;
 
   // 4. SUBMIT. The colour writes wait for the image to be acquired; the
   // semaphore for present and the fence for the CPU fire when it is drawn.
@@ -452,7 +498,7 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/) {
   return {};
 }
 
-Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex) const {
+Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex, const FrameData& frame) const {
   const VkCommandBufferBeginInfo begin{
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
       .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -500,9 +546,20 @@ Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex) 
   vkCmdSetViewport(commands, 0, 1, &viewport);
   vkCmdSetScissor(commands, 0, 1, &scissor);
 
-  // THE DRAW CALL: 3 vertices, 1 instance. The vertex shader runs three
-  // times with gl_VertexIndex 0, 1, 2 and places the corners itself.
-  vkCmdDraw(commands, 3, 1, 0, 0);
+  // One draw per sprite: its data in push constants, 6 vertices (two
+  // triangles) placed by the vertex shader.
+  const glm::vec2 viewportHalf{0.5f * width, 0.5f * height};
+  for (const SpriteInstance& sprite : frame.sprites) {
+    const SpritePushConstants push{
+        .position = sprite.position,
+        .halfSize = 0.5f * sprite.size,
+        .rotation = {std::cos(sprite.rotation), std::sin(sprite.rotation)},
+        .viewportHalf = viewportHalf,
+        .colour = sprite.colour,
+    };
+    vkCmdPushConstants(commands, pipelineLayout_.get(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+    vkCmdDraw(commands, 6, 1, 0, 0);
+  }
 
   vkCmdEndRendering(commands);
 

@@ -4,13 +4,16 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 [`ROADMAP.md`](ROADMAP.md); where the last session stopped is in
 [`HANDOFF.md`](HANDOFF.md).
 
-**Current state:** a window, a main loop with a `std::chrono` frame clock, and
-a Vulkan renderer that draws one hardcoded triangle every frame, with
-validation on in debug builds and the swapchain rebuilt on resize.
+**Current state:** a window, a main loop with a `std::chrono` frame clock, a
+Vulkan renderer, and an entity component system (ECS). The demo spawns 200
+entities with Transform, Velocity and Sprite components; systems move them,
+bounce them off the window edges, and hand them to the renderer, which draws
+each as a rotated, alpha-blended square.
 
-![The first triangle](docs/first-triangle.png)
+![200 ECS entities drawn as sprites](docs/ecs-sprites.png)
 
-*Captured from the running app on Mesa's software Vulkan driver.*
+*Captured from the running app on Mesa's software Vulkan driver. The
+earlier milestone, one hardcoded triangle, is in `docs/first-triangle.png`.*
 
 ## Layout
 
@@ -19,10 +22,11 @@ validation on in debug builds and the swapchain rebuilt on resize.
 | `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock` |
 | `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
 | `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Context`, `Swapchain`, `DeviceHandle` |
-| `render/` | `playground_render` | `Renderer` (interface), the Vulkan renderer, the shaders |
-| `engine/` | `playground_engine` | `Application` (main loop) |
+| `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
+| `render/` | `playground_render` | `Renderer` (interface), `FrameData`, the Vulkan renderer, the shaders |
+| `engine/` | `playground_engine` | `Application` (main loop), components (`Transform`, `Velocity`, `Sprite`), systems |
 | `app/` | `playground_app` | `main.cpp` |
-| `tests/` | | doctest suites for core, application, GPU and renderer |
+| `tests/` | | doctest suites for core, ECS, application, GPU and renderer |
 | `third_party/` | | vendored `tl::expected` |
 
 Each layer may include only the layers below it. Vulkan types stop at the
@@ -44,6 +48,36 @@ failure says which step failed and why.
 The requirements both step 3 and step 4 use live in one place,
 `gpu/src/Requirements.h`.
 
+## The ECS
+
+An entity is just an ID. Data lives in components, one packed array per
+component type, and behaviour lives in systems: plain functions that run over
+every entity with the components they need.
+
+```cpp
+ecs::World world;
+ecs::Entity ship = world.create();
+world.add<engine::Transform>(ship, engine::Transform{.position = {0, 0}});
+world.add<engine::Velocity>(ship, engine::Velocity{.linear = {40, 0}});
+
+engine::movementSystem(world, dt);   // every Transform + Velocity
+world.flush();                       // apply destroys queued during the systems
+```
+
+- `world.each<A, B>(fn)` walks the smallest of the pools and looks the rest
+  up, calling `fn(entity, a, b)`.
+- `destroy()` is deferred to `flush()`, so a system can destroy what it is
+  walking. `add()` and `remove()` during `each()` are refused (debug assert).
+- Handles carry a generation: after an entity is destroyed and its slot
+  reused, old handles see nothing.
+- Speed (release build): `movementSystem` over 100,000 entities takes about
+  0.46 ms.
+
+Each frame, the Application calls the game's update (systems), then its
+extract step (`engine::extractSprites` copies Transform + Sprite into a plain
+`render::FrameData`), then the renderer draws that list. The renderer never
+touches the ECS.
+
 ## Drawing a frame
 
 `render/src/VulkanRenderer.cpp`, once per frame:
@@ -52,13 +86,14 @@ The requirements both step 3 and step 4 use live in one place,
    frames in flight).
 2. **Acquire** a swapchain image to draw into.
 3. **Record:** move the image into the drawing layout, clear it, bind the
-   triangle pipeline, `vkCmdDraw(3 vertices)`, move it into the present
-   layout.
+   sprite pipeline, then per sprite push its 48 bytes of data (position,
+   size, rotation, colour) and `vkCmdDraw(6 vertices)`, then move the image
+   into the present layout.
 4. **Submit** to the graphics queue.
 5. **Present** the image to the window.
 
-The triangle's corners and colours are in `render/shaders/triangle.vert`; no
-vertex buffer yet. The shaders are compiled by `glslc` during the build and
+The quad's corners are in `render/shaders/sprite.vert`; no vertex buffer yet.
+World units are pixels, with (0, 0) at the centre of the window and +y up. The shaders are compiled by `glslc` during the build and
 embedded in the executable (see `cmake/Shaders.cmake`), so there are no shader
 files to ship. When the window is resized, or present reports the swapchain is
 out of date, the swapchain is rebuilt at the new size.
@@ -169,13 +204,13 @@ On this project's test machine (software Vulkan driver), start-up logs:
 [gpu     ] graphics queue ready: family 0, also used for present
 [gpu     ] GPU ready: llvmpipe (LLVM 20.1.2, 256 bits) with Vulkan 1.4.318
 [gpu     ] swapchain created: 1600x900, 4 images, B8G8R8A8_SRGB, FIFO (vsync)
-[render  ] triangle pipeline built for B8G8R8A8_SRGB
+[render  ] sprite pipeline built for B8G8R8A8_SRGB
 [render  ] Vulkan renderer ready: 2 frames in flight
 [engine  ] renderer "vulkan" attached
 ```
 
-And the window shows the triangle above: red at the top, green bottom left,
-blue bottom right, on a very dark blue background.
+followed by `[game    ] spawned 200 sprites (200 entities)`, and the window
+shows the bouncing squares above on a very dark blue background.
 
 On a desktop you will see your own GPU, `discrete GPU` or `integrated GPU`,
 and on Windows `VK_KHR_win32_surface` instead of `VK_KHR_xcb_surface`. A
@@ -196,7 +231,7 @@ Every failure is one `critical` line naming the step and the reason.
 | `the Vulkan loader on this machine supports 1.2` | Driver too old | Update the GPU driver |
 | `step 3 (choosing a GPU): no GPU meets the engine's requirements` | Every GPU lacks something; the message lists what, per GPU | Update the driver; if it still fails, the GPU is older than the engine's minimum (Vulkan 1.3 with descriptor indexing) |
 | `validation was requested but VK_LAYER_KHRONOS_validation is not installed` (warning) | The program still runs, without validation | Install the Vulkan SDK (Windows) or `vulkan-validationlayers` (Linux) |
-| Window opens but stays black or dark blue with no triangle | The draw is not reaching the screen | Run with `--verbose` and send the log; check for `[gpu] [error]` lines |
+| Window opens but stays black or dark blue with no squares | The draw is not reaching the screen | Run with `--verbose` and send the log; check for `[gpu] [error]` lines |
 | `N Vulkan validation error(s)` at exit, exit code 1 | A real bug: the engine used Vulkan incorrectly | Read the `[gpu] [error]` lines above it; each names the rule broken (`VUID-...`) |
 
 ## Options
@@ -204,6 +239,7 @@ Every failure is one `critical` line naming the step and the reason.
 | Option | Effect |
 |---|---|
 | `--frames N` | exit after N frames |
+| `--sprites N` | how many bouncing squares the demo spawns (default 200) |
 | `--verbose` | debug-level logging: frame-time statistics, Vulkan loader messages |
 | `--log-file PATH` | where the log goes (default `playground.log`) |
 | `--validation` / `--no-validation` | force Vulkan validation on or off (default: on in debug builds, off in release) |

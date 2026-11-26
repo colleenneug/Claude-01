@@ -7,8 +7,11 @@
 //    2. stop?    Ctrl+C, requestQuit(), or the window's close button
 //    3. clock    FrameClock::tick() -> FrameTime (delta, elapsed, index)
 //    4. update   the UpdateFn, if set: gameplay goes here
-//    5. render   the Renderer, if set and the window is not minimised
-//    6. limit    stop after config.maxFrames, if set (tests, --frames)
+//    5. extract  the ExtractFn, if set: copies what is visible (e.g. sprites
+//                from the ECS) into a render::FrameData
+//    6. render   the Renderer, if set and the window is not minimised,
+//                drawing that FrameData
+//    7. limit    stop after config.maxFrames, if set (tests, --frames)
 //
 //  Roadmap Milestone 3 replaces step 4's single variable-rate call with the
 //  fixed-timestep loop from engine/ (erebus::GameLoop); this class is where
@@ -67,6 +70,10 @@ struct ApplicationConfig {
 
 using UpdateFn = std::function<void(const FrameTime&)>;
 
+// Fills the (already cleared) FrameData the renderer will draw this frame.
+// Runs only on frames that are rendered.
+using ExtractFn = std::function<void(render::FrameData&)>;
+
 enum class StopReason : u8 {
   None,           // still running, or never ran
   WindowClosed,   // close button, Alt+F4, Window::requestClose()
@@ -95,6 +102,7 @@ class Application {
   void setRenderer(std::unique_ptr<render::Renderer> renderer);
 
   void setUpdate(UpdateFn update);
+  void setExtract(ExtractFn extract);
 
   // Runs frames until something stops the loop (see StopReason). Returns the
   // renderer's error if that is what stopped it; success otherwise. May be
@@ -138,6 +146,8 @@ class Application {
   std::optional<platform::Window> window_;
   std::unique_ptr<render::Renderer> renderer_;
   UpdateFn update_;
+  ExtractFn extract_;
+  render::FrameData frameData_;  // reused every frame, so its memory is too
 
   FrameClock clock_;
   FrameStats stats_{};

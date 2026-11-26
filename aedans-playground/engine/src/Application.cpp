@@ -89,6 +89,7 @@ void Application::shutdown() noexcept {
     renderer_.reset();
   }
   update_ = nullptr;  // may capture references to things about to go away
+  extract_ = nullptr;
   if (window_) {
     window_.reset();
     log::info(Category::Engine, "window destroyed");
@@ -108,6 +109,8 @@ void Application::setRenderer(std::unique_ptr<render::Renderer> renderer) {
 }
 
 void Application::setUpdate(UpdateFn update) { update_ = std::move(update); }
+
+void Application::setExtract(ExtractFn extract) { extract_ = std::move(extract); }
 
 void Application::requestQuit() noexcept { quitRequested_.store(true); }
 
@@ -166,7 +169,7 @@ Status Application::run() {
     // 4. Update.
     if (update_) update_(time);
 
-    // 5. Render.
+    // 5 and 6. Extract and render.
     if (renderer_ && !window_->isMinimized()) {
       if (Status frame = renderFrame(time); !frame) {
         log::error(Category::Engine, "renderer \"{}\" failed on frame {}: {}", renderer_->name(), time.frameIndex,
@@ -181,7 +184,7 @@ Status Application::run() {
     ++framesRun_;
     recordFrameStats(time);
 
-    // 6. Frame limit.
+    // 7. Frame limit.
     if (config_.maxFrames != 0 && framesRun_ >= config_.maxFrames) {
       stopReason_ = StopReason::FrameLimit;
       break;
@@ -216,7 +219,9 @@ Status Application::renderFrame(const FrameTime& time) {
     log::debug(Category::Engine, "telling renderer about new framebuffer size {}x{}", size.width, size.height);
     if (Status resized = renderer_->onFramebufferResized(size); !resized) return resized;
   }
-  return renderer_->renderFrame(time);
+  frameData_.clear();
+  if (extract_) extract_(frameData_);
+  return renderer_->renderFrame(time, frameData_);
 }
 
 void Application::recordFrameStats(const FrameTime& time) noexcept {

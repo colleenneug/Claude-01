@@ -40,7 +40,7 @@ class VulkanRenderer final : public Renderer {
 
   [[nodiscard]] std::string_view name() const noexcept override { return "vulkan"; }
   [[nodiscard]] Status onFramebufferResized(platform::Extent2D size) override;
-  [[nodiscard]] Status renderFrame(const FrameTime& time) override;
+  [[nodiscard]] Status renderFrame(const FrameTime& time, const FrameData& frame) override;
 
   // For tests and diagnostics.
   [[nodiscard]] const gpu::Context& context() const noexcept { return context_; }
@@ -62,7 +62,7 @@ class VulkanRenderer final : public Renderer {
   [[nodiscard]] Status createSwapchain(platform::Extent2D size);
   [[nodiscard]] Status createPipeline(VkFormat colourFormat);
   [[nodiscard]] Status createFrameResources();
-  [[nodiscard]] Status recordCommands(VkCommandBuffer commands, u32 imageIndex) const;
+  [[nodiscard]] Status recordCommands(VkCommandBuffer commands, u32 imageIndex, const FrameData& frame) const;
 
   platform::Window& window_;
   VulkanRendererDesc desc_;

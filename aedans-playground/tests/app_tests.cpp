@@ -48,7 +48,7 @@ class FakeRenderer final : public render::Renderer {
     return {};
   }
 
-  Status renderFrame(const FrameTime&) override {
+  Status renderFrame(const FrameTime&, const render::FrameData&) override {
     ++record_.frames;
     if (record_.frames == failOnFrame_) {
       return fail(Errc::RendererFailure, "simulated device loss on frame {}", record_.frames);

@@ -44,7 +44,7 @@ render::VulkanRenderer* attachRenderer(engine::Application& app) {
 
 }  // namespace
 
-TEST_CASE("renders and presents every frame, with no validation errors") {
+TEST_CASE("renders and presents every frame of sprites, with no validation errors") {
   gpu::resetValidationCounts();
   {
     auto app = makeApp(30);
@@ -55,6 +55,12 @@ TEST_CASE("renders and presents every frame, with no validation errors") {
     CHECK(swapchain.extent().width == framebuffer.width);
     CHECK(swapchain.extent().height == framebuffer.height);
     CHECK(swapchain.imageCount() >= 2);
+
+    // Something to draw, including overlap (blending) and rotation.
+    app->setExtract([](render::FrameData& frame) {
+      frame.sprites.push_back({.position = {0.0f, 0.0f}, .size = {64.0f, 64.0f}, .rotation = 0.3f});
+      frame.sprites.push_back({.position = {20.0f, 10.0f}, .size = {40.0f, 20.0f}, .colour = {1, 0, 0, 0.5f}});
+    });
 
     const Status status = app->run();
     REQUIRE_MESSAGE(status.has_value(), (status ? "" : status.error().message));

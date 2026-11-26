@@ -8,10 +8,11 @@
 #    playground_platform  GLFW window, events, Ctrl+C handling    -> core
 #    playground_gpu       Vulkan instance, surface, GPU choice,
 #                         device, queues, swapchain              -> platform
+#    playground_ecs       entities, component pools, queries     -> core
 #    playground_render    Renderer interface + the Vulkan
 #                         renderer (Vulkan stays private)        -> gpu
-#    playground_engine    Application: owns the loop and the
-#                         renderer slot                           -> render
+#    playground_engine    Application (loop, renderer slot),
+#                         components and systems           -> render, ecs
 #    playground_app       the executable                         -> engine
 # =============================================================================
 cmake_minimum_required(VERSION 3.24)
@@ -41,6 +42,7 @@ include(cmake/Shaders.cmake)
 # time, so a configure never depends on the network.
 find_package(glfw3 3.3 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(glm CONFIG REQUIRED)
 # Vulkan headers and loader: the Vulkan SDK on Windows (VULKAN_SDK is set by
 # its installer), libvulkan-dev on Ubuntu.
 find_package(Vulkan 1.3 REQUIRED COMPONENTS glslc)   # glslc compiles the shaders
@@ -53,6 +55,7 @@ target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRE
 # --- Layers ------------------------------------------------------------------
 add_subdirectory(core)
 add_subdirectory(platform)
+add_subdirectory(ecs)
 add_subdirectory(gpu)
 add_subdirectory(render)
 add_subdirectory(engine)

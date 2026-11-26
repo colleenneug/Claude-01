@@ -3,12 +3,11 @@
 Paste this file into a new session to resume. The plan is `ROADMAP.md`;
 build, run and troubleshooting instructions are in `README.md`.
 
-**Status:** the first triangle is on screen. A Vulkan renderer draws one
-hardcoded triangle every frame, with validation on in debug builds and the
-swapchain rebuilt on resize. That completes roadmap Milestone 1 (the user
-calls it Milestone 3). Screenshot: `docs/first-triangle.png`. **Next:**
-roadmap Milestone 2, renderer foundations: GPU memory (VMA), vertex and
-index buffers, a depth buffer, a camera, and many meshes.
+**Status:** an entity component system (ECS) now drives what is on screen.
+The demo spawns 200 entities with Transform, Velocity and Sprite components;
+systems move them and bounce them off the window edges; an extract step
+copies them into a plain draw list; the Vulkan renderer draws each as a
+rotated, alpha-blended square. Screenshot: `docs/ecs-sprites.png`.
 
 - Repository `colleenneug/Claude-01`, branch `claude/relaxed-cray-5kc2fl`, no pull request open.
 - Standing guidelines: modern C++20 (smart pointers, RAII, `std::span`,
@@ -18,75 +17,80 @@ index buffers, a depth buffer, a camera, and many meshes.
 - Decisions: C++20 with `tl::expected`; Windows and Linux only; the
   Playground lives in this repository; minimum GPU Vulkan 1.3 with descriptor
   indexing; namespace `playground`, targets `playground_*`; the `Renderer`
-  interface lives in a `render` layer below the engine.
-- Numbering: the user's milestone numbers run one or two ahead of
-  `ROADMAP.md`'s. Same work, different count.
+  interface lives in the render layer below the engine; the ECS is a fresh
+  sparse-set implementation (the `engine/` blueprint is left untouched as
+  reference, not moved).
+- Numbering: the user calls this "Milestone 4". In `ROADMAP.md` it is the
+  ECS part of Milestone 3 (engine core). Roadmap Milestone 2 (GPU memory,
+  vertex buffers, depth, camera) has NOT been done yet; the user skipped
+  ahead to the ECS, and sprites are drawn without buffers (push constants).
 - The user may be young or new to this: when asked to explain, keep it short
-  and plain; one simple idea at a time.
+  and plain, one idea at a time.
 
 ---
 
 ## 1. Current Architecture State
 
 ```
-app/main.cpp      logging -> Application (platform, window) -> createVulkanRenderer -> setRenderer -> run
-  engine/         Application: loop, renderer slot; destroys renderer -> window -> GLFW
-  render/         Renderer (interface); VulkanRenderer (private class, src/); shaders/
-  gpu/            Context (Instance, Surface, GPU choice, Device), Swapchain, DeviceHandle
-  platform/       Platform (GLFW, Ctrl+C), Window (no GL context, setSize)
-  core/           Result, Log, Assert, FrameClock
+app/main.cpp   logging -> Application -> createVulkanRenderer -> setRenderer
+               -> ecs::World + spawnBouncingSprites -> setUpdate (systems) -> setExtract -> run
+  engine/      Application (loop, renderer slot, update + extract hooks);
+               Components (Transform, Velocity, Sprite); Systems (movement, bounce, extract)
+  ecs/         Entity, ComponentPool<T>, World            (depends only on core)
+  render/      Renderer interface, FrameData/SpriteInstance (public, no Vulkan);
+               VulkanRenderer + sprite shaders (private)
+  gpu/         Context (instance, surface, GPU, device), Swapchain, DeviceHandle, VulkanCheck
+  platform/    Platform (GLFW, Ctrl+C), Window
+  core/        Result, Log, Assert, FrameClock, Types
 ```
 
-Vulkan types stop at `render`: its public headers
-(`render/Renderer.h`, `render/VulkanRenderer.h`) have none, and
-`playground_render` links `playground_gpu` PRIVATE, so engine and app build
-without Vulkan include paths.
+Dependencies point down only: core ← platform ← gpu ← render ← engine ← app;
+ecs depends on core; engine on render + ecs. render links gpu PRIVATE, so no
+Vulkan header reaches engine or app.
 
-**One frame** (`VulkanRenderer::renderFrame`), 2 frames in flight:
-1. Wait on this slot's fence (5 s timeout → "GPU probably hung" error).
-2. `vkAcquireNextImageKHR` → `imageAcquired` semaphore. `OUT_OF_DATE` → mark
-   stale and skip the frame; `SUBOPTIMAL` → draw, then rebuild.
-3. Reset the fence only after a successful acquire (else the next wait hangs).
-4. Record: sync2 barrier UNDEFINED → COLOR_ATTACHMENT_OPTIMAL; `vkCmdBeginRendering`
-   (clear); bind pipeline; viewport with negative height (y up); scissor;
-   `vkCmdDraw(3, 1, 0, 0)`; end; barrier → PRESENT_SRC_KHR.
-5. `vkQueueSubmit2`: wait `imageAcquired` at COLOR_ATTACHMENT_OUTPUT, signal
-   `renderFinished[imageIndex]` and the fence.
-6. `vkQueuePresentKHR` waiting `renderFinished[imageIndex]`.
+**The frame** (`engine::Application::run`):
+1. Events (poll; or sleep to 60 fps when there is no renderer or the window is minimised).
+2. Stop check: Ctrl+C/SIGTERM, `requestQuit()`, window closed.
+3. `FrameClock::tick()` → `FrameTime` (delta clamped to 0.25 s).
+4. **Update** hook: in main, `movementSystem` → `bounceSystem` → `world.flush()` → FPS in title.
+5. **Extract** hook (only on rendered frames): `FrameData` cleared, then `extractSprites` fills it.
+6. **Render**: `renderer->renderFrame(time, frameData)`.
+7. Frame limit (`--frames N`).
 
-`renderFinished` semaphores are per swapchain **image**, not per frame in
-flight (present holds them until the image is shown).
+**The ECS** (`ecs/`):
+- `Entity{u32 index; u32 generation}`. `World::alive()` checks the slot is in
+  use and the generation matches.
+- One `ComponentPool<T>` per component type, a sparse set: `sparse[index] →
+  slot`, `dense[slot] → Entity`, `data[slot] → T` (packed). `contains()`
+  compares the full Entity stored in `dense`, so stale handles see nothing.
+  The old `engine/` blueprint only compared the index; that bug is fixed here.
+- Pools are found by a per-type integer ID (`detail::componentTypeId<T>()`,
+  assigned on first use) indexing a `vector<unique_ptr<PoolBase>>`: no hash map.
+- `each<Ts...>(fn)`: one type walks the packed arrays directly; several
+  types walk the smallest pool and probe the rest; `fn(Entity, Ts&...)`.
+- `destroy()` is deferred to `flush()` (safe inside `each`); `add()` /
+  `remove()` / `flush()` inside `each` hit a debug `PG_ASSERT` (iteration
+  counter); `create()` is allowed anytime.
+- `Component` concept: object type, not const, nothrow move-constructible
+  and move-assignable.
 
-**Swapchain** (`gpu/src/Swapchain.cpp`): B8G8R8A8_SRGB or R8G8B8A8_SRGB with
-SRGB_NONLINEAR (warns if neither); FIFO by default (vsync), MAILBOX then
-IMMEDIATE with vsync off; extent from the surface or the clamped framebuffer
-size; minImageCount + 1 within the max; CONCURRENT sharing when graphics and
-present families differ; rebuilt with `oldSwapchain` after `vkDeviceWaitIdle`.
-The pipeline is rebuilt only if the format changes.
+**Sprites on the GPU** (`render/src/VulkanRenderer.cpp`): one pipeline, no
+vertex buffer. Per sprite: `vkCmdPushConstants` of `SpritePushConstants` (48
+bytes: position, halfSize, (cos, sin), viewportHalf, colour; offsets
+`static_assert`ed against `sprite.vert`), then `vkCmdDraw(6)`. Standard alpha
+blending. World units are pixels, origin at the window centre, +y up
+(negative-height viewport).
 
-**Shaders**: `render/shaders/triangle.vert` has the three positions and
-colours as constant arrays indexed by `gl_VertexIndex`; `triangle.frag`
-outputs the interpolated colour. Vertex output location 0 → fragment input
-location 0; fragment output location 0 → colour attachment 0. Compiled by
-`glslc --target-env=vulkan1.3 -Werror -O -mfmt=num` at build time
-(`cmake/Shaders.cmake`) and `#include`d into `const u32[]` arrays.
-
-**Pipeline**: no vertex input, triangle list, dynamic viewport and scissor,
-no culling, no blending, no depth, empty layout,
-`VkPipelineRenderingCreateInfo` with the swapchain format (no VkRenderPass).
-
-**Verified this session** (GCC 13.3, Clang 18.1, GCC + ASan + UBSan, Mesa
+**Verified this session** (GCC 13.3, Clang 18.1, GCC + ASan + UBSan; Mesa
 llvmpipe under Xvfb):
 
 | Check | Result |
 |---|---|
 | Build, warnings as errors | 0 warnings, GCC and Clang |
-| `xvfb-run -a ctest`: core, app, gpu, render, app_smoke, app_no_display | 6/6 in all three builds |
-| Screenshot of the running app | triangle visible: red top, green bottom-left, blue bottom-right; background (25,25,48) = sRGB of the linear clear colour |
-| Real window resize to 480×360 | swapchain rebuilt at 480×360, no validation errors |
-| Replacing the renderer mid-run | no validation errors |
-| Ctrl+C | clean shutdown, exit 0 |
-| ASan leak check | still catches a deliberately planted leak in our code |
+| `xvfb-run -a ctest`: core, ecs, app, gpu, render, app_smoke, app_no_display | 7/7 in all three builds |
+| Screenshot of the demo | 200 rotated, translucent squares; two screenshots 0.5 s apart differ in ~350k pixels (they move) |
+| ECS speed, release | `movementSystem` over 100,000 entities: 0.46 ms (debug: 4.8 ms) |
+| Validation | 0 messages |
 
 **Not yet run on a real GPU, and not on Windows.**
 
@@ -96,120 +100,153 @@ New:
 
 | File | Contents |
 |---|---|
-| `gpu/include/playground/gpu/DeviceHandle.h` | `DeviceHandle<Handle, Destroy>`; aliases `Semaphore`, `Fence`, `ImageView`, `ShaderModule`, `PipelineLayout`, `Pipeline`, `CommandPool` |
-| `gpu/include/playground/gpu/Swapchain.h`, `gpu/src/Swapchain.cpp` | `SwapchainDesc`, `Swapchain`, `describe(VkFormat)`, `describe(VkPresentModeKHR)` |
-| `render/include/playground/render/VulkanRenderer.h` | `VulkanRendererDesc`, `createVulkanRenderer()`, `GpuValidationCounts`, `gpuValidationCounts()` (no Vulkan types) |
-| `render/src/VulkanRenderer.h`, `render/src/VulkanRenderer.cpp` | `VulkanRenderer` (private), `kFramesInFlight` |
-| `render/shaders/triangle.vert`, `render/shaders/triangle.frag` | The hardcoded triangle |
-| `render/CMakeLists.txt` | `playground_render`; compiles the shaders |
-| `cmake/Shaders.cmake` | `playground_compile_shader(target shader)` |
-| `tests/render_tests.cpp` | 4 tests: frames presented with no validation errors, real resize, renderer replacement, public factory |
-| `docs/first-triangle.png` | Screenshot of the running app |
+| `ecs/include/playground/ecs/Entity.h` | `Entity`, `kNullEntity`, `std::hash<Entity>` |
+| `ecs/include/playground/ecs/ComponentPool.h` | `Component` concept, `PoolBase`, `ComponentPool<T>` |
+| `ecs/include/playground/ecs/World.h`, `ecs/src/World.cpp` | `World` (create, destroy, flush, alive, add, remove, get, tryGet, has, count, each), `detail::componentTypeId<T>()` |
+| `ecs/CMakeLists.txt` | `playground_ecs` (links core) |
+| `engine/include/playground/engine/Components.h` | `Transform`, `Velocity`, `Sprite` |
+| `engine/include/playground/engine/Systems.h`, `engine/src/Systems.cpp` | `movementSystem`, `bounceSystem`, `extractSprites` |
+| `render/include/playground/render/FrameData.h` | `SpriteInstance`, `FrameData` |
+| `render/shaders/sprite.vert`, `render/shaders/sprite.frag` | The push-constant quad |
+| `tests/ecs_tests.cpp` | 14 tests: lifetime, deferred destroy, generations/stale handles, add/replace/remove, swap-and-pop integrity, 1/2/3-component queries, destroy during iteration, the three systems, 100k-entity timing |
+| `docs/ecs-sprites.png` | Screenshot of the demo |
 
-Moved: `engine/include/playground/engine/Renderer.h` →
-`render/include/playground/render/Renderer.h` (namespace `render`).
+Deleted: `render/shaders/triangle.vert`, `render/shaders/triangle.frag`
+(the triangle pipeline became the sprite pipeline).
 
-Changed: root `CMakeLists.txt` (glslc component, Shaders.cmake, render
-subdirectory); `gpu/CMakeLists.txt` (Swapchain.cpp); `engine/CMakeLists.txt`
-(links render); `app/CMakeLists.txt` (links engine only);
-`engine/.../Application.h/.cpp` and `tests/app_tests.cpp` (`render::Renderer`);
-`platform/.../Window.h/.cpp` (`setSize`); `app/main.cpp` (creates and
-attaches the renderer, no hand-ordered teardown); `tests/CMakeLists.txt`
-(render_tests; sanitizer-build preload, see §4); `README.md`.
+Changed:
+
+| File | Change |
+|---|---|
+| `render/include/playground/render/Renderer.h` | `renderFrame(const FrameTime&, const FrameData&)` |
+| `render/src/VulkanRenderer.h/.cpp` | Sprite pipeline: push-constant range, alpha blending, per-sprite push + draw |
+| `render/include/playground/render/VulkanRenderer.h` | Comments only |
+| `render/CMakeLists.txt` | Sprite shaders; links `glm::glm` PUBLIC |
+| `engine/include/playground/engine/Application.h`, `engine/src/Application.cpp` | `ExtractFn`, `setExtract()`, `frameData_` reused each frame |
+| `engine/CMakeLists.txt` | `Systems.cpp`; links `playground::ecs` |
+| `CMakeLists.txt` | `find_package(glm CONFIG REQUIRED)`; `add_subdirectory(ecs)` |
+| `vcpkg.json` | `glm` |
+| `app/main.cpp` | `--sprites N`; `spawnBouncingSprites`; systems in the update hook; `extractSprites` in the extract hook |
+| `tests/app_tests.cpp` | `FakeRenderer::renderFrame` takes `FrameData` |
+| `tests/render_tests.cpp` | The frame test now draws two sprites (rotation, blending) |
+| `tests/CMakeLists.txt` | `ecs_tests` |
+| `README.md` | ECS section, sprite drawing, `--sprites`, new screenshot |
 
 ## 3. Code Snippet of the Core Loop/Active Component
 
-`VulkanRenderer::recordCommands` in `render/src/VulkanRenderer.cpp`:
+The game loop's ECS wiring, `app/main.cpp`:
 
 ```cpp
-transitionImage(commands, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+ecs::World world;
+spawnBouncingSprites(world, options->sprites, halfSizeOf(application.window().framebufferSize()));
 
-const VkRenderingAttachmentInfo colour{
-    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-    .imageView = swapchain_->imageView(imageIndex),
-    .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-    .clearValue = {.color = {.float32 = {/* desc_.clearColour */}}},
-};
-const VkRenderingInfo rendering{
-    .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-    .renderArea = {.offset = {0, 0}, .extent = extent},
-    .layerCount = 1,
-    .colorAttachmentCount = 1,
-    .pColorAttachments = &colour,
-};
-vkCmdBeginRendering(commands, &rendering);
-vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_.get());
+TitleFpsCounter fpsCounter(application.window());
+application.setUpdate([&](const FrameTime& time) {
+  const auto deltaSeconds = static_cast<f32>(time.deltaSeconds);
+  engine::movementSystem(world, deltaSeconds);
+  engine::bounceSystem(world, halfSizeOf(application.window().framebufferSize()));
+  world.flush();  // apply any destroys the systems queued
+  fpsCounter.update(time);
+});
+application.setExtract([&world](render::FrameData& frame) { engine::extractSprites(world, frame); });
+```
 
-const VkViewport viewport{.x = 0.0f, .y = height, .width = width, .height = -height,
-                          .minDepth = 0.0f, .maxDepth = 1.0f};   // y up
-const VkRect2D scissor{.offset = {0, 0}, .extent = extent};
-vkCmdSetViewport(commands, 0, 1, &viewport);
-vkCmdSetScissor(commands, 0, 1, &scissor);
+The system that moves things, `engine/src/Systems.cpp`:
 
-vkCmdDraw(commands, 3, 1, 0, 0);   // the triangle
+```cpp
+void movementSystem(ecs::World& world, f32 deltaSeconds) {
+  world.each<Transform, Velocity>([deltaSeconds](ecs::Entity, Transform& transform, const Velocity& velocity) {
+    transform.position += velocity.linear * deltaSeconds;
+    transform.rotation += velocity.angular * deltaSeconds;
+  });
+}
+```
 
-vkCmdEndRendering(commands);
-transitionImage(commands, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+The query at the heart of it, `World::each` in `ecs/include/playground/ecs/World.h`:
+
+```cpp
+template <Component... Ts, class Fn>
+void each(Fn&& fn) {
+  const std::tuple<ComponentPool<Ts>*...> pools{findPool<Ts>()...};
+  if (((std::get<ComponentPool<Ts>*>(pools) == nullptr) || ...)) return;  // a type nobody has
+  IterationGuard guard(iterating_);
+
+  if constexpr (sizeof...(Ts) == 1) {
+    auto* p = std::get<0>(pools);                      // one type: walk the packed arrays
+    const std::span<const Entity> entities = p->entities();
+    const auto components = p->components();
+    for (usize i = 0; i < entities.size(); ++i) fn(entities[i], components[i]);
+  } else {
+    const std::array<const PoolBase*, sizeof...(Ts)> bases{std::get<ComponentPool<Ts>*>(pools)...};
+    const PoolBase* smallest = bases[0];               // several: walk the smallest, probe the rest
+    for (const PoolBase* b : bases) if (b->size() < smallest->size()) smallest = b;
+    const std::span<const Entity> entities = smallest->entities();
+    for (usize i = 0; i < entities.size(); ++i) {
+      const Entity e = entities[i];
+      if ((std::get<ComponentPool<Ts>*>(pools)->contains(e) && ...)) {
+        fn(e, std::get<ComponentPool<Ts>*>(pools)->getUnchecked(e)...);
+      }
+    }
+  }
+}
 ```
 
 ## 4. Known Bugs & Incomplete Tasks
 
 No known bugs in our code.
 
-**Worked around, not ours:** with ASan, Mesa's software driver produces a
-~112-byte LeakSanitizer report once the Vulkan loader unloads it at
-`vkDestroyInstance` (its presentation thread's allocations were referenced
-only from the unloaded library). Proven: keeping the driver loaded removes
-the report. In GCC sanitizer builds, `tests/CMakeLists.txt` preloads
-`libasan.so` and `libvulkan_lvp.so` for gpu_tests, render_tests and
-app_smoke. A deliberately planted leak in our code is still reported. Running
-`build/asan/app/playground_app` by hand without that preload shows the
-report; it is expected.
-
 **Not verified**
-- A real GPU, two-GPU laptops, separate graphics/present queue families.
-- Windows (presets, vcpkg, Vulkan SDK, MSVC warnings).
-- An automated pixel check. The triangle was verified by screenshot; a test
-  that reads back the swapchain image and checks colours is not written.
-- Minimise and restore on a real desktop (Xvfb has no window manager).
+- A real GPU and Windows (presets, vcpkg, Vulkan SDK, MSVC warnings). `glm`
+  was added to `vcpkg.json` this session; vcpkg's GLM is 1.0 (Ubuntu's is
+  0.9.9.8). Only `vec2`/`vec4`/`abs` are used, which both have.
+- Minimise/restore on a real desktop (Xvfb has no window manager).
+- No automated pixel check; screenshots were checked by hand and by script.
 
-**Known simplifications, acceptable for now**
-- Swapchain recreation waits for the whole device to go idle
-  (`vkDeviceWaitIdle`) and reuses no semaphores. Fine at window-resize rates.
-  Strictly, `vkDeviceWaitIdle` does not cover pending presents; the clean
-  fix is `VK_EXT_swapchain_maintenance1` present fences, later.
-- Fences, not timeline semaphores, for CPU waits. The roadmap wants timeline
-  semaphores; switch when there is more than one queue.
-- No debug names on Vulkan objects (RenderDoc shows numbered handles).
-- No pipeline cache on disk.
+**Known limitations, acceptable for now**
+- **Variable timestep.** Systems run once per frame with the clamped frame
+  delta. The roadmap's fixed timestep with interpolation (the tested
+  `erebus::GameLoop` in `engine/`) is not ported yet; movement is therefore
+  frame-rate-dependent in edge cases (bounces, future physics).
+- **One draw call per sprite** (push constants). Fine for hundreds;
+  thousands need one instanced draw from a buffer, which needs roadmap
+  Milestone 2 (VMA).
+- **Log file lines below warning are buffered**, so `tail -f playground.log`
+  lags until a warning, a flush or exit. Consider `flush_every` or flushing
+  at info level in debug builds.
+- **No input layer**: nothing responds to keyboard or mouse yet.
+- **`bounceSystem` uses the sprite size as a collider** until there is a
+  collider component.
+- **Component type IDs are per run** (assigned on first use): never save
+  them to disk.
+- Carried over: swapchain recreation uses `vkDeviceWaitIdle`; fences rather
+  than timeline semaphores; no Vulkan debug names; no pipeline cache.
+- In GCC sanitizer builds the Mesa driver is preloaded for GPU tests (Mesa
+  leak-report artefact; see `tests/CMakeLists.txt`); running
+  `build/asan/app/playground_app` by hand without the preload shows a
+  ~112-byte report from the driver. Expected.
 
 ## 5. Immediate Next Steps for Next Weekend
 
-Roadmap Milestone 2: renderer foundations. Order:
+Recommended order (user to choose between A and B first):
 
-1. **GPU memory.** Add Vulkan Memory Allocator (vcpkg `vulkan-memory-allocator`;
-   on Ubuntu `libvma-dev` if packaged, else vendor the single header, pinned).
-   New `gpu/Allocator.h/.cpp`: RAII `VmaAllocator` owned by the Context, and
-   `gpu::Buffer` / `gpu::Image` RAII types.
-2. **Upload path.** A staging buffer and a one-shot command buffer to copy
-   data to device-local memory.
-3. **Vertex and index buffers.** Move the triangle's corners out of the shader
-   into a vertex buffer; add `VkVertexInputBindingDescription` /
-   attribute descriptions. Then a cube.
-4. **Depth buffer** (reverse-Z, D32_SFLOAT), rebuilt with the swapchain.
-5. **Camera**: GLM (`GLM_FORCE_DEPTH_ZERO_TO_ONE`), view-projection via push
-   constants. Keep the negative-viewport y-flip.
-6. **Debug names** on every Vulkan object, and a pipeline cache.
-7. **Tests**: add a pixel read-back test (render, copy the image to a
-   host-visible buffer, check the centre colour) now that buffers exist.
+**A. Finish roadmap Milestone 3 (engine core), smallest steps:**
+1. **Fixed timestep.** Port `erebus::GameLoop` into
+   `engine/include/playground/engine/FixedStep.h` (or into
+   `Application::run`): systems run in fixed 1/120 s steps; `Transform`
+   gains a previous position so extraction interpolates by the leftover
+   fraction. Add `ApplicationConfig::fixedStepSeconds`; the update hook
+   becomes the fixed step.
+2. **Input actions.** `platform/Input.h`: key/mouse state per frame with
+   pressed/released edges, from GLFW callbacks in `Window.cpp`; then an
+   action map (`Move`, `Fire`) as data. First use: a player-controlled
+   sprite with a `PlayerTag` component and an `inputSystem`.
+3. Frame arenas (roadmap §6) only when a profile shows allocation cost.
+
+**B. Roadmap Milestone 2 (renderer foundations):** VMA (`gpu/Allocator.h`),
+`gpu::Buffer`, a staging upload, then instanced sprites from one storage
+buffer (one draw for all sprites), a depth buffer, a camera.
 
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
 debug` passes (reinstall the packages in `README.md` if the setup script did
-not), then start Milestone 2 at step 1."
+not), then start step A1, the fixed timestep."

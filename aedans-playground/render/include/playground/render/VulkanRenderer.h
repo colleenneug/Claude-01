@@ -33,13 +33,13 @@ struct VulkanRendererDesc {
   bool enableValidation = true;  // debug builds check every Vulkan call
 #endif
   bool vsync = true;  // FIFO present: caps the frame rate at the display's
-  // Linear RGBA. The default is a very dark blue, so a missing triangle is
+  // Linear RGBA. The default is a very dark blue, so missing sprites are
   // easy to tell from a missing window.
   std::array<f32, 4> clearColour{0.01f, 0.01f, 0.03f, 1.0f};
 };
 
 // Brings up Vulkan (instance, surface, GPU, device), creates the swapchain,
-// the triangle pipeline and the per-frame resources. Every failure names the
+// the sprite pipeline and the per-frame resources. Every failure names the
 // step and the reason.
 [[nodiscard]] Result<std::unique_ptr<Renderer>> createVulkanRenderer(platform::Platform& platform,
                                                                      platform::Window& window,

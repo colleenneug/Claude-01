@@ -12,10 +12,10 @@ target_include_directories(playground_render
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 target_link_libraries(playground_render
-  PUBLIC  playground::platform
+  PUBLIC  playground::platform glm::glm   # FrameData uses GLM vectors
   PRIVATE playground::gpu)
 
-playground_compile_shader(playground_render shaders/triangle.vert)
-playground_compile_shader(playground_render shaders/triangle.frag)
+playground_compile_shader(playground_render shaders/sprite.vert)
+playground_compile_shader(playground_render shaders/sprite.frag)
 
 playground_configure_target(playground_render)
