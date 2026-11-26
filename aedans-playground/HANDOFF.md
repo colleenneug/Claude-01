@@ -204,9 +204,9 @@ No known bugs.
 - Gamepads: not supported yet.
 
 **Limitations, acceptable for now**
-- `xdotool` is not in the cloud environment's setup script, so a fresh
-  container skips `keyboard_e2e` until it is installed (`apt-get install -y
-  xdotool`).
+- `xdotool` was added to the cloud environment's setup script at the end of
+  this session; until a fresh container proves it, a container without it
+  skips `keyboard_e2e` (install with `apt-get install -y xdotool`).
 - Cursor position is in window pixels; there is no window → world mapping
   yet (needed for aiming at the mouse).
 - Bindings live in code (`ActionMap::defaults()`); loading them from a
@@ -237,4 +237,4 @@ No known bugs.
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
 debug` passes (reinstall the packages in `README.md` if the setup script did
-not; install `xdotool` to run `keyboard_e2e`), then start step 1."
+not; `xdotool` is needed for `keyboard_e2e`), then start step 1."
