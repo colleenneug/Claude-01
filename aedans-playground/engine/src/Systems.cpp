@@ -25,14 +25,29 @@ void movementSystem(ecs::World& world, f32 deltaSeconds) {
   });
 }
 
-void bounceSystem(ecs::World& world, glm::vec2 halfArea) {
+void inputSystem(ecs::World& world, const ActionMap& actions, const platform::InputState& input) {
+  const glm::vec2 move = actions.axis2D(input, actions::kMove);
+  world.each<PlayerTag, Velocity>([move](ecs::Entity, const PlayerTag& player, Velocity& velocity) {
+    velocity.linear = move * player.speed;
+  });
+}
+
+void lifetimeSystem(ecs::World& world, f32 deltaSeconds) {
+  world.each<Lifetime>([&world, deltaSeconds](ecs::Entity entity, Lifetime& lifetime) {
+    lifetime.secondsLeft -= deltaSeconds;
+    if (lifetime.secondsLeft <= 0.0f) world.destroy(entity);  // deferred: safe mid-iteration
+  });
+}
+
+void bounceSystem(ecs::World& world, const WorldBounds& bounds) {
+  const glm::vec2 halfArea = bounds.halfSize;
   world.each<Transform, Velocity, Sprite>(
       [halfArea](ecs::Entity, Transform& transform, Velocity& velocity, const Sprite& sprite) {
         const glm::vec2 halfExtent = 0.5f * sprite.size * glm::abs(transform.scale);
         for (int axis = 0; axis < 2; ++axis) {
           const f32 limit = std::fmax(halfArea[axis] - halfExtent[axis], 0.0f);
           // Only reflect a velocity that points further out, so a sprite
-          // pushed past the edge (the window shrank) comes back in smoothly
+          // pushed past the edge (the bounds shrank) comes back in smoothly
           // instead of flipping direction every frame.
           if (transform.position[axis] > limit) {
             transform.position[axis] = limit;

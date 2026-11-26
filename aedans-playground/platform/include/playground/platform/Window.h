@@ -22,6 +22,7 @@
 
 #include "playground/core/Result.h"
 #include "playground/core/Types.h"
+#include "playground/platform/Input.h"
 
 #include <memory>
 #include <string>
@@ -89,12 +90,21 @@ class Window {
   // resize like any other.
   void setSize(u32 width, u32 height) noexcept;
 
+  // Keyboard and mouse events for this window, collected by its GLFW
+  // callbacks (see Input.h). The Application takes one snapshot per frame.
+  [[nodiscard]] InputCollector& input() noexcept;
+
+  // Whether this window has keyboard focus. Losing it releases all held
+  // keys and buttons (InputCollector::focusLost).
+  [[nodiscard]] bool isFocused() const noexcept;
+
   // For the gpu layer's surface creation (glfwCreateWindowSurface). Nothing
   // outside the platform and gpu layers should need it.
   [[nodiscard]] GLFWwindow* nativeHandle() const noexcept;
 
  private:
   struct State;  // defined in Window.cpp
+  static void registerInputCallbacks(GLFWwindow* handle) noexcept;
   explicit Window(std::unique_ptr<State> state) noexcept;
   std::unique_ptr<State> state_;
 };

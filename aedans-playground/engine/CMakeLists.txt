@@ -1,6 +1,7 @@
 # engine: the Application (window + main loop + renderer slot). Depends on
 # render for the Renderer interface (and, through it, on platform).
 add_library(playground_engine STATIC
+  src/Actions.cpp
   src/Application.cpp
   src/Systems.cpp)
 add_library(playground::engine ALIAS playground_engine)

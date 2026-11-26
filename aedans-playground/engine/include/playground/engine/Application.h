@@ -5,7 +5,8 @@
 //  ONE FRAME
 //    1. events   pump OS events (wait for them, when idle; see PACING)
 //    2. stop?    Ctrl+C, requestQuit(), or the window's close button
-//    3. clock    FrameClock::tick() -> FrameTime (delta, elapsed, index)
+//    3. clock    FrameClock::tick() -> FrameTime (delta, elapsed, index),
+//                and one input snapshot for the frame (platform/Input.h)
 //    4. simulate the FixedUpdateFn, 0..n times, each a step of exactly
 //                config.fixedStepSeconds (1/120 s): gameplay and physics.
 //                How many is decided by a FixedStepAccumulator from the
@@ -17,6 +18,12 @@
 //                render::FrameData, blending previous and current state
 //    7. render   the Renderer, if set and the window is not minimised
 //    8. limit    stop after config.maxFrames, if set (tests, --frames)
+//
+//  INPUT: every fixed step in a frame sees the same held keys, but each
+//  press/release reaches exactly one step (an InputLatch): a slow frame that
+//  runs four steps does not fire four bullets, and a fast frame that runs
+//  none does not lose the press. The per-frame update sees the frame's own
+//  snapshot.
 //
 //  A frame may run zero fixed steps (a 240 Hz display with a 120 Hz
 //  simulation does every other frame) or several (a 30 fps frame runs about
@@ -47,7 +54,9 @@
 //    auto app = engine::Application::create({.window = {.title = "Erebus Cradle"}});
 //    if (!app) { log the error; return 1; }
 //    (*app)->setRenderer(std::move(renderer));   // later: Vulkan
-//    (*app)->setFixedUpdate([&](const FixedStep& step) { game.simulate(step); });
+//    (*app)->setFixedUpdate([&](const FixedStep& step, const platform::InputState& input) {
+//      game.simulate(step, input);
+//    });
 //    (*app)->setExtract([&](render::FrameData& frame, f64 alpha) { game.draw(frame, alpha); });
 //    Status status = (*app)->run();
 // =============================================================================
@@ -57,6 +66,7 @@
 #include "playground/core/Result.h"
 #include "playground/core/Types.h"
 #include "playground/render/Renderer.h"
+#include "playground/platform/Input.h"
 #include "playground/platform/Platform.h"
 #include "playground/platform/Window.h"
 
@@ -78,11 +88,13 @@ struct ApplicationConfig {
   f64 statsIntervalSeconds = 5.0;    // how often frame-time statistics are logged (debug level)
 };
 
-// One simulation step of exactly step.deltaSeconds. Called 0..n times a frame.
-using FixedUpdateFn = std::function<void(const FixedStep&)>;
+// One simulation step of exactly step.deltaSeconds. Called 0..n times a
+// frame. `input`: held keys as of this frame; presses and releases only in
+// the one step they are delivered to.
+using FixedUpdateFn = std::function<void(const FixedStep&, const platform::InputState& input)>;
 
-// Once a frame, with the real (clamped) frame time.
-using UpdateFn = std::function<void(const FrameTime&)>;
+// Once a frame, with the real (clamped) frame time and this frame's input.
+using UpdateFn = std::function<void(const FrameTime&, const platform::InputState& input)>;
 
 // Fills the (already cleared) FrameData the renderer will draw this frame.
 // `alpha` in [0, 1) is how far real time has moved past the last simulation
@@ -173,6 +185,7 @@ class Application {
 
   FrameClock clock_;
   FixedStepAccumulator accumulator_;
+  platform::InputLatch inputLatch_;
   FrameStats stats_{};
   u64 framesRun_ = 0;
   u64 fixedStepsRun_ = 0;

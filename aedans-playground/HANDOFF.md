@@ -3,24 +3,24 @@
 Paste this file into a new session to resume. The plan is `ROADMAP.md`;
 build, run and troubleshooting instructions are in `README.md`.
 
-**Status:** the simulation now runs in fixed 1/120 s steps, separate from
-rendering, and sprites are drawn interpolated between steps. The log file is
-written live. The ECS demo (200 bouncing, spinning sprites) runs on top.
-Screenshot of the demo: `docs/ecs-sprites.png`.
+**Status:** the demo is playable. Keyboard and mouse input flow from GLFW
+callbacks through a per-frame snapshot and a fixed-step latch to a
+data-driven action map; a player sprite moves with WASD/arrows and fires
+with Space/left mouse. The game world has fixed bounds of its own, and the
+window only views it (scaled to fit). Verified end to end with real X11
+keystrokes.
 
 - Repository `colleenneug/Claude-01`, branch `claude/relaxed-cray-5kc2fl`, no pull request open.
 - Standing guidelines: modern C++20 (smart pointers, RAII, `std::span`,
   designated initialisers); no over-engineering; clean, commented,
   production-ready code; strict error handling and logging for graphics
   initialisation.
-- Decisions: C++20 with `tl::expected`; Windows and Linux only; the
-  Playground lives in this repository; minimum GPU Vulkan 1.3 with descriptor
-  indexing; namespace `playground`, targets `playground_*`; the `Renderer`
-  interface lives in the render layer below the engine; the ECS is our own
-  sparse set (the old `engine/` blueprint is untouched reference).
-- Numbering: the user's milestone numbers run ahead of `ROADMAP.md`'s. This
-  session finished the fixed-timestep part of roadmap Milestone 3. Roadmap
-  Milestone 2 (GPU memory, vertex buffers, depth, camera) is still not done.
+- Decisions: C++20 with `tl::expected`; Windows and Linux only; namespace
+  `playground`, targets `playground_*`; `Renderer` interface in the render
+  layer; own sparse-set ECS; raw input in `platform/`, actions in `engine/`.
+- Numbering: the user's milestone numbers run ahead of `ROADMAP.md`'s.
+  Roadmap Milestone 3 (engine core) is now done apart from frame arenas;
+  roadmap Milestone 2 (GPU memory, buffers, depth, camera) is still not done.
 - The user may be young or new to this: when asked to explain, keep it short
   and plain, one idea at a time.
 
@@ -29,63 +29,64 @@ Screenshot of the demo: `docs/ecs-sprites.png`.
 ## 1. Current Architecture State
 
 ```
-app/main.cpp   logging -> Application -> createVulkanRenderer -> setRenderer
-               -> ecs::World + spawnBouncingSprites
-               -> setFixedUpdate (snapshot, movement, bounce, flush)
-               -> setUpdate (FPS in title) -> setExtract (interpolated sprites) -> run
-  engine/      Application (loop, fixed-step accumulator, hooks); Components; Systems
-  ecs/         Entity, ComponentPool<T>, World            (depends only on core)
-  render/      Renderer interface, FrameData (public, no Vulkan); VulkanRenderer (private)
+app/main.cpp   Application + VulkanRenderer; ecs::World with 200 bouncers + player
+               setFixedUpdate(step, input): snapshot -> input -> Fire -> movement -> bounce(bounds) -> lifetime -> flush
+               setUpdate(time, input): Escape quits; FPS in title
+               setExtract(frame, alpha): view = world bounds; playfield; interpolated sprites
+  engine/      Application (loop, accumulator, InputLatch, hooks); ActionMap; WorldBounds;
+               components (Transform, Velocity, Sprite, PlayerTag, Lifetime); systems
+  ecs/         Entity, ComponentPool<T>, World
+  render/      Renderer, FrameData (+ viewHalfExtent, fitView); VulkanRenderer (private)
   gpu/         Context, Swapchain, DeviceHandle, VulkanCheck
-  platform/    Platform (GLFW, Ctrl+C), Window
+  platform/    Platform, Window (GLFW callbacks: key, mouse, cursor, focus), Input
   core/        Result, Log, Assert, FrameClock, FixedStep, Types
 ```
 
-**The frame** (`engine::Application::run`):
-1. Events (poll; sleep to 60 fps if no renderer or minimised).
-2. Stop check (Ctrl+C/SIGTERM, `requestQuit`, window closed).
-3. `FrameClock::tick()` → `FrameTime`.
-4. **Simulate:** `FixedStepAccumulator::advance(rawDeltaSeconds)` →
-   `FixedStepPlan{steps, alpha, droppedSeconds}`; the `FixedUpdateFn` runs
-   `steps` times with `FixedStep{deltaSeconds = 1/120, index}`.
-5. **Update:** `UpdateFn(FrameTime)` once.
-6. **Extract:** `ExtractFn(FrameData&, alpha)` (rendered frames only).
-7. **Render:** `renderer->renderFrame(time, frameData)`.
-8. Frame limit.
+**The frame** (`Application::run`): events → stop check → clock tick **and
+one input snapshot** (`window.input().takeSnapshot()`, then
+`inputLatch.beginFrame(snapshot)`) → 0..n fixed steps, each
+`fixedUpdate(step, latch.current())` then `latch.consumeEdges()` → `update(time,
+snapshot)` → `extract(frame, alpha)` → render.
 
-**Fixed-step accumulator** (`core/FixedStep.h`, pure arithmetic, no clock):
-step 1/120 s; each frame's delta clamped to `maxFrameSeconds` (0.25 s, from
-`ApplicationConfig::maxDeltaSeconds`) before it is added; at most
-`maxStepsPerFrame` (8) steps per frame, with whole steps beyond the cap
-dropped and the fraction kept; `alpha = accumulated / step` in [0, 1). The
-periodic debug stats line reports steps per second, and a warning reports
-dropped time.
+**Input** (`platform/Input.h`, no GLFW in it):
+- `InputCollector`: `keyEvent`, `mouseButtonEvent`, `cursorMoved`,
+  `focusLost`, `takeSnapshot`. Edges are set only on real state changes
+  (duplicate downs and stray ups are ignored; GLFW key repeats are dropped in
+  the callback). `focusLost()` moves every held key/button to `released`.
+- `InputState`: `down/pressed/released` for `Key` and `MouseButton`
+  (bitsets), cursor position. A tap within one frame = pressed + released,
+  not down.
+- `InputLatch`: `beginFrame` keeps held state from the newest snapshot and
+  ORs in undelivered edges; `consumeEdges` after each step. Result: held keys
+  in every step, each press/release in exactly one step, none lost on
+  zero-step frames.
+- `Window.cpp`: `registerInputCallbacks` (key, mouse button, cursor, focus);
+  `translateKey` maps GLFW codes to `Key`. `Window::input()`, `isFocused()`.
 
-**Interpolation** (`engine::Transform`): `previousPosition`,
-`previousRotation`, `hasPrevious`. `snapshotTransforms` (first in every fixed
-step) copies current → previous and sets `hasPrevious`. `extractSprites(world,
-frame, alpha)` draws `glm::mix(previous, current, alpha)`; rotation is blended
-the short way round (`std::remainder` by 2π), so wrapped angles do not spin
-backwards. While `hasPrevious` is false (a freshly spawned entity, made any
-way, before its first snapshot) it is drawn at its current state: no streak
-from (0, 0). `Transform::teleport(pos, rot)` sets both states.
+**Actions** (`engine/Actions.h`): `ActionMap` with named button actions
+(`std::variant<Key, MouseButton>` sources) and 2D axes (`AxisKeys`),
+string_view lookup via transparent hashing; `defaults()` = `Move`
+(WASD + arrows) and `Fire` (Space + left mouse). Axis values are clamped per
+component and normalised to length ≤ 1. Querying an unbound action asserts in
+debug builds.
 
-**Logging** (`core/Log`): `Config::flushLevel`, default `kDefaultFlushLevel`
-= Trace in debug builds (every line flushed), Info in release. `tail -f`
-is live.
+**World and view**: `engine::WorldBounds{halfSize}` (demo: 800×450, centred).
+`bounceSystem(world, bounds)` has no access to the window.
+`FrameData::viewHalfExtent` = the world area to show; the renderer computes
+`render::fitView(viewportHalf, required)` (scale to fit, no stretch) and
+passes the result as the shader's `viewportHalf`.
 
 **Verified this session** (GCC 13.3, Clang 18.1, GCC + ASan + UBSan; Mesa
 llvmpipe under Xvfb):
 
 | Check | Result |
 |---|---|
-| Baseline before changes | 7/7 suites passed |
+| Baseline at `3a128f3` before changes | 7/7 suites passed |
 | Build, warnings as errors | 0 warnings, GCC and Clang |
-| `xvfb-run -a ctest` | 7/7 suites in all three builds (core 22 cases, ecs 20, app 12, gpu 7, render 4, plus the two app runs) |
-| Real run, 5 s | 754 frames (150.8 fps) and exactly 600 simulation steps (120.0 per second) |
-| Live log | "entering main loop" readable in the file while running (previously ~30 s late) |
-| Determinism | 120 steps at 30 fps and at 144 fps give bit-identical positions |
-| Validation | 0 messages |
+| `xvfb-run -a ctest` | 9/9 suites in all three builds: core, ecs (24 cases), **input (13, new)**, app (14), gpu, render, **keyboard_e2e (new)**, app_smoke, app_no_display |
+| Real keystrokes (xdotool → X11 → GLFW) | hold D 1 s → player at x≈366–372, y=0; two Space taps → exactly 2 bullets; Escape → "quit requested", exit 0 |
+| Window resized to 900×900 | world drawn 506 px tall, centred (rows 197–702), exactly as `fitView` predicts; swapchain recreated, 0 validation messages |
+| Repeatability of keyboard_e2e | 12/12 standalone and 6/6 full-suite runs after the focus check was added |
 
 **Not yet run on a real GPU, and not on Windows.**
 
@@ -95,52 +96,52 @@ New:
 
 | File | Contents |
 |---|---|
-| `core/include/playground/core/FixedStep.h`, `core/src/FixedStep.cpp` | `FixedStep`, `FixedStepPlan`, `FixedStepAccumulator` |
+| `platform/include/playground/platform/Input.h`, `platform/src/Input.cpp` | `Key`, `MouseButton`, `describe(Key)`, `InputState`, `InputCollector`, `InputLatch` |
+| `engine/include/playground/engine/Actions.h`, `engine/src/Actions.cpp` | `actions::kMove`, `actions::kFire`, `InputSource`, `AxisKeys`, `ActionMap` |
+| `engine/include/playground/engine/WorldBounds.h` | `WorldBounds` |
+| `tests/input_tests.cpp` | 13 tests: edge transitions, in-frame tap, duplicate/stray events, mouse, focus loss (×2), latch multi-step consumption, zero-step carry-over, tap across zero-step frames, Move axis (normalised, cancelling, not doubled), Fire sources, custom bindings, key names |
+| `tests/e2e/keyboard.sh` | Real-keystroke test driven by xdotool (skips with 77 without a display or xdotool) |
 
 Changed:
 
 | File | Change |
 |---|---|
-| `core/include/playground/core/Log.h`, `core/src/Log.cpp` | `kDefaultFlushLevel`, `Config::flushLevel`, `flush_on(config.flushLevel)` |
-| `core/CMakeLists.txt` | `FixedStep.cpp` |
-| `engine/include/playground/engine/Application.h`, `engine/src/Application.cpp` | `FixedUpdateFn`, `setFixedUpdate`; `ExtractFn` takes `f64 alpha`; `ApplicationConfig::fixedStepSeconds`, `maxFixedStepsPerFrame` (validated in `create`); accumulator in `run`; `fixedStepsRun()`, `lastAlpha()`; stats include steps and dropped time |
-| `engine/include/playground/engine/Components.h` | `Transform::previousPosition`, `previousRotation`, `hasPrevious`, `teleport()` |
-| `engine/include/playground/engine/Systems.h`, `engine/src/Systems.cpp` | `snapshotTransforms`; `extractSprites(world, frame, alpha)`; `interpolatePosition`, `interpolateRotation` |
-| `app/main.cpp` | Systems moved into `setFixedUpdate`; FPS counter in `setUpdate`; extract passes `alpha` |
-| `tests/core_tests.cpp` | +8: accumulator (60 fps → 2 steps, 240 Hz alternation, carry-over, clamp, cap, conservation over uneven frames, edge cases); live log flush |
-| `tests/ecs_tests.cpp` | +6: snapshot, blend by alpha, no spawn streak, teleport, rotation wrap, 30 vs 144 fps determinism |
-| `tests/app_tests.cpp` | +3: exact contiguous steps and time bookkeeping, per-frame order (steps → update → extract) and alpha range, bad settings rejected |
-| `tests/render_tests.cpp` | Extract lambda takes alpha |
-| `README.md` | Frame pipeline section, live log note |
+| `platform/include/playground/platform/Window.h`, `platform/src/Window.cpp` | `input()`, `isFocused()`; `State` holds an `InputCollector` and focus flag; `registerInputCallbacks`; `translateKey` |
+| `platform/CMakeLists.txt` | `Input.cpp` |
+| `engine/include/playground/engine/Application.h`, `engine/src/Application.cpp` | `FixedUpdateFn(step, input)`, `UpdateFn(time, input)`; one snapshot per frame; `InputLatch` around the fixed steps; stale events dropped at the start of `run()` |
+| `engine/include/playground/engine/Components.h` | `PlayerTag{speed}`, `Lifetime{secondsLeft}` |
+| `engine/include/playground/engine/Systems.h`, `engine/src/Systems.cpp` | `inputSystem`, `lifetimeSystem`; `bounceSystem(world, const WorldBounds&)` |
+| `engine/CMakeLists.txt` | `Actions.cpp` |
+| `render/include/playground/render/FrameData.h` | `FrameData::viewHalfExtent`, `fitView()`; comments say world units |
+| `render/src/VulkanRenderer.cpp`, `render/shaders/sprite.vert` | Push the fitted view instead of the raw viewport half-size |
+| `app/main.cpp` | `WorldBounds` 800×450; `ActionMap::defaults()`; `spawnPlayer`, `spawnBullet`; systems in fixed update; Escape quits; playfield sprite; view = bounds; exit summary line "player ended at x=…, y=…; N bullets fired" |
+| `tests/ecs_tests.cpp` | +4: inputSystem, lifetimeSystem, world-bounds bouncing independent of window, `fitView` |
+| `tests/app_tests.cpp` | +2 real-loop tests (press reaches one fixed step and one frame update; held key reaches all steps; focus loss releases); callbacks take input |
+| `tests/render_tests.cpp` | Update callback takes input |
+| `tests/CMakeLists.txt` | `input_tests`; `keyboard_e2e` (defined before the sanitizer block, which passes the Mesa preload to the game only via `PLAYGROUND_APP_PRELOAD`) |
+| `README.md` | Controls, Input, World bounds and the view; `glslc`, `libglm-dev`, `xdotool` in the Linux package list |
 
 ## 3. Code Snippet of the Core Loop/Active Component
 
-The accumulator, `core/src/FixedStep.cpp`:
+The latch, `platform/src/Input.cpp`:
 
 ```cpp
-FixedStepPlan FixedStepAccumulator::advance(f64 frameSeconds) noexcept {
-  FixedStepPlan plan;
+void InputLatch::beginFrame(const InputState& frame) noexcept {
+  // Held state and cursor: always the newest. Edges: the newest plus any
+  // the previous frame did not get to deliver (it ran no fixed step).
+  InputState next = frame;
+  next.keys_.pressed |= state_.keys_.pressed;
+  next.keys_.released |= state_.keys_.released;
+  next.mouse_.pressed |= state_.mouse_.pressed;
+  next.mouse_.released |= state_.mouse_.released;
+  state_ = next;
+}
 
-  // Guard 1: clamp the frame before it reaches the accumulator.
-  const f64 frame = std::max(frameSeconds, 0.0);
-  const f64 clamped = std::min(frame, maxFrameSeconds_);
-  plan.droppedSeconds = frame - clamped;
-  accumulated_ += clamped;
-
-  while (accumulated_ >= stepSeconds_ && plan.steps < maxStepsPerFrame_) {
-    accumulated_ -= stepSeconds_;
-    ++plan.steps;
-  }
-
-  // Guard 2: whole steps still owed after the cap are dropped; the fraction is kept.
-  if (accumulated_ >= stepSeconds_) {
-    const f64 leftover = std::fmod(accumulated_, stepSeconds_);
-    plan.droppedSeconds += accumulated_ - leftover;
-    accumulated_ = leftover;
-  }
-
-  plan.alpha = std::clamp(accumulated_ / stepSeconds_, 0.0, 1.0);
-  return plan;
+void InputLatch::consumeEdges() noexcept {
+  state_.keys_.pressed.reset();
+  state_.keys_.released.reset();
+  state_.mouse_.pressed.reset();
+  state_.mouse_.released.reset();
 }
 ```
 
@@ -148,76 +149,92 @@ How the loop uses it, `engine/src/Application.cpp`:
 
 ```cpp
 const FrameTime time = clock_.tick();
+const platform::InputState frameInput = window_->input().takeSnapshot();
+inputLatch_.beginFrame(frameInput);
 
-// 4. Simulate: as many fixed steps as real time has paid for.
 const FixedStepPlan plan = accumulator_.advance(time.rawDeltaSeconds);
 for (u32 i = 0; i < plan.steps; ++i) {
-  if (fixedUpdate_) fixedUpdate_(FixedStep{.deltaSeconds = accumulator_.stepSeconds(), .index = fixedStepsRun_});
+  if (fixedUpdate_) {
+    fixedUpdate_(FixedStep{.deltaSeconds = accumulator_.stepSeconds(), .index = fixedStepsRun_},
+                 inputLatch_.current());
+  }
+  inputLatch_.consumeEdges();  // presses and releases reach one step only
   ++fixedStepsRun_;
 }
 lastAlpha_ = plan.alpha;
-
-// 5. Update, once per frame.
-if (update_) update_(time);
-
-// 6 and 7. Extract (interpolated by alpha) and render.
-if (renderer_ && !window_->isMinimized()) {
-  if (Status frame = renderFrame(time, plan.alpha); !frame) { /* log, stop, return the error */ }
-}
+if (update_) update_(time, frameInput);
 ```
 
 The game side, `app/main.cpp`:
 
 ```cpp
-application.setFixedUpdate([&](const FixedStep& step) {
+application.setFixedUpdate([&](const FixedStep& step, const platform::InputState& input) {
+  const auto deltaSeconds = static_cast<f32>(step.deltaSeconds);
   engine::snapshotTransforms(world);
-  engine::movementSystem(world, static_cast<f32>(step.deltaSeconds));
-  engine::bounceSystem(world, halfSizeOf(application.window().framebufferSize()));
+  engine::inputSystem(world, actions, input);
+  if (actions.pressed(input, engine::actions::kFire)) {
+    spawnBullet(world, world.get<engine::Transform>(player).position);
+    ++bulletsFired;
+  }
+  engine::movementSystem(world, deltaSeconds);
+  engine::bounceSystem(world, bounds);
+  engine::lifetimeSystem(world, deltaSeconds);
   world.flush();
 });
-application.setUpdate([&fpsCounter](const FrameTime& time) { fpsCounter.update(time); });
-application.setExtract(
-    [&world](render::FrameData& frame, f64 alpha) { engine::extractSprites(world, frame, alpha); });
 ```
 
 ## 4. Known Bugs & Incomplete Tasks
 
 No known bugs.
 
+**Watch**
+- `keyboard_e2e` failed once, early, in a GCC full-suite run whose output was
+  not captured; the likely cause (keystrokes sent before the window had
+  focus, with no window manager) is now guarded: the script confirms focus
+  before typing and keeps the game's output (`keyboard_e2e.log.out`) for any
+  future failure. It has passed every run since (12 standalone, 6 full suite,
+  plus the Clang and sanitizer suites).
+
 **Not verified**
 - A real GPU; Windows (presets, vcpkg incl. GLM 1.0, Vulkan SDK, MSVC warnings).
-- Minimise/restore on a real desktop (Xvfb has no window manager).
-- No automated pixel check; screenshots checked by hand and by script.
+- A real focus change through GLFW's focus callback: the guard logic is
+  tested through `InputCollector::focusLost()` (unit and real-loop tests), but
+  Xvfb has no window manager to take focus away. Alt+Tab on a desktop is the
+  remaining check.
+- Gamepads: not supported yet.
 
-**Known limitations, acceptable for now**
-- `Transform::scale` is not interpolated (nothing animates scale yet).
-- `bounceSystem` reads the window size inside the fixed step; resizing the
-  window mid-game moves the walls, so the simulation is deterministic only
-  for a fixed window size. Game-world bounds should not come from the window.
-- One draw call per sprite (push constants); thousands need roadmap M2 (VMA,
-  instanced draw from a buffer).
-- No input layer yet.
-- In release builds, debug/trace lines (if enabled with `--verbose`) are
-  still buffered by design.
-- Carried over: swapchain recreation uses `vkDeviceWaitIdle`; fences, not
-  timeline semaphores; no Vulkan debug names; no pipeline cache; GCC
-  sanitizer builds preload the Mesa driver for GPU tests (Mesa leak-report
-  artefact, see `tests/CMakeLists.txt`).
+**Limitations, acceptable for now**
+- `xdotool` is not in the cloud environment's setup script, so a fresh
+  container skips `keyboard_e2e` until it is installed (`apt-get install -y
+  xdotool`).
+- Cursor position is in window pixels; there is no window → world mapping
+  yet (needed for aiming at the mouse).
+- Bindings live in code (`ActionMap::defaults()`); loading them from a
+  settings file is not written.
+- Bullets fire straight up; the player has no facing direction.
+- Carried over: `Transform::scale` not interpolated; one draw call per
+  sprite; swapchain recreation waits for idle; fences, not timeline
+  semaphores; no Vulkan debug names; no pipeline cache; GCC sanitizer builds
+  preload the Mesa driver for GPU tests (driver leak-report artefact).
 
 ## 5. Immediate Next Steps for Next Weekend
 
-1. **Input** (`platform/include/playground/platform/Input.h`, `platform/src/Input.cpp`):
-   per-frame key and mouse state with pressed/released edges, fed by GLFW
-   callbacks registered in `Window.cpp`, sampled once per frame and handed to
-   the fixed steps as a snapshot (so every step in a frame sees the same
-   input). Then an action map (`Move`, `Fire`) as data. First use: a
-   `PlayerTag` sprite steered with WASD by an `inputSystem` in the fixed step.
-2. **Game-world bounds** instead of the window size in `bounceSystem`
-   (a `WorldBounds` value owned by the game), so resizing is purely visual.
-3. Then roadmap Milestone 2: VMA (`gpu/Allocator.h`), `gpu::Buffer`, staging
-   upload, instanced sprites from one storage buffer, depth, camera.
+1. **Cursor in world space**: `render::screenToWorld(cursor, viewportPixels,
+   viewHalfExtent)` next to `fitView` in `render/FrameData.h`, with tests;
+   then aim bullets at the mouse (needs a facing or aim direction on the
+   player).
+2. **Roadmap Milestone 2, renderer foundations**, starting with GPU memory:
+   - `gpu/include/playground/gpu/Allocator.h` + `gpu/src/Allocator.cpp`:
+     Vulkan Memory Allocator (vcpkg `vulkan-memory-allocator`; on Ubuntu,
+     `libvma-dev` if packaged, else vendor the single header, pinned), owned
+     by `gpu::Context`.
+   - `gpu::Buffer` (RAII, VMA-backed) and a staging upload.
+   - Draw every sprite with **one instanced draw** from a per-frame storage
+     buffer instead of one push-constant draw per sprite; then a depth
+     buffer and a camera.
+3. Optional: bindings from a file in the project's existing `.cfg` style.
 
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
 debug` passes (reinstall the packages in `README.md` if the setup script did
-not), then start step 1, input."
+not; install `xdotool` to run `keyboard_e2e`), then start step 1."

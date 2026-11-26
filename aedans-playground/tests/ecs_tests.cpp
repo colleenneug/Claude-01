@@ -8,6 +8,8 @@
 #include "playground/ecs/World.h"
 #include "playground/engine/Components.h"
 #include "playground/engine/Systems.h"
+#include "playground/engine/WorldBounds.h"
+#include "playground/platform/Input.h"
 
 #include <chrono>
 #include <cmath>
@@ -211,7 +213,7 @@ TEST_CASE("bounceSystem keeps sprites inside the area and reflects their velocit
   world.add<Velocity>(e, Velocity{.linear = {50.0f, 10.0f}});
   world.add<Sprite>(e, Sprite{.size = {20.0f, 20.0f}});
 
-  engine::bounceSystem(world, {100.0f, 100.0f});
+  engine::bounceSystem(world, engine::WorldBounds{.halfSize = {100.0f, 100.0f}});
 
   CHECK(world.get<Transform>(e).position.x == doctest::Approx(90.0f));  // 100 - half of 20
   CHECK(world.get<Velocity>(e).linear.x == doctest::Approx(-50.0f));    // now heading left
@@ -219,7 +221,7 @@ TEST_CASE("bounceSystem keeps sprites inside the area and reflects their velocit
 
   // Already heading back in: no second flip, even if still outside.
   world.get<Transform>(e).position.x = 95.0f;
-  engine::bounceSystem(world, {100.0f, 100.0f});
+  engine::bounceSystem(world, engine::WorldBounds{.halfSize = {100.0f, 100.0f}});
   CHECK(world.get<Velocity>(e).linear.x == doctest::Approx(-50.0f));
 }
 
@@ -341,7 +343,7 @@ TEST_CASE("the fixed-step simulation is identical at 30 fps and at 144 fps") {
       for (u32 i = 0; i < plan.steps && steps < 120; ++i, ++steps) {
         engine::snapshotTransforms(world);
         engine::movementSystem(world, static_cast<f32>(accumulator.stepSeconds()));
-        engine::bounceSystem(world, {200.0f, 150.0f});
+        engine::bounceSystem(world, engine::WorldBounds{.halfSize = {200.0f, 150.0f}});
       }
     }
     std::vector<glm::vec2> positions;
@@ -356,6 +358,82 @@ TEST_CASE("the fixed-step simulation is identical at 30 fps and at 144 fps") {
     CHECK(at30[i].x == at144[i].x);  // exact equality, on purpose
     CHECK(at30[i].y == at144[i].y);
   }
+}
+
+// --- Player input, lifetimes, world bounds, view ------------------------------
+
+TEST_CASE("inputSystem steers only the player, at its speed") {
+  ecs::World world;
+  const ecs::Entity player = world.create();
+  world.add<Transform>(player);
+  world.add<Velocity>(player);
+  world.add<engine::PlayerTag>(player, engine::PlayerTag{.speed = 200.0f});
+  const ecs::Entity other = world.create();
+  world.add<Transform>(other);
+  world.add<Velocity>(other, Velocity{.linear = {5.0f, 5.0f}});
+
+  platform::InputCollector collector;
+  collector.keyEvent(platform::Key::D, true);
+  const engine::ActionMap actions = engine::ActionMap::defaults();
+  engine::inputSystem(world, actions, collector.takeSnapshot());
+
+  CHECK(world.get<Velocity>(player).linear == glm::vec2{200.0f, 0.0f});
+  CHECK(world.get<Velocity>(other).linear == glm::vec2{5.0f, 5.0f});  // not a player: untouched
+
+  collector.keyEvent(platform::Key::D, false);  // let go: the player stops
+  engine::inputSystem(world, actions, collector.takeSnapshot());
+  CHECK(world.get<Velocity>(player).linear == glm::vec2{0.0f, 0.0f});
+}
+
+TEST_CASE("lifetimeSystem destroys an entity when its time runs out") {
+  ecs::World world;
+  const ecs::Entity bullet = world.create();
+  world.add<engine::Lifetime>(bullet, engine::Lifetime{.secondsLeft = 0.25f});
+
+  engine::lifetimeSystem(world, 0.125f);
+  world.flush();
+  CHECK(world.alive(bullet));
+  engine::lifetimeSystem(world, 0.125f);
+  world.flush();
+  CHECK_FALSE(world.alive(bullet));
+}
+
+TEST_CASE("bouncing uses the world bounds, whatever size the window is") {
+  // The same world, stepped identically, must end identically: bounceSystem
+  // takes only the WorldBounds, so there is no window size it could read.
+  auto run = [] {
+    ecs::World world;
+    const ecs::Entity e = world.create();
+    world.add<Transform>(e, Transform{.position = {0.0f, 0.0f}});
+    world.add<Velocity>(e, Velocity{.linear = {700.0f, 300.0f}});
+    world.add<Sprite>(e, Sprite{.size = {20.0f, 20.0f}});
+    const engine::WorldBounds bounds{.halfSize = {800.0f, 450.0f}};
+    for (int step = 0; step < 600; ++step) {
+      engine::movementSystem(world, 1.0f / 120.0f);
+      engine::bounceSystem(world, bounds);
+      CHECK(bounds.contains(world.get<Transform>(e).position));
+    }
+    return world.get<Transform>(e).position;
+  };
+  CHECK(run() == run());
+}
+
+TEST_CASE("fitView shows the whole world in any window shape, without stretching") {
+  const glm::vec2 world{800.0f, 450.0f};  // 16:9
+  // Same shape and size: one unit per pixel.
+  CHECK(render::fitView({800.0f, 450.0f}, world) == glm::vec2{800.0f, 450.0f});
+  // Same shape, half the size: everything still visible, scaled down.
+  CHECK(render::fitView({400.0f, 225.0f}, world) == glm::vec2{800.0f, 450.0f});
+  // A square window: the width decides; extra world shows above and below.
+  const glm::vec2 square = render::fitView({300.0f, 300.0f}, world);
+  CHECK(square.x == doctest::Approx(800.0f));
+  CHECK(square.y == doctest::Approx(800.0f));
+  // A very wide window: the height decides; extra world shows at the sides.
+  const glm::vec2 wide = render::fitView({1000.0f, 250.0f}, world);
+  CHECK(wide.y == doctest::Approx(450.0f));
+  CHECK(wide.x == doctest::Approx(1800.0f));
+  // No requirement: pixels.
+  CHECK(render::fitView({640.0f, 360.0f}, {0.0f, 0.0f}) == glm::vec2{640.0f, 360.0f});
 }
 
 TEST_CASE("movement over 100,000 entities (timing printed, not asserted)") {

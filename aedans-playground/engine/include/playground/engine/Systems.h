@@ -6,10 +6,12 @@
 //  the components it needs and updates them. No base class, no registration.
 //  The game calls them in order, in each fixed simulation step:
 //
-//      engine::snapshotTransforms(world);      // previous = current, first
+//      engine::snapshotTransforms(world);              // previous = current, first
+//      engine::inputSystem(world, actions, input);     // player velocity from Move
 //      engine::movementSystem(world, step.deltaSeconds);
-//      engine::bounceSystem(world, halfArea);
-//      world.flush();                          // apply queued destroys
+//      engine::bounceSystem(world, bounds);            // walls are the WORLD's, not the window's
+//      engine::lifetimeSystem(world, step.deltaSeconds);
+//      world.flush();                                  // apply queued destroys
 //
 //  and once per rendered frame:
 //
@@ -18,7 +20,10 @@
 
 #include "playground/core/Types.h"
 #include "playground/ecs/World.h"
+#include "playground/engine/Actions.h"
 #include "playground/engine/Components.h"
+#include "playground/engine/WorldBounds.h"
+#include "playground/platform/Input.h"
 #include "playground/render/FrameData.h"
 
 #include <glm/vec2.hpp>
@@ -32,10 +37,18 @@ void snapshotTransforms(ecs::World& world);
 // Transform + Velocity: position += linear * dt, rotation += angular * dt.
 void movementSystem(ecs::World& world, f32 deltaSeconds);
 
-// Transform + Velocity + Sprite: keeps each sprite inside the rectangle
-// from -halfArea to +halfArea, reflecting its velocity off the edges.
-// (Uses the sprite's size as its extent until there is a collider component.)
-void bounceSystem(ecs::World& world, glm::vec2 halfArea);
+// PlayerTag + Velocity: velocity = Move direction * speed. The Move axis is
+// already at most length 1, so diagonals are not faster.
+void inputSystem(ecs::World& world, const ActionMap& actions, const platform::InputState& input);
+
+// Transform + Velocity + Sprite: keeps each sprite inside the world bounds,
+// reflecting its velocity off the edges. Depends only on `bounds`, never on
+// the window, so the simulation is the same at every window size. (Uses the
+// sprite's size as its extent until there is a collider component.)
+void bounceSystem(ecs::World& world, const WorldBounds& bounds);
+
+// Lifetime: counts down, and destroys the entity (deferred to flush) at zero.
+void lifetimeSystem(ecs::World& world, f32 deltaSeconds);
 
 // Transform + Sprite -> render::SpriteInstance, appended to frame.sprites,
 // drawn `alpha` of the way from the previous state to the current one

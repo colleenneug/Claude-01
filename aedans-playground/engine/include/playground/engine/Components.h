@@ -59,6 +59,17 @@ struct Velocity {
   f32 angular = 0.0f;        // radians per second
 };
 
+// Marks the entity the player steers. inputSystem sets its velocity from
+// the Move action.
+struct PlayerTag {
+  f32 speed = 360.0f;  // world units per second at full stick / key
+};
+
+// Destroyed when this runs out (lifetimeSystem). Bullets, effects.
+struct Lifetime {
+  f32 secondsLeft = 1.0f;
+};
+
 // How it looks: a coloured rectangle, size multiplied by Transform::scale.
 struct Sprite {
   glm::vec2 size{32.0f};     // pixels

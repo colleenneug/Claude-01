@@ -9,16 +9,16 @@
 //  command buffer with each draw. The C++ side is SpritePushConstants in
 //  VulkanRenderer.cpp; the two layouts must match byte for byte.
 //
-//  World units are pixels with (0, 0) at the window's centre and +y up (the
-//  renderer flips the viewport), so dividing by half the viewport size
-//  gives clip space directly.
+//  World units with (0, 0) at the view's centre and +y up (the renderer
+//  flips the viewport). `viewportHalf` is half the WORLD area visible
+//  (render::fitView), so dividing by it gives clip space directly.
 // =============================================================================
 
 layout(push_constant) uniform Sprite {
   vec2 position;      // offset  0: centre, pixels
   vec2 halfSize;      // offset  8: half width and height, pixels
   vec2 rotation;      // offset 16: (cos, sin) of the angle
-  vec2 viewportHalf;  // offset 24: half the framebuffer size, pixels
+  vec2 viewportHalf;  // offset 24: half the visible world area, world units
   vec4 colour;        // offset 32: linear RGBA
 } sprite;
 

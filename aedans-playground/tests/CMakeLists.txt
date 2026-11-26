@@ -10,6 +10,12 @@ target_link_libraries(playground_ecs_tests PRIVATE playground::engine doctest::d
 playground_configure_target(playground_ecs_tests)
 add_test(NAME ecs_tests COMMAND playground_ecs_tests)
 
+# --- Input and actions: no window ---------------------------------------------
+add_executable(playground_input_tests input_tests.cpp)
+target_link_libraries(playground_input_tests PRIVATE playground::engine doctest::doctest)
+playground_configure_target(playground_input_tests)
+add_test(NAME input_tests COMMAND playground_input_tests)
+
 # --- Application tests: open real windows -----------------------------------
 add_executable(playground_app_tests app_tests.cpp)
 target_link_libraries(playground_app_tests PRIVATE playground::engine doctest::doctest)
@@ -41,6 +47,14 @@ set_tests_properties(app_smoke PROPERTIES
   # GLFW's own words for "there is no display": skip rather than fail.
   SKIP_REGULAR_EXPRESSION "DISPLAY environment variable is missing;Failed to open display;Failed to detect any supported platform")
 
+# Real keystrokes through X11 and GLFW's callbacks (needs xdotool; skipped
+# without it or without a display). See tests/e2e/keyboard.sh.
+if(UNIX AND NOT APPLE)
+  add_test(NAME keyboard_e2e
+           COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/keyboard.sh $<TARGET_FILE:playground_app> keyboard_e2e.log)
+  set_tests_properties(keyboard_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input" TIMEOUT 90)
+endif()
+
 # --- Sanitizer builds and Mesa's software Vulkan driver ----------------------
 # Mesa's presentation thread keeps its allocations reachable only from the
 # driver's own memory. When vkDestroyInstance makes the Vulkan loader unload
@@ -58,6 +72,12 @@ if(PLAYGROUND_SANITIZERS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND UNIX AND N
   if(EXISTS "${playgroundAsanRuntime}" AND PLAYGROUND_MESA_LAVAPIPE)
     set_tests_properties(gpu_tests render_tests app_smoke PROPERTIES
       ENVIRONMENT "LD_PRELOAD=${playgroundAsanRuntime}:${PLAYGROUND_MESA_LAVAPIPE}")
+    # The keyboard test is a shell script driving xdotool: only the game itself
+    # may get the preload, so it is passed through a variable the script reads.
+    if(TEST keyboard_e2e)
+      set_tests_properties(keyboard_e2e PROPERTIES
+        ENVIRONMENT "PLAYGROUND_APP_PRELOAD=${playgroundAsanRuntime}:${PLAYGROUND_MESA_LAVAPIPE}")
+    endif()
   endif()
 endif()
 

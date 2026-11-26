@@ -1,5 +1,6 @@
 # platform: window, events, Ctrl+C. Depends on core.
 add_library(playground_platform STATIC
+  src/Input.cpp
   src/Platform.cpp
   src/Window.cpp)
 add_library(playground::platform ALIAS playground_platform)

@@ -4,11 +4,18 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 [`ROADMAP.md`](ROADMAP.md); where the last session stopped is in
 [`HANDOFF.md`](HANDOFF.md).
 
-**Current state:** a window, a main loop with a `std::chrono` frame clock, a
-Vulkan renderer, and an entity component system (ECS). The demo spawns 200
-entities with Transform, Velocity and Sprite components; systems move them,
-bounce them off the window edges, and hand them to the renderer, which draws
-each as a rotated, alpha-blended square.
+**Current state:** a window, a fixed-timestep main loop, a Vulkan renderer,
+an entity component system (ECS), and keyboard/mouse input. The demo is
+playable: steer the white square with **WASD** or the **arrow keys**, fire
+with **Space** or the **left mouse button**, quit with **Escape**. 200 other
+entities bounce around a fixed 1600×900 world; the window shows that world
+scaled to fit, whatever its size.
+
+| Key | Action |
+|---|---|
+| W A S D, arrow keys | Move |
+| Space, left mouse button | Fire |
+| Escape | Quit |
 
 ![200 ECS entities drawn as sprites](docs/ecs-sprites.png)
 
@@ -95,6 +102,32 @@ first, then movement and bounce. A newly spawned entity has no previous
 state yet and is drawn where it is, so it never streaks in from the origin;
 `Transform::teleport()` moves an entity without blending across the jump.
 
+## Input
+
+Three layers, in `platform/Input.h` and `engine/Actions.h`:
+
+- **`InputCollector`** is fed by the window's GLFW callbacks and gives one
+  snapshot per frame. Each key and mouse button has `down`, `pressed` and
+  `released`; a tap inside one frame shows as pressed and released, never
+  lost. **Losing focus** (Alt+Tab) releases everything held, so no key sticks.
+- **`InputLatch`** hands input to the fixed steps: every step in a frame
+  sees the same held keys, but each press reaches exactly **one** step. A
+  slow frame running four steps fires once, not four times; a fast frame
+  running none keeps the press for the next step.
+- **`ActionMap`** maps keys to actions as data: `Move` (a 2D axis, never
+  longer than 1, so diagonals are not faster) and `Fire`. Game code asks
+  `actions.pressed(input, actions::kFire)`, never "is Space down".
+
+The fixed update receives the latched input; the per-frame update receives
+the frame's own snapshot.
+
+## World bounds and the view
+
+The playing area is a `WorldBounds` owned by the game (1600×900 world
+units), and `bounceSystem` reads only that, never the window. The renderer
+scales the world to fit the window without stretching (`render::fitView`),
+with bars where the shapes differ. Resizing changes the view, not the game.
+
 ## Drawing a frame
 
 `render/src/VulkanRenderer.cpp`, once per frame:
@@ -172,7 +205,7 @@ device for machines without a GPU (CI, cloud containers); with a real GPU,
 its vendor's driver is what gets used.
 
 ```bash
-sudo apt-get install -y cmake ninja-build g++ libglfw3-dev libspdlog-dev doctest-dev libvulkan-dev vulkan-validationlayers vulkan-tools mesa-vulkan-drivers xvfb
+sudo apt-get install -y cmake ninja-build g++ libglfw3-dev libglm-dev libspdlog-dev doctest-dev libvulkan-dev vulkan-validationlayers vulkan-tools mesa-vulkan-drivers glslc xvfb xdotool
 ```
 
 ```bash
@@ -190,6 +223,9 @@ cmake --build --preset debug
 ```bash
 ctest --preset debug
 ```
+
+`xdotool` is only for `keyboard_e2e`, which sends real keystrokes to the game;
+without it that test is skipped.
 
 Without a display, the window and GPU tests are reported as skipped. To run
 them headless, wrap the command in a virtual display:

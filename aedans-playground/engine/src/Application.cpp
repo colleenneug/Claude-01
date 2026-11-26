@@ -152,6 +152,8 @@ Status Application::run() {
 
   clock_.reset();
   accumulator_.reset();
+  inputLatch_ = {};
+  (void)window_->input().takeSnapshot();  // drop anything from before the run
   stats_ = {};
   framesRun_ = 0;
   fixedStepsRun_ = 0;
@@ -178,20 +180,26 @@ Status Application::run() {
       break;
     }
 
-    // 3. Clock.
+    // 3. Clock and input: one snapshot for the whole frame.
     const FrameTime time = clock_.tick();
+    const platform::InputState frameInput = window_->input().takeSnapshot();
+    inputLatch_.beginFrame(frameInput);
 
     // 4. Simulate: as many fixed steps as real time has paid for. The
     // accumulator clamps the frame and caps the catch-up (core/FixedStep.h).
     const FixedStepPlan plan = accumulator_.advance(time.rawDeltaSeconds);
     for (u32 i = 0; i < plan.steps; ++i) {
-      if (fixedUpdate_) fixedUpdate_(FixedStep{.deltaSeconds = accumulator_.stepSeconds(), .index = fixedStepsRun_});
+      if (fixedUpdate_) {
+        fixedUpdate_(FixedStep{.deltaSeconds = accumulator_.stepSeconds(), .index = fixedStepsRun_},
+                     inputLatch_.current());
+      }
+      inputLatch_.consumeEdges();  // presses and releases reach one step only
       ++fixedStepsRun_;
     }
     lastAlpha_ = plan.alpha;
 
     // 5. Update, once per frame.
-    if (update_) update_(time);
+    if (update_) update_(time, frameInput);
 
     // 6 and 7. Extract (interpolated by alpha) and render.
     if (renderer_ && !window_->isMinimized()) {

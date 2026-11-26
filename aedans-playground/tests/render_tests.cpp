@@ -78,7 +78,7 @@ TEST_CASE("resizing the window rebuilds the swapchain at the new size") {
     engine::Application* raw = app.get();
 
     bool resized = false;
-    app->setUpdate([&](const FrameTime& time) {
+    app->setUpdate([&](const FrameTime& time, const platform::InputState&) {
       if (time.frameIndex == 5) raw->window().setSize(480, 360);
       const VkExtent2D extent = renderer->swapchain().extent();
       if (extent.width == 480 && extent.height == 360) {

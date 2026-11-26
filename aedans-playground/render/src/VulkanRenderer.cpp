@@ -548,7 +548,9 @@ Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex, 
 
   // One draw per sprite: its data in push constants, 6 vertices (two
   // triangles) placed by the vertex shader.
-  const glm::vec2 viewportHalf{0.5f * width, 0.5f * height};
+  // How much of the world the window shows: all of frame.viewHalfExtent,
+  // scaled to fit without stretching (or pixels, if the game set none).
+  const glm::vec2 viewportHalf = fitView({0.5f * width, 0.5f * height}, frame.viewHalfExtent);
   for (const SpriteInstance& sprite : frame.sprites) {
     const SpritePushConstants push{
         .position = sprite.position,

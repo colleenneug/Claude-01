@@ -93,7 +93,7 @@ TEST_CASE("the loop runs exactly maxFrames frames, rendering each one") {
 TEST_CASE("update sees every frame in order, with a zero first delta") {
   auto app = makeApp(5);
   std::vector<FrameTime> seen;
-  app->setUpdate([&seen](const FrameTime& time) { seen.push_back(time); });
+  app->setUpdate([&seen](const FrameTime& time, const platform::InputState&) { seen.push_back(time); });
 
   REQUIRE(app->run().has_value());
   REQUIRE(seen.size() == 5);
@@ -111,7 +111,7 @@ TEST_CASE("requestQuit from update stops the loop after that frame") {
   auto app = makeApp(0);  // no frame limit: only the quit request can stop it
   engine::Application* raw = app.get();
   app->setRenderer(std::make_unique<FakeRenderer>(app->window(), record));
-  app->setUpdate([raw](const FrameTime& time) {
+  app->setUpdate([raw](const FrameTime& time, const platform::InputState&) {
     if (time.frameIndex == 4) raw->requestQuit();
   });
 
@@ -197,8 +197,8 @@ TEST_CASE("fixed update runs in exact 1/120 s steps, numbered without gaps") {
 
   std::vector<FixedStep> steps;
   f64 realSeconds = 0.0;
-  (*app)->setFixedUpdate([&](const FixedStep& step) { steps.push_back(step); });
-  (*app)->setUpdate([&](const FrameTime& time) { realSeconds += std::min(time.rawDeltaSeconds, config.maxDeltaSeconds); });
+  (*app)->setFixedUpdate([&](const FixedStep& step, const platform::InputState&) { steps.push_back(step); });
+  (*app)->setUpdate([&](const FrameTime& time, const platform::InputState&) { realSeconds += std::min(time.rawDeltaSeconds, config.maxDeltaSeconds); });
 
   REQUIRE((*app)->run().has_value());
   REQUIRE_FALSE(steps.empty());
@@ -220,8 +220,8 @@ TEST_CASE("each frame: fixed steps, then update, then extract with alpha in [0, 
 
   std::vector<char> order;  // 'f' fixed step, 'u' update, 'e' extract
   std::vector<f64> alphas;
-  app->setFixedUpdate([&](const FixedStep&) { order.push_back('f'); });
-  app->setUpdate([&](const FrameTime&) { order.push_back('u'); });
+  app->setFixedUpdate([&](const FixedStep&, const platform::InputState&) { order.push_back('f'); });
+  app->setUpdate([&](const FrameTime&, const platform::InputState&) { order.push_back('u'); });
   app->setExtract([&](render::FrameData&, f64 alpha) {
     order.push_back('e');
     alphas.push_back(alpha);
@@ -258,6 +258,66 @@ TEST_CASE("unusable fixed-step settings are rejected with a reason") {
   const auto b = engine::Application::create(noSteps);
   REQUIRE_FALSE(b.has_value());
   CHECK(b.error().code == Errc::InvalidArgument);
+}
+
+// --- Input through the real loop ------------------------------------------------
+// Events are injected into the window's InputCollector, exactly where the
+// GLFW callbacks put them, from inside the running loop.
+
+TEST_CASE("in the real loop: a press reaches one fixed step, a held key reaches all of them") {
+  auto app = makeApp(60);  // no renderer: ~2 fixed steps per frame at 60 fps
+  engine::Application* raw = app.get();
+
+  int pressedSteps = 0;
+  int releasedSteps = 0;
+  int pressedFrames = 0;
+  u64 firstDownStep = 0;
+  u64 lastDownStep = 0;
+  app->setFixedUpdate([&](const FixedStep& step, const platform::InputState& input) {
+    if (step.index == 5) raw->window().input().keyEvent(platform::Key::Space, true);
+    if (step.index == 40) raw->window().input().keyEvent(platform::Key::Space, false);
+    if (input.pressed(platform::Key::Space)) ++pressedSteps;
+    if (input.released(platform::Key::Space)) ++releasedSteps;
+    if (input.down(platform::Key::Space)) {
+      if (firstDownStep == 0) firstDownStep = step.index;
+      lastDownStep = step.index;
+    }
+  });
+  app->setUpdate([&](const FrameTime&, const platform::InputState& input) {
+    if (input.pressed(platform::Key::Space)) ++pressedFrames;
+  });
+
+  REQUIRE(app->run().has_value());
+  REQUIRE(app->fixedStepsRun() > 50);
+  CHECK(pressedSteps == 1);   // one press, one step: Fire would fire once
+  CHECK(releasedSteps == 1);
+  CHECK(pressedFrames == 1);  // the per-frame update sees it once too
+  CHECK(firstDownStep > 5);   // seen from the next frame on...
+  CHECK(lastDownStep >= 40);  // ...held through every step until the release arrived
+  CHECK(lastDownStep < 45);
+}
+
+TEST_CASE("in the real loop: losing focus releases a held key") {
+  auto app = makeApp(40);
+  engine::Application* raw = app.get();
+  bool downAfterFocusLoss = false;
+  int releasedSteps = 0;
+  u64 focusLostAt = 0;
+  app->setFixedUpdate([&](const FixedStep& step, const platform::InputState& input) {
+    if (step.index == 2) raw->window().input().keyEvent(platform::Key::W, true);
+    if (step.index == 20) {
+      raw->window().input().focusLost();  // what the GLFW focus callback calls
+      focusLostAt = step.index;
+    }
+    if (input.released(platform::Key::W)) ++releasedSteps;
+    // Allow the rest of the current frame (it already took its snapshot).
+    if (focusLostAt != 0 && step.index > focusLostAt + 10 && input.down(platform::Key::W)) {
+      downAfterFocusLoss = true;
+    }
+  });
+  REQUIRE(app->run().has_value());
+  CHECK(releasedSteps == 1);
+  CHECK_FALSE(downAfterFocusLoss);
 }
 
 int main(int argc, char** argv) {

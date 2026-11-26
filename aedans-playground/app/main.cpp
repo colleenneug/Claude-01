@@ -14,9 +14,11 @@
 
 #include "playground/core/Log.h"
 #include "playground/ecs/World.h"
+#include "playground/engine/Actions.h"
 #include "playground/engine/Application.h"
 #include "playground/engine/Components.h"
 #include "playground/engine/Systems.h"
+#include "playground/engine/WorldBounds.h"
 #include "playground/render/VulkanRenderer.h"
 
 #include <charconv>
@@ -142,8 +144,24 @@ void spawnBouncingSprites(ecs::World& world, u32 count, glm::vec2 halfArea) {
   }
 }
 
-glm::vec2 halfSizeOf(platform::Extent2D framebuffer) {
-  return {0.5f * static_cast<f32>(framebuffer.width), 0.5f * static_cast<f32>(framebuffer.height)};
+// The square the player steers (WASD / arrows), drawn on top of the crowd.
+ecs::Entity spawnPlayer(ecs::World& world) {
+  const ecs::Entity player = world.create();
+  world.add<engine::Transform>(player, engine::Transform{.position = {0.0f, 0.0f}});
+  world.add<engine::Velocity>(player);
+  world.add<engine::Sprite>(player, engine::Sprite{.size = {44.0f, 44.0f}, .colour = {1.0f, 1.0f, 1.0f, 1.0f}});
+  world.add<engine::PlayerTag>(player);
+  return player;
+}
+
+// Fire: a small bright bullet from the player, straight up, gone after a
+// moment. One press, one bullet, however many fixed steps the frame runs.
+void spawnBullet(ecs::World& world, glm::vec2 from) {
+  const ecs::Entity bullet = world.create();
+  world.add<engine::Transform>(bullet, engine::Transform{.position = from + glm::vec2{0.0f, 30.0f}});
+  world.add<engine::Velocity>(bullet, engine::Velocity{.linear = {0.0f, 900.0f}, .angular = 12.0f});
+  world.add<engine::Sprite>(bullet, engine::Sprite{.size = {10.0f, 10.0f}, .colour = {1.0f, 0.85f, 0.2f, 1.0f}});
+  world.add<engine::Lifetime>(bullet, engine::Lifetime{.secondsLeft = 1.2f});
 }
 
 }  // namespace
@@ -176,7 +194,7 @@ int main(int argc, char** argv) {
   engine::Application& application = **app;
 
   // The Vulkan renderer: brings up the GPU (each step logged, a failure
-  // names the step), then the swapchain and the triangle pipeline. Once
+  // names the step), then the swapchain and the sprite pipeline. Once
   // attached, the Application owns it and destroys it before the window.
   auto renderer = render::createVulkanRenderer(application.platform(), application.window(),
                                                {.enableValidation = options->validation});
@@ -189,30 +207,57 @@ int main(int argc, char** argv) {
 
   // The game world. Declared after the Application, so it is destroyed
   // first; shutdown() also drops the callbacks below that refer to it.
+  //
+  // Its size is fixed and belongs to the game: the window only views it
+  // (render::fitView), so resizing never changes the simulation.
+  const engine::WorldBounds bounds{.halfSize = {800.0f, 450.0f}};
+  const engine::ActionMap actions = engine::ActionMap::defaults();
   ecs::World world;
-  spawnBouncingSprites(world, options->sprites, halfSizeOf(application.window().framebufferSize()));
-  log::info(Category::Game, "spawned {} sprites ({} entities)", world.count<engine::Sprite>(), world.entityCount());
+  spawnBouncingSprites(world, options->sprites, bounds.halfSize);
+  const ecs::Entity player = spawnPlayer(world);
+  log::info(Category::Game, "spawned {} sprites and the player; move with WASD or the arrow keys, fire with "
+            "Space or the left mouse button, Escape quits", world.count<engine::Sprite>() - 1);
 
   // The simulation: fixed 1/120 s steps, 0..n per frame (core/FixedStep.h).
-  // Snapshot first, so extraction can blend from where things were.
-  application.setFixedUpdate([&](const FixedStep& step) {
+  // Snapshot first, so extraction can blend from where things were. `input`
+  // holds the same keys for every step in a frame; a press reaches one step.
+  u32 bulletsFired = 0;
+  application.setFixedUpdate([&](const FixedStep& step, const platform::InputState& input) {
+    const auto deltaSeconds = static_cast<f32>(step.deltaSeconds);
     engine::snapshotTransforms(world);
-    engine::movementSystem(world, static_cast<f32>(step.deltaSeconds));
-    engine::bounceSystem(world, halfSizeOf(application.window().framebufferSize()));
+    engine::inputSystem(world, actions, input);
+    if (actions.pressed(input, engine::actions::kFire)) {
+      spawnBullet(world, world.get<engine::Transform>(player).position);
+      ++bulletsFired;
+    }
+    engine::movementSystem(world, deltaSeconds);
+    engine::bounceSystem(world, bounds);
+    engine::lifetimeSystem(world, deltaSeconds);
     world.flush();  // apply any destroys the systems queued
   });
 
-  // Once per frame, at the display's rate: the FPS in the title bar.
+  // Once per frame, at the display's rate: Escape, and the FPS in the title.
   TitleFpsCounter fpsCounter(application.window());
-  application.setUpdate([&fpsCounter](const FrameTime& time) { fpsCounter.update(time); });
+  application.setUpdate([&](const FrameTime& time, const platform::InputState& input) {
+    if (input.pressed(platform::Key::Escape)) application.requestQuit();
+    fpsCounter.update(time);
+  });
 
-  // Once per rendered frame: copy the sprites out, blended `alpha` of the way
-  // from the previous step to the current one, so motion is smooth at any
-  // display rate.
-  application.setExtract(
-      [&world](render::FrameData& frame, f64 alpha) { engine::extractSprites(world, frame, alpha); });
+  // Once per rendered frame: the playfield, then the sprites blended `alpha`
+  // of the way from the previous step to the current one. The view is the
+  // whole world, scaled to fit the window.
+  application.setExtract([&world, &bounds](render::FrameData& frame, f64 alpha) {
+    frame.viewHalfExtent = bounds.halfSize;
+    frame.sprites.push_back({.position = {0.0f, 0.0f}, .size = bounds.size(), .colour = {0.03f, 0.03f, 0.07f, 1.0f}});
+    engine::extractSprites(world, frame, alpha);
+  });
 
   const Status status = application.run();
+
+  // A summary line the end-to-end keyboard test (tests/e2e/keyboard.sh) reads.
+  const glm::vec2 playerAt = world.get<engine::Transform>(player).position;
+  log::info(Category::Game, "player ended at x={:.0f}, y={:.0f}; {} bullets fired", playerAt.x, playerAt.y,
+            bulletsFired);
   application.shutdown();  // renderer, then window, then GLFW
 
   if (!status) {
