@@ -13,6 +13,7 @@
 
 #include "playground/core/JobSystem.h"
 #include "playground/engine/Assets.h"
+#include "playground/engine/EnvironmentAsset.h"
 #include "playground/engine/Gltf.h"
 
 #include <array>
@@ -475,6 +476,11 @@ class RecordingRenderer final : public render::Renderer {
     CHECK(image.rgba.size() == usize{image.width} * image.height * 4);
     return render::TextureHandle{.index = nextTexture++, .generation = 0};
   }
+  Status setEnvironment(const render::HdrImage& panorama, const render::EnvironmentQuality& quality) override {
+    environmentWidth = panorama.width;
+    environmentQuality = quality;
+    return {};
+  }
   void destroyMesh(render::MeshHandle) noexcept override { ++meshesDestroyed; }
   void destroyTexture(render::TextureHandle) noexcept override { ++texturesDestroyed; }
 
@@ -486,6 +492,8 @@ class RecordingRenderer final : public render::Renderer {
   int texturesDestroyed = 0;
   int failMeshNumber = 0;  // > 0: that createMesh call fails
   int meshCalls = 0;
+  u32 environmentWidth = 0;
+  render::EnvironmentQuality environmentQuality{};
 };
 
 // A folder with a .gltf whose buffer and image are separate files.
@@ -603,4 +611,76 @@ TEST_CASE("clear() unloads every model, so they can go before the renderer") {
   // And the manager still works afterwards.
   const auto again = assets.load<engine::Model>("quad.gltf");
   CHECK(again != handle);
+}
+
+// --- HDR environments ------------------------------------------------------------------
+
+namespace {
+
+// A tiny Radiance .hdr, 4 x 2, written flat (no run-length coding: stb reads
+// rows under 8 pixels that way). Each pixel is RGBE: three 8-bit mantissas
+// sharing one exponent byte (value = mantissa * 2^(exponent - 136)).
+std::vector<std::byte> tinyHdr() {
+  std::string text = "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 2 +X 4\n";
+  std::vector<std::byte> file;
+  for (const char c : text) file.push_back(std::byte{static_cast<u8>(c)});
+  const auto pixel = [&](u8 r, u8 g, u8 b, u8 e) {
+    file.insert(file.end(), {std::byte{r}, std::byte{g}, std::byte{b}, std::byte{e}});
+  };
+  // Top row: 1.0 white, 2.0 white, 4.0 red, black.
+  pixel(128, 128, 128, 129);
+  pixel(128, 128, 128, 130);
+  pixel(128, 0, 0, 131);
+  pixel(0, 0, 0, 0);
+  // Bottom row: 0.5 blue x 4.
+  for (int i = 0; i < 4; ++i) pixel(0, 0, 128, 128);
+  return file;
+}
+
+}  // namespace
+
+TEST_CASE("decodeHdr reads Radiance RGBE into linear floats, brighter than 1 included") {
+  const std::vector<std::byte> file = tinyHdr();
+  auto image = engine::decodeHdr(file, "tiny.hdr");
+  REQUIRE_MESSAGE(image.has_value(), (image ? "" : image.error().message));
+  CHECK(image->width == 4);
+  CHECK(image->height == 2);
+  REQUIRE(image->rgba.size() == 32);
+  CHECK(image->rgba[0] == doctest::Approx(1.0f));
+  CHECK(image->rgba[4] == doctest::Approx(2.0f));   // over 1: why HDR matters for light
+  CHECK(image->rgba[8] == doctest::Approx(4.0f));
+  CHECK(image->rgba[9] == doctest::Approx(0.0f));
+  CHECK(image->rgba[12] == doctest::Approx(0.0f));
+  CHECK(image->rgba[16 + 2] == doctest::Approx(0.5f));  // bottom row, blue
+  CHECK(image->rgba[3] == doctest::Approx(1.0f));        // alpha added
+
+  const std::string junk = "not an image";
+  const auto bad = engine::decodeHdr(std::as_bytes(std::span(junk)), "junk.hdr");
+  REQUIRE_FALSE(bad.has_value());
+  CHECK(bad.error().code == Errc::InvalidArgument);
+  CHECK(bad.error().message.find("junk.hdr") != std::string::npos);
+}
+
+TEST_CASE("an .hdr loaded through the AssetManager is decoded on a worker and handed to the renderer") {
+  const auto folder = std::filesystem::temp_directory_path() / "playground_gltf_tests" / "hdr";
+  std::filesystem::remove_all(folder);
+  std::filesystem::create_directories(folder);
+  const std::vector<std::byte> file = tinyHdr();
+  std::ofstream(folder / "sky.hdr", std::ios::binary)
+      .write(reinterpret_cast<const char*>(file.data()), static_cast<std::streamsize>(file.size()));
+
+  JobSystem jobs(2);
+  RecordingRenderer renderer;
+  engine::AssetManager assets(jobs, folder);
+  assets.registerType<engine::EnvironmentAsset>(engine::environmentLoader(renderer, render::kFastEnvironment));
+  const auto sky = assets.load<engine::EnvironmentAsset>("sky.hdr");
+  while (!assets.idle()) {
+    (void)assets.update();
+    std::this_thread::yield();
+  }
+  REQUIRE_MESSAGE(assets.state(sky) == engine::AssetState::Ready,
+                  (assets.error(sky) ? assets.error(sky)->message : std::string("not ready")));
+  CHECK(assets.get(sky)->width == 4);
+  CHECK(renderer.environmentWidth == 4);
+  CHECK(renderer.environmentQuality.cubeSize == render::kFastEnvironment.cubeSize);
 }

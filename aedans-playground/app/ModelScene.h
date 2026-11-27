@@ -9,8 +9,12 @@
 //    --model PATH       any glTF 2.0 file (.gltf or .glb) instead, with the
 //                       camera framed on it once it has loaded
 //
-//  Models load in the background (engine::AssetManager): the window opens
-//  at once, and each model appears when it is ready.
+//    the sky            a procedural sky baked into image-based lighting
+//                       (render/Environment.h), so metals reflect it;
+//    --environment PATH an HDR panorama (.hdr) instead, once loaded
+//
+//  Models and panoramas load in the background (engine::AssetManager): the
+//  window opens at once, and each appears when it is ready.
 //
 //  Controls: see engine/CameraController.h. Tab switches orbit <-> fly;
 //  R puts the camera back where it started.
@@ -22,7 +26,9 @@
 #include "playground/engine/Assets.h"
 #include "playground/engine/Camera.h"
 #include "playground/engine/CameraController.h"
+#include "playground/engine/EnvironmentAsset.h"
 #include "playground/engine/Gltf.h"
+#include "playground/render/Renderer.h"
 
 #include <filesystem>
 #include <optional>
@@ -36,9 +42,12 @@ namespace playground::app {
 
 class ModelScene final : public Scene {
  public:
-  // The models must be registered with `assets` (engine::gltfLoader).
-  // `model`: a file to show instead of the default scene.
-  ModelScene(engine::AssetManager& assets, std::optional<std::filesystem::path> model);
+  // Models and panoramas must be registered with `assets`
+  // (engine::gltfLoader, engine::environmentLoader). `model`: a glTF file to
+  // show instead of the default scene; `environment`: an .hdr panorama to
+  // light it with instead of the procedural sky.
+  ModelScene(engine::AssetManager& assets, render::Renderer& renderer, std::optional<std::filesystem::path> model,
+             std::optional<std::filesystem::path> environment);
 
   void update(const FrameTime& time, const platform::InputState& input) override;
   void extract(render::FrameData& frame, f64 alpha) override;
@@ -58,6 +67,8 @@ class ModelScene final : public Scene {
 
   engine::AssetManager& assets_;
   std::vector<Object> objects_;
+  std::optional<engine::AssetHandle<engine::EnvironmentAsset>> environment_;
+  bool environmentReported_ = false;
   bool showingOneModel_ = false;  // --model: frame the camera on it once loaded
   bool framed_ = false;
   engine::Camera camera_;

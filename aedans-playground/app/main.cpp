@@ -6,7 +6,7 @@
 //  first and goes last so that every other step, including a failed
 //  start-up, is recorded.
 //
-//  Usage: playground_app [--scene models|sprites] [--model PATH] [--frames N]
+//  Usage: playground_app [--scene models|sprites] [--model PATH] [--environment PATH] [--frames N]
 //                        [--sprites N] [--verbose] [--log-file PATH]
 //                        [--validation | --no-validation]
 //
@@ -26,6 +26,7 @@
 #include "playground/core/Log.h"
 #include "playground/engine/Application.h"
 #include "playground/engine/Assets.h"
+#include "playground/engine/EnvironmentAsset.h"
 #include "playground/engine/Gltf.h"
 #include "playground/render/VulkanRenderer.h"
 
@@ -53,16 +54,18 @@ struct Options {
   bool validation = render::VulkanRendererDesc{}.enableValidation;  // on in debug builds
   SceneChoice scene = SceneChoice::Models;
   std::optional<std::filesystem::path> model;  // --model: show this glTF file
+  std::optional<std::filesystem::path> environment;  // --environment: light the 3D scene with this .hdr
   u32 sprites = 25'000;  // how many bouncing squares the sprite scene spawns
 };
 
 void printUsage() {
   std::puts(
-      "usage: playground_app [--scene models|sprites] [--model PATH] [--frames N] [--sprites N] [--verbose]\n"
-      "                      [--log-file PATH] [--validation | --no-validation]\n"
+      "usage: playground_app [--scene models|sprites] [--model PATH] [--environment PATH] [--frames N]\n"
+      "                      [--sprites N] [--verbose] [--log-file PATH] [--validation | --no-validation]\n"
       "  --scene models   3D glTF models with an orbit/fly camera (the default)\n"
       "  --scene sprites  the 2D demo: bouncing squares and a player to steer\n"
       "  --model PATH     show this glTF 2.0 file (.gltf or .glb) in the 3D scene\n"
+      "  --environment PATH  light the 3D scene with this HDR panorama (.hdr) and show it as the sky\n"
       "  --frames N       run N frames, then exit (used by the automated tests)\n"
       "  --sprites N      how many bouncing squares to spawn (default 25000)\n"
       "  --verbose        log at debug level, including frame-time statistics\n"
@@ -105,6 +108,11 @@ Result<Options> parseOptions(std::span<char*> args) {
       } else {
         return fail(Errc::InvalidArgument, "--scene expects models or sprites, got \"{}\"", *value);
       }
+    } else if (arg == "--environment") {
+      auto value = nextValue();
+      if (!value) return tl::unexpected(std::move(value.error()));
+      options.environment = std::filesystem::path(*value);
+      options.scene = SceneChoice::Models;
     } else if (arg == "--model") {
       auto value = nextValue();
       if (!value) return tl::unexpected(std::move(value.error()));
@@ -203,6 +211,7 @@ int main(int argc, char** argv) {
   engine::AssetManager assets(jobs, std::filesystem::path(argv[0]).parent_path() / "assets");
   assets.registerType<engine::TextAsset>(engine::textAssetLoader());
   assets.registerType<engine::Model>(engine::gltfLoader(renderer));
+  assets.registerType<engine::EnvironmentAsset>(engine::environmentLoader(renderer));
   const auto welcome = assets.load<engine::TextAsset>("welcome.txt");
   bool welcomeShown = false;
 
@@ -212,7 +221,7 @@ int main(int argc, char** argv) {
   if (options->scene == SceneChoice::Sprites) {
     scene = std::make_unique<app::SpriteScene>(application, options->sprites);
   } else {
-    scene = std::make_unique<app::ModelScene>(assets, options->model);
+    scene = std::make_unique<app::ModelScene>(assets, renderer, options->model, options->environment);
   }
 
   // The simulation: fixed 1/120 s steps, 0..n per frame (core/FixedStep.h).
