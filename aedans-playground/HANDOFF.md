@@ -8,7 +8,7 @@ to build, run and troubleshoot is in `README.md`.
   engine architecture, memory management and data-oriented design, and to
   host **Erebus Cradle** (the OpenGL 4.1 game in `../cpp/`) once it is ready.
 - **Where:** repository `colleenneug/Claude-01`, folder `aedans-playground/`,
-  branch `claude/relaxed-cray-5kc2fl` (31 commits, `d065ae6` → this one). No
+  branch `claude/relaxed-cray-5kc2fl` (32 commits, `d065ae6` → this one). No
   pull request open.
 - **Size:** about 16,500 lines of engine code and shaders, and 6,600 lines
   of tests.
@@ -308,7 +308,7 @@ test still passing.
   - The headless `--server` loop at 120 Hz with snapshots.
   - Ctrl+C handling moved into `core`.
   - `--connect` test client; a server end-to-end test with no display.
-- [x] **Step 9: Client-server gameplay sync** (this commit)
+- [x] **Step 9: Client-server gameplay sync** (`9d89089`)
   - The `game/` library; protocol v2 with a **handshake** (version check
     and Reject with a reason, 3 s half-open timeout) and reliable
     **Spawn/Despawn** of one player entity per client.
