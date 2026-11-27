@@ -1,363 +1,375 @@
-# Aedan's Playground — session handoff
+# Aedan's Playground — Master Handoff
 
-Paste this file into a new session to resume. The plan is `ROADMAP.md`;
-build, run and troubleshooting instructions are in `README.md`.
+A complete snapshot of the engine from the first commit to now. Paste this
+file into a new session to resume. The long-term plan is `ROADMAP.md`; how
+to build, run and troubleshoot is in `README.md`.
 
-**Status:** Stage 3, prompt 7 is done: **networking**. It's built on the
-renderer milestones (PBR, image-based lighting, shadows, HDR
-post-processing; start of this milestone: commit `8f0d485`).
-- **`net/` library** (target `playground_net`, alias `engine_net`):
-  - an ENet transport behind pimpl: `Host`, `Peer`, `Packet`;
-  - two channels: `Reliable` (reliable and ordered) and `Unreliable`
-    (unsequenced);
-  - a bit-level `BitWriter`/`BitReader` (endian-safe, no struct casts,
-    overrun-proof);
-  - quantization: bounded floats, vectors, smallest-three quaternions.
-- **Dedicated server:** `--server [--port N]` runs the 120 Hz fixed-step
-  simulation headless. GLFW and Vulkan are never started.
-  - It welcomes clients (reliable) and sends quantized 20 Hz snapshots
-    (unreliable).
-  - Ctrl+C or SIGTERM ends it cleanly, after telling every client goodbye.
-  - `--connect HOST[:PORT]` is a headless test client.
-- Ctrl+C handling moved into `core` (`InterruptGuard`); the GLFW
-  `Platform` uses it too.
+- **What it is:** a C++20 / Vulkan 1.3 engine built from scratch to learn
+  engine architecture, memory management and data-oriented design, and to
+  host **Erebus Cradle** (the OpenGL 4.1 game in `../cpp/`) once it is ready.
+- **Where:** repository `colleenneug/Claude-01`, folder `aedans-playground/`,
+  branch `claude/relaxed-cray-5kc2fl` (29 commits, `d065ae6` → this one). No
+  pull request open.
+- **Size:** about 14,600 lines of engine code and shaders, and 5,600 lines
+  of tests.
+- **State at this snapshot:**
+  - `xvfb-run -a ctest --preset debug` passes **21/21**: 16 suites with
+    **205 test cases**, plus 5 end-to-end and smoke checks.
+  - A clean rebuild has **0 warnings** (warnings are errors).
+  - **0 Vulkan validation errors**. (The one `[error] [gpu]` line in the
+    test log is gpu_tests' deliberately injected "expected" message.)
 
-- Repository `colleenneug/Claude-01`, branch `claude/relaxed-cray-5kc2fl`, no pull request open.
-- **Long-term goal (user):** Erebus Cradle (the game in `cpp/`) will be moved
-  onto this engine eventually. Its co-op runs over its own UDP layer;
-  `net/` is where that moves to. Roadmap Milestone 5 covers the port.
-- **The helmet** (`app/assets/third_party/DamagedHelmet/`, kept at the
-  user's request) is CC BY 4.0 on top of CC BY-NC 4.0. It is credited, and
-  **non-commercial only**: remove it before anything built on this engine
-  is sold.
-- **Environment:** the cloud environment's setup script now also installs
-  `libenet-dev`. Not yet proven in a fresh session; if configure cannot
-  find `enet/enet.h` or `tiny_gltf.h`, install the packages listed in
-  `README.md`.
+**Working with the user**
 - Standing guidelines:
   - modern C++20 (smart pointers, RAII, `std::span`, designated initialisers);
-  - no over-engineering;
+  - avoid over-engineering;
   - clean, commented, production-ready code;
   - strict error handling and logging for graphics initialisation.
-- Decisions:
-  - C++20 with `tl::expected`;
-  - Windows and Linux only;
-  - no Vulkan types above render;
-  - reverse-Z everywhere;
-  - asset decode on workers;
-  - bindless textures;
-  - tone mapping only in the composite pass;
-  - FrameData effects off by default;
-  - **`net/` depends on `core` only, with ENet PRIVATE: no ENet or
-    winsock types in public headers**;
-  - **`Peer` is a never-reused id, not a pointer**;
-  - **`Packet` owns a copy of its bytes**;
-  - **one thread per `Host`**;
-  - **bit order is least-significant first; values move by shifts, never
-    struct casts**;
-  - **decoders check `ok()` once after a whole message**;
-  - **the server's network wait is its tick sleep**;
-  - **game messages live in `app/Protocol.h`, not the engine**.
-- The user's milestone numbers run ahead of `ROADMAP.md`'s.
+- Each session starts with "read HANDOFF.md, run `xvfb-run -a ctest --preset
+  debug`", and ends with a 5-heading summary:
+  1. Current Architecture State
+  2. Exact Files & Classes Modified
+  3. Code Snippet of the Core Loop/Active Component
+  4. Known Bugs & Incomplete Tasks
+  5. Immediate Next Steps
+
+  This file keeps that information, organised by topic.
 - The user may be young or new to this: when asked to explain, keep it short
   and plain, one idea at a time.
+- The user's milestone numbers run ahead of `ROADMAP.md`'s (see the
+  checklist below for the mapping).
+- **The Damaged Helmet** (`app/assets/third_party/DamagedHelmet/`) was kept
+  at the user's request. It is CC BY 4.0 (ctxwing) on top of CC BY-NC 4.0
+  (theblueturtle_), credited, and **non-commercial only**: remove it before
+  anything built on this engine is sold. Every other asset is generated by
+  `tools/make_demo_assets.py`.
 
 ---
 
-## 1. Current Architecture State
+## 1. Full Library Architecture
 
-**Final state, verified at wrap-up:**
-- a clean rebuild of the debug preset: **0 warnings**;
-- `xvfb-run -a ctest --preset debug`: **21/21** in 33 s;
-- **0 Vulkan validation errors** (the one `[error] [gpu]` line in the test
-  log is gpu_tests' deliberately injected "expected" message).
-
-**Active libraries** (each layer includes only those below it; Vulkan
-stops at render, ENet stops inside net):
-
-| Library | Depends on | Role |
-|---|---|---|
-| `playground_core` | spdlog (private) | Result/Error, logging, asserts, frame clock, fixed-step accumulator, job system, Ctrl+C guard |
-| `playground_net` (`engine_net`) | core, glm; ENet (private) | Bit packing, quantization, reliable/unreliable transport |
-| `playground_platform` | core, GLFW | Window, input |
-| `playground_ecs` | core | Sparse-set entity/component world |
-| `playground_gpu` | platform, Vulkan, VMA | Vulkan bring-up, buffers, images, samplers, swapchain |
-| `playground_render` | platform, glm; gpu (private) | Renderer interface, frame data; the Vulkan renderer (PBR, IBL, shadows, HDR, bloom, tone mapping, sprites) |
-| `playground_engine` | render, ecs; tinygltf + stb (private) | Application loop, camera, assets (glTF, HDR), systems |
-| `playground_app` | engine, net | The game: 3D and 2D scenes, `--server`, `--connect` |
-
-**How the loops flow**
-- **Windowed game:** `Application::run()`, per frame:
-  1. poll input;
-  2. `FixedStepAccumulator`: 0..n simulation steps at 1/120 s;
-  3. `update` (the camera, `assets.update()` finishing loads);
-  4. `extract` into `FrameData`;
-  5. `VulkanRenderer::renderFrame`: wait on the fence, acquire, write
-     the buffers, then record: **shadow map → HDR scene (meshes, sky) →
-     bloom → composite (tone map, sRGB) + sprites** (a sprites-only frame
-     skips the first three); submit; present.
-- **Dedicated server** (`--server`), per loop:
-  1. `Host::service(time until the next tick)`, which is also the loop's
-     sleep (welcomes, goodbyes);
-  2. the same `FixedStepAccumulator`: 0..n steps of
-     movement/bounce/flush, broadcasting a snapshot every 6th tick;
-  3. `flush()`.
-
-  No GLFW, no Vulkan. Ctrl+C (`InterruptGuard`) ends the loop, then every
-  client is told goodbye.
+Each folder is a static library with its own public `include/`. A layer may
+include only the layers below it, so a wrong `#include` is a build error.
+Vulkan types never appear above `render`'s private sources; ENet never
+appears outside `net/src/Host.cpp`; tinygltf and stb never appear outside
+`engine/src/Gltf*.cpp` and `EnvironmentAsset.cpp`.
 
 ```
-core      Result, Log (+ "net" category), Assert, FrameClock, FixedStep, Types, JobSystem,
-          InterruptGuard (new: Ctrl+C / SIGTERM as a stop request)
-net       BitWriter, BitReader, Quantize (quantize/dequantize, vec2/vec3, smallest-three quaternions),
-   (new)  Host (pimpl over ENet), Peer, Packet, Event, Channel, PeerInfo
-platform  Platform (GLFW; holds an InterruptGuard), Window, Input
-gpu       Context, Buffer, Image, Sampler, Swapchain, DeviceHandle
-render    Renderer, FrameData, Resources, Environment, Shadow; VulkanRenderer + Mesh, ResourcePool,
-          IblBaker, BrdfLut, PostProcess, ShadowMap
-engine    Application, Camera, CameraController, AssetManager, Gltf, EnvironmentAsset, systems
-app       main.cpp (+ --server, --port, --connect), Server (new), Protocol (new), ModelScene, SpriteScene
+            app  (the game: scenes, --server, --connect)
+           /   \
+      engine    net ──────────┐
+       /  \                   │
+  render   ecs                │
+    │  (gpu private)          │
+   gpu                        │
+    │                         │
+ platform                     │
+    │                         │
+   core ◄─────────────────────┘
 ```
 
-**`net/BitStream`:**
-- `BitWriter::writeBits(value, count ≤ 64)` works 8 bits at a time:
-  `bytes[pos/8] |= chunk << (pos % 8)`. Debug builds assert that high bits
-  are zero; release builds mask them off.
-- Typed helpers: `writeBool`, `U8`/`U16`/`U32`/`U64`, `writeI32` (bit_cast
-  to u32), `writeF32` (bit_cast), `writeVarU32` (7-bit groups plus a
-  continuation bit), `writeString` (VarU32 length, capped at `maxLength`),
-  `writeBytes`, `alignToByte`, `take()`.
-- `BitReader` mirrors it. On overrun, more than 64 bits, a varint longer
-  than 5 groups or over 32 bits, a string length past the end or over
-  `maxLength`, or a short `readBytes`, `fail()` sets a sticky flag and the
-  read position jumps to the end; the read returns 0 or empty.
+| Library (target) | Depends on | Responsibilities | Key types |
+|---|---|---|---|
+| **core** (`playground_core`) | spdlog (private), threads | errors as values (`Result<T>` = `tl::expected<T, Error>`, `fail()`); logging behind `std::format` with categories (core, platform, gpu, render, engine, net, game), console and file, live flushing; asserts (`PG_ASSERT` debug, `PG_VERIFY` always); frame clock; the **120 Hz fixed-step accumulator** (clamp 0.25 s, at most 8 steps, interpolation alpha); a **job system** (thread pool, futures, counters, `parallelFor`); **Ctrl+C / SIGTERM as a stop request** | `Result`, `Error`/`Errc`, `log::Session`, `FrameClock`, `FixedStepAccumulator`, `JobSystem`, `JobCounter`, `InterruptGuard` |
+| **platform** (`playground_platform`) | core, GLFW | GLFW lifetime (one at a time), the window (sizes, resize, focus), keyboard/mouse/wheel input as per-frame snapshots with pressed/released edges; a latch so each press reaches exactly one fixed step; releasing keys on focus loss | `Platform`, `Window`, `InputCollector`, `InputState`, `InputLatch`, `Key`, `MouseButton` |
+| **gpu** (`playground_gpu`) | platform, Vulkan 1.3, VMA (vendored v3.3.0 on Linux) | Vulkan bring-up: instance and validation (messages counted; any error fails the app), surface, GPU selection with every rejection reason logged, logical device and queues (dynamic rendering, synchronization2, timeline semaphores, descriptor indexing with update-after-bind, buffer device address, optional anisotropy); memory (VMA); buffers (host-visible, device-local via staging, readback); images (2D, cube, arrays, mip chains built by blits); samplers; swapchain (sRGB or UNORM, rebuilt on resize); RAII for every handle | `Context`, `Device`, `Allocator`, `Buffer`, `Image`, `createTexture`, `Sampler`, `Swapchain`, `DeviceHandle<T>`, `transitionImage` |
+| **ecs** (`playground_ecs`) | core | sparse-set entity/component storage, generational entity handles, multi-component iteration, deferred destruction | `World`, `Entity`, `ComponentPool<T>` |
+| **render** (`playground_render`) | platform, glm; gpu **private** | the `Renderer` interface and Vulkan-free frame description (`FrameData`, meshes, materials, lights, environment, shadow/bloom/tone-map settings); the Vulkan renderer: instanced sprites, meshes with bindless PBR textures, image-based lighting baked on the GPU, a skybox, sun shadow maps, an HDR target, bloom, ACES/PBR Neutral tone mapping, sRGB-correct composite, frame capture for pixel tests; GPU resources behind generational handles with deferred freeing | `Renderer`, `FrameData`, `MeshData`, `Material`, `MeshInstance`, `ProceduralSky`, `HdrImage`, `Aabb`, `directionalShadowMatrix`; private: `VulkanRenderer`, `Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess` |
+| **engine** (`playground_engine`) | render, ecs; tinygltf + stb **private** | the application loop (window + fixed steps + update + extract + render); cameras (orthographic/perspective, reverse-Z, screen ↔ world) and an orbit/fly controller; the **asset manager** (decode on workers, finalize on the main thread, generational handles, cache by path); glTF 2.0 models and HDR panoramas as assets; components and systems (movement, bounce, input, lifetime, sprite extraction, picking); input actions | `Application`, `Camera`, `CameraController`, `AssetManager`, `AssetHandle<T>`, `Model`, `gltfLoader`, `EnvironmentAsset`, `ActionMap`, `Transform`, `Velocity`, `Sprite` |
+| **net** (`playground_net`, alias `engine_net`) | core, glm; ENet **private** | the network transport (server or client hosts; reliable-ordered and unreliable-unsequenced channels; events), bit-level serialization (endian-safe, overrun-proof), quantization (bounded floats, vectors, smallest-three quaternions) | `Host`, `Peer`, `Packet`, `Event`, `Channel`, `BitWriter`, `BitReader`, `quantize`, `writeQuaternion` |
+| **app** (`playground_app`) | engine, net | the program: start-up order, command-line options; the **3D scene** (floor, crates, PBR spheres, lamps, the helmet; sun shadows, sky, bloom; orbit/fly camera; `--model`, `--environment`); the **2D scene** (25,000 bouncing sprites, a player, bullets aimed with the mouse); the **dedicated server** and a headless test client; the game's wire protocol | `Scene`, `ModelScene`, `SpriteScene`, `runServer`, `runClient`, `protocol::Welcome/Snapshot` |
 
-**`net/Quantize`:**
-- `quantize(v, min, max, bits)` = `llround(clamp((v − min)/(max − min), 0,
-  1) × (2^bits − 1))`, done in f64; NaN gives 0. `quantizationError()` is
-  half a step.
-- Smallest-three quaternions:
-  - normalise, find the largest |component| (order x, y, z, w), flip the
-    sign so it is positive;
-  - write its index (2 bits) and the other three in ±(1/√2 + 1e-4) at N
-    bits;
-  - reading rebuilds the largest as `sqrt(1 − Σ²)` and normalises.
+Also: `tests/` (doctest suites, end-to-end shell scripts), `tools/`
+(`make_demo_assets.py`), `third_party/` (`tl::expected`, VMA), `cmake/`
+(warnings and sanitizers, shader compilation with dependency files),
+`docs/` (screenshots of every milestone).
 
-**`net/Host`** (`Host.cpp` is the only file with `<enet/enet.h>`):
-- `Impl` holds the `ENetHost*`, maps between `ENetPeer*` and id (both
-  ways), and the next id.
-- ENet's `enet_initialize`/`enet_deinitialize` are reference-counted under
-  a mutex.
-- `listen` uses `ENET_HOST_ANY` on a port (0 means any free port; ENet
-  reports the bound one). `client` creates a host with no address. Both
-  use 2 channels.
-- `service(timeout)` waits once for the first event, then drains with
-  timeout 0:
-  - CONNECT: remember the peer;
-  - RECEIVE: copy the bytes, map the channel id to a `Channel`, destroy
-    the packet;
-  - DISCONNECT: forget the peer.
-- `send`: Reliable → `ENET_PACKET_FLAG_RELIABLE`, Unreliable →
-  `ENET_PACKET_FLAG_UNSEQUENCED`; channel id = enum value. If
-  `enet_peer_send` fails, the packet is destroyed.
-- Also: `broadcast` (connected peers only), `flush`, `disconnect`,
-  `disconnectAll`, `port`, `connectedPeers`, `knownPeers` (any state, for
-  waiting out goodbyes) and `info` (address, RTT).
+**Build:**
+- CMake presets: `debug`, `release`, `asan` (ASan + UBSan), `tsan`
+  (ThreadSanitizer, runs the threaded suites), `windows`.
+- A Clang build lives in `build/clang`.
+- Dependencies come from system packages on Linux (`README.md` lists them;
+  the cloud environment's setup script installs them), or from the vcpkg
+  manifest on Windows: glfw3, glm, spdlog, vulkan-memory-allocator,
+  doctest, tinygltf, stb, enet.
+- Shaders are compiled by glslc at build time and embedded in the
+  executable.
 
-**Server** (`app/Server.cpp`):
-- `runServer`: an `InterruptGuard`, `Host::listen`, 64 bouncing entities
-  (a fixed seed) in an `ecs::World`, `FrameClock`, `FixedStepAccumulator`.
+---
+
+## 2. End-to-End Loops
+
+### The windowed client (`playground_app`, `--scene models` by default)
+Start-up order:
+1. logging;
+2. job system;
+3. `Application` (GLFW, window);
+4. Vulkan renderer;
+5. asset manager;
+6. scene.
+
+Shutdown is the reverse, and assets are cleared before the renderer.
+
+Per frame (`engine::Application::run`):
+1. **Input:** poll GLFW, snapshot the input, latch the edges.
+2. **Simulation:** the fixed-step accumulator decides 0..n steps of 1/120 s.
+   Each step runs the scene's `fixedUpdate` (ECS systems). Positions are
+   snapshotted first so drawing can blend.
+3. **Update** (once per frame): `assets.update()` finishes up to 8 loaded
+   assets (GPU uploads happen here, on the main thread); the camera
+   controller; key toggles.
+4. **Extract:** the scene copies what is visible into `FrameData`: mesh
+   instances with materials, sprites interpolated by alpha, the camera,
+   the sun, and environment, shadow, bloom and tone-map settings. The
+   renderer never reads the ECS.
+5. **Render:** `VulkanRenderer::renderFrame`.
+
+Meanwhile, worker threads (`JobSystem`) read and decode files (glTF,
+images, HDR panoramas) and hand them to step 3 through one locked queue.
+
+### The rendering pipeline (`render/src/VulkanRenderer.cpp`)
+Per frame, two frames in flight:
+1. **Wait** on this slot's fence, then **acquire** a swapchain image.
+2. **Free** resources destroyed two or more frames ago.
+3. **Write** the frame's data into persistently mapped buffers:
+   - the mesh draw list (192 B per instance);
+   - sprites (opaque first, translucent ones sorted back to front);
+   - uniforms (288 B: camera, inverse, light matrix, sun, environment,
+     shadow settings).
+4. **Record.** When there are meshes or a sky:
+   1. **Shadow map:** 2048² `D32_SFLOAT`, depth only, from the sun. The
+      box is fitted round a bounding sphere of the scene and snapped to
+      texels. Hardware depth bias, negative for reverse-Z.
+   2. **HDR scene:** into `R16G16B16A16_SFLOAT` with depth. Meshes are
+      drawn one indexed draw each, sharing one buffer of per-draw data
+      read by GPU address. Each draw gets:
+      - bindless textures (set 1);
+      - Cook-Torrance GGX lighting with normal maps;
+      - sunlight × shadow visibility (normal offset, 3×3 hardware PCF,
+        fade at the map's edges);
+      - image-based lighting: irradiance, plus prefiltered specular × the
+        BRDF table;
+      - emissive.
+
+      Then the sky (its environment cube and the sun's disk) where no mesh
+      drew.
+   3. **Bloom** (if on): a half-size mip chain. Going down, the first step
+      thresholds with a soft knee and uses the Karis average; 13-tap
+      filters. Going back up, tent filters added level onto level.
+   4. **Swapchain:** the composite (HDR + bloom × strength → exposure →
+      ACES or PBR Neutral → sRGB encoded once: by the swapchain if
+      `_SRGB`, in the shader if `_UNORM`), then **sprites**, un-tone-mapped,
+      depth-tested against the scene.
+
+   Frames with sprites only (the 2D scene) go straight to the swapchain
+   step.
+5. **Submit, present.** An out-of-date swapchain is rebuilt next frame.
+   The HDR target, bloom chain and their descriptor sets are rebuilt with
+   it, without leaks.
+
+The environment (a procedural sky by default, or an `.hdr` panorama) is
+baked on the GPU when it changes, by four compute shaders: the environment
+cube, the irradiance cube, and the GGX-prefiltered specular cube. A fast
+procedural sky is baked at start-up, so headless tests stay quick.
+
+### The dedicated server (`playground_app --server [--port N]`)
+- It branches off straight after logging starts: no GLFW, no window, no
+  Vulkan, no job system.
+- An `InterruptGuard` turns Ctrl+C or SIGTERM into a stop request.
+- `net::Host::listen(port)` starts the network; the world is 64 bouncing
+  entities in an ECS.
 - Each loop:
-  - `service(min(time to the next tick, 8 ms))`. On connect: log it and
-    send a Welcome (reliable). On disconnect: log it.
-  - Then the steps: movement, bounce, flush; every 6th tick broadcast a
-    Snapshot (unreliable); `flush()`.
-  - Every 5 s, a status line.
-- On stopping: `disconnectAll`, then service until `knownPeers() == 0` or
-  500 ms.
-- `runClient`: connect, then service every 8 ms for N / 120 s. Decode with
-  `peekKind`, `decodeWelcome` or `decodeSnapshot`, counting the malformed
-  ones. Then a summary line, a goodbye, and exit 0 only if welcomed and
-  never dropped.
-- `main.cpp` takes these branches straight after logging starts, before
-  the JobSystem, the Application or anything of GLFW.
+  1. `host.service(time until the next tick, at most 8 ms)` is both the
+     network pump and the loop's sleep. A client connecting gets a
+     **Welcome** (reliable); departures are logged.
+  2. The same `FixedStepAccumulator` as the client runs 0..n steps of
+     movement, bounce and flush. Every 6th tick (20 Hz) it broadcasts a
+     **Snapshot** (unreliable): tick, then per entity its id, a
+     16-bit × 2 position and a 10-bit angle. About 6 B per entity.
+  3. `host.flush()`; a status line every 5 s.
+- On stopping: goodbye to every client, waiting up to 500 ms for their
+  acknowledgements, then exit 0.
 
-**Protocol** (`app/Protocol.h`):
-- A 4-bit kind first.
-- Welcome: u16 version (1), u16 tick rate, u32 tick, varint entity count.
-- Snapshot: u32 tick, varint count (≤ 128, checked before reserving),
-  then per entity a varint id, 2×16-bit position in ±1024, and a 10-bit
-  angle over [0, 2π] (wrapped).
+### How they fit together today
+- The client and server share core (clock, fixed step), the ECS and its
+  systems, and the `net/` library. `app/Protocol.h` defines the messages.
+- **The windowed game does not connect to a server yet.** The headless
+  `--connect HOST[:PORT]` client receives and decodes snapshots, and the
+  end-to-end test checks it. Making the windowed game a real client is the
+  next step.
 
-**Verified** (GCC 13.3 debug and release, Clang 18.1, GCC + ASan + UBSan,
-GCC + TSan; Mesa llvmpipe, Xvfb):
+---
 
-| Check | Result |
+## 3. Completed Milestones (Steps 1–8)
+
+Each item was run and verified: tests in that step, plus every earlier
+test still passing.
+
+- [x] **Step 0: Roadmap** (`d065ae6`): architecture, layering, principles,
+  milestones (`ROADMAP.md`).
+- [x] **Step 1: Application shell** (`e99bc6d`; roadmap Milestone 0)
+  - CMake presets, the vcpkg manifest, `Result`/`Error`, logging, asserts.
+  - The GLFW window with resize, minimise and focus; Ctrl+C.
+  - The main loop with a renderer slot; exit codes; the no-display error
+    path.
+- [x] **Step 2: Vulkan bring-up** (`29f1a83`; roadmap M1, first half)
+  - Instance with validation and a debug messenger (messages counted).
+  - Surface; GPU selection that logs every rejection reason.
+  - Logical device, graphics and present queues, required features.
+  - Every failure names its step.
+- [x] **Step 3: Swapchain and first triangle** (`dcee23d`; M1, second half)
+  - Swapchain with resize and out-of-date handling.
+  - Shaders compiled at build time and embedded; dynamic rendering;
+    synchronization2.
+  - Frames in flight, with per-image semaphores.
+- [x] **Step 4: Engine core** (`bea4444`, `3a128f3`, `9a2f847`; roadmap M3)
+  - Sparse-set ECS with generational entities.
+  - The fixed 120 Hz simulation with interpolated drawing, and a live log.
+  - Keyboard and mouse input, actions (WASD/arrows, fire), a player,
+    world bounds, focus-loss release; an xdotool end-to-end keyboard test.
+- [x] **Step 5: Renderer foundations** (`abf570d`, `5338dae`; roadmap M2)
+  - VMA, buffers and staging uploads.
+  - **25,000 sprites in one instanced draw** (storage buffer read by GPU
+    address).
+  - Reverse-Z `D32` depth with translucent sorting.
+  - Orthographic and perspective camera through a per-frame UBO;
+    `screenToWorld` mouse picking.
+  - Frame capture for pixel tests.
+- [x] **Step 6: Multithreading and asset streaming** (`92332f1`)
+  - `JobSystem` (futures, counters, `parallelFor` with helping waits).
+  - `AssetManager` (async decode, main-thread finalize, budgets, caching,
+    cancellation, stale handles).
+  - The ThreadSanitizer preset.
+- [x] **Step 7: 3D rendering** (`f70d690` … `8f0d485`; most of roadmap M4)
+  - **Geometry and textures:**
+    - GPU-built mip chains; samplers with anisotropy;
+    - device-local meshes; bindless textures;
+    - metallic-roughness PBR with normal maps; double-sided materials;
+    - **glTF 2.0** (`.gltf`/`.glb`; generated normals and tangents; node
+      transforms; required extensions refused);
+    - orbit and fly camera; mouse wheel.
+  - **Reflections:** image-based lighting baked on the GPU (procedural sky
+    or `.hdr` panorama), the BRDF table on the CPU, a skybox with the sun's
+    disk.
+  - **Shadows and post-processing:**
+    - offscreen HDR target;
+    - sun shadow map (texel-snapped, depth bias plus normal offset, 3×3
+      PCF, edge fade);
+    - mip-chain bloom (threshold, Karis average);
+    - ACES and PBR Neutral tone mapping; sRGB encoded exactly once on
+      `_SRGB` and `_UNORM` swapchains;
+    - emissive materials;
+    - resizing without leaks; the sprites-only fast path.
+- [x] **Step 8: Networking and dedicated server** (`dc700ba`)
+  - The `net/` library: ENet behind pimpl; reliable and unreliable
+    channels; `BitWriter`/`BitReader`; quantization (smallest-three
+    quaternions).
+  - The headless `--server` loop at 120 Hz with snapshots.
+  - Ctrl+C handling moved into `core`.
+  - `--connect` test client; a server end-to-end test with no display.
+
+**Verification as of this snapshot:**
+
+| Suite (test cases) | What it covers |
 |---|---|
-| Baseline at `8f0d485` | 19/19 suites passed |
-| After | **21/21 suites** (new `net_tests`, `server_e2e`) in debug, release, Clang and ASan+UBSan (**no UBSan runtime errors in the bit packer**); TSan 3/3, 3 runs, 0 race reports, and `net_tests` under TSan: 0 reports; 0 warnings everywhere |
-| `net_tests` (12, 0.04 s) | exact layout (`0b101`,`0xFF` → `FD 07`; `0x12345678` → `78 56 34 12`); every width 1..64 three times at every alignment; i32 extremes, floats bit-exact (−0, ∞, NaN), varints at 7-bit edges, strings, bytes, alignment; varint sizes (100 → 8 bits, u32 max → 40); past the end → zeros, sticky failure, `readBits(65)`, empty data; hostile string lengths, over-long varints, short byte reads (zeroed), a message cut by one byte; quantization error ≤ half a step (+ one f32 step at 20–24 bits), exact ends, clamping, NaN, 1-bit; vec2/vec3 bit counts and error; **1,000 random rotations: 32 bits each, worst error < 0.25°**; identity and sign-flipped unnormalised input; **loopback**: client ↔ server on 127.0.0.1, reliable client → server and unreliable server → client on the right channels, bit-packed payloads decoded, `info()` address, polite disconnect seen by the server, stale peer refused; **100 reliable messages all arrive in order**; a port in use refused, naming it |
-| `server_e2e` (no `DISPLAY`) | server on a free port; client for 2 s: welcomed, ≥ 20 snapshots (got ~40), 64 entities each, 0 malformed; the server logs the connect and the goodbye; Ctrl+C → "interrupted", exit 0; no GLFW, Vulkan or GPU line in the server's log |
-| By hand | the server reacts to SIGINT within ~8 ms (`strace`) |
+| core (22), ecs (26), input (15), camera (16) | errors, logging, fixed step; ECS; input edges and actions; cameras and the controller |
+| job (10), asset (10) | thread pool, async assets (also under ThreadSanitizer) |
+| gltf (14), ibl (5), shadow (6), net (12) | glTF and HDR decoding; BRDF table maths; shadow framing; bit packing, quantization, loopback networking |
+| app (14) | the main loop with a fake renderer |
+| gpu (17), render (12), mesh (11), environment (6), postfx (9) | Vulkan bring-up, memory and textures; sprites, depth, camera, capture; meshes and materials; image-based lighting and sky; shadows, bloom, ACES, UNORM vs sRGB, resizing (pixels read back from the GPU; every test asserts 0 validation errors) |
+| app_smoke, keyboard_e2e, camera_e2e, server_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; server + client with no display, then Ctrl+C; a clear error with no display |
 
-**Not yet run on Windows** (ENet via vcpkg's `unofficial::enet::enet`, ws2_32).
+- Debug, release, Clang and ASan+UBSan: 21/21.
+- TSan: the threaded suites and `net_tests`, with 0 race reports.
+- Every build at `-Werror`.
 
-## 2. Exact Files & Classes Modified
+---
 
-(This milestone, since `8f0d485`.)
+## 4. Known Limitations & Remaining Roadmap
 
-Deleted: **none**. Moved: Ctrl+C signal handling, from
-`platform/src/Platform.cpp` into `core/src/Interrupt.cpp`. (Earlier
-milestones renamed `render/shaders/mesh.*` to `pbr.*`.)
+### Unverified platforms and conditions
+- **Windows** has never been built or run: the `windows` preset, MSVC
+  warnings, vcpkg's tinygltf, stb and ENet packages.
+- **A real GPU:** everything so far ran on Mesa's CPU driver (llvmpipe)
+  under Xvfb. Speeds measured there (release, 1600×900): 3D scene ~83 ms
+  a frame, 2D scene ~36 ms.
+- **High-DPI displays.**
+- **A real network:** only loopback so far, with no loss, latency or
+  reordering simulated.
+- **The cloud environment's setup script**, until a fresh session runs it.
+- `environment_tests` failed once when the virtual display (Xvfb) did not
+  start. It hasn't recurred.
 
-New:
+### Known limitations (no known bugs)
+- **Networking:**
+  - the windowed game isn't a client;
+  - no client input, prediction, interpolation or handshake (the version
+    is sent, not enforced);
+  - full snapshots capped at 128 entities;
+  - no authentication or encryption;
+  - IPv4 only;
+  - each `Host` is single-threaded.
 
-| File | Contents |
-|---|---|
-| `net/CMakeLists.txt` | `playground_net` (aliases `playground::net`, `engine_net`): PUBLIC core + glm, PRIVATE `playground_enet` |
-| `net/include/playground/net/BitStream.h`, `net/src/BitStream.cpp` | `BitWriter`, `BitReader` |
-| `net/include/playground/net/Quantize.h`, `net/src/Quantize.cpp` | `quantize`, `dequantize`, `quantizationError`, `writeQuantized`/`readQuantized`, `writeVec2/3`/`readVec2/3`, `writeQuaternion`/`readQuaternion` |
-| `net/include/playground/net/Host.h`, `net/src/Host.cpp` | `Channel`, `Peer`, `Packet`, `EventType`, `Event`, `PeerInfo`, `Host` (+ `Host::Impl`) |
-| `core/include/playground/core/Interrupt.h`, `core/src/Interrupt.cpp` | `InterruptGuard` |
-| `app/Protocol.h`, `app/Protocol.cpp` | `protocol::Welcome`, `Snapshot`, `encode`, `peekKind`, `decodeWelcome`, `decodeSnapshot` |
-| `app/Server.h`, `app/Server.cpp` | `ServerOptions`, `ClientOptions`, `runServer`, `runClient` |
-| `tests/net_tests.cpp`, `tests/e2e/server.sh` | 12 tests; the dedicated-server end-to-end test |
+  Note: ROADMAP §4.11 planned to keep networking inside the game. At the
+  user's request we built a generic engine transport (`net/`). Game
+  messages still live in the game (`app/Protocol.h`).
+- **Rendering:**
+  - one shadow map, no cascades;
+  - lamps glow but light nothing (no point lights);
+  - no fog, depth of field or HUD text yet (Milestone 4 parity items);
+  - no frustum culling or instancing of repeated meshes;
+  - one GPU mesh per glTF primitive;
+  - `setEnvironment` and every upload wait for the GPU (`submitAndWait`);
+  - fences, not timeline semaphores;
+  - no Vulkan debug names; no pipeline cache.
+- **Engine:**
+  - 3D objects aren't in the ECS (the 3D scene keeps a list);
+  - glTF without skins, animation, morph targets or alpha modes;
+  - no profiler (Tracy) and no debug overlay.
 
-Changed:
-
-| File | Change |
-|---|---|
-| `vcpkg.json` | `enet` |
-| `CMakeLists.txt` | `playground_enet` interface target (vcpkg `unofficial::enet::enet`, or `find_path`/`find_library`; ws2_32 and winmm on Windows); `add_subdirectory(net)` |
-| `core/CMakeLists.txt`, `core/include/playground/core/Log.h`, `core/src/Log.cpp` | `Interrupt.cpp`; `Category::Net` ("net") |
-| `platform/include/playground/platform/Platform.h`, `platform/src/Platform.cpp` | Signal handling replaced by an `InterruptGuard` member |
-| `app/main.cpp`, `app/CMakeLists.txt` | `--server`, `--port`, `--connect`; headless branches before any GLFW; links `playground::net` |
-| `tests/CMakeLists.txt` | `net_tests` (label `net`), `server_e2e` (label `net`, timeout 60 s) |
-| `README.md` | Networking section, options, layout, packages (`libenet-dev`) |
-
-## 3. Code Snippet of the Core Loop/Active Component
-
-`app/Server.cpp`, the dedicated server's loop:
-
-```cpp
-while (!InterruptGuard::interruptRequested() && (options.maxTicks == 0 || tick < options.maxTicks)) {
-  // 1. The network, waiting until (about) the next tick is due: the wait IS the sleep.
-  const f64 untilNextTick = std::max(0.0, steps.stepSeconds() - steps.accumulatedSeconds());
-  const auto waitMs = static_cast<u32>(std::clamp(untilNextTick * 1000.0, 0.0, 8.0));
-  for (const net::Event& e : host->service(waitMs)) { /* welcome on connect; log goodbyes */ }
-
-  // 2. The simulation: fixed 1/120 s steps, a snapshot every 6th tick (20 Hz).
-  const FixedStepPlan plan = steps.advance(clock.tick().rawDeltaSeconds);
-  for (u32 i = 0; i < plan.steps; ++i) {
-    engine::movementSystem(world, dt);
-    engine::bounceSystem(world, bounds);
-    world.flush();
-    if (++tick % protocol::kSnapshotEveryTicks == 0 && host->connectedPeers() > 0) {
-      host->broadcast(net::Packet(net::Channel::Unreliable, protocol::encode(snapshotOf(world, tick))));
-    }
-  }
-  host->flush();
-}
-disconnectEveryone(*host, 500);  // goodbye to every client, then wait for their acknowledgements
-```
-
-`net/src/BitStream.cpp`, writing bits without struct casts:
-
-```cpp
-while (count > 0) {  // up to eight bits at a time: the rest of the current byte
-  const usize byteIndex = bits_ / 8;
-  const u32 offset = static_cast<u32>(bits_ % 8);
-  if (byteIndex == bytes_.size()) bytes_.push_back(std::byte{0});
-  const u32 take = std::min(8u - offset, count);
-  const u32 chunk = static_cast<u32>(value & ((u64{1} << take) - 1));
-  bytes_[byteIndex] |= static_cast<std::byte>(chunk << offset);
-  value >>= take;
-  count -= take;
-  bits_ += take;
-}
-```
-
-`net/src/Quantize.cpp`, smallest-three:
-
-```cpp
-u32 largest = 0;                                   // drop the biggest component...
-for (u32 i = 1; i < 4; ++i) if (std::fabs(c[i]) > std::fabs(c[largest])) largest = i;
-const f32 sign = c[largest] < 0.0f ? -1.0f : 1.0f; // ...made positive (q and -q: the same rotation)
-out.writeBits(largest, 2);
-for (u32 i = 0; i < 4; ++i)
-  if (i != largest) writeQuantized(out, c[i] * sign, -kSmallestThreeRange, kSmallestThreeRange, bitsPerComponent);
-// reading: the dropped one is sqrt(1 - sum of the others' squares)
-```
-
-## 4. Known Bugs, Unverified Platforms & Incomplete Tasks
-
-No known bugs.
-
-**Found and fixed this session**
-- **Shutdown goodbyes:** "disconnect everyone, then wait while anyone is
-  connected" returned at once, because a peer saying goodbye stops being
-  "connected" before the goodbye is even sent. The client exited, and the
-  server would only have noticed after ENet's ~30 s timeout. It now waits
-  until each peer's Disconnected event (`Host::knownPeers()`).
-- The quantization test's bound ignored float precision: at 20+ bits over
-  ±1000, f32 is coarser than the step. The bound now includes it, and the
-  header says so.
-- A measuring mistake, not a bug: a detached server *looked* slow to exit
-  (1.6 s) because the container's init reaps zombie processes late;
-  `strace` shows it exits ~8 ms after Ctrl+C. The end-to-end test `wait`s
-  on its own child.
-
-**Not verified**
-- Windows (vcpkg ENet; `ws2_32`/`winmm` linking; MSVC warnings).
-- A real network: only loopback (127.0.0.1) so far. No packet loss,
-  latency or reordering has been simulated; ENet's reliability is trusted,
-  not yet tested under loss.
-- The updated environment setup script (`libenet-dev`), until a fresh
-  session runs it.
-
-**Limitations, acceptable for now**
-- **No replication yet:** the graphical game is not a client. Snapshots
-  are a demo of the pipeline (the test client decodes and counts them);
-  nothing interpolates or predicts. The server simulates its own bouncing
-  entities, not players.
-- No input from clients (the server ignores received packets), no
-  connection handshake beyond ENet's (no version check enforced: the
-  client logs the version but does not leave on a mismatch), no
-  authentication or encryption.
-- Snapshots are full, not delta-compressed, and capped at 128 entities
-  (about 1 KB).
-- `Host` is single-threaded by design: networking on another thread
-  needs a queue (not built).
-- IPv4 only (ENet 1.3).
-- Carried over (render): one shadow map (no cascades); lamps do not light
-  their surroundings; `setEnvironment` stalls; glTF without skins or
-  animation; no frustum culling; uploads `submitAndWait` per resource; the
-  ECS doesn't hold 3D objects; no Vulkan debug names; no pipeline cache.
-
-## 5. Immediate Next Steps for Next Weekend
-
-1. **The game as a client:** `--connect` in the windowed game. Draw the
-   server's entities from snapshots, interpolating between the last two
-   (about 100 ms behind) so 20 Hz looks smooth.
-2. **Client input → server:** an unreliable input message every tick
-   (sequence-numbered, last few inputs repeated against loss); the server
-   moves a player entity per client. Spawn and despawn over reliable
-   messages.
-3. **Prediction and reconciliation** for the local player: apply input
-   at once, correct when the server's state arrives.
-4. **A protocol handshake:** reject other versions with a reason; time
-   out half-open connections; a test with simulated packet loss and
-   latency (ENet has per-peer throttling, but a loss shim between two
-   hosts would test our code).
-5. **Delta snapshots** (only what changed since the last acknowledged
-   one) once entity counts grow.
-6. Later, rendering steps still open (point lights, cascaded shadows, 3D
-   in the ECS), roadmap Milestone 4 (visual parity with `cpp/`) and
-   Milestone 5 (moving Erebus Cradle, including its co-op, onto the
-   engine).
+### Remaining roadmap, in order
+1. **Finish networking:**
+   - the windowed game as a client (`--connect`), interpolating snapshots;
+   - client input every tick (unreliable, sequence-numbered, redundant);
+   - client-side **prediction and reconciliation** for the local player;
+   - a **handshake** (version check with a reason, timeouts);
+   - a packet-loss and latency test shim;
+   - delta snapshots.
+2. **Physics (Jolt):**
+   - first, per ROADMAP §4.8: the game's AABB colliders and its tested
+     kinematic player controller behind a query interface (sweep,
+     raycast, overlap);
+   - then **Jolt Physics** behind the same interface for rigid bodies,
+     triangle meshes and ragdolls; the player stays kinematic;
+   - a server-authoritative simulation.
+   - Jolt is in vcpkg (`joltphysics`); on Linux it would need vendoring
+     (no Ubuntu package, and configure must not download).
+3. **Developer tooling: ImGui inspector** (ROADMAP §4.12):
+   - Dear ImGui on the Vulkan backend with dynamic rendering, drawn after
+     the composite;
+   - frame timings, render toggles (shadows, bloom, tone mapping), an
+     entity/component inspector, and live material and light editing;
+   - Vulkan debug names (RenderDoc) and Tracy profiling zones.
+4. **Spatial audio** (ROADMAP §4.9): move Erebus Cradle's miniaudio
+   `Audio.cpp` over, then enable miniaudio's spatialiser (positional sound
+   from entities, a listener on the camera).
+5. **3D in the ECS:** `Transform3D` and `MeshRenderer` components, an
+   extraction system; point lights (the clustered binner from `engine/` in
+   the repository root); cascaded shadows.
+6. **Visual parity (ROADMAP Milestone 4):** Erebus Cradle's procedural
+   materials, fog, depth of field, dust motes, HUD text; one mission scene
+   rendered in both builds and compared.
+7. **Port Erebus Cradle (ROADMAP Milestone 5):**
+   - a `game/` module on the engine, ported seam by seam: draw lists, then
+     input, then collision;
+   - audio, `.cfg` content, profiles and co-op networking moving across
+     (onto `net/`).
+   - Exit test: Mission 1 (HOME) playable start to finish, then the hub,
+     then a two-client co-op session.
+   - The `cpp/` build keeps working until then.
 
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
-debug` passes (if configure cannot find `enet/enet.h` or tiny_gltf.h,
-install the packages in `README.md`; `xdotool` is needed for the e2e
-tests), then start step 1."
+debug` passes (if configure cannot find a package, install the list in
+`README.md`; `xdotool` is needed for the e2e tests), then start Remaining
+Roadmap step 1."
