@@ -4,6 +4,20 @@ target_link_libraries(playground_core_tests PRIVATE playground::core doctest::do
 playground_configure_target(playground_core_tests)
 add_test(NAME core_tests COMMAND playground_core_tests)
 
+# --- Job system: no window. Also run under ThreadSanitizer (label "threads"). --
+add_executable(playground_job_tests job_tests.cpp)
+target_link_libraries(playground_job_tests PRIVATE playground::core doctest::doctest)
+playground_configure_target(playground_job_tests)
+add_test(NAME job_tests COMMAND playground_job_tests)
+set_tests_properties(job_tests PROPERTIES LABELS threads)
+
+# --- Asset manager: no window, no GPU; also under ThreadSanitizer. -----------
+add_executable(playground_asset_tests asset_tests.cpp)
+target_link_libraries(playground_asset_tests PRIVATE playground::engine doctest::doctest)
+playground_configure_target(playground_asset_tests)
+add_test(NAME asset_tests COMMAND playground_asset_tests)
+set_tests_properties(asset_tests PROPERTIES LABELS threads)
+
 # --- ECS and systems: no window, no GPU --------------------------------------
 add_executable(playground_ecs_tests ecs_tests.cpp)
 target_link_libraries(playground_ecs_tests PRIVATE playground::engine doctest::doctest)

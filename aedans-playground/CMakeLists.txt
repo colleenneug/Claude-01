@@ -31,6 +31,7 @@ endif()
 
 option(PLAYGROUND_WARNINGS_AS_ERRORS "Treat compiler warnings in our own code as errors" ON)
 option(PLAYGROUND_SANITIZERS "Build with AddressSanitizer and UndefinedBehaviorSanitizer (GCC/Clang)" OFF)
+option(PLAYGROUND_TSAN "Build with ThreadSanitizer (GCC/Clang); cannot be combined with PLAYGROUND_SANITIZERS" OFF)
 option(PLAYGROUND_BUILD_TESTS "Build the test executables" ON)
 
 include(cmake/ProjectOptions.cmake)
@@ -40,6 +41,7 @@ include(cmake/Shaders.cmake)
 # Found as CMake config packages: from system packages on Linux, from the
 # vcpkg manifest (vcpkg.json) on Windows. Nothing is downloaded at configure
 # time, so a configure never depends on the network.
+find_package(Threads REQUIRED)  # std::thread (JobSystem)
 find_package(glfw3 3.3 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)

@@ -16,6 +16,21 @@ if(PLAYGROUND_SANITIZERS)
   endif()
 endif()
 
+# ThreadSanitizer finds data races: two threads touching the same memory,
+# at least one writing, with nothing ordering them. AddressSanitizer cannot
+# see those, and the two cannot share a build.
+if(PLAYGROUND_TSAN)
+  if(PLAYGROUND_SANITIZERS)
+    message(FATAL_ERROR "PLAYGROUND_TSAN cannot be combined with PLAYGROUND_SANITIZERS (ASan); pick one")
+  endif()
+  if(MSVC)
+    message(WARNING "PLAYGROUND_TSAN is only wired up for GCC and Clang; ignoring it.")
+  else()
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
+  endif()
+endif()
+
 function(playground_configure_target target)
   if(MSVC)
     target_compile_options(${target} PRIVATE

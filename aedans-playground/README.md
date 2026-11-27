@@ -5,7 +5,9 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 [`HANDOFF.md`](HANDOFF.md).
 
 **Current state:** a window, a fixed-timestep main loop, a Vulkan renderer,
-an entity component system (ECS), and keyboard/mouse input. The demo is
+an entity component system (ECS), keyboard/mouse input, a camera, a job
+system (worker threads) and an asset manager that loads files in the
+background. The demo is
 playable: steer the white square with **WASD** or the **arrow keys**, fire
 with **Space** or the **left mouse button**, quit with **Escape**. 25,000
 other entities bounce around a fixed 1600×900 world, all drawn in a single
@@ -32,14 +34,14 @@ app on Mesa's software Vulkan driver. Earlier milestones: the first triangle
 
 | Folder | Library | Contents |
 |---|---|---|
-| `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock` |
+| `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock`, `FixedStep`, `JobSystem` |
 | `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
 | `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, the Vulkan renderer, the shaders |
-| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
-| `app/` | `playground_app` | `main.cpp` |
-| `tests/` | | doctest suites for core, ECS, application, GPU and renderer |
+| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `AssetManager`, components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
+| `app/` | `playground_app` | `main.cpp`, `assets/` (copied next to the executable) |
+| `tests/` | | doctest suites for core, jobs, assets, ECS, input, camera, application, GPU and renderer |
 | `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator |
 
 Each layer may include only the layers below it. Vulkan types stop at the
@@ -216,6 +218,53 @@ dominates): one draw per sprite took about 66 ms a frame; one instanced draw
 takes about 38 ms, with the 120 Hz simulation keeping up. Not yet measured on
 a real GPU.
 
+## Worker threads: the job system
+
+`JobSystem` (`core/JobSystem.h`) is a pool of worker threads, by default one
+fewer than the CPU has cores (at least one), sharing one queue. Three ways to
+use it:
+
+| Call | Use |
+|---|---|
+| `submit(fn)` | One background task; returns a `std::future` with its result (or its exception). |
+| `run(fn, counter)` | Fire-and-forget; `counter.wait()` blocks until all jobs on that counter are done. |
+| `parallelFor(count, batch, fn)` | Splits `0..count` into batches; `fn(begin, end)` runs on the workers and on the calling thread, and returns when all are done. The first exception is rethrown. |
+
+Waiting never just sleeps while there is work: `JobCounter::wait()` and
+`parallelFor` run queued jobs on the waiting thread, so a job that waits for
+other jobs (nested `parallelFor`) cannot deadlock the pool, even with one
+worker. Destroying the `JobSystem` finishes every queued job, then joins the
+threads.
+
+## Loading files: the asset manager
+
+`engine::AssetManager` (`engine/Assets.h`) loads files without stopping the
+game. Each asset type registers a loader with two halves:
+
+- **decode**, on a worker thread: read the file and turn its bytes into
+  CPU data (parse it, decompress it). The slow part.
+- **finalize**, on the main thread inside `assets.update()`: make the
+  finished asset, for example by uploading it to the GPU, since Vulkan
+  objects belong to the main thread. `update(budget)` finalizes at most
+  `budget` assets per frame (8 by default), so a burst of loads is spread
+  over several frames.
+
+`load<T>("path")` returns an `AssetHandle<T>` at once; `state(handle)` is
+`Loading`, then `Ready` (`get(handle)` returns it) or `Failed` (`error(handle)`
+says why, naming the file). Loading the same path twice returns the same
+handle. `unload(handle)` frees an asset; if it was still loading, its result
+is thrown away. Handles carry a generation, like ECS entities, so an old
+handle never finds a newer asset that reused its slot.
+
+Workers never touch the asset table: they hand results to the main thread
+through one locked queue. Every other call is main-thread only, and debug
+builds assert it. The renderer test `an asset is read on a worker and
+uploaded to GPU memory on the main thread` loads a 64 KiB file into a
+device-local buffer this way and reads it back.
+
+The demo loads `app/assets/welcome.txt` at start-up and logs it once it is
+ready (`[game    ] asset welcome.txt: Welcome to Aedan's Playground.`).
+
 ## Getting it running on Windows
 
 1. **Visual Studio 2022** with the "Desktop development with C++" workload.
@@ -302,7 +351,15 @@ them headless, wrap the command in a virtual display:
 xvfb-run -a ctest --preset debug
 ```
 
-Other presets: `release`, and `asan` (AddressSanitizer + UBSan).
+Other presets: `release`, `asan` (AddressSanitizer + UBSan), and `tsan`
+(ThreadSanitizer, which finds data races; it runs only the tests labelled
+`threads`, the job and asset suites):
+
+```bash
+cmake --preset tsan
+cmake --build --preset tsan
+ctest --preset tsan
+```
 
 ## What a good start looks like
 
@@ -332,8 +389,11 @@ On this project's test machine (software Vulkan driver), start-up logs:
 [engine  ] renderer "vulkan" attached
 ```
 
-followed by `[game    ] spawned 200 sprites (200 entities)`, and the window
-shows the bouncing squares above on a very dark blue background.
+followed by `[game    ] spawned 25000 sprites and the player; ...` and
+`[game    ] asset welcome.txt: Welcome to Aedan's Playground.`, and the
+window shows the bouncing squares above on a very dark blue background.
+Before the GPU lines, `[core    ] job system: N worker thread(s)` gives the
+number of worker threads (one fewer than your CPU's cores).
 
 On a desktop you will see your own GPU, `discrete GPU` or `integrated GPU`,
 and on Windows `VK_KHR_win32_surface` instead of `VK_KHR_xcb_surface`. A

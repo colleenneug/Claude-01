@@ -1,9 +1,10 @@
 // =============================================================================
 //  Aedan's Playground — entry point.
 //
-//  Start-up order: logging -> application (platform, window) -> renderer -> loop.
-//  Shutdown is the reverse. Logging comes first and goes last so that every
-//  other step, including a failed start-up, is recorded.
+//  Start-up order: logging -> job system -> application (platform, window)
+//  -> renderer -> assets -> loop. Shutdown is the reverse. Logging comes
+//  first and goes last so that every other step, including a failed
+//  start-up, is recorded.
 //
 //  Usage: playground_app [--frames N] [--verbose] [--log-file PATH]
 //                        [--validation | --no-validation]
@@ -12,10 +13,12 @@
 //  Vulkan validation error), 2 bad arguments.
 // =============================================================================
 
+#include "playground/core/JobSystem.h"
 #include "playground/core/Log.h"
 #include "playground/ecs/World.h"
 #include "playground/engine/Actions.h"
 #include "playground/engine/Application.h"
+#include "playground/engine/Assets.h"
 #include "playground/engine/Camera.h"
 #include "playground/engine/Components.h"
 #include "playground/engine/Systems.h"
@@ -26,6 +29,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <format>
 #include <numbers>
 #include <optional>
@@ -204,6 +208,10 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Worker threads for background work (file loading today). Created before
+  // everything that submits jobs, so it is destroyed after them.
+  JobSystem jobs;
+
   auto app = engine::Application::create({
       .window = {.title = "Aedan's Playground"},
       .maxFrames = options->frames,
@@ -225,6 +233,13 @@ int main(int argc, char** argv) {
     return 1;
   }
   application.setRenderer(std::move(*renderer));
+
+  // Game files, loaded on the workers and finished on this thread in
+  // update(). They live in assets/ next to the executable (app/CMakeLists.txt).
+  engine::AssetManager assets(jobs, std::filesystem::path(argv[0]).parent_path() / "assets");
+  assets.registerType<engine::TextAsset>(engine::textAssetLoader());
+  const auto welcome = assets.load<engine::TextAsset>("welcome.txt");
+  bool welcomeShown = false;
 
   // The game world. Declared after the Application, so it is destroyed
   // first; shutdown() also drops the callbacks below that refer to it.
@@ -297,6 +312,15 @@ int main(int argc, char** argv) {
   // Once per frame, at the display's rate: Escape, and the FPS in the title.
   TitleFpsCounter fpsCounter(application.window());
   application.setUpdate([&](const FrameTime& time, const platform::InputState& input) {
+    (void)assets.update();  // finish a few loaded files; never waits for one
+    if (!welcomeShown && assets.state(welcome) != engine::AssetState::Loading) {
+      welcomeShown = true;
+      if (const engine::TextAsset* text = assets.get(welcome)) {
+        log::info(Category::Game, "asset welcome.txt: {}", text->text.substr(0, text->text.find('\n')));
+      } else if (const Error* error = assets.error(welcome)) {
+        log::warn(Category::Game, "asset welcome.txt not loaded: {}", error->message);  // the game still runs
+      }
+    }
     if (input.pressed(platform::Key::Escape)) application.requestQuit();
     if (input.pressed(platform::Key::C)) {
       const bool to3d = camera.projection == engine::Projection::Orthographic;

@@ -12,10 +12,17 @@
 
 #include "VulkanRenderer.h"  // render/src: private
 #include "playground/core/Log.h"
+#include "playground/core/JobSystem.h"
+#include "playground/engine/Assets.h"
 #include "playground/engine/Application.h"
 
 #include <cstdio>
 #include <memory>
+#include <thread>
+#include <fstream>
+#include <filesystem>
+#include <cstring>
+#include <atomic>
 
 #include <glm/ext/matrix_clip_space.hpp>
 #include <vector>
@@ -303,6 +310,68 @@ TEST_CASE("takeCapture without a captured frame says so") {
   const auto frame = renderer->takeCapture();
   REQUIRE_FALSE(frame.has_value());
   CHECK(frame.error().code == Errc::InvalidState);
+}
+
+// --- Assets: decoded on workers, uploaded to the GPU on the main thread -----------
+
+TEST_CASE("an asset is read on a worker and uploaded to GPU memory on the main thread") {
+  gpu::resetValidationCounts();
+  // 64 KiB of a known pattern, on disk.
+  const auto folder = std::filesystem::temp_directory_path() / "playground_render_assets";
+  std::filesystem::create_directories(folder);
+  std::vector<std::byte> pattern(64 * 1024);
+  for (std::size_t i = 0; i < pattern.size(); ++i) pattern[i] = static_cast<std::byte>((i * 13 + 5) & 0xFF);
+  std::ofstream(folder / "blob.bin", std::ios::binary)
+      .write(reinterpret_cast<const char*>(pattern.data()), static_cast<std::streamsize>(pattern.size()));
+
+  auto app = makeApp(1);
+  render::VulkanRenderer* renderer = attachRenderer(*app);
+  const gpu::Context& context = renderer->context();
+  const auto mainThread = std::this_thread::get_id();
+  std::atomic<bool> decodedOffMainThread{false};
+  bool finalizedOnMainThread = false;
+  {
+    JobSystem jobs(2);
+    engine::AssetManager assets(jobs, folder);
+    // A GPU asset type: decode = copy the bytes (worker); finalize = staging
+    // upload into device-local memory (main thread, where the GPU work belongs).
+    assets.registerType<gpu::Buffer>(engine::AssetLoader<gpu::Buffer, std::vector<std::byte>>{
+        .decode = [&](std::span<const std::byte> file, const std::filesystem::path&) -> Result<std::vector<std::byte>> {
+          decodedOffMainThread = std::this_thread::get_id() != mainThread;
+          return std::vector<std::byte>(file.begin(), file.end());
+        },
+        .finalize = [&](std::vector<std::byte>&& bytes, const std::filesystem::path& path) -> Result<gpu::Buffer> {
+          finalizedOnMainThread = std::this_thread::get_id() == mainThread;
+          return gpu::createDeviceLocalBuffer(context, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, path.generic_string());
+        },
+    });
+
+    const auto handle = assets.load<gpu::Buffer>("blob.bin");
+    // Like frames: update() only, never waiting (a waiting thread would help
+    // decode, and this test checks that decode ran on a worker).
+    while (!assets.idle()) {
+      (void)assets.update();
+      std::this_thread::yield();
+    }
+    REQUIRE_MESSAGE(assets.state(handle) == engine::AssetState::Ready,
+                    (assets.error(handle) ? assets.error(handle)->message : std::string("not ready")));
+    const gpu::Buffer* buffer = assets.get(handle);
+    REQUIRE(buffer != nullptr);
+    CHECK_FALSE(buffer->isHostVisible());  // in device-local memory
+
+    // Read it back and compare every byte.
+    auto readback = gpu::Buffer::create(context.allocator(), {.sizeBytes = pattern.size(),
+                                                              .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                              .memory = gpu::MemoryKind::HostReadback,
+                                                              .debugName = "asset readback"});
+    REQUIRE(readback.has_value());
+    REQUIRE(gpu::copyBuffer(context, *buffer, *readback, pattern.size()).has_value());
+    REQUIRE(readback->invalidate().has_value());
+    CHECK(std::memcmp(readback->mapped().data(), pattern.data(), pattern.size()) == 0);
+  }  // the asset (a GPU buffer) is freed here, before the renderer and its allocator
+  CHECK(decodedOffMainThread.load());
+  CHECK(finalizedOnMainThread);
+  CHECK(render::gpuValidationCounts().errors == 0);
 }
 
 int main(int argc, char** argv) {
