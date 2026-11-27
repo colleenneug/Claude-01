@@ -4,15 +4,40 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 [`ROADMAP.md`](ROADMAP.md); where the last session stopped is in
 [`HANDOFF.md`](HANDOFF.md).
 
-**Current state:** a window, a fixed-timestep main loop, a Vulkan renderer,
-an entity component system (ECS), keyboard/mouse input, a camera, a job
-system (worker threads) and an asset manager that loads files in the
-background. The demo is
-playable: steer the white square with **WASD** or the **arrow keys**, fire
-with **Space** or the **left mouse button**, quit with **Escape**. 25,000
-other entities bounce around a fixed 1600×900 world, all drawn in a single
-instanced draw call; the window shows that world scaled to fit, whatever its
-size.
+**Current state:** a window, a fixed-timestep main loop, a Vulkan renderer
+that draws textured, lit 3D meshes and 2D sprites, glTF 2.0 model loading,
+an entity component system (ECS), keyboard/mouse input, an orbit/fly
+camera, a job system (worker threads) and an asset manager that loads files
+in the background.
+
+The demo has two scenes. The default is **3D**: glTF models (a tiled floor,
+textured crates, a row of spheres from rough plastic to polished gold) lit
+by the sun, which you look around with the mouse. `--model PATH` shows any
+glTF file instead. `--scene sprites` is the **2D** demo: steer a white
+square among 25,000 bouncing ones, all drawn in one instanced draw call.
+
+![The 3D scene: glTF models with base colour, normal and metallic-roughness textures](docs/gltf-scene.png)
+
+*The 3D scene, captured from the running app on Mesa's software Vulkan
+driver. Earlier milestones: the first triangle (`docs/first-triangle.png`),
+the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
+(`docs/instanced-25k.png`) and the tilted 2D view (`docs/perspective-3d.png`).*
+
+**3D scene** (camera: `engine/CameraController.h`)
+
+| Input | Orbit mode (the start) | Fly mode |
+|---|---|---|
+| Left-drag | spin around the target | |
+| Right-drag | pan the target | look around |
+| Wheel | zoom | change the fly speed |
+| W A S D, arrows | tilt and spin | move where you look |
+| Q / E | zoom out / in | down / up (also Ctrl / Space) |
+| Shift | | 4x faster |
+| Tab | switch to fly | switch to orbit |
+| R | reset the view | reset the view |
+| Escape | quit | quit |
+
+**2D scene** (`--scene sprites`)
 
 | Key | Action |
 |---|---|
@@ -23,26 +48,20 @@ size.
 | C | Switch between the 2D (orthographic) and 3D (perspective) view |
 | Escape | Quit |
 
-![25,000 sprites in one instanced draw call](docs/instanced-25k.png)
-
-*25,000 sprites and the player (white, centre), captured from the running
-app on Mesa's software Vulkan driver. Earlier milestones: the first triangle
-(`docs/first-triangle.png`) and the first 200 ECS sprites
-(`docs/ecs-sprites.png`).*
-
 ## Layout
 
 | Folder | Library | Contents |
 |---|---|---|
 | `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock`, `FixedStep`, `JobSystem` |
 | `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
-| `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image`, `Context`, `Swapchain`, `DeviceHandle` |
+| `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image` (+ `createTexture`, mipmaps), `Sampler`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
-| `render/` | `playground_render` | `Renderer` (interface), `FrameData`, the Vulkan renderer, the shaders |
-| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `AssetManager`, components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
-| `app/` | `playground_app` | `main.cpp`, `assets/` (copied next to the executable) |
-| `tests/` | | doctest suites for core, jobs, assets, ECS, input, camera, application, GPU and renderer |
-| `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator |
+| `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), the Vulkan renderer (`Mesh`, `ResourcePool`), the shaders |
+| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController`, `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
+| `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`), `assets/` (copied next to the executable) |
+| `tests/` | | doctest suites for core, jobs, assets, glTF, ECS, input, camera, application, GPU, renderer and meshes; end-to-end keyboard and camera tests |
+| `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
+| `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator. tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
 
 Each layer may include only the layers below it. Vulkan types stop at the
 render layer: its public headers have none, so the engine and the game build
@@ -166,17 +185,19 @@ bullets and, with `engine::pickSprite`, to remove the sprite you right-click.
 1. **Wait** for the GPU to finish the frame that last used this slot (two
    frames in flight).
 2. **Acquire** a swapchain image to draw into.
-3. **Write the sprites** straight into this frame slot's storage buffer
-   (host-visible, mapped once and kept mapped; it doubles when outgrown):
-   opaque sprites first, then translucent ones sorted back to front. Write
-   the camera matrix into this slot's uniform buffer.
-4. **Record:** clear the image and the depth buffer, then draw **all**
-   sprites with at most two instanced draws, `vkCmdDraw(6 vertices, N
-   instances)`: opaque sprites with depth writes, then translucent ones
-   without (they still depth-test). Then move the image into the present
-   layout.
-5. **Submit** to the graphics queue.
-6. **Present** the image to the window.
+3. **Free** meshes and textures destroyed at least two frames ago.
+4. **Write the frame's data** straight into this frame slot's buffers
+   (host-visible, mapped once and kept mapped; they double when outgrown):
+   the mesh draw list, the sprites (opaque first, then translucent ones
+   sorted back to front), and the camera and lights in the uniform buffer.
+5. **Record:** clear the image and the depth buffer, bind the frame's
+   uniforms (set 0) and the texture array (set 1), draw every mesh (one
+   indexed draw each), then **all** sprites with at most two instanced
+   draws, `vkCmdDraw(6 vertices, N instances)`: opaque sprites with depth
+   writes, then translucent ones without (they still depth-test). Then
+   move the image into the present layout.
+6. **Submit** to the graphics queue.
+7. **Present** the image to the window.
 
 The vertex shader (`render/shaders/sprite.vert`) picks its sprite with
 `gl_InstanceIndex`, reads it through a buffer reference
@@ -199,6 +220,67 @@ embedded in the executable (see `cmake/Shaders.cmake`), so there are no shader
 files to ship. When the window is resized, or present reports the swapchain is
 out of date, the swapchain is rebuilt at the new size.
 
+## 3D meshes, textures and materials
+
+The renderer draws **meshes** before sprites, sharing the camera and depth
+buffer. Everything above the render layer uses plain data
+(`render/Resources.h`): `MeshData` (vertices with position, normal,
+tangent and UV, plus 32-bit indices), `ImageData` (RGBA8), and **handles**
+back from `Renderer::createMesh` / `createTexture`. Each frame the game
+lists `MeshInstance`s (mesh, material, transform) in `FrameData`.
+
+- **Meshes** (`render/src/Mesh.h`): vertex and index buffers in device-local
+  memory, uploaded once through a staging buffer. Indices are checked
+  first: one past the last vertex is an error, not a GPU fault.
+- **Textures** (`gpu::createTexture`): staging copy, then the GPU builds the
+  full **mip chain** with linear blits, moving each level through
+  TRANSFER_DST → TRANSFER_SRC → SHADER_READ_ONLY. Base colour is stored as
+  sRGB (so mips average in linear light), normal and metallic-roughness
+  maps as plain data. One trilinear sampler with anisotropic filtering
+  (when the GPU has it) serves every texture.
+- **Bindless**: every texture sits in one big descriptor array (set 1,
+  4,096 slots, update-after-bind); a material names its textures by slot.
+  Slots 0 and 1 hold the defaults (white, flat normal) for textures a
+  material lacks.
+- **Draws**: per frame, one 176-byte entry per mesh instance (transform,
+  normal matrix, material) in a storage buffer read by GPU address; one
+  `vkCmdDrawIndexed` per instance with `firstInstance` = its entry.
+  Double-sided materials use a second pipeline without culling.
+- **Shading** (`render/shaders/mesh.frag`): glTF's metallic-roughness model,
+  GGX/Smith/Schlick specular, normal mapping, one directional sun and a
+  flat ambient term. No shadows or environment reflections yet, so metals
+  look dark away from their highlight.
+- **Destroying** a mesh or texture makes its handle stale at once; the
+  memory is freed after every frame that might still use it has finished.
+
+### glTF 2.0 models
+
+`engine/Gltf.h` plugs into the asset manager:
+
+```cpp
+assets.registerType<engine::Model>(engine::gltfLoader(renderer));
+auto helmet = assets.load<engine::Model>("models/helmet.glb");
+// once ready, each frame:
+if (const engine::Model* model = assets.get(helmet)) model->extract(transform, frame);
+```
+
+On a worker, `decodeGltf` reads `.gltf` or `.glb` (tinygltf), decodes PNG
+and JPEG images to RGBA (stb_image), converts triangle primitives
+(positions, normals, tangents, UVs, any glTF component type and stride),
+makes flat normals and tangents when a file lacks them, and flattens the
+node tree. On the main thread, `uploadModel` creates the meshes and
+textures. A `Model` destroys them when unloaded, so `AssetManager::clear()`
+runs before the renderer shuts down. Files with extensions we lack marked
+as *required* (Draco, meshopt, KTX2) fail with a message naming them.
+Skins, animation, morph targets, alpha blending and emissive are not read
+yet (see `engine/Gltf.h`).
+
+The demo's models are our own, generated by `tools/make_demo_assets.py`
+(Python standard library only). Khronos's sample models (DamagedHelmet,
+Avocado, BoxTextured, NormalTangentMirrorTest) were checked with
+`--model` and render correctly, mirrored tangents included; they are not
+in the repository.
+
 ## GPU memory
 
 `gpu::Allocator` wraps the Vulkan Memory Allocator (VMA), owned by
@@ -215,8 +297,9 @@ three kinds:
 Speed, 25,000 sprites, release build, validation off, on the software
 renderer in the cloud container (a CPU doing the GPU's work, so pixel filling
 dominates): one draw per sprite took about 66 ms a frame; one instanced draw
-takes about 38 ms, with the 120 Hz simulation keeping up. Not yet measured on
-a real GPU.
+takes about 38 ms, with the 120 Hz simulation keeping up. The 3D scene
+(about 15,500 lit triangles plus the textured floor, 1600x900) takes about
+30 ms. Not yet measured on a real GPU.
 
 ## Worker threads: the job system
 
@@ -389,9 +472,12 @@ On this project's test machine (software Vulkan driver), start-up logs:
 [engine  ] renderer "vulkan" attached
 ```
 
-followed by `[game    ] spawned 25000 sprites and the player; ...` and
-`[game    ] asset welcome.txt: Welcome to Aedan's Playground.`, and the
-window shows the bouncing squares above on a very dark blue background.
+followed by `[game    ] 3D scene: 4 object(s) loading; ...`,
+`[game    ] asset welcome.txt: Welcome to Aedan's Playground.`, one
+`[engine  ] model "..." uploaded` and one `[game    ] ... ready` line per
+model, and the window shows the scene in the screenshot above. (With
+`--scene sprites`: `[game    ] spawned 25000 sprites and the player; ...`
+and the bouncing squares.)
 Before the GPU lines, `[core    ] job system: N worker thread(s)` gives the
 number of worker threads (one fewer than your CPU's cores).
 
@@ -421,8 +507,10 @@ Every failure is one `critical` line naming the step and the reason.
 
 | Option | Effect |
 |---|---|
+| `--scene models` / `--scene sprites` | the 3D scene (default) or the 2D one |
+| `--model PATH` | show this glTF 2.0 file (`.gltf` or `.glb`) in the 3D scene |
 | `--frames N` | exit after N frames |
-| `--sprites N` | how many bouncing squares the demo spawns (default 25000) |
+| `--sprites N` | how many bouncing squares the 2D scene spawns (default 25000; implies `--scene sprites`) |
 | `--verbose` | debug-level logging: frame-time statistics, Vulkan loader messages |
 | `--log-file PATH` | where the log goes (default `playground.log`) |
 | `--validation` / `--no-validation` | force Vulkan validation on or off (default: on in debug builds, off in release) |
