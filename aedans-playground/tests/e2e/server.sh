@@ -12,7 +12,8 @@
 #    - both exited 0, and the server stopped because it was interrupted;
 #    - the bot was welcomed, received at least 20 snapshots (20 a second),
 #      knows all 65 entities (64 balls and its own player), saw nothing
-#      malformed, and its prediction ended exactly on the server's answer;
+#      malformed, got most snapshots as deltas (never one it could not
+#      rebuild), and its prediction ended exactly on the server's answer;
 #    - the server saw the bot connect, join, leave, and despawned it;
 #    - the server never started GLFW or Vulkan.
 #
@@ -46,6 +47,9 @@ echo "$summary" | grep -q 'welcome received' || { echo "FAIL: no welcome"; exit 
 [ -n "$snapshots" ] && [ "$snapshots" -ge 20 ] || { echo "FAIL: $snapshots snapshots, expected at least 20"; exit 1; }
 echo "$summary" | grep -q '65 entities known, 0 malformed packets' || { echo "FAIL: bad snapshots: $summary"; exit 1; }
 echo "$summary" | grep -q 'prediction error 0.000 units' || { echo "FAIL: the prediction did not converge: $summary"; exit 1; }
+echo "$summary" | grep -q ', 0 missing baselines)' || { echo "FAIL: a delta snapshot named a baseline the bot did not have: $summary"; exit 1; }
+deltas=$(echo "$summary" | sed -n 's/.*snapshots (\([0-9]*\) as deltas.*/\1/p')
+[ -n "$deltas" ] && [ "$deltas" -ge 10 ] || { echo "FAIL: only $deltas delta snapshots"; exit 1; }
 grep -q 'client 1 connected' "$LOG.server.log" || { echo "FAIL: the server did not see the client connect"; exit 1; }
 grep -q 'client 1 ("headless bot") joined as player entity 64' "$LOG.server.log" || { echo "FAIL: the bot did not join"; exit 1; }
 grep -q 'client 1 (.*) disconnected' "$LOG.server.log" || { echo "FAIL: the server did not see the client leave"; exit 1; }

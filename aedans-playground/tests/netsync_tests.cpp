@@ -185,7 +185,12 @@ TEST_CASE("a server and two clients converge over a laggy, lossy network; a leav
     CHECK(stats.snapshots + stats.outOfOrder < server.snapshotsSent / 2);  // some never arrived
     CHECK(stats.malformed == 0);
     CHECK(client->lastAckedInputSeq() + 30 > client->inputSeq());  // acknowledged up to about a round trip ago
+    // Delta snapshots, despite the losses: most came as deltas, none against
+    // a snapshot the client did not have.
+    CHECK(stats.deltaSnapshots > stats.snapshots / 2);
+    CHECK(stats.missingBaseline == 0);
   }
+  CHECK(server.deltaSnapshotsSent > server.snapshotsSent / 2);
   for (const ServerClientStats& c : game.server->clientStats()) {
     CHECK(c.inputsApplied + c.inputsDropped + c.inputsSkipped + 30 > c.lastAckedInputSeq);
     CHECK(c.inputsApplied > 400);
@@ -198,6 +203,35 @@ TEST_CASE("a server and two clients converge over a laggy, lossy network; a leav
   CHECK_FALSE(findEntity(a.remoteEntities(), bId).has_value());
   CHECK(a.stats().despawned == 1);
   CHECK(a.state() == ClientState::Playing);
+}
+
+TEST_CASE("delta snapshots: the same game for fewer bytes than full snapshots") {
+  f64 bytesPerSnapshot[2] = {0.0, 0.0};
+  for (const bool deltas : {false, true}) {
+    CAPTURE(deltas);
+    Game game;
+    game.server = startServer({.network = {.latencyMs = 20}, .deltaSnapshots = deltas});
+    game.clients.push_back(connectClient(*game.server, {.network = {.latencyMs = 20}}));
+    GameClient& client = *game.clients[0];
+    REQUIRE(game.idleUntil(360, [&] { return client.state() == ClientState::Playing; }));
+    // Two seconds: walking for one, standing still for one.
+    game.run(240, [](usize, u32 t) { return PlayerInput{.move = {t < 120 ? 1.0f : 0.0f, 0.0f}}; });
+    const ServerStats& stats = game.server->stats();
+    REQUIRE(stats.snapshotsSent > 30);
+    bytesPerSnapshot[deltas ? 1 : 0] = static_cast<f64>(stats.snapshotBytesSent) / static_cast<f64>(stats.snapshotsSent);
+    CHECK(client.remoteEntities().size() == 64);  // every ball, drawn either way
+    CHECK(client.stats().missingBaseline == 0);
+    if (deltas) {
+      CHECK(client.stats().deltaSnapshots + 3 > client.stats().snapshots);  // all but the first few
+    } else {
+      CHECK(stats.deltaSnapshotsSent == 0);
+    }
+    const auto server = game.server->playerPosition(client.playerId());
+    REQUIRE(server.has_value());
+    CHECK(glm::length(client.predictedPosition() - *server) < 1e-3f);
+  }
+  MESSAGE("bytes per snapshot: full " << bytesPerSnapshot[0] << ", delta " << bytesPerSnapshot[1]);
+  CHECK(bytesPerSnapshot[1] < 0.85 * bytesPerSnapshot[0]);
 }
 
 TEST_CASE("a client speaking another protocol version is rejected, and told why") {

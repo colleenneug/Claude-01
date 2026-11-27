@@ -9,10 +9,13 @@
 //                will see it, applied at once to the local player
 //                (prediction: no waiting for the server), remembered, and
 //                sent with the last few unacknowledged ones (unreliable).
-//    snapshots   older than the newest already seen: dropped. Otherwise
-//                the local player is RECONCILED (Prediction.h) and the
-//                snapshot buffered for drawing everything else a little in
-//                the past, smoothly (Interpolation.h).
+//    snapshots   older than the newest already seen: dropped. A delta is
+//                rebuilt on the snapshot it names, from the last
+//                kSnapshotHistory kept (each Input tells the server the
+//                newest we have, so it only names ones we kept). Then the
+//                local player is RECONCILED (Prediction.h) and the snapshot
+//                buffered for drawing everything else a little in the past,
+//                smoothly (Interpolation.h).
 //
 //  Drawing the local player: blended between the last two ticks (alpha),
 //  and when a correction moves it, the jump is spread over a few ticks
@@ -61,6 +64,8 @@ struct RemoteEntity {
 struct ClientStats {
   u64 snapshots = 0;
   u64 outOfOrder = 0;  // older than one already seen: dropped
+  u64 deltaSnapshots = 0;   // of `snapshots`, how many came as deltas
+  u64 missingBaseline = 0;  // deltas against a snapshot we did not have: dropped (should stay 0)
   u64 malformed = 0;
   u64 inputPackets = 0;
   u64 spawned = 0;

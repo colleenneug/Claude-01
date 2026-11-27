@@ -8,13 +8,13 @@ to build, run and troubleshoot is in `README.md`.
   engine architecture, memory management and data-oriented design, and to
   host **Erebus Cradle** (the OpenGL 4.1 game in `../cpp/`) once it is ready.
 - **Where:** repository `colleenneug/Claude-01`, folder `aedans-playground/`,
-  branch `claude/relaxed-cray-5kc2fl` (32 commits, `d065ae6` → this one). No
+  branch `claude/relaxed-cray-5kc2fl` (34 commits, `d065ae6` → this one). No
   pull request open.
-- **Size:** about 16,500 lines of engine code and shaders, and 6,600 lines
+- **Size:** about 16,800 lines of engine code and shaders, and 6,800 lines
   of tests.
 - **State at this snapshot:**
   - `xvfb-run -a ctest --preset debug` passes **24/24**: 18 suites with
-    **226 test cases**, plus 6 end-to-end and smoke checks.
+    **231 test cases**, plus 6 end-to-end and smoke checks.
   - A clean rebuild has **0 warnings** (warnings are errors).
   - **0 Vulkan validation errors**. (The one `[error] [gpu]` line in the
     test log is gpu_tests' deliberately injected "expected" message.)
@@ -79,7 +79,7 @@ appears outside `net/src/Host.cpp`; tinygltf and stb never appear outside
 | **render** (`playground_render`) | platform, glm; gpu **private** | the `Renderer` interface and Vulkan-free frame description (`FrameData`, meshes, materials, lights, environment, shadow/bloom/tone-map settings); the Vulkan renderer: instanced sprites, meshes with bindless PBR textures, image-based lighting baked on the GPU, a skybox, sun shadow maps, an HDR target, bloom, ACES/PBR Neutral tone mapping, sRGB-correct composite, frame capture for pixel tests; GPU resources behind generational handles with deferred freeing | `Renderer`, `FrameData`, `MeshData`, `Material`, `MeshInstance`, `ProceduralSky`, `HdrImage`, `Aabb`, `directionalShadowMatrix`; private: `VulkanRenderer`, `Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess` |
 | **engine** (`playground_engine`) | render, ecs; tinygltf + stb **private** | the application loop (window + fixed steps + update + extract + render); cameras (orthographic/perspective, reverse-Z, screen ↔ world) and an orbit/fly controller; the **asset manager** (decode on workers, finalize on the main thread, generational handles, cache by path); glTF 2.0 models and HDR panoramas as assets; components and systems (movement, bounce, input, lifetime, sprite extraction, picking); input actions | `Application`, `Camera`, `CameraController`, `AssetManager`, `AssetHandle<T>`, `Model`, `gltfLoader`, `EnvironmentAsset`, `ActionMap`, `Transform`, `Velocity`, `Sprite` |
 | **net** (`playground_net`, alias `engine_net`) | core, glm; ENet **private** | the network transport (server or client hosts; reliable-ordered and unreliable-unsequenced channels; events; `disconnectAfterSending`), **simulated latency, jitter and loss** for tests, bit-level serialization (endian-safe, overrun-proof), quantization (bounded floats, vectors, smallest-three quaternions) | `Host`, `Peer`, `Packet`, `Event`, `Channel`, `NetworkConditions`, `BitWriter`, `BitReader`, `quantize`, `writeQuaternion` |
-| **game** (`playground_game`) | engine, net | the networked game, with no window or GPU: the **wire protocol v2** (Hello, Welcome, Reject, Spawn, Despawn, Input, Snapshot); the **movement rule** both sides run; the server's per-client **input queue** (ordered, deduplicated, rate-limited); client **prediction** (ring, reconcile, replay) and **interpolation** (snapshot buffer, render clock); the authoritative **server** and the **client** | `protocol::*`, `stepPlayer`, `InputQueue`, `Prediction`, `SnapshotBuffer`, `InterpolationClock`, `GameServer`, `GameClient` |
+| **game** (`playground_game`) | engine, net | the networked game, with no window or GPU: the **wire protocol v3** (Hello, Welcome, Reject, Spawn, Despawn, Input, Snapshot) with **delta snapshots**; the **movement rule** both sides run; the server's per-client **input queue** (ordered, deduplicated, rate-limited); client **prediction** (ring, reconcile, replay) and **interpolation** (snapshot buffer, render clock); the authoritative **server** and the **client** | `protocol::*`, `stepPlayer`, `InputQueue`, `Prediction`, `SnapshotBuffer`, `InterpolationClock`, `GameServer`, `GameClient` |
 | **app** (`playground_app`) | engine, game | the program: start-up order, command-line options; the **3D scene** (floor, crates, PBR spheres, lamps, the helmet; sun shadows, sky, bloom; orbit/fly camera; `--model`, `--environment`); the **2D scene** (25,000 bouncing sprites, a player, bullets aimed with the mouse); the **network scene** (`--connect`: the server's world, your player predicted); the **dedicated server** and a headless bot | `Scene`, `ModelScene`, `SpriteScene`, `NetScene`, `runServer`, `runClient` |
 
 Also: `tests/` (doctest suites, end-to-end shell scripts), `tools/`
@@ -198,7 +198,12 @@ procedural sky is baked at start-up, so headless tests stay quick.
      (a token bucket: +1 a tick, at most 3, one per input) with
      `stepPlayer`; balls move and bounce; every 6th tick (20 Hz) each
      client gets its own **Snapshot**: tick, `lastAckedInputSeq`, its exact
-     position, then every entity quantized (~6 B each). Then `flush()`.
+     position, then the entities quantized (~6 B each when full). It is a
+     **delta** against the newest snapshot the client says it has (each
+     Input carries that tick) if the server still holds that one (the
+     last 32 sent, per client): gone ids; new entities in full; changed
+     ones as offsets in the fewest bits; unchanged ones not at all.
+     Otherwise full. Then `flush()`.
   3. A status line every 5 s, with each client's inputs applied, dropped
      (over the rate limit) and lost.
 - On stopping: goodbye to every client, waiting up to 500 ms for their
@@ -217,8 +222,11 @@ procedural sky is baked at start-up, so headless tests stay quick.
      ring `{seq, input, state}`;
   3. sent unreliably with every unacknowledged input up to 8 (redundancy);
   4. the interpolation clock advances a tick.
-- Each snapshot: dropped if `tick <= newest seen`. Otherwise buffered for
-  interpolation, and **reconciled**: the predicted state at
+- Each snapshot: dropped if `tick <= newest seen`. A delta is rebuilt on
+  the snapshot it names, from the last 32 the client kept (missing: dropped
+  and counted, never seen in tests). The newest tick goes back to the
+  server in the next Input. Then it is buffered for interpolation, and
+  **reconciled**: the predicted state at
   `lastAckedInputSeq` is compared with the server's exact position; if
   further than 0.01 units, rewind to the server's and replay the later
   inputs. If the ring no longer holds that input (a ping over 2 s), take
@@ -241,7 +249,7 @@ procedural sky is baked at start-up, so headless tests stay quick.
 
 ---
 
-## 3. Completed Milestones (Steps 1–8)
+## 3. Completed Milestones (Steps 1–9)
 
 Each item was run and verified: tests in that step, plus every earlier
 test still passing.
@@ -324,6 +332,13 @@ test still passing.
   - Tests: `game_tests`, `netsync_tests` (server + 2 clients converging
     over a bad network, rejection, timeout, speed hack, ring overflow),
     simulated-network cases in `net_tests`, `netclient_e2e`.
+  - **Delta snapshots** (protocol v3, this commit): each client acks the
+    newest snapshot it has in every Input; the server keeps the last 32
+    per client and sends a delta against the acked one; offsets sized to
+    the change. Rebuilt bit for bit (2,000 random rounds in
+    `game_tests`). Measured: a still world 557 → 20 bytes (the header);
+    the demo, where all 64 balls move and spin every tick, 368 → 294
+    bytes per snapshot (−20%).
 
 **Verification as of this snapshot:**
 
@@ -332,7 +347,7 @@ test still passing.
 | core (22), ecs (26), input (15), camera (16) | errors, logging, fixed step; ECS; input edges and actions; cameras and the controller |
 | job (10), asset (10) | thread pool, async assets (also under ThreadSanitizer) |
 | gltf (14), ibl (5), shadow (6), net (15) | glTF and HDR decoding; BRDF table maths; shadow framing; bit packing, quantization, loopback networking, simulated latency and loss |
-| game (13), netsync (5) | protocol round trips and malformed packets; the movement rule; the input queue and its rate limit; prediction (confirm, replay, overflow); interpolation; a server and two clients over a bad network (convergence, despawn, version rejection, handshake timeout, speed hack, 2.4 s ping) |
+| game (17), netsync (6) | protocol round trips and malformed packets; delta snapshots (exact rebuilds, refused without their baseline, random changes); the movement rule; the input queue and its rate limit; prediction (confirm, replay, overflow); interpolation; a server and two clients over a bad network (convergence with deltas, despawn, version rejection, handshake timeout, speed hack, 2.4 s ping); bytes with and without deltas |
 | app (14) | the main loop with a fake renderer |
 | gpu (17), render (12), mesh (11), environment (6), postfx (9) | Vulkan bring-up, memory and textures; sprites, depth, camera, capture; meshes and materials; image-based lighting and sky; shadows, bloom, ACES, UNORM vs sRGB, resizing (pixels read back from the GPU; every test asserts 0 validation errors) |
 | app_smoke, keyboard_e2e, camera_e2e, server_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
@@ -361,8 +376,9 @@ test still passing.
 
 ### Known limitations (no known bugs)
 - **Networking:**
-  - full snapshots (no delta compression), capped at 128 entities (64
-    balls + up to 16 players, checked at start-up);
+  - snapshots are capped at 128 entities (64 balls + up to 16 players,
+    checked at start-up); deltas save little on things that move every
+    tick (no velocity-based prediction of positions in the encoding);
   - players only move: no shooting or collision between players yet (the
     Fire button is sent but unused), so nothing needs lag compensation;
   - the movement rule is deterministic within one build; a client built
@@ -397,8 +413,8 @@ test still passing.
   - no profiler (Tracy) and no debug overlay.
 
 ### Remaining roadmap, in order
-1. **Networking polish** (optional before physics):
-   - delta snapshots against the client's last acknowledged one;
+1. **Networking polish** (optional before physics; Step 1's core,
+   including delta snapshots, is done):
    - an on-screen network HUD (ping, corrections) once there is HUD text;
    - shooting with server-side lag compensation (rewind other players by
      the shooter's interpolation delay).

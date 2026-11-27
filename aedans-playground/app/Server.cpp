@@ -86,8 +86,11 @@ int runServer(const ServerOptions& options) {
 
     if (Clock::now() - lastStatus >= std::chrono::seconds(5)) {
       const f64 seconds = std::chrono::duration<f64>(Clock::now() - lastStatus).count();
-      log::info(Category::Game, "server: tick {}, {:.1f} ticks/s, {} player(s), {} snapshots sent", game.tick(),
-                (game.tick() - ticksAtLastStatus) / seconds, game.playerCount(), game.stats().snapshotsSent);
+      const game::ServerStats& stats = game.stats();
+      log::info(Category::Game, "server: tick {}, {:.1f} ticks/s, {} player(s), {} snapshots sent ({} as deltas, "
+                "{:.0f} bytes each on average)", game.tick(), (game.tick() - ticksAtLastStatus) / seconds,
+                game.playerCount(), stats.snapshotsSent, stats.deltaSnapshotsSent,
+                stats.snapshotsSent > 0 ? static_cast<f64>(stats.snapshotBytesSent) / static_cast<f64>(stats.snapshotsSent) : 0.0);
       for (const game::ServerClientStats& c : game.clientStats()) {
         log::info(Category::Game, "  client {}: entity {} at ({:.0f}, {:.0f}), input {} applied ({} applied, {} over "
                   "the rate limit, {} lost)", c.peer, c.playerId, c.position.x, c.position.y, c.lastAckedInputSeq,
@@ -102,9 +105,10 @@ int runServer(const ServerOptions& options) {
             InterruptGuard::interruptRequested() ? "interrupted (Ctrl+C or SIGTERM)" : "tick limit reached");
   game.shutdown(500);
   const game::ServerStats& stats = game.stats();
-  log::info(Category::Game, "dedicated server stopped after {} ticks: {} snapshots sent, {} joined, {} rejected, "
-            "{} handshake timeouts, {} malformed packets", game.tick(), stats.snapshotsSent, stats.joined,
-            stats.rejected, stats.handshakeTimeouts, stats.malformedPackets);
+  log::info(Category::Game, "dedicated server stopped after {} ticks: {} snapshots sent ({} as deltas, {} bytes), "
+            "{} joined, {} rejected, {} handshake timeouts, {} malformed packets", game.tick(), stats.snapshotsSent,
+            stats.deltaSnapshotsSent, stats.snapshotBytesSent, stats.joined, stats.rejected, stats.handshakeTimeouts,
+            stats.malformedPackets);
   return 0;
 }
 
@@ -143,10 +147,11 @@ int runClient(const ClientOptions& options) {
 
   const game::ClientStats stats = client.stats();
   const bool welcomed = played > 0;
-  log::info(Category::Game, "client summary: welcome {}, player entity {}, {} snapshots ({} out of order), last "
-            "server tick {}, {} entities known, {} malformed packets, {} inputs sent, {} acknowledged, {} "
-            "corrections, prediction error {:.3f} units",
-            welcomed ? "received" : "MISSING", client.playerId(), stats.snapshots, stats.outOfOrder,
+  log::info(Category::Game, "client summary: welcome {}, player entity {}, {} snapshots ({} as deltas, {} out of "
+            "order, {} missing baselines), last server tick {}, {} entities known, {} malformed packets, {} inputs "
+            "sent, {} acknowledged, {} corrections, prediction error {:.3f} units",
+            welcomed ? "received" : "MISSING", client.playerId(), stats.snapshots, stats.deltaSnapshots,
+            stats.outOfOrder, stats.missingBaseline,
             client.lastServerTick(), client.knownEntityCount(), stats.malformed, client.inputSeq(),
             client.lastAckedInputSeq(), stats.prediction.corrections,
             glm::length(client.predictedPosition() - client.serverPosition()));

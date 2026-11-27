@@ -17,9 +17,11 @@
 
 #include "playground/net/BitStream.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <random>
 #include <span>
 #include <vector>
 
@@ -75,27 +77,30 @@ TEST_CASE("protocol: every message round-trips, and the kinds are told apart") {
   REQUIRE(despawn);
   CHECK(despawn->ids == std::vector<u32>{1, 2, 70000});
 
-  const auto input = protocol::decodeInput(protocol::encode(
-      protocol::Input{.newestSeq = 50, .inputs = {right(), up(), {.move = {-0.5f, 0.25f}, .buttons = 1}}}));
+  const auto input = protocol::decodeInput(protocol::encode(protocol::Input{
+      .newestSeq = 50, .inputs = {right(), up(), {.move = {-0.5f, 0.25f}, .buttons = 1}}, .lastSnapshotTick = 594}));
   REQUIRE(input);
   CHECK(input->newestSeq == 50);
+  CHECK(input->lastSnapshotTick == 594);
   REQUIRE(input->inputs.size() == 3);
   CHECK(input->inputs[0] == right());
   CHECK(input->inputs[1] == up());
   CHECK(input->inputs[2] == protocol::quantize({.move = {-0.5f, 0.25f}, .buttons = 1}));
 
   protocol::Snapshot snapshot{.tick = 600, .lastAckedInputSeq = 598, .yourPosition = glm::vec2(10.0625f, -3.0f)};
-  snapshot.entities = {{.id = 1, .position = {100.0f, -200.0f}, .rotation = 1.0f},
-                       {.id = 2, .position = {-1023.0f, 1023.0f}, .rotation = -0.5f}};
+  snapshot.entities = {protocol::quantizeEntity(1, {100.0f, -200.0f}, 1.0f),
+                       protocol::quantizeEntity(2, {-1023.0f, 1023.0f}, -0.5f)};
   const auto decoded = protocol::decodeSnapshot(protocol::encode(snapshot));
   REQUIRE(decoded);
   CHECK(decoded->tick == 600);
+  CHECK(decoded->baselineTick == 0);  // full
   CHECK(decoded->lastAckedInputSeq == 598);
   REQUIRE(decoded->yourPosition);
   CHECK(*decoded->yourPosition == glm::vec2(10.0625f, -3.0f));  // exact: the client compares against it
-  REQUIRE(decoded->entities.size() == 2);
-  CHECK(glm::length(decoded->entities[0].position - glm::vec2(100.0f, -200.0f)) < 0.03f);
-  CHECK(decoded->entities[1].rotation == doctest::Approx(2.0f * std::numbers::pi_v<f32> - 0.5f).epsilon(0.002));
+  CHECK(decoded->entities == snapshot.entities);  // the wire integers, exactly
+  CHECK(glm::length(protocol::dequantize(decoded->entities[0]).position - glm::vec2(100.0f, -200.0f)) < 0.03f);
+  CHECK(protocol::dequantize(decoded->entities[1]).rotation ==
+        doctest::Approx(2.0f * std::numbers::pi_v<f32> - 0.5f).epsilon(0.002));
 
   // Kinds: each decoder refuses the others' messages.
   const auto helloBytes = protocol::encode(protocol::Hello{});
@@ -114,8 +119,9 @@ TEST_CASE("protocol: truncated, oversized and nonsense packets are refused") {
   checkTruncationsRefused(protocol::encode(protocol::Input{.newestSeq = 9, .inputs = {right(), up()}}),
                           protocol::decodeInput);
   protocol::Snapshot snapshot{.tick = 6, .lastAckedInputSeq = 2, .yourPosition = glm::vec2(1.0f)};
-  snapshot.entities.resize(3);
-  checkTruncationsRefused(protocol::encode(snapshot), protocol::decodeSnapshot);
+  snapshot.entities = {{.id = 0}, {.id = 1}, {.id = 7}};
+  const auto decodeFull = [](std::span<const std::byte> bytes) { return protocol::decodeSnapshot(bytes); };
+  checkTruncationsRefused(protocol::encode(snapshot), decodeFull);
 
   // An input claiming more inputs than sequence numbers before it (seq 1 with 3 inputs).
   CHECK_FALSE(protocol::decodeInput(protocol::encode(protocol::Input{.newestSeq = 2, .inputs = {right(), up(), up()}})));
@@ -127,8 +133,9 @@ TEST_CASE("protocol: truncated, oversized and nonsense packets are refused") {
   // A snapshot with a NaN for "your position".
   net::BitWriter nan;
   nan.writeBits(static_cast<u32>(protocol::MessageKind::Snapshot), 4);
-  nan.writeU32(1);
-  nan.writeU32(1);
+  nan.writeU32(1);     // tick
+  nan.writeVarU32(0);  // full
+  nan.writeU32(1);     // acknowledged input
   nan.writeBool(true);
   nan.writeF32(std::numeric_limits<f32>::quiet_NaN());
   nan.writeF32(0.0f);
@@ -145,6 +152,154 @@ TEST_CASE("input quantization: zero stays exactly zero, full stays full, and qua
   CHECK(protocol::quantize(once) == once);
   CHECK(once.buttons == 0x0F);
   CHECK(std::abs(once.move.x - 0.3333f) <= 0.5f / 127.0f);
+}
+
+// --- Delta snapshots ----------------------------------------------------------------------
+
+namespace {
+
+protocol::Snapshot snapshotAt(u32 tick, std::vector<protocol::QuantizedEntity> entities) {
+  return {.tick = tick, .lastAckedInputSeq = tick / 2, .yourPosition = glm::vec2(1.5f, -2.0f),
+          .entities = std::move(entities)};
+}
+
+}  // namespace
+
+TEST_CASE("delta snapshots: rebuilt on their baseline, they are exactly the full snapshot") {
+  using protocol::quantizeEntity;
+  const protocol::Snapshot baseline = snapshotAt(600, {
+      quantizeEntity(1, {0.0f, 0.0f}, 0.0f),        // will not change
+      quantizeEntity(2, {10.0f, 10.0f}, 1.0f),      // a small move
+      quantizeEntity(3, {-500.0f, 300.0f}, 2.0f),   // a big move (a teleport)
+      quantizeEntity(4, {50.0f, 50.0f}, 3.0f),      // only turns
+      quantizeEntity(5, {70.0f, 70.0f}, 0.5f),      // will be gone
+      quantizeEntity(64, {0.0f, 0.0f}, 0.0f),       // a player standing still
+  });
+  const protocol::Snapshot current = snapshotAt(612, {
+      quantizeEntity(1, {0.0f, 0.0f}, 0.0f),
+      quantizeEntity(2, {12.5f, 9.0f}, 1.0f),
+      quantizeEntity(3, {400.0f, -300.0f}, 2.0f),
+      quantizeEntity(4, {50.0f, 50.0f}, 3.5f),
+      quantizeEntity(64, {0.0f, 0.0f}, 0.0f),
+      quantizeEntity(65, {-120.0f, 0.0f}, 0.0f),    // new: a player joined
+  });
+
+  const std::vector<std::byte> full = protocol::encode(current);
+  const std::vector<std::byte> delta = protocol::encode(current, &baseline);
+  const auto ticks = protocol::peekSnapshot(delta);
+  REQUIRE(ticks);
+  CHECK(ticks->tick == 612);
+  CHECK(ticks->baselineTick == 600);
+  const auto rebuilt = protocol::decodeSnapshot(delta, &baseline);
+  REQUIRE(rebuilt);
+  CHECK(rebuilt->entities == current.entities);
+  CHECK(rebuilt->baselineTick == 600);
+  CHECK(rebuilt->tick == 612);
+  CHECK(rebuilt->lastAckedInputSeq == current.lastAckedInputSeq);
+  CHECK(rebuilt->yourPosition == current.yourPosition);
+  CHECK(protocol::decodeSnapshot(full)->entities == current.entities);
+  INFO("full " << full.size() << " bytes, delta " << delta.size());
+  CHECK(delta.size() < full.size());
+
+  // Unsorted input is sorted first; the result is the same.
+  protocol::Snapshot shuffled = current;
+  std::swap(shuffled.entities.front(), shuffled.entities.back());
+  CHECK(protocol::encode(shuffled, &baseline) == delta);
+  // A "baseline" that is not older is ignored: the snapshot goes full.
+  CHECK(protocol::peekSnapshot(protocol::encode(current, &current))->baselineTick == 0);
+}
+
+TEST_CASE("delta snapshots: refused without their baseline, with another one, or when hostile") {
+  const protocol::Snapshot baseline = snapshotAt(6, {protocol::quantizeEntity(1, {1.0f, 1.0f}, 0.0f),
+                                                     protocol::quantizeEntity(2, {2.0f, 2.0f}, 0.0f)});
+  const protocol::Snapshot current = snapshotAt(12, {protocol::quantizeEntity(1, {3.0f, 1.0f}, 0.0f),
+                                                    protocol::quantizeEntity(9, {2.0f, 2.0f}, 0.0f)});
+  const std::vector<std::byte> delta = protocol::encode(current, &baseline);
+  CHECK_FALSE(protocol::decodeSnapshot(delta));  // no baseline
+  const protocol::Snapshot other = snapshotAt(7, baseline.entities);
+  CHECK_FALSE(protocol::decodeSnapshot(delta, &other));  // the wrong one
+  REQUIRE(protocol::decodeSnapshot(delta, &baseline));
+  checkTruncationsRefused(delta, [&](std::span<const std::byte> bytes) {
+    return protocol::decodeSnapshot(bytes, &baseline);
+  });
+
+  // "Remove entity 999", which the baseline never had.
+  net::BitWriter out;
+  out.writeBits(static_cast<u32>(protocol::MessageKind::Snapshot), 4);
+  out.writeU32(12);
+  out.writeVarU32(6);  // baseline: tick 6
+  out.writeU32(0);
+  out.writeBool(false);
+  out.writeVarU32(1);
+  out.writeVarU32(999);
+  out.writeVarU32(0);
+  CHECK_FALSE(protocol::decodeSnapshot(out.take(), &baseline));
+  // A baseline older than tick 0.
+  net::BitWriter before;
+  before.writeBits(static_cast<u32>(protocol::MessageKind::Snapshot), 4);
+  before.writeU32(3);
+  before.writeVarU32(10);
+  CHECK_FALSE(protocol::peekSnapshot(before.take()));
+}
+
+TEST_CASE("delta snapshots: a world standing still costs a few bytes, not hundreds") {
+  std::vector<protocol::QuantizedEntity> still;
+  for (u32 id = 0; id < 100; ++id) {
+    still.push_back(protocol::quantizeEntity(id, {static_cast<f32>(id) * 7.0f - 350.0f, 20.0f}, 0.1f));
+  }
+  const protocol::Snapshot baseline = snapshotAt(600, still);
+  const protocol::Snapshot current = snapshotAt(606, still);
+  const usize full = protocol::encode(current).size();
+  const usize delta = protocol::encode(current, &baseline).size();
+  INFO("full " << full << " bytes, delta " << delta);
+  CHECK(full > 500);
+  // Exactly the header (tick, baseline, acknowledged input, our exact
+  // position: 20 bytes), as if there were no entities at all.
+  const protocol::Snapshot emptyBaseline = snapshotAt(600, {});
+  CHECK(delta == protocol::encode(snapshotAt(606, {}), &emptyBaseline).size());
+  CHECK(protocol::decodeSnapshot(protocol::encode(current, &baseline), &baseline)->entities == still);
+}
+
+TEST_CASE("delta snapshots: thousands of random changes all rebuild exactly") {
+  std::mt19937 rng(7u);
+  auto below = [&rng](u32 n) { return std::uniform_int_distribution<u32>(0, n - 1)(rng); };
+  usize fullBytes = 0;
+  usize deltaBytes = 0;
+  protocol::Snapshot previous = snapshotAt(6, {});
+  for (u32 round = 0; round < 2000; ++round) {
+    std::vector<protocol::QuantizedEntity> entities;
+    for (const protocol::QuantizedEntity& e : previous.entities) {
+      if (below(20) == 0) continue;  // gone
+      protocol::QuantizedEntity next = e;
+      switch (below(4)) {
+        case 0: break;  // still
+        case 1:         // a small move, even across the 12-bit edge
+          next.x = static_cast<u16>(std::clamp<i32>(e.x + static_cast<i32>(below(4200)) - 2100, 0, 0xFFFF));
+          next.y = static_cast<u16>(std::clamp<i32>(e.y + static_cast<i32>(below(600)) - 300, 0, 0xFFFF));
+          break;
+        case 2: next.x = static_cast<u16>(below(65536)); break;  // anywhere
+        default: next.rotation = static_cast<u16>(below(1024)); break;
+      }
+      entities.push_back(next);
+    }
+    while (entities.size() < protocol::kMaxSnapshotEntities && below(3) == 0) {  // new ones, ids may be far apart
+      entities.push_back({.id = below(5000), .x = static_cast<u16>(below(65536)), .y = static_cast<u16>(below(65536)),
+                          .rotation = static_cast<u16>(below(1024))});
+    }
+    std::sort(entities.begin(), entities.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
+    entities.erase(std::unique(entities.begin(), entities.end(), [](const auto& a, const auto& b) { return a.id == b.id; }),
+                   entities.end());
+    const protocol::Snapshot current = snapshotAt(previous.tick + 6, entities);
+    const std::vector<std::byte> delta = protocol::encode(current, &previous);
+    const auto rebuilt = protocol::decodeSnapshot(delta, &previous);
+    REQUIRE(rebuilt);
+    REQUIRE(rebuilt->entities == current.entities);
+    fullBytes += protocol::encode(current).size();
+    deltaBytes += delta.size();
+    previous = current;
+  }
+  INFO("full " << fullBytes << " bytes in all, delta " << deltaBytes);
+  CHECK(deltaBytes < fullBytes);
 }
 
 // --- The movement rule --------------------------------------------------------------------

@@ -17,7 +17,11 @@
 //                 exists; every other client gets a Spawn of the new player.
 //                 All reliable.
 //    playing      Input in (unreliable), a Snapshot out every 6 ticks,
-//                 made for it: with its lastAckedInputSeq and exact position.
+//                 made for it: with its lastAckedInputSeq and exact position,
+//                 and as a DELTA against the newest snapshot the client says
+//                 it has (each Input carries that tick), when the server
+//                 still has that one: the last kSnapshotHistory sent are
+//                 kept per client. Otherwise full.
 //    disconnect   its player is destroyed and every other client gets a
 //                 Despawn (reliable).
 //
@@ -46,6 +50,7 @@ struct ServerConfig {
   u32 balls = 64;
   u32 handshakeTimeoutMs = 3000;  // connected but no Hello by then: disconnected
   net::NetworkConditions network;  // simulated latency and loss on what the server sends
+  bool deltaSnapshots = true;      // false: every snapshot full (to compare, or to debug)
 };
 
 struct ServerClientStats {
@@ -60,6 +65,8 @@ struct ServerClientStats {
 
 struct ServerStats {
   u64 snapshotsSent = 0;
+  u64 deltaSnapshotsSent = 0;  // of those, deltas against a snapshot the client had
+  u64 snapshotBytesSent = 0;
   u64 malformedPackets = 0;
   u64 handshakeTimeouts = 0;
   u64 rejected = 0;

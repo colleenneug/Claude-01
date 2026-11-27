@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <format>
 #include <unordered_map>
 
@@ -58,6 +59,7 @@ struct GameClient::Impl {
   std::unordered_map<u32, EntityKind> known;  // what the server has spawned for us
   bool anySnapshot = false;
   u32 lastSnapshotTick = 0;
+  std::deque<protocol::Snapshot> received;  // the newest kSnapshotHistory: baselines for deltas
   f64 ackDelayMs = 0.0;
   ClientStats stats;
 
@@ -94,15 +96,43 @@ struct GameClient::Impl {
               welcome.spawnPosition.x, welcome.spawnPosition.y);
   }
 
-  void onSnapshot(const protocol::Snapshot& snapshot) {
-    if (anySnapshot && snapshot.tick <= lastSnapshotTick) {  // overtaken by a newer one: old news
+  // A snapshot packet: dropped if older than the newest seen; a delta is
+  // rebuilt on the baseline it names (one we kept); then stored as a
+  // baseline for the deltas to come. Returns false if it was malformed.
+  bool onSnapshotPacket(std::span<const std::byte> bytes) {
+    const auto ticks = protocol::peekSnapshot(bytes);
+    if (!ticks) return false;
+    if (anySnapshot && ticks->tick <= lastSnapshotTick) {  // overtaken by a newer one: old news
       ++stats.outOfOrder;
-      return;
+      return true;
     }
+    const protocol::Snapshot* baseline = nullptr;
+    if (ticks->baselineTick != 0) {
+      const auto it = std::find_if(received.begin(), received.end(),
+                                   [&](const protocol::Snapshot& s) { return s.tick == ticks->baselineTick; });
+      if (it == received.end()) {  // never had it (or long gone): wait for the next one
+        ++stats.missingBaseline;
+        return true;
+      }
+      baseline = &*it;
+    }
+    auto snapshot = protocol::decodeSnapshot(bytes, baseline);
+    if (!snapshot) return false;
+    stats.deltaSnapshots += baseline != nullptr ? 1 : 0;
+    onSnapshot(*snapshot);
+    received.push_back(std::move(*snapshot));
+    while (received.size() > protocol::kSnapshotHistory) received.pop_front();
+    return true;
+  }
+
+  void onSnapshot(const protocol::Snapshot& snapshot) {
     anySnapshot = true;
     lastSnapshotTick = snapshot.tick;
     ++stats.snapshots;
-    snapshots.push(snapshot.tick, snapshot.entities);
+    std::vector<protocol::SnapshotEntity> entities;
+    entities.reserve(snapshot.entities.size());
+    for (const protocol::QuantizedEntity& e : snapshot.entities) entities.push_back(protocol::dequantize(e));
+    snapshots.push(snapshot.tick, entities);
     clock.heard(snapshot.tick);
 
     if (state != ClientState::Playing || !snapshot.yourPosition || snapshot.lastAckedInputSeq == 0) return;
@@ -151,7 +181,7 @@ struct GameClient::Impl {
         }
         break;
       case protocol::MessageKind::Snapshot:
-        if (const auto m = protocol::decodeSnapshot(bytes)) return onSnapshot(*m);
+        if (onSnapshotPacket(bytes)) return;
         break;
       case protocol::MessageKind::Hello:
       case protocol::MessageKind::Input:
@@ -215,7 +245,8 @@ void GameClient::step(const PlayerInput& input) {
 
   // Send it, with the few before it the server has not acknowledged yet.
   const u32 oldest = std::max(m.prediction.lastAcked() + 1, seq + 1 - std::min(seq, protocol::kMaxInputsPerPacket));
-  const protocol::Input message{.newestSeq = seq, .inputs = m.prediction.inputsSince(oldest)};
+  const protocol::Input message{.newestSeq = seq, .inputs = m.prediction.inputsSince(oldest),
+                                .lastSnapshotTick = m.anySnapshot ? m.lastSnapshotTick : 0};
   if (Status s = m.host.send(m.server, net::Packet(net::Channel::Unreliable, protocol::encode(message))); s) {
     ++m.stats.inputPackets;
   }

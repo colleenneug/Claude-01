@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <format>
 #include <numbers>
 #include <random>
@@ -54,6 +55,9 @@ struct Client {
   ecs::Entity player;
   PlayerState state;
   InputQueue inputs;
+  // Delta snapshots: what was sent lately, and the newest the client says it has.
+  std::deque<protocol::Snapshot> sent;  // oldest first, at most kSnapshotHistory
+  u32 ackedSnapshotTick = 0;
 };
 
 }  // namespace
@@ -172,7 +176,11 @@ struct GameServer::Impl {
       }
     } else if (kind == protocol::MessageKind::Input) {
       if (const auto input = protocol::decodeInput(packet.bytes())) {
-        if (client.playing && !client.leaving) client.inputs.receive(input->newestSeq, input->inputs);
+        if (client.playing && !client.leaving) {
+          client.inputs.receive(input->newestSeq, input->inputs);
+          // Inputs can arrive out of order: keep the newest claim.
+          client.ackedSnapshotTick = std::max(client.ackedSnapshotTick, input->lastSnapshotTick);
+        }
         return;
       }
     }
@@ -193,18 +201,35 @@ struct GameServer::Impl {
     }
   }
 
+  // The world, quantized, once; then for each client a delta against the
+  // newest snapshot it has told us it holds, if we still have that one too
+  // (a client that claims a tick we never sent, or one too old, gets a full one).
   void sendSnapshots() {
     protocol::Snapshot snapshot{.tick = tick};
     world.each<engine::Transform>([&](ecs::Entity entity, engine::Transform& t) {
-      snapshot.entities.push_back({.id = entity.index, .position = t.position, .rotation = t.rotation});
+      snapshot.entities.push_back(protocol::quantizeEntity(entity.index, t.position, t.rotation));
     });
+    std::sort(snapshot.entities.begin(), snapshot.entities.end(),
+              [](const auto& a, const auto& b) { return a.id < b.id; });
     for (auto& [id, client] : clients) {
       if (!client.playing || client.leaving) continue;
       snapshot.lastAckedInputSeq = client.inputs.lastApplied();
       snapshot.yourPosition = client.state.position;
-      if (Status s = host.send(client.peer, net::Packet(net::Channel::Unreliable, protocol::encode(snapshot))); s) {
-        ++stats.snapshotsSent;
+      const protocol::Snapshot* baseline = nullptr;
+      if (config.deltaSnapshots && client.ackedSnapshotTick != 0) {
+        const auto it = std::find_if(client.sent.begin(), client.sent.end(),
+                                     [&](const protocol::Snapshot& s) { return s.tick == client.ackedSnapshotTick; });
+        if (it != client.sent.end()) baseline = &*it;
       }
+      std::vector<std::byte> bytes = protocol::encode(snapshot, baseline);
+      const usize size = bytes.size();
+      if (Status s = host.send(client.peer, net::Packet(net::Channel::Unreliable, std::move(bytes))); s) {
+        ++stats.snapshotsSent;
+        stats.deltaSnapshotsSent += baseline != nullptr ? 1 : 0;
+        stats.snapshotBytesSent += size;
+      }
+      client.sent.push_back(snapshot);
+      while (client.sent.size() > protocol::kSnapshotHistory) client.sent.pop_front();
     }
   }
 

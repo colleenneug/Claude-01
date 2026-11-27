@@ -75,7 +75,7 @@ orange, the server's 64 balls).*
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), `Shadow` (shadow-map framing), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess`), the shaders |
 | `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController`, `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
-| `game/` | `playground_game` | the networked game: `Protocol` (v2), `Simulation` (the movement rule both sides run), `InputQueue` (the server's rate limit), `Prediction`, `Interpolation`, `GameServer`, `GameClient`. No window, no GPU |
+| `game/` | `playground_game` | the networked game: `Protocol` (v3, with delta snapshots), `Simulation` (the movement rule both sides run), `InputQueue` (the server's rate limit), `Prediction`, `Interpolation`, `GameServer`, `GameClient`. No window, no GPU |
 | `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`, `NetScene`), the dedicated server and headless bot (`Server`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
 | `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, networking, the game's pieces, and a server with two clients over a bad simulated network; end-to-end keyboard, camera, dedicated-server and windowed-client tests |
 | `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
@@ -458,7 +458,8 @@ where everything is. Each client controls one player entity.
 | Connect | the client says **Hello** with its protocol version. Another version: **Reject** ("protocol version mismatch"), then goodbye. Silent for 3 s (a half-open connection): disconnected |
 | Join | the server spawns the client's player and sends **Welcome** (its entity id and exact start) and a **Spawn** list of everything; every other client gets a Spawn of the newcomer. All reliable |
 | Play | every 120 Hz tick the client sends its **Input** (unreliable, numbered, with the last 8 repeated, so a lost packet loses nothing). The server applies at most **one input a tick** on average to that player (a small bucket allows a burst of 3 after a hiccup), so sending inputs faster does not make anyone faster |
-| Snapshots | 20 a second, one per client: the server tick, `lastAckedInputSeq` (the newest of that client's inputs applied) and exactly where that left its player, then every entity, quantized (about 6 bytes each) |
+| Snapshots | 20 a second, one per client: the server tick, `lastAckedInputSeq` (the newest of that client's inputs applied) and exactly where that left its player, then the entities, quantized (about 6 bytes each) |
+| Deltas | each Input also says the newest snapshot the client has; the server keeps its last 32 snapshots per client and sends only the differences from that one: ids that are gone, new entities, and changes as offsets in as few bits as they need. Unchanged entities cost nothing (a still world: 557 bytes → 20). If the server no longer has that snapshot, it sends a full one |
 | Leave | the player is destroyed and everyone else gets a **Despawn** (reliable) |
 
 **Prediction** (`game/Prediction.h`). The client moves its own player at
