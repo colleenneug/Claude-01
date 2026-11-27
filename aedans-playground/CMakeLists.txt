@@ -66,6 +66,24 @@ else()
 endif()
 target_compile_definitions(playground_vma INTERFACE VMA_STATIC_VULKAN_FUNCTIONS=1 VMA_DYNAMIC_VULKAN_FUNCTIONS=0)
 
+# glTF 2.0 and images. tinygltf (with nlohmann/json) parses glTF; stb_image
+# decodes PNG and JPEG. Both are used header-only: their implementations are
+# compiled once, in engine/src/GltfImplementation.cpp. Ubuntu packages:
+# libtinygltf-dev, nlohmann-json3-dev, libstb-dev (which puts the stb headers
+# in include/stb/); vcpkg ports: tinygltf (pulls in nlohmann-json) and stb.
+# The TINYGLTF_ definitions change tinygltf's declarations, so every file
+# that includes it must see the same ones: they are set here, on the target.
+# tinygltf must not use its own stb_image call (it would keep the image's
+# own channel count); engine/src/Gltf.cpp gives it one that always decodes
+# to RGBA8.
+find_path(PLAYGROUND_TINYGLTF_INCLUDE_DIR tiny_gltf.h REQUIRED)
+find_path(PLAYGROUND_STB_INCLUDE_DIR stb_image.h PATH_SUFFIXES stb REQUIRED)
+find_package(nlohmann_json 3.9 CONFIG REQUIRED)
+add_library(playground_gltf INTERFACE)
+target_include_directories(playground_gltf SYSTEM INTERFACE ${PLAYGROUND_TINYGLTF_INCLUDE_DIR} ${PLAYGROUND_STB_INCLUDE_DIR})
+target_link_libraries(playground_gltf INTERFACE nlohmann_json::nlohmann_json)
+target_compile_definitions(playground_gltf INTERFACE TINYGLTF_NO_STB_IMAGE TINYGLTF_NO_STB_IMAGE_WRITE)
+
 add_library(playground_tl_expected INTERFACE)
 target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 

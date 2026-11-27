@@ -52,6 +52,9 @@ struct PhysicalDeviceInfo {
   u32 apiVersion = 0;
   std::string driver;  // e.g. "NVIDIA 560.35.03" or "llvmpipe Mesa 25.2.8"
   QueueFamilies queues;
+  // Optional features: used when present, never a reason to reject a GPU.
+  bool samplerAnisotropy = false;
+  f32 maxSamplerAnisotropy = 1.0f;
 };
 
 // Errc::Unsupported if no GPU meets the requirements; the message summarises

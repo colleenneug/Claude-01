@@ -14,8 +14,13 @@
 #include "playground/gpu/Buffer.h"
 #include "playground/gpu/Context.h"
 #include "playground/gpu/Image.h"
+#include "playground/gpu/Sampler.h"
 #include "playground/gpu/VulkanCheck.h"
 
+#include <algorithm>
+#include <array>
+#include <cstdlib>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -307,4 +312,158 @@ int main(int argc, char** argv) {
 
   doctest::Context context(argc, argv);
   return context.run();
+}
+
+// --- Textures ---------------------------------------------------------------------
+
+namespace {
+
+// Copies one mip level of a SHADER_READ_ONLY texture back to the CPU (RGBA8).
+std::vector<u8> readTextureLevel(const gpu::Context& context, const gpu::Image& image, u32 level) {
+  const u32 width = std::max(1u, image.extent().width >> level);
+  const u32 height = std::max(1u, image.extent().height >> level);
+  auto readback = gpu::Buffer::create(context.allocator(), {.sizeBytes = u64{width} * height * 4,
+                                                            .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                            .memory = gpu::MemoryKind::HostReadback,
+                                                            .debugName = "test texture readback"});
+  REQUIRE(readback.has_value());
+  const VkImageSubresourceRange range{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = level,
+                                      .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1};
+  const Status copied = gpu::submitAndWait(context, [&](VkCommandBuffer commands) {
+    gpu::transitionImage(commands, image.handle(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE,
+                         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, range);
+    const VkBufferImageCopy region{
+        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = level, .baseArrayLayer = 0,
+                             .layerCount = 1},
+        .imageExtent = {width, height, 1},
+    };
+    vkCmdCopyImageToBuffer(commands, image.handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback->handle(), 1,
+                           &region);
+    gpu::transitionImage(commands, image.handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_NONE,
+                         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, range);
+  });
+  REQUIRE_MESSAGE(copied.has_value(), (copied ? "" : copied.error().message));
+  REQUIRE(readback->invalidate().has_value());
+  std::vector<u8> pixels(readback->size());
+  std::memcpy(pixels.data(), readback->mapped().data(), pixels.size());
+  return pixels;
+}
+
+// A width x height RGBA image: the left half opaque red, the right half opaque blue.
+std::vector<std::byte> redBlueHalves(u32 width, u32 height) {
+  std::vector<std::byte> pixels(usize{width} * height * 4);
+  for (u32 y = 0; y < height; ++y) {
+    for (u32 x = 0; x < width; ++x) {
+      const usize i = (usize{y} * width + x) * 4;
+      const bool left = x < width / 2;
+      pixels[i + 0] = std::byte{static_cast<u8>(left ? 255 : 0)};
+      pixels[i + 1] = std::byte{0};
+      pixels[i + 2] = std::byte{static_cast<u8>(left ? 0 : 255)};
+      pixels[i + 3] = std::byte{255};
+    }
+  }
+  return pixels;
+}
+
+}  // namespace
+
+TEST_CASE("a full mip chain goes down to 1x1, counted by the larger side") {
+  CHECK(gpu::fullMipCount(1, 1) == 1);
+  CHECK(gpu::fullMipCount(2, 1) == 2);
+  CHECK(gpu::fullMipCount(256, 256) == 9);
+  CHECK(gpu::fullMipCount(300, 20) == 9);
+  CHECK(gpu::fullMipCount(64, 32) == 7);
+}
+
+TEST_CASE("a texture upload builds its mip chain on the GPU, each level a filtered half of the last") {
+  gpu::resetValidationCounts();
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+  {
+    const std::vector<std::byte> pixels = redBlueHalves(64, 32);
+    auto texture = gpu::createTexture(*context, {.width = 64, .height = 32, .format = VK_FORMAT_R8G8B8A8_UNORM,
+                                                 .pixels = pixels, .debugName = "test halves"});
+    REQUIRE_MESSAGE(texture.has_value(), (texture ? "" : texture.error().message));
+    CHECK(texture->mipLevels() == 7);  // 64x32, 32x16, ... 2x1, 1x1
+
+    // Level 0 is the upload, byte for byte.
+    const std::vector<u8> level0 = readTextureLevel(*context, *texture, 0);
+    CHECK(std::memcmp(level0.data(), pixels.data(), pixels.size()) == 0);
+
+    // 2x1: each half averaged on its own, so still pure red and pure blue.
+    const std::vector<u8> level5 = readTextureLevel(*context, *texture, 5);
+    REQUIRE(level5.size() == 8);
+    CHECK(level5[0] == 255);
+    CHECK(level5[2] == 0);
+    CHECK(level5[4] == 0);
+    CHECK(level5[6] == 255);
+
+    // 1x1: the two halves mixed, about 50% each in this linear (UNORM) format.
+    const std::vector<u8> level6 = readTextureLevel(*context, *texture, 6);
+    CHECK(std::abs(int{level6[0]} - 128) <= 2);
+    CHECK(std::abs(int{level6[2]} - 128) <= 2);
+    CHECK(level6[3] == 255);
+  }
+  CHECK(context->allocator().stats().allocationCount == 0);  // staging and texture both freed
+  CHECK(gpu::validationCounts().errors == 0);
+}
+
+TEST_CASE("an sRGB texture's mips are averaged in linear light, not on the stored bytes") {
+  gpu::resetValidationCounts();
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+  const std::vector<std::byte> pixels = redBlueHalves(2, 1);
+  auto texture = gpu::createTexture(*context, {.width = 2, .height = 1, .format = VK_FORMAT_R8G8B8A8_SRGB,
+                                               .pixels = pixels, .debugName = "test srgb"});
+  REQUIRE(texture.has_value());
+  REQUIRE(texture->mipLevels() == 2);
+  // Half of full red in linear light is 0.5, which sRGB stores as 188, not 128.
+  // Averaging the bytes instead would darken every distant texture.
+  const std::vector<u8> mixed = readTextureLevel(*context, *texture, 1);
+  CHECK(std::abs(int{mixed[0]} - 188) <= 3);
+  CHECK(std::abs(int{mixed[2]} - 188) <= 3);
+  CHECK(gpu::validationCounts().errors == 0);
+}
+
+TEST_CASE("texture misuse is reported: wrong pixel count, format or size") {
+  gpu::resetValidationCounts();
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+  const std::vector<std::byte> pixels(16 * 4);
+
+  const auto short_ = gpu::createTexture(*context, {.width = 8, .height = 8, .pixels = pixels, .debugName = "short"});
+  REQUIRE_FALSE(short_.has_value());
+  CHECK(short_.error().code == Errc::InvalidArgument);
+  CHECK(short_.error().message.find("needs 256 bytes, got 64") != std::string::npos);
+
+  const auto format = gpu::createTexture(
+      *context, {.width = 4, .height = 4, .format = VK_FORMAT_R16G16B16A16_SFLOAT, .pixels = pixels});
+  REQUIRE_FALSE(format.has_value());
+  CHECK(format.error().code == Errc::InvalidArgument);
+
+  const auto mips = gpu::Image::create(context->allocator(), {.width = 4, .height = 4,
+                                                              .format = VK_FORMAT_R8G8B8A8_UNORM,
+                                                              .usage = VK_IMAGE_USAGE_SAMPLED_BIT, .mipLevels = 4});
+  REQUIRE_FALSE(mips.has_value());  // 4x4 has at most 3 levels
+  CHECK(mips.error().message.find("at most 3") != std::string::npos);
+  CHECK(context->allocator().stats().allocationCount == 0);
+  CHECK(gpu::validationCounts().errors == 0);
+}
+
+TEST_CASE("a sampler is created, with anisotropy only when the GPU has it") {
+  gpu::resetValidationCounts();
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+  auto sampler = gpu::createSampler(*context, {.maxAnisotropy = 1000.0f, .debugName = "test sampler"});
+  REQUIRE_MESSAGE(sampler.has_value(), (sampler ? "" : sampler.error().message));
+  CHECK(sampler->get() != VK_NULL_HANDLE);
+  MESSAGE("anisotropy supported: " << context->physicalDevice().samplerAnisotropy << ", up to "
+                                   << context->physicalDevice().maxSamplerAnisotropy);
+  CHECK(gpu::validationCounts().errors == 0);  // 1000 was clamped, or anisotropy left off
 }

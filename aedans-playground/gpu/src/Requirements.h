@@ -47,6 +47,10 @@ inline void requestEngineFeatures(FeatureChain& chain) noexcept {
   chain.v12.runtimeDescriptorArray = VK_TRUE;
   chain.v12.descriptorBindingPartiallyBound = VK_TRUE;
   chain.v12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+  // The bindless texture array gains textures while frames that use it are
+  // still on the GPU (slots those frames do not read).
+  chain.v12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+  chain.v12.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
   chain.v12.bufferDeviceAddress = VK_TRUE;  // GPU pointers to buffers
 }
 
@@ -68,6 +72,10 @@ inline std::vector<std::string> missingFeatures(const FeatureChain& supported) {
        "descriptorBindingPartiallyBound");
   need(required.v12.shaderSampledImageArrayNonUniformIndexing,
        supported.v12.shaderSampledImageArrayNonUniformIndexing, "shaderSampledImageArrayNonUniformIndexing");
+  need(required.v12.descriptorBindingSampledImageUpdateAfterBind,
+       supported.v12.descriptorBindingSampledImageUpdateAfterBind, "descriptorBindingSampledImageUpdateAfterBind");
+  need(required.v12.descriptorBindingUpdateUnusedWhilePending, supported.v12.descriptorBindingUpdateUnusedWhilePending,
+       "descriptorBindingUpdateUnusedWhilePending");
   need(required.v12.bufferDeviceAddress, supported.v12.bufferDeviceAddress, "bufferDeviceAddress");
   return missing;
 }

@@ -132,6 +132,8 @@ Result<Candidate> evaluate(VkPhysicalDevice device, VkSurfaceKHR surface) {
   for (const std::string& feature : detail::missingFeatures(supported)) {
     rejections.push_back(std::format("missing feature {}", feature));
   }
+  candidate.info.samplerAnisotropy = supported.core.features.samplerAnisotropy == VK_TRUE;
+  candidate.info.maxSamplerAnisotropy = properties.limits.maxSamplerAnisotropy;
 
   // Depth buffer format.
   VkFormatProperties depthFormat{};

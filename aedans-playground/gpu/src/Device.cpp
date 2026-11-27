@@ -41,6 +41,7 @@ Result<Device> Device::create(const PhysicalDeviceInfo& physicalDevice) {
   // --- 2. Extensions and features: exactly what selection checked --------
   detail::FeatureChain features;
   detail::requestEngineFeatures(features);
+  features.core.features.samplerAnisotropy = physicalDevice.samplerAnisotropy ? VK_TRUE : VK_FALSE;  // optional
 
   const VkDeviceCreateInfo createInfo{
       .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -68,8 +69,8 @@ Result<Device> Device::create(const PhysicalDeviceInfo& physicalDevice) {
   }
 
   log::info(Category::Gpu, "logical device created: extensions {}; features dynamicRendering, synchronization2, "
-                           "timelineSemaphore, descriptorIndexing, bufferDeviceAddress",
-            detail::kRequiredDeviceExtensions[0]);
+                           "timelineSemaphore, descriptorIndexing (update after bind), bufferDeviceAddress{}",
+            detail::kRequiredDeviceExtensions[0], physicalDevice.samplerAnisotropy ? ", samplerAnisotropy" : "");
   if (families.shared()) {
     log::info(Category::Gpu, "graphics queue ready: family {}, also used for present", families.graphics);
   } else {

@@ -8,6 +8,8 @@
     "glm",
     "spdlog",
     "vulkan-memory-allocator",
-    "doctest"
+    "doctest",
+    "tinygltf",
+    "stb"
   ]
 }

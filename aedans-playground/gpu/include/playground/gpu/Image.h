@@ -3,8 +3,23 @@
 //  playground/gpu/Image.h — a GPU image and its view, as an RAII object.
 //
 //  The image counterpart of gpu::Buffer: memory from the Allocator (VMA),
-//  plus the VkImageView that rendering and shaders use to look at it. First
-//  use: the depth buffer. Textures will be the next.
+//  plus the VkImageView that rendering and shaders use to look at it. Used
+//  for the depth buffer and for textures.
+//
+//  TEXTURES (createTexture)
+//    Pixels go CPU -> staging buffer -> image, and the GPU then builds the
+//    MIP CHAIN: each level half the size of the one before, down to 1x1, so
+//    a texture seen from far away is sampled from a small, pre-filtered copy
+//    instead of shimmering. Each level is a linear blit (downscale) of the
+//    previous one. On the way, the image's LAYOUT (how the GPU arranges it
+//    in memory for a given job) changes, and each change is a barrier:
+//
+//      UNDEFINED -> TRANSFER_DST        all levels: ready to be written
+//      copy the pixels into level 0
+//      for each level i >= 1:
+//        level i-1: TRANSFER_DST -> TRANSFER_SRC   (written; now read)
+//        blit level i-1 -> level i
+//      every level -> SHADER_READ_ONLY  ready for the fragment shader
 //
 //  Destroy every Image before the Allocator (gpu::Context) it came from.
 // =============================================================================
@@ -13,6 +28,7 @@
 #include "playground/core/Types.h"
 #include "playground/gpu/Allocator.h"
 
+#include <span>
 #include <string_view>
 
 #include <vulkan/vulkan.h>
@@ -24,14 +40,29 @@ namespace playground::gpu {
 // pay off (see engine/Camera.h). GPUs without it are rejected at selection.
 inline constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 
+class Context;
+
 struct ImageDesc {
   u32 width = 0;
   u32 height = 0;
   VkFormat format = VK_FORMAT_UNDEFINED;
   VkImageUsageFlags usage = 0;
   VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+  u32 mipLevels = 1;  // the view covers all of them
   std::string_view debugName;
 };
+
+// Levels in a full mip chain for this size: 1 + floor(log2(max(w, h))).
+// 256x256 has 9 (256, 128, ..., 1); 300x20 has 9 too (the larger side counts).
+[[nodiscard]] constexpr u32 fullMipCount(u32 width, u32 height) noexcept {
+  u32 largest = width > height ? width : height;
+  u32 levels = 1;
+  while (largest > 1) {
+    largest /= 2;
+    ++levels;
+  }
+  return levels;
+}
 
 class Image {
  public:
@@ -50,6 +81,7 @@ class Image {
   [[nodiscard]] VkImageView view() const noexcept { return view_; }
   [[nodiscard]] VkFormat format() const noexcept { return format_; }
   [[nodiscard]] VkExtent2D extent() const noexcept { return extent_; }
+  [[nodiscard]] u32 mipLevels() const noexcept { return mipLevels_; }
   [[nodiscard]] explicit operator bool() const noexcept { return image_ != VK_NULL_HANDLE; }
 
  private:
@@ -62,6 +94,37 @@ class Image {
   VkImageView view_ = VK_NULL_HANDLE;
   VkFormat format_ = VK_FORMAT_UNDEFINED;
   VkExtent2D extent_{};
+  u32 mipLevels_ = 1;
 };
+
+// A synchronization2 layout transition of `range` of `image`. Stage and
+// access masks should be as narrow as the transition allows: ALL_COMMANDS
+// everywhere "works" and serialises the whole GPU.
+void transitionImage(VkCommandBuffer commands, VkImage image, VkImageLayout from, VkImageLayout to,
+                     VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
+                     VkAccessFlags2 dstAccess, const VkImageSubresourceRange& range);
+
+// The common case: every level of a colour image (or the aspect given).
+void transitionImage(VkCommandBuffer commands, VkImage image, VkImageLayout from, VkImageLayout to,
+                     VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
+                     VkAccessFlags2 dstAccess, VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
+
+struct TextureDesc {
+  u32 width = 0;
+  u32 height = 0;
+  // 4 bytes per pixel: VK_FORMAT_R8G8B8A8_SRGB for colours (base colour),
+  // VK_FORMAT_R8G8B8A8_UNORM for data (normals, metallic-roughness).
+  VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+  std::span<const std::byte> pixels;  // width * height * 4 bytes, top row first
+  bool generateMips = true;
+  std::string_view debugName;
+};
+
+// A sampled image holding `desc.pixels`, with a full mip chain when asked
+// (and when the GPU can blit-filter this format; otherwise one level and a
+// warning), left in SHADER_READ_ONLY_OPTIMAL. Waits for the GPU to finish:
+// for loading, not per frame. Errc::InvalidArgument for a size, format or
+// pixel count that does not add up.
+[[nodiscard]] Result<Image> createTexture(const Context& context, const TextureDesc& desc);
 
 }  // namespace playground::gpu

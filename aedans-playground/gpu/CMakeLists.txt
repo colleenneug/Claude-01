@@ -10,6 +10,7 @@ add_library(playground_gpu STATIC
   src/Image.cpp
   src/Instance.cpp
   src/PhysicalDevice.cpp
+  src/Sampler.cpp
   src/Surface.cpp
   src/Swapchain.cpp
   src/VmaImplementation.cpp

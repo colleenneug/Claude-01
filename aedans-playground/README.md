@@ -322,7 +322,7 @@ device for machines without a GPU (CI, cloud containers); with a real GPU,
 its vendor's driver is what gets used.
 
 ```bash
-sudo apt-get install -y cmake ninja-build g++ libglfw3-dev libglm-dev libspdlog-dev doctest-dev libvulkan-dev vulkan-validationlayers vulkan-tools mesa-vulkan-drivers glslc xvfb xdotool
+sudo apt-get install -y cmake ninja-build g++ libglfw3-dev libglm-dev libspdlog-dev doctest-dev libtinygltf-dev nlohmann-json3-dev libstb-dev libvulkan-dev vulkan-validationlayers vulkan-tools mesa-vulkan-drivers glslc xvfb xdotool
 ```
 
 ```bash
