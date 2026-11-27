@@ -3,26 +3,30 @@
 Paste this file into a new session to resume. The plan is `ROADMAP.md`;
 build, run and troubleshooting instructions are in `README.md`.
 
-**Status:** roadmap Milestone 2, part 1 is done. GPU memory goes through the
-Vulkan Memory Allocator (`gpu::Allocator`, `gpu::Buffer`, staging uploads),
-and every sprite is drawn in ONE instanced draw call from a persistently
-mapped per-frame storage buffer read through its GPU address. The demo spawns
-25,000 sprites by default (screenshot: `docs/instanced-25k.png`), with zero
-validation messages.
+**Status:** roadmap Milestone 2, part 2 is done. A reverse-Z `D32_SFLOAT`
+depth buffer, an `engine::Camera` (orthographic or perspective) fed to the
+shader through a per-frame uniform buffer, and `screenToWorld` mouse
+picking. The demo aims bullets at the mouse, removes the sprite you
+right-click, and switches to a tilted 3D view with C. Renderer tests now
+read pixels back from the GPU to check depth order, translucency and the
+camera. Screenshots: `docs/instanced-25k.png`, `docs/perspective-3d.png`.
 
 - Repository `colleenneug/Claude-01`, branch `claude/relaxed-cray-5kc2fl`, no pull request open.
+- **Long-term goal (user, this session):** Erebus Cradle (the game in
+  `cpp/`) will be moved onto this engine eventually; we are still far from
+  that. Roadmap Milestone 5 covers the port.
 - Standing guidelines: modern C++20 (smart pointers, RAII, `std::span`,
   designated initialisers); no over-engineering; clean, commented,
   production-ready code; strict error handling and logging for graphics
   initialisation.
 - Decisions: C++20 with `tl::expected`; Windows and Linux only; namespace
   `playground`, targets `playground_*`; `Renderer` interface in the render
-  layer; own sparse-set ECS; raw input in `platform/`, actions in `engine/`;
-  **shaders read storage buffers by device address (`GL_EXT_buffer_reference`),
-  not descriptor sets**; VMA vendored (v3.3.0) on Linux, vcpkg's on Windows.
+  layer; own sparse-set ECS; storage buffers read by device address; VMA
+  vendored (v3.3.0) on Linux, vcpkg's on Windows; **the camera reaches
+  shaders through a uniform buffer + descriptor set (set 0, binding 0)**;
+  **reverse-Z everywhere**; **translucent sprites: sorted back to front,
+  depth-tested, not depth-written**.
 - Numbering: the user's milestone numbers run ahead of `ROADMAP.md`'s.
-  Roadmap Milestone 2 part 2 (depth buffer, camera, debug names, pipeline
-  cache) is next.
 - The user may be young or new to this: when asked to explain, keep it short
   and plain, one idea at a time.
 
@@ -32,61 +36,69 @@ validation messages.
 
 ```
 core      Result, Log, Assert, FrameClock, FixedStep, Types
-platform  Platform, Window (GLFW callbacks), Input
-gpu       Context = Instance, Surface, GPU, Device, Allocator (new, step 5);
-          Buffer (new), Swapchain, DeviceHandle, VulkanCheck
+platform  Platform, Window (+ windowSize()), Input
+gpu       Context (Instance, Surface, GPU, Device, Allocator), Buffer, Image (new),
+          Swapchain (+ TRANSFER_SRC for capture), DeviceHandle (+ descriptor types)
 ecs       Entity, ComponentPool<T>, World
-render    Renderer, FrameData (+ fitView); VulkanRenderer (private): instanced sprites
-engine    Application (loop, fixed step, input latch), ActionMap, WorldBounds, components, systems
-app       main.cpp: 25,000 bouncing sprites (default) + the player
+render    Renderer, FrameData (viewProjection, viewportSize, sprite depth; reverseZ,
+          pixelViewProjection, fitView); VulkanRenderer (private)
+engine    Application, Camera (new), ActionMap, WorldBounds, components, systems (+ pickSprite)
+app       main.cpp: 25,000 sprites, player, camera, aiming, picking
 ```
 
-**GPU memory** (`gpu/Allocator.h`, `gpu/Buffer.h`):
-- `Allocator` wraps `VmaAllocator` (BUFFER_DEVICE_ADDRESS flag; Vulkan
-  functions taken statically from the linked loader). Bring-up step 5 in
-  `Context::create`; declared after `Device`, so destroyed before it; logs an
-  error naming the count and bytes of any allocation still alive at
-  destruction. `stats()` = live allocations, bytes, block bytes.
-- `Buffer`: RAII, move-only, three `MemoryKind`s:
-  `HostVisible` (sequential-write, mapped for life), `DeviceLocal`,
-  `HostReadback` (random-access/cached, mapped). `mapped()`, `write()`,
-  `flush()`, `invalidate()`, `deviceAddress()` (with SHADER_DEVICE_ADDRESS
-  usage). VMA allocation names = debug names.
-- `submitAndWait(context, record)` (transient pool + fence, 5 s timeout),
-  `copyBuffer`, `createDeviceLocalBuffer` (staging upload). Blocking: for
-  loading and tests, not per frame.
+**Camera** (`engine/Camera.h/.cpp`): `projection` (Orthographic |
+Perspective), `position`, `target`, `up`, `orthoHalfExtent` (fitted with
+`render::fitView`), `fovY`, `nearPlane` (1), `farPlane` (10000).
+`view()` = `glm::lookAtRH`; `projectionMatrix(viewport)` =
+`render::reverseZ() * glm::orthoRH_ZO(...)` or `* glm::perspectiveRH_ZO(...)`;
+`viewProjection(viewport)`; `screenRay` (unproject NDC depth 1 and 0 through
+the inverse view-projection; screen y down, NDC y up); `screenToWorld(screen,
+viewport, planeZ = 0)` (ray–plane intersection, empty if parallel or behind);
+`worldToScreen`.
 
-**Sprite rendering, per frame** (`VulkanRenderer::renderFrame`): wait fence
-→ acquire → **`writeSprites`**: grow this slot's buffer if needed (doubling
-from 1,024; cap `kMaxSprites` = 4M) and write `SpriteGpu` records
-(position, halfSize, (cos, sin), pad, colour: 48 bytes, std430) straight into
-the mapping, then flush → record: push `DrawPushConstants{spriteList address,
-viewHalf}` (16 bytes) and **`vkCmdDraw(6, N)`** → submit → present. One sprite
-buffer per frame in flight. `sprite.vert` indexes
-`draw.spriteList.sprites[gl_InstanceIndex]`.
+**Per frame** (`VulkanRenderer::renderFrame`): wait fence → acquire →
+`writeSprites` (opaque sprites, alpha = 1, first in game order; then
+translucent ones stable-sorted by depth, back to front, sort skipped if
+already sorted; counts kept in the frame slot) → `writeFrameUniforms`
+(`FrameUniforms{viewProjection}` = `frameData.viewProjection` or
+`pixelViewProjection(extent)`) → `prepareCapture` → record:
+- colour image UNDEFINED → COLOR_ATTACHMENT; depth image UNDEFINED →
+  DEPTH_ATTACHMENT (source = previous frame's depth tests, since one depth
+  image is shared by both frames in flight);
+- `vkCmdBeginRendering` with colour (clear) + depth (clear 0, store
+  DONT_CARE);
+- bind descriptor set 0 (this slot's UBO), push the sprite buffer address
+  (8 bytes);
+- **opaque pipeline** (depth write on) `vkCmdDraw(6, opaqueCount, 0, 0)`;
+  **translucent pipeline** (depth write off) `vkCmdDraw(6, blendedCount, 0,
+  opaqueCount)`; at most 2 draws;
+- if capturing: copy the image into a HostReadback buffer, memory barrier to
+  HOST_READ; then → PRESENT.
 
-**Measured** (25,000 sprites, release, validation off, Mesa llvmpipe = CPU
-rasteriser, 1600×900):
+**Shader** (`sprite.vert`): `Sprite{position, halfSize, rotation(cos,sin),
+depth(x = world z), colour}` (48 bytes, std430) by buffer reference +
+`gl_InstanceIndex`; `uniform Frame { mat4 viewProjection; }` at set 0,
+binding 0; `gl_Position = viewProjection * vec4(xy, depth.x, 1)`.
 
-| Renderer | Frame time | Simulation |
-|---|---|---|
-| Old, one draw per sprite, OLD sprite sizes (12–48 px) | ~112 ms | 71 of 120 steps/s (falling behind) |
-| Old, one draw per sprite, NEW sprite sizes (5–16 px) | ~66 ms | ~115 steps/s |
-| **New, one instanced draw, new sizes** | **~38 ms** | **120 steps/s** |
+**Demo** (`app/main.cpp`): layers playfield −1, crowd 0 (translucent),
+bullets 1, player 2. Fire aims at `camera.screenToWorld(mouse, windowSize)`
+(straight up if off the playfield). Right-click → `pickSprite` → destroy
+(never the player). C toggles orthographic ↔ perspective (eye (0, −1150,
+950), target (0, −60, 0)). A debug log line records each shot's aim.
 
-So instancing alone ≈ 1.7× on this CPU rasteriser (fill-rate bound); the
-rest of 112 → 38 came from smaller sprites (the demo now sizes sprites from
-the count). The old renderer was measured by building commit `5da6f36` in a
-temporary worktree with only the sizing change.
+**Verified** (GCC 13.3, Clang 18.1, GCC + ASan + UBSan; Mesa llvmpipe, Xvfb):
 
-**Verified** (GCC 13.3, Clang 18.1, GCC + ASan + UBSan; Xvfb):
-- Baseline at `5da6f36`: 9/9 suites passed.
-- After: 9/9 suites in all three builds; gpu_tests 11 cases (4 new),
-  render_tests 7 (3 new); 0 warnings.
-- 25,000 sprites with validation on: 0 validation messages, no GPU memory
-  leak at allocator destruction, sprite buffers grew once (1,024 → 32,768
-  per slot, 1.5 MiB each).
-- **Not yet run on a real GPU or on Windows.**
+| Check | Result |
+|---|---|
+| Baseline at `abf570d` | 9/9 suites passed |
+| After | **10/10 suites** (new `camera_tests`) in all three builds; 0 warnings; 0 validation messages |
+| Camera maths (`camera_tests`, 11 cases) | ortho fit, square-window fit, no size change with distance, reverse-Z near = 1 / far = 0 / higher layer larger, perspective centre and foreshortening, screen ↔ world round trips in both projections, misses |
+| Pixels read back (`render_tests`, 11 cases) | red layer-1 sprite drawn FIRST is in front of blue layer 0; equal depth → later wins; translucent blue (front, given first) over red after sorting; translucent magenta hidden behind opaque green; camera matrix moves a sprite to the screen centre; depth buffer rebuilt on resize |
+| Real mouse (xdotool) | cursor at pixel (1400, 450) → world (600, 0), direction (1, 0); bullets land right of the player and level |
+| 3D view | perspective renders; an early version z-fought (stripes) among translucent same-plane sprites, fixed by the opaque/translucent split |
+| Speed (release, 25,000 sprites, llvmpipe) | ~40.5 ms/frame (was ~38 ms before depth), 120 steps/s |
+
+**Not yet run on a real GPU or on Windows.**
 
 ## 2. Exact Files & Classes Modified
 
@@ -94,86 +106,86 @@ New:
 
 | File | Contents |
 |---|---|
-| `third_party/vma/vk_mem_alloc.h`, `third_party/vma/README.md` | VMA v3.3.0, unmodified (MIT; SHA-256 recorded) |
-| `gpu/include/playground/gpu/Allocator.h`, `gpu/src/Allocator.cpp` | `AllocatorStats`, `Allocator` |
-| `gpu/include/playground/gpu/Buffer.h`, `gpu/src/Buffer.cpp` | `MemoryKind`, `BufferDesc`, `Buffer`, `submitAndWait`, `copyBuffer`, `createDeviceLocalBuffer` |
-| `gpu/src/VmaImplementation.cpp` | The one `VMA_IMPLEMENTATION` unit, built with `-w` |
-| `docs/instanced-25k.png` | Screenshot, 25,000 sprites |
+| `engine/include/playground/engine/Camera.h`, `engine/src/Camera.cpp` | `Projection`, `Ray`, `Camera` |
+| `gpu/include/playground/gpu/Image.h`, `gpu/src/Image.cpp` | `kDepthFormat`, `ImageDesc`, `Image` |
+| `tests/camera_tests.cpp` | 11 tests |
+| `docs/perspective-3d.png` | The 3D view |
 
 Changed:
 
 | File | Change |
 |---|---|
-| `CMakeLists.txt` | `find_package(VulkanMemoryAllocator CONFIG QUIET)`; `playground_vma` target (package or vendored header; `VMA_STATIC_VULKAN_FUNCTIONS=1`, `VMA_DYNAMIC_VULKAN_FUNCTIONS=0`) |
-| `vcpkg.json` | `vulkan-memory-allocator` |
-| `gpu/CMakeLists.txt` | Allocator, Buffer, VmaImplementation sources; links `playground_vma` |
-| `gpu/include/playground/gpu/Context.h`, `gpu/src/Context.cpp` | Step 5 allocator; `allocator()` accessor; member after `device_` |
-| `render/shaders/sprite.vert` | Buffer reference + `gl_InstanceIndex`; push constant = address + viewHalf |
-| `render/src/VulkanRenderer.h`, `render/src/VulkanRenderer.cpp` | `SpriteGpu`, `DrawPushConstants` (replace `SpritePushConstants`); per-frame `gpu::Buffer sprites`; `writeSprites`; one instanced draw; `kInitialSpriteCapacity`, `kMaxSprites`; `spriteCapacity()`, `lastSpriteCount()`, `lastDrawCalls()` |
-| `app/main.cpp` | Default `--sprites` 25,000; sprite size derived from the count |
-| `tests/gpu_tests.cpp` | +4: allocation counting and no leaks, mapped buffer + device address, staging round trip byte for byte, misuse errors |
-| `tests/render_tests.cpp` | +3: 25,000 sprites in one draw, buffer growth without shrinking, zero-sprite frame |
-| `README.md` | GPU memory section, instanced drawing, measured speed, new screenshot |
+| `gpu/include/playground/gpu/DeviceHandle.h` | `DescriptorSetLayout`, `DescriptorPool` |
+| `gpu/src/PhysicalDevice.cpp` | GPUs without D32_SFLOAT depth attachments are rejected |
+| `gpu/include/playground/gpu/Swapchain.h`, `gpu/src/Swapchain.cpp` | TRANSFER_SRC usage when supported; `canCopyFrom()` |
+| `gpu/CMakeLists.txt` | `Image.cpp` |
+| `render/include/playground/render/FrameData.h` | `SpriteInstance::depth`; `FrameData::viewProjection` (optional), `viewportSize`; `reverseZ()`, `pixelViewProjection()`; `viewHalfExtent` removed |
+| `render/shaders/sprite.vert` | Uniform block (set 0) with the view-projection; depth from `depth.x`; push constant = sprite address only |
+| `render/src/VulkanRenderer.h`, `render/src/VulkanRenderer.cpp` | Depth image; descriptor set layout/pool/sets + per-frame UBOs; `FrameUniforms`; opaque and translucent pipelines; partition + stable sort; up to 2 draws; `CapturedFrame`, `requestCapture()`, `takeCapture()`, `depthBuffer()` |
+| `platform/include/playground/platform/Window.h`, `platform/src/Window.cpp` | `windowSize()` |
+| `engine/src/Application.cpp` | Fills `FrameData::viewportSize` before extraction |
+| `engine/include/playground/engine/Components.h` | `Sprite::layer` |
+| `engine/include/playground/engine/Systems.h`, `engine/src/Systems.cpp` | `extractSprites` passes `layer` as depth; `pickSprite` |
+| `engine/CMakeLists.txt` | `Camera.cpp` |
+| `app/main.cpp` | Camera + C toggle, layers, aim at mouse, right-click removal, aim debug log |
+| `tests/render_tests.cpp` | +4 (depth order, translucency, camera UBO, capture without frame); resize checks the depth buffer |
+| `tests/gpu_tests.cpp` | +1 (depth image) |
+| `tests/ecs_tests.cpp` | +2 (picking) |
+| `tests/CMakeLists.txt` | `camera_tests` |
+| `README.md` | Controls, Camera section, depth, translucency, frame capture, 3D screenshot |
 
 ## 3. Code Snippet of the Core Loop/Active Component
 
-`render/src/VulkanRenderer.cpp`:
+`engine/src/Camera.cpp`, projection and mouse picking:
 
 ```cpp
-Status VulkanRenderer::writeSprites(Frame& frame, const FrameData& frameData) {
-  const usize count = frameData.sprites.size();
-  if (count > kMaxSprites) {
-    return fail(Errc::InvalidArgument, "{} sprites in one frame; the renderer's limit is {}", count, kMaxSprites);
+glm::mat4 Camera::projectionMatrix(glm::vec2 viewportSize) const {
+  const glm::vec2 viewport = safeViewport(viewportSize);
+  glm::mat4 clipFromView(1.0f);
+  if (projection == Projection::Orthographic) {
+    const glm::vec2 half = render::fitView(0.5f * viewport, orthoHalfExtent);
+    clipFromView = glm::orthoRH_ZO(-half.x, half.x, -half.y, half.y, nearPlane, farPlane);
+  } else {
+    clipFromView = glm::perspectiveRH_ZO(fovY, viewport.x / viewport.y, nearPlane, farPlane);
   }
-  lastSpriteCount_ = static_cast<u32>(count);
-  lastDrawCalls_ = count > 0 ? 1u : 0u;
-
-  // Grow this frame's buffer if too small: double until it fits.
-  const u64 needed = std::max<u64>(count, kInitialSpriteCapacity) * sizeof(SpriteGpu);
-  if (frame.sprites.size() < needed) {
-    u64 capacity = std::max<u64>(frame.sprites.size() / sizeof(SpriteGpu), kInitialSpriteCapacity);
-    while (capacity * sizeof(SpriteGpu) < needed) capacity *= 2;
-    auto grown = gpu::Buffer::create(context_.allocator(),
-        {.sizeBytes = capacity * sizeof(SpriteGpu),
-         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-         .memory = gpu::MemoryKind::HostVisible, .debugName = "sprite instances"});
-    if (!grown) return tl::unexpected(std::move(grown.error()));
-    frame.sprites = std::move(*grown);  // safe: this slot's fence was waited on
-  }
-  if (count == 0) return {};
-
-  auto* out = reinterpret_cast<SpriteGpu*>(frame.sprites.mapped().data());
-  for (usize i = 0; i < count; ++i) {
-    const SpriteInstance& sprite = frameData.sprites[i];
-    out[i] = SpriteGpu{.position = sprite.position, .halfSize = 0.5f * sprite.size,
-                       .rotation = {std::cos(sprite.rotation), std::sin(sprite.rotation)},
-                       .unused = {0.0f, 0.0f}, .colour = sprite.colour};
-  }
-  return frame.sprites.flush(0, count * sizeof(SpriteGpu));
+  return render::reverseZ() * clipFromView;
 }
 
-// in recordCommands():
-if (!frame.sprites.empty()) {
-  const DrawPushConstants push{.spriteList = sprites,
-                               .viewHalf = fitView({0.5f * width, 0.5f * height}, frame.viewHalfExtent)};
-  vkCmdPushConstants(commands, pipelineLayout_.get(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-  vkCmdDraw(commands, 6, static_cast<u32>(frame.sprites.size()), 0, 0);  // every sprite, one draw
+Ray Camera::screenRay(glm::vec2 screen, glm::vec2 viewportSize) const {
+  const glm::vec2 viewport = safeViewport(viewportSize);
+  const float ndcX = 2.0f * screen.x / viewport.x - 1.0f;
+  const float ndcY = 1.0f - 2.0f * screen.y / viewport.y;
+  const glm::mat4 inverse = glm::inverse(viewProjection(viewport));
+  const glm::vec4 nearClip = inverse * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);  // reverse-Z: near = 1
+  const glm::vec4 farClip = inverse * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
+  const glm::vec3 nearPoint = glm::vec3(nearClip) / nearClip.w;
+  const glm::vec3 farPoint = glm::vec3(farClip) / farClip.w;
+  return {.origin = nearPoint, .direction = farPoint - nearPoint};
+}
+
+std::optional<glm::vec3> Camera::screenToWorld(glm::vec2 screen, glm::vec2 viewportSize, f32 planeZ) const {
+  const Ray ray = screenRay(screen, viewportSize);
+  if (std::fabs(ray.direction.z) < 1e-6f) return std::nullopt;  // looking along the plane
+  const float t = (planeZ - ray.origin.z) / ray.direction.z;
+  if (t < 0.0f) return std::nullopt;                             // plane behind the camera
+  return ray.origin + t * ray.direction;
 }
 ```
 
-`render/shaders/sprite.vert` (core):
+`render/src/VulkanRenderer.cpp`, the draw:
 
-```glsl
-layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer SpriteList { Sprite sprites[]; };
-layout(push_constant) uniform Draw { SpriteList spriteList; vec2 viewHalf; } draw;
-
-void main() {
-  Sprite sprite = draw.spriteList.sprites[gl_InstanceIndex];
-  vec2 local = kCorners[gl_VertexIndex] * sprite.halfSize;
-  vec2 rotated = vec2(local.x * sprite.rotation.x - local.y * sprite.rotation.y,
-                      local.x * sprite.rotation.y + local.y * sprite.rotation.x);
-  gl_Position = vec4((rotated + sprite.position) / draw.viewHalf, 0.0, 1.0);
-  outColour = sprite.colour;
+```cpp
+if (frameSlot.opaqueCount + frameSlot.blendedCount > 0) {
+  vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, opaquePipeline_.get());
+  vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_.get(), 0, 1,
+                          &frameSlot.descriptorSet, 0, nullptr);          // set 0: the camera UBO
+  const DrawPushConstants push{.spriteList = sprites};
+  vkCmdPushConstants(commands, pipelineLayout_.get(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+  if (frameSlot.opaqueCount > 0) vkCmdDraw(commands, 6, frameSlot.opaqueCount, 0, 0);
+  if (frameSlot.blendedCount > 0) {
+    vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, blendedPipeline_.get());  // no depth writes
+    vkCmdDraw(commands, 6, frameSlot.blendedCount, 0, frameSlot.opaqueCount);
+  }
 }
 ```
 
@@ -182,41 +194,47 @@ void main() {
 No known bugs.
 
 **Not verified**
-- A real GPU: the speed-up from removing 25,000 draw calls should be larger
-  there (CPU-side recording and validation cost), but it is unmeasured.
-- Windows: vcpkg's VMA package path (`GPUOpen::VulkanMemoryAllocator`) has
-  never been configured; MSVC warnings; GLM 1.0.
+- A real GPU; Windows (vcpkg VMA package, MSVC warnings, GLM 1.0 — this
+  session uses `glm::orthoRH_ZO` / `perspectiveRH_ZO` / `lookAtRH`, present
+  in both 0.9.9 and 1.0).
+- High-DPI displays: aiming uses window coordinates and `windowSize()`
+  consistently, but window and framebuffer sizes have always been equal in
+  the test environment.
 
 **Limitations, acceptable for now**
-- Sprite buffers grow but never shrink (a spike to 1M sprites keeps ~48 MiB
-  per frame slot until exit).
-- CPU-side per frame: extraction (ECS → FrameData) and writeSprites copy all
-  sprites twice; writing `SpriteGpu` straight from the ECS would save one
-  pass. Not needed yet.
-- `submitAndWait` creates a command pool and fence per call: fine for
-  loading, wasteful if called often.
-- With 25,000 sprites and validation on, the debug build runs ~13 fps on the
-  software renderer (simulation and validation, not drawing).
-- Carried over: cursor position not mapped to world space; bindings in code;
-  bullets fire straight up; scale not interpolated; swapchain recreation
-  waits for idle; fences, not timeline semaphores; no Vulkan debug names; no
-  pipeline cache; GCC sanitizer builds preload the Mesa driver for GPU tests.
+- Opaque sprites on the same layer that overlap would z-fight in the 3D
+  view (coplanar, same depth). Nothing in the demo does this (the crowd is
+  translucent). Fix when needed: give each opaque sprite a tiny depth
+  offset, or treat same-layer opaque sprites as translucent.
+- Translucent sorting is by world z (layer), not by distance from the
+  camera: right for a 2D plane, approximate for true 3D scenes.
+- One depth buffer shared by both frames in flight (correct: the barrier
+  orders them), so frame N+1's depth clear waits for frame N's depth tests.
+- Frame capture needs swapchain TRANSFER_SRC support (almost universal);
+  otherwise `takeCapture` reports Unsupported.
+- The 3D view's camera position is hand-placed; no orbit or zoom controls.
+- Carried over: sprite buffers never shrink; extraction + writeSprites copy
+  sprites twice; `submitAndWait` makes a pool per call; key bindings in code;
+  scale not interpolated; swapchain recreation waits for idle; fences, not
+  timeline semaphores; no Vulkan debug names; no pipeline cache; GCC
+  sanitizer builds preload the Mesa driver for GPU tests.
 
 ## 5. Immediate Next Steps for Next Weekend
 
-Roadmap Milestone 2, part 2:
-1. **Vulkan debug names** on every object (`vkSetDebugUtilsObjectNameEXT`):
-   a `gpu::setDebugName(device, objectType, handle, name)` helper in a new
-   `gpu/include/playground/gpu/DebugNames.h`, a no-op when validation is off;
-   use it for buffers (`BufferDesc::debugName`), the swapchain, pipeline,
-   command buffers and queues. Makes RenderDoc captures readable.
-2. **Depth buffer** (D32_SFLOAT, reverse-Z), an image from the Allocator
-   (`gpu::Image`, the counterpart of `gpu::Buffer`), recreated with the
-   swapchain; sprites get a depth (layer) value.
-3. **Camera**: view/projection in push constants (GLM,
-   `GLM_FORCE_DEPTH_ZERO_TO_ONE`), replacing `viewHalf`; follow the player.
-4. **Pipeline cache** saved to disk.
-5. Optional: cursor → world (`render::screenToWorld`) and aiming.
+1. **Vulkan debug names** (`vkSetDebugUtilsObjectNameEXT`): a
+   `gpu::setDebugName(device, objectType, handle, name)` helper in a new
+   `gpu/include/playground/gpu/DebugNames.h`, a no-op without validation;
+   apply to buffers, images, pipelines, descriptor sets, command buffers,
+   queues. Readable RenderDoc captures.
+2. **Pipeline cache** saved to disk (`VkPipelineCache`, loaded at start,
+   written at shutdown), with a header check so a driver update discards it.
+3. **Textures**: `gpu::Image` + staging upload of pixels (`stb_image`), a
+   sampler, and a bindless texture array (descriptor indexing is already a
+   required feature); `Sprite` gains a texture index.
+4. Camera controls for the 3D view (orbit, zoom) and a follow-the-player
+   option.
+5. Later: roadmap Milestone 4 (visual parity with `cpp/`) and Milestone 5
+   (moving Erebus Cradle onto the engine).
 
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset

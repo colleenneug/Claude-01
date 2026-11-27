@@ -13,6 +13,22 @@
 //  buffer per frame in flight, because the GPU may still be reading frame
 //  N's sprites while the CPU writes frame N+1's.
 //
+//  THE CAMERA reaches the shader through a per-frame UNIFORM BUFFER (a UBO:
+//  small, read-only, the same for every vertex) holding the view-projection
+//  matrix, bound with a descriptor set: set 0, binding 0.
+//
+//  DEPTH: a D32_SFLOAT depth buffer with reverse-Z (cleared to 0, nearer is
+//  larger, test GREATER_OR_EQUAL). A sprite's depth is its world z. Sprites
+//  are drawn in two instanced draws, the standard split for transparency:
+//    1. OPAQUE sprites (alpha 1): depth test AND depth write, in the game's
+//       order. The depth buffer puts higher layers in front.
+//    2. TRANSLUCENT sprites: depth test but no depth write, stable-sorted
+//       back to front by depth (so same-depth sprites keep the game's
+//       order). Writing depth for them would hide what is behind instead of
+//       blending with it; and many translucent sprites on one plane would
+//       z-fight in a perspective view, where coplanar depths differ only by
+//       rounding.
+//
 //  ONE FRAME (renderFrame), in order:
 //
 //    1. WAIT     for this frame slot's fence: the GPU has finished the last
@@ -76,7 +92,7 @@ struct SpriteGpu {
   glm::vec2 position;
   glm::vec2 halfSize;
   glm::vec2 rotation;  // (cos, sin)
-  glm::vec2 unused;    // pads colour to a 16-byte boundary, as std430 does
+  glm::vec2 depth;     // x: world z; y unused (keeps colour 16-byte aligned, as std430 does)
   glm::vec4 colour;
 };
 static_assert(offsetof(SpriteGpu, position) == 0);
@@ -88,10 +104,14 @@ static_assert(sizeof(SpriteGpu) == 48);
 // Must match the push_constant block in sprite.vert.
 struct DrawPushConstants {
   VkDeviceAddress spriteList;  // the frame's sprite buffer, as a GPU pointer
-  glm::vec2 viewHalf;
 };
-static_assert(offsetof(DrawPushConstants, viewHalf) == 8);
-static_assert(sizeof(DrawPushConstants) == 16);
+static_assert(sizeof(DrawPushConstants) == 8);
+
+// Must match the uniform block (set 0, binding 0) in sprite.vert (std140).
+struct FrameUniforms {
+  glm::mat4 viewProjection;  // world -> clip, reverse-Z
+};
+static_assert(sizeof(FrameUniforms) == 64);
 
 // How long to wait for the GPU before calling it hung. Generous: a frame
 // that takes this long is a bug, not a slow frame.
@@ -125,7 +145,7 @@ Result<gpu::Semaphore> createSemaphore(VkDevice device) {
 // and serialises the whole GPU.
 void transitionImage(VkCommandBuffer commands, VkImage image, VkImageLayout from, VkImageLayout to,
                      VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
-                     VkAccessFlags2 dstAccess) {
+                     VkAccessFlags2 dstAccess, VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT) {
   const VkImageMemoryBarrier2 barrier{
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
       .srcStageMask = srcStage,
@@ -137,7 +157,7 @@ void transitionImage(VkCommandBuffer commands, VkImage image, VkImageLayout from
       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .image = image,
-      .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1},
+      .subresourceRange = {.aspectMask = aspect, .levelCount = 1, .layerCount = 1},
   };
   const VkDependencyInfo dependency{
       .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -223,6 +243,9 @@ Status VulkanRenderer::createSwapchain(platform::Extent2D size) {
     renderFinished_.push_back(std::move(*semaphore));
   }
 
+  // The depth buffer matches the swapchain's size.
+  if (Status s = createDepthBuffer(swapchain_->extent()); !s) return s;
+
   // The pipeline is built for one colour format; rebuild it if that changed.
   if (swapchain_->format() != pipelineFormat_) {
     if (Status s = createPipeline(swapchain_->format()); !s) return s;
@@ -303,9 +326,29 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .pDynamicStates = dynamicStates.data(),
   };
 
-  // --- Layout: what the shaders read besides vertices: one push-constant
-  // block, read by the vertex shader.
+  // --- Layout: what the shaders read besides vertices: set 0 = the frame's
+  // uniform buffer (the camera), and a push constant with the sprite
+  // buffer's address. Both read by the vertex shader.
   if (!pipelineLayout_) {
+    const VkDescriptorSetLayoutBinding frameBinding{
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo setLayoutInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &frameBinding,
+    };
+    VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
+    if (Status s = gpu::check(vkCreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &setLayout),
+                              "vkCreateDescriptorSetLayout");
+        !s) {
+      return s;
+    }
+    frameSetLayout_ = gpu::DescriptorSetLayout(device, setLayout);
+
     const VkPushConstantRange pushRange{
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .offset = 0,
@@ -313,6 +356,8 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
     };
     const VkPipelineLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &setLayout,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushRange,
     };
@@ -329,6 +374,18 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
       .colorAttachmentCount = 1,
       .pColorAttachmentFormats = &colourFormat,
+      .depthAttachmentFormat = gpu::kDepthFormat,
+  };
+
+  // Reverse-Z depth test: keep a fragment if it is at least as near as what
+  // is there (larger depth = nearer). Equal passes, so sprites on the same
+  // layer keep their draw order. The opaque pipeline writes depth; the
+  // translucent one only tests it.
+  VkPipelineDepthStencilStateCreateInfo depthState{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+      .depthTestEnable = VK_TRUE,
+      .depthWriteEnable = VK_TRUE,
+      .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
   };
 
   const VkGraphicsPipelineCreateInfo pipelineInfo{
@@ -341,22 +398,31 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .pViewportState = &viewport,
       .pRasterizationState = &rasterization,
       .pMultisampleState = &multisample,
-      .pDepthStencilState = nullptr,  // no depth buffer yet
+      .pDepthStencilState = &depthState,
       .pColorBlendState = &colourBlend,
       .pDynamicState = &dynamic,
       .layout = pipelineLayout_.get(),
       .renderPass = VK_NULL_HANDLE,  // dynamic rendering
   };
 
-  VkPipeline pipeline = VK_NULL_HANDLE;
-  if (Status s = gpu::check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline),
-                            "vkCreateGraphicsPipelines");
+  VkPipeline opaque = VK_NULL_HANDLE;
+  if (Status s = gpu::check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &opaque),
+                            "vkCreateGraphicsPipelines (opaque sprites)");
       !s) {
     return s;
   }
-  pipeline_ = gpu::Pipeline(device, pipeline);  // replaces (and destroys) any old one
+  opaquePipeline_ = gpu::Pipeline(device, opaque);  // replaces (and destroys) any old one
+
+  depthState.depthWriteEnable = VK_FALSE;  // the same pipeline, without depth writes
+  VkPipeline blended = VK_NULL_HANDLE;
+  if (Status s = gpu::check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &blended),
+                            "vkCreateGraphicsPipelines (translucent sprites)");
+      !s) {
+    return s;
+  }
+  blendedPipeline_ = gpu::Pipeline(device, blended);
   pipelineFormat_ = colourFormat;
-  log::info(Category::Render, "sprite pipeline built for {}", gpu::describe(colourFormat));
+  log::info(Category::Render, "sprite pipelines (opaque, translucent) built for {}", gpu::describe(colourFormat));
   return {};  // the shader modules are destroyed here: the pipeline no longer needs them
 }
 
@@ -401,7 +467,71 @@ Status VulkanRenderer::createFrameResources() {
     VkFence fence = VK_NULL_HANDLE;
     if (Status s = gpu::check(vkCreateFence(device, &fenceInfo, nullptr, &fence), "vkCreateFence"); !s) return s;
     frame.inFlight = gpu::Fence(device, fence);
+
+    auto uniforms = gpu::Buffer::create(context_.allocator(), {.sizeBytes = sizeof(FrameUniforms),
+                                                               .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                               .memory = gpu::MemoryKind::HostVisible,
+                                                               .debugName = "frame uniforms"});
+    if (!uniforms) return tl::unexpected(std::move(uniforms.error()));
+    frame.uniforms = std::move(*uniforms);
   }
+
+  // One descriptor set per frame in flight, each pointing at that frame's
+  // uniform buffer. Written once: the buffers never move.
+  const VkDescriptorPoolSize poolSize{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = kFramesInFlight};
+  const VkDescriptorPoolCreateInfo poolCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .maxSets = kFramesInFlight,
+      .poolSizeCount = 1,
+      .pPoolSizes = &poolSize,
+  };
+  VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+  if (Status s = gpu::check(vkCreateDescriptorPool(device, &poolCreateInfo, nullptr, &descriptorPool),
+                            "vkCreateDescriptorPool");
+      !s) {
+    return s;
+  }
+  descriptorPool_ = gpu::DescriptorPool(device, descriptorPool);
+
+  std::array<VkDescriptorSetLayout, kFramesInFlight> layouts{};
+  layouts.fill(frameSetLayout_.get());
+  std::array<VkDescriptorSet, kFramesInFlight> sets{};
+  const VkDescriptorSetAllocateInfo setInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = descriptorPool,
+      .descriptorSetCount = kFramesInFlight,
+      .pSetLayouts = layouts.data(),
+  };
+  if (Status s = gpu::check(vkAllocateDescriptorSets(device, &setInfo, sets.data()), "vkAllocateDescriptorSets"); !s) {
+    return s;
+  }
+  for (u32 i = 0; i < kFramesInFlight; ++i) {
+    frames_[i].descriptorSet = sets[i];
+    const VkDescriptorBufferInfo bufferInfo{.buffer = frames_[i].uniforms.handle(), .offset = 0,
+                                            .range = sizeof(FrameUniforms)};
+    const VkWriteDescriptorSet write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = sets[i],
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .pBufferInfo = &bufferInfo,
+    };
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+  }
+  return {};
+}
+
+Status VulkanRenderer::createDepthBuffer(VkExtent2D extent) {
+  auto depth = gpu::Image::create(context_.allocator(), {.width = extent.width,
+                                                         .height = extent.height,
+                                                         .format = gpu::kDepthFormat,
+                                                         .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                         .aspect = VK_IMAGE_ASPECT_DEPTH_BIT,
+                                                         .debugName = "depth buffer"});
+  if (!depth) return tl::unexpected(std::move(depth.error()));
+  depth_ = std::move(*depth);  // the old one goes: createSwapchain waited for the GPU to be idle
+  log::debug(Category::Render, "depth buffer {}x{} (D32_SFLOAT)", extent.width, extent.height);
   return {};
 }
 
@@ -450,8 +580,10 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/, const FrameData& f
   }
 
   // The fence wait above means the GPU has finished reading this slot's
-  // sprite buffer, so it is safe to overwrite (or replace) now.
+  // sprite buffer and uniforms, so it is safe to overwrite (or replace) them.
   if (Status s = writeSprites(frame, frameData); !s) return s;
+  if (Status s = writeFrameUniforms(frame, frameData); !s) return s;
+  if (Status s = prepareCapture(frame); !s) return s;
 
   // Reset the fence only once we are sure to submit work that signals it.
   // Resetting before a failed acquire would leave it unsignalled forever,
@@ -460,9 +592,7 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/, const FrameData& f
 
   // 3. RECORD.
   if (Status s = gpu::check(vkResetCommandBuffer(frame.commandBuffer, 0), "vkResetCommandBuffer"); !s) return s;
-  if (Status s = recordCommands(frame.commandBuffer, imageIndex, frameData, frame.sprites.deviceAddress()); !s) {
-    return s;
-  }
+  if (Status s = recordCommands(frame, imageIndex); !s) return s;
 
   // 4. SUBMIT. The colour writes wait for the image to be acquired; the
   // semaphore for present and the fence for the CPU fire when it is drawn.
@@ -529,7 +659,7 @@ Status VulkanRenderer::writeSprites(Frame& frame, const FrameData& frameData) {
     return fail(Errc::InvalidArgument, "{} sprites in one frame; the renderer's limit is {}", count, kMaxSprites);
   }
   lastSpriteCount_ = static_cast<u32>(count);
-  lastDrawCalls_ = count > 0 ? 1u : 0u;  // all sprites, one instanced draw
+
 
   // Grow this frame's buffer if it is too small (or does not exist yet):
   // double until it fits, so a steadily growing scene reallocates rarely.
@@ -548,27 +678,114 @@ Status VulkanRenderer::writeSprites(Frame& frame, const FrameData& frameData) {
     log::debug(Category::Render, "sprite buffer for frame slot {} now holds {} sprites ({} KiB)", frameIndex_,
                capacity, capacity * sizeof(SpriteGpu) / 1024);
   }
-  if (count == 0) return {};
+  frame.opaqueCount = 0;
+  frame.blendedCount = 0;
+  if (count == 0) {
+    lastDrawCalls_ = 0;
+    return {};
+  }
 
   // Straight into mapped memory, front to back: on a discrete GPU this is
   // write-combined memory, which is fast to write in order and must never
-  // be read back.
+  // be read back. Opaque sprites first, in the game's order...
   auto* out = reinterpret_cast<SpriteGpu*>(frame.sprites.mapped().data());
-  for (usize i = 0; i < count; ++i) {
-    const SpriteInstance& sprite = frameData.sprites[i];
-    out[i] = SpriteGpu{
+  const auto toGpu = [](const SpriteInstance& sprite) {
+    return SpriteGpu{
         .position = sprite.position,
         .halfSize = 0.5f * sprite.size,
         .rotation = {std::cos(sprite.rotation), std::sin(sprite.rotation)},
-        .unused = {0.0f, 0.0f},
+        .depth = {sprite.depth, 0.0f},
         .colour = sprite.colour,
     };
+  };
+  blendedOrder_.clear();
+  u32 written = 0;
+  for (usize i = 0; i < count; ++i) {
+    const SpriteInstance& sprite = frameData.sprites[i];
+    if (sprite.colour.a >= 1.0f) {
+      out[written++] = toGpu(sprite);
+    } else {
+      blendedOrder_.push_back(static_cast<u32>(i));
+    }
   }
+  frame.opaqueCount = written;
+
+  // ...then translucent ones, back to front (smaller depth = farther). A
+  // stable sort keeps the game's order among equal depths. Already in order
+  // (common: one translucent layer) costs one pass, no sort.
+  const auto farther = [&](u32 a, u32 b) { return frameData.sprites[a].depth < frameData.sprites[b].depth; };
+  if (!std::is_sorted(blendedOrder_.begin(), blendedOrder_.end(), farther)) {
+    std::stable_sort(blendedOrder_.begin(), blendedOrder_.end(), farther);
+  }
+  for (const u32 i : blendedOrder_) out[written++] = toGpu(frameData.sprites[i]);
+  frame.blendedCount = static_cast<u32>(blendedOrder_.size());
+
+  lastDrawCalls_ = (frame.opaqueCount > 0 ? 1u : 0u) + (frame.blendedCount > 0 ? 1u : 0u);
   return frame.sprites.flush(0, count * sizeof(SpriteGpu));  // a no-op on host-coherent memory
 }
 
-Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex, const FrameData& frame,
-                                      VkDeviceAddress sprites) const {
+Status VulkanRenderer::writeFrameUniforms(Frame& frame, const FrameData& frameData) {
+  const VkExtent2D extent = swapchain_->extent();
+  const FrameUniforms uniforms{
+      .viewProjection = frameData.viewProjection.value_or(pixelViewProjection(
+          {static_cast<f32>(extent.width), static_cast<f32>(extent.height)})),
+  };
+  return frame.uniforms.write(std::as_bytes(std::span(&uniforms, 1)));
+}
+
+Status VulkanRenderer::prepareCapture(Frame& frame) {
+  // Only this submission's copy is decided here. A capture already sitting
+  // in this slot's buffer stays valid when the slot is reused without one.
+  frame.recordCapture = false;
+  if (!captureRequested_) return {};
+  captureRequested_ = false;
+  if (!swapchain_->canCopyFrom()) {
+    return fail(Errc::Unsupported, "this window's swapchain images cannot be copied from, so frames cannot be captured");
+  }
+  const VkExtent2D extent = swapchain_->extent();
+  const u64 bytes = u64{extent.width} * extent.height * 4;  // both supported formats are 4 bytes per pixel
+  if (frame.capture.size() < bytes) {
+    auto buffer = gpu::Buffer::create(context_.allocator(), {.sizeBytes = bytes,
+                                                             .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                             .memory = gpu::MemoryKind::HostReadback,
+                                                             .debugName = "frame capture"});
+    if (!buffer) return tl::unexpected(std::move(buffer.error()));
+    frame.capture = std::move(*buffer);
+  }
+  for (Frame& other : frames_) other.hasCapture = false;  // only the newest capture counts
+  frame.recordCapture = true;
+  frame.hasCapture = true;  // readable once this frame's fence has signalled
+  frame.captureExtent = extent;
+  frame.captureFormat = swapchain_->format();
+  return {};
+}
+
+Result<CapturedFrame> VulkanRenderer::takeCapture() {
+  if (Status s = context_.device().waitIdle(); !s) return tl::unexpected(std::move(s.error()));
+  for (Frame& frame : frames_) {
+    if (!frame.hasCapture) continue;
+    if (Status s = frame.capture.invalidate(); !s) return tl::unexpected(std::move(s.error()));
+    CapturedFrame result{.width = frame.captureExtent.width, .height = frame.captureExtent.height};
+    const usize bytes = usize{result.width} * result.height * 4;
+    const auto source = frame.capture.mapped().first(bytes);
+    result.rgba.resize(bytes);
+    const bool bgra = frame.captureFormat == VK_FORMAT_B8G8R8A8_SRGB || frame.captureFormat == VK_FORMAT_B8G8R8A8_UNORM;
+    for (usize i = 0; i < bytes; i += 4) {
+      const auto byte = [&](usize k) { return std::to_integer<u8>(source[i + k]); };
+      result.rgba[i + 0] = bgra ? byte(2) : byte(0);
+      result.rgba[i + 1] = byte(1);
+      result.rgba[i + 2] = bgra ? byte(0) : byte(2);
+      result.rgba[i + 3] = byte(3);
+    }
+    frame.hasCapture = false;
+    return result;
+  }
+  return fail(Errc::InvalidState, "no frame has been captured: call requestCapture() and render a frame first");
+}
+
+Status VulkanRenderer::recordCommands(const Frame& frameSlot, u32 imageIndex) const {
+  const VkCommandBuffer commands = frameSlot.commandBuffer;
+  const VkDeviceAddress sprites = frameSlot.sprites.deviceAddress();
   const VkCommandBufferBeginInfo begin{
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
       .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -594,16 +811,35 @@ Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex, 
       .clearValue = {.color = {.float32 = {desc_.clearColour[0], desc_.clearColour[1], desc_.clearColour[2],
                                            desc_.clearColour[3]}}},
   };
+  // The depth buffer: its old contents are not needed (it is cleared), so
+  // UNDEFINED -> DEPTH_ATTACHMENT_OPTIMAL. It is shared by both frames in
+  // flight, so the source side waits for the previous frame's depth tests
+  // and writes to finish before this frame clears it.
+  constexpr VkPipelineStageFlags2 kDepthStages =
+      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+  transitionImage(commands, depth_.handle(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                  kDepthStages, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, kDepthStages,
+                  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                  VK_IMAGE_ASPECT_DEPTH_BIT);
+
+  const VkRenderingAttachmentInfo depthAttachment{
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+      .imageView = depth_.view(),
+      .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,  // not needed after the frame
+      .clearValue = {.depthStencil = {.depth = 0.0f, .stencil = 0}},  // reverse-Z: 0 is the far plane
+  };
+
   const VkRenderingInfo rendering{
       .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
       .renderArea = {.offset = {0, 0}, .extent = extent},
       .layerCount = 1,
       .colorAttachmentCount = 1,
       .pColorAttachments = &colour,
+      .pDepthAttachment = &depthAttachment,
   };
   vkCmdBeginRendering(commands, &rendering);
-
-  vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_.get());
 
   // Negative height flips Vulkan's y-down clip space to y-up, so positions
   // mean the same as in OpenGL and GLM (roadmap §4.4). y starts at the
@@ -616,28 +852,65 @@ Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex, 
   vkCmdSetViewport(commands, 0, 1, &viewport);
   vkCmdSetScissor(commands, 0, 1, &scissor);
 
-  // ONE draw for every sprite: 6 vertices (two triangles) per instance, one
-  // instance per sprite. The shader reads instance i's data from the buffer
-  // at `sprites`. How much of the world the window shows: all of
-  // frame.viewHalfExtent, scaled to fit without stretching (or pixels, if
-  // the game set none). Instances draw in order, so later sprites are on top.
-  if (!frame.sprites.empty()) {
-    const DrawPushConstants push{
-        .spriteList = sprites,
-        .viewHalf = fitView({0.5f * width, 0.5f * height}, frame.viewHalfExtent),
-    };
+  // At most TWO draws for every sprite: 6 vertices (two triangles) per
+  // instance, one instance per sprite; opaque instances first, then the
+  // translucent ones (firstInstance = opaqueCount, and gl_InstanceIndex
+  // includes it). The shader reads instance i's data from the buffer at
+  // `sprites`, and the camera from this frame's uniform buffer (set 0).
+  // Both pipelines share one layout, so the descriptor set and push constant
+  // stay bound across the switch.
+  if (frameSlot.opaqueCount + frameSlot.blendedCount > 0) {
+    vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, opaquePipeline_.get());
+    vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_.get(), 0, 1,
+                            &frameSlot.descriptorSet, 0, nullptr);
+    const DrawPushConstants push{.spriteList = sprites};
     vkCmdPushConstants(commands, pipelineLayout_.get(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-    vkCmdDraw(commands, 6, static_cast<u32>(frame.sprites.size()), 0, 0);
+    if (frameSlot.opaqueCount > 0) vkCmdDraw(commands, 6, frameSlot.opaqueCount, 0, 0);
+    if (frameSlot.blendedCount > 0) {
+      vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, blendedPipeline_.get());
+      vkCmdDraw(commands, 6, frameSlot.blendedCount, 0, frameSlot.opaqueCount);
+    }
   }
 
   vkCmdEndRendering(commands);
 
-  // COLOR_ATTACHMENT_OPTIMAL -> PRESENT_SRC_KHR, after the colour writes.
-  // Nothing on this queue reads it afterwards; present waits on the
-  // renderFinished semaphore, not on a pipeline stage.
-  transitionImage(commands, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                  VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                  VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+  if (frameSlot.recordCapture) {
+    // Frame capture: copy the finished image into the readback buffer
+    // before it is presented.
+    transitionImage(commands, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+    const VkBufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,  // tightly packed
+        .bufferImageHeight = 0,
+        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {extent.width, extent.height, 1},
+    };
+    vkCmdCopyImageToBuffer(commands, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, frameSlot.capture.handle(), 1, &region);
+    // Make the copy visible to the CPU once the frame's fence has signalled.
+    const VkMemoryBarrier2 toHost{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+        .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+        .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+    };
+    const VkDependencyInfo hostDependency{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1,
+                                          .pMemoryBarriers = &toHost};
+    vkCmdPipelineBarrier2(commands, &hostDependency);
+    transitionImage(commands, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                    VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_NONE,
+                    VK_ACCESS_2_NONE);
+  } else {
+    // COLOR_ATTACHMENT_OPTIMAL -> PRESENT_SRC_KHR, after the colour writes.
+    // Nothing on this queue reads it afterwards; present waits on the
+    // renderFinished semaphore, not on a pipeline stage.
+    transitionImage(commands, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+  }
 
   return gpu::check(vkEndCommandBuffer(commands), "vkEndCommandBuffer");
 }

@@ -253,6 +253,8 @@ Status Application::renderFrame(const FrameTime& time, f64 alpha) {
     if (Status resized = renderer_->onFramebufferResized(size); !resized) return resized;
   }
   frameData_.clear();
+  const platform::Extent2D framebuffer = window_->framebufferSize();
+  frameData_.viewportSize = {static_cast<f32>(framebuffer.width), static_cast<f32>(framebuffer.height)};
   if (extract_) extract_(frameData_, alpha);
   return renderer_->renderFrame(time, frameData_);
 }

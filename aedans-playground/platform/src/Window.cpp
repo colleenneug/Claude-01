@@ -179,6 +179,14 @@ Extent2D Window::framebufferSize() const noexcept {
   return toExtent(width, height);
 }
 
+Extent2D Window::windowSize() const noexcept {
+  if (!isOpen()) return {};
+  int width = 0;
+  int height = 0;
+  glfwGetWindowSize(state_->handle, &width, &height);
+  return toExtent(width, height);
+}
+
 bool Window::isMinimized() const noexcept {
   if (!isOpen()) return true;
   return glfwGetWindowAttrib(state_->handle, GLFW_ICONIFIED) == GLFW_TRUE || framebufferSize().isEmpty();

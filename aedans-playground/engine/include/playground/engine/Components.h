@@ -72,8 +72,9 @@ struct Lifetime {
 
 // How it looks: a coloured rectangle, size multiplied by Transform::scale.
 struct Sprite {
-  glm::vec2 size{32.0f};     // pixels
+  glm::vec2 size{32.0f};     // world units
   glm::vec4 colour{1.0f};    // linear RGBA
+  f32 layer = 0.0f;          // world z: a higher layer is drawn in front, whatever the order
 };
 
 }  // namespace playground::engine

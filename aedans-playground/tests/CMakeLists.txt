@@ -16,6 +16,12 @@ target_link_libraries(playground_input_tests PRIVATE playground::engine doctest:
 playground_configure_target(playground_input_tests)
 add_test(NAME input_tests COMMAND playground_input_tests)
 
+# --- Camera maths: no window ---------------------------------------------------
+add_executable(playground_camera_tests camera_tests.cpp)
+target_link_libraries(playground_camera_tests PRIVATE playground::engine doctest::doctest)
+playground_configure_target(playground_camera_tests)
+add_test(NAME camera_tests COMMAND playground_camera_tests)
+
 # --- Application tests: open real windows -----------------------------------
 add_executable(playground_app_tests app_tests.cpp)
 target_link_libraries(playground_app_tests PRIVATE playground::engine doctest::doctest)

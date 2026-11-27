@@ -13,6 +13,7 @@
 #include "playground/core/Log.h"
 #include "playground/gpu/Buffer.h"
 #include "playground/gpu/Context.h"
+#include "playground/gpu/Image.h"
 #include "playground/gpu/VulkanCheck.h"
 
 #include <cstdio>
@@ -258,6 +259,31 @@ TEST_CASE("buffer misuse is reported, not undefined behaviour") {
   const Status overrun = small->write(bytes, 56);  // 16 bytes at 56 > 64
   REQUIRE_FALSE(overrun.has_value());
   CHECK(overrun.error().code == Errc::InvalidArgument);
+}
+
+TEST_CASE("a depth image is created, counted by the allocator, and freed") {
+  gpu::resetValidationCounts();
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+  {
+    auto depth = gpu::Image::create(context->allocator(), {.width = 256, .height = 128,
+                                                           .format = gpu::kDepthFormat,
+                                                           .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                           .aspect = VK_IMAGE_ASPECT_DEPTH_BIT,
+                                                           .debugName = "test depth"});
+    REQUIRE_MESSAGE(depth.has_value(), (depth ? "" : depth.error().message));
+    CHECK(depth->view() != VK_NULL_HANDLE);
+    CHECK(depth->extent().width == 256);
+    CHECK(context->allocator().stats().allocationCount == 1);
+  }
+  CHECK(context->allocator().stats().allocationCount == 0);
+
+  const auto bad = gpu::Image::create(context->allocator(), {.width = 0, .height = 64, .format = gpu::kDepthFormat,
+                                                             .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
+  REQUIRE_FALSE(bad.has_value());
+  CHECK(bad.error().code == Errc::InvalidArgument);
+  CHECK(gpu::validationCounts().errors == 0);
 }
 
 int main(int argc, char** argv) {

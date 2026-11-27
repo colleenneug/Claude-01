@@ -68,5 +68,7 @@ using ShaderModule = DeviceHandle<VkShaderModule, &vkDestroyShaderModule>;
 using PipelineLayout = DeviceHandle<VkPipelineLayout, &vkDestroyPipelineLayout>;
 using Pipeline = DeviceHandle<VkPipeline, &vkDestroyPipeline>;
 using CommandPool = DeviceHandle<VkCommandPool, &vkDestroyCommandPool>;
+using DescriptorSetLayout = DeviceHandle<VkDescriptorSetLayout, &vkDestroyDescriptorSetLayout>;
+using DescriptorPool = DeviceHandle<VkDescriptorPool, &vkDestroyDescriptorPool>;
 
 }  // namespace playground::gpu

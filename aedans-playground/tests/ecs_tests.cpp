@@ -436,6 +436,44 @@ TEST_CASE("fitView shows the whole world in any window shape, without stretching
   CHECK(render::fitView({640.0f, 360.0f}, {0.0f, 0.0f}) == glm::vec2{640.0f, 360.0f});
 }
 
+// --- Picking ---------------------------------------------------------------------
+
+TEST_CASE("pickSprite finds the sprite under a point, exactly for rotated rectangles") {
+  ecs::World world;
+  const ecs::Entity square = world.create();
+  // A 40x10 bar rotated 90 degrees: it now stands upright, 10 wide and 40 tall.
+  world.add<Transform>(square, Transform{.position = {100.0f, 100.0f}, .rotation = 1.5707964f});
+  world.add<Sprite>(square, Sprite{.size = {40.0f, 10.0f}});
+
+  CHECK(engine::pickSprite(world, {100.0f, 117.0f}) == square);  // inside, near the top
+  CHECK_FALSE(engine::pickSprite(world, {117.0f, 100.0f}).has_value());  // would be inside if not rotated
+  CHECK_FALSE(engine::pickSprite(world, {500.0f, 500.0f}).has_value());
+}
+
+TEST_CASE("pickSprite prefers the higher layer, then the one drawn last") {
+  ecs::World world;
+  auto make = [&](float layer) {
+    const ecs::Entity e = world.create();
+    world.add<Transform>(e, Transform{.position = {0.0f, 0.0f}});
+    world.add<Sprite>(e, Sprite{.size = {50.0f, 50.0f}, .layer = layer});
+    return e;
+  };
+  const ecs::Entity high = make(2.0f);
+  make(0.0f);
+  CHECK(engine::pickSprite(world, {0.0f, 0.0f}) == high);  // in front, though created first
+
+  ecs::World sameLayer;
+  auto makeIn = [&](ecs::World& w) {
+    const ecs::Entity e = w.create();
+    w.add<Transform>(e, Transform{.position = {0.0f, 0.0f}});
+    w.add<Sprite>(e, Sprite{.size = {50.0f, 50.0f}});
+    return e;
+  };
+  makeIn(sameLayer);
+  const ecs::Entity drawnLast = makeIn(sameLayer);
+  CHECK(engine::pickSprite(sameLayer, {0.0f, 0.0f}) == drawnLast);
+}
+
 TEST_CASE("movement over 100,000 entities (timing printed, not asserted)") {
   ecs::World world;
   constexpr int kCount = 100'000;

@@ -15,7 +15,10 @@ size.
 | Key | Action |
 |---|---|
 | W A S D, arrow keys | Move |
-| Space, left mouse button | Fire |
+| Mouse | Aim |
+| Space, left mouse button | Fire (towards the mouse) |
+| Right mouse button | Remove the sprite under the mouse |
+| C | Switch between the 2D (orthographic) and 3D (perspective) view |
 | Escape | Quit |
 
 ![25,000 sprites in one instanced draw call](docs/instanced-25k.png)
@@ -31,10 +34,10 @@ app on Mesa's software Vulkan driver. Earlier milestones: the first triangle
 |---|---|---|
 | `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock` |
 | `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
-| `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Context`, `Swapchain`, `DeviceHandle` |
+| `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, the Vulkan renderer, the shaders |
-| `engine/` | `playground_engine` | `Application` (main loop), components (`Transform`, `Velocity`, `Sprite`), systems |
+| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
 | `app/` | `playground_app` | `main.cpp` |
 | `tests/` | | doctest suites for core, ECS, application, GPU and renderer |
 | `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator |
@@ -127,9 +130,32 @@ the frame's own snapshot.
 ## World bounds and the view
 
 The playing area is a `WorldBounds` owned by the game (1600×900 world
-units), and `bounceSystem` reads only that, never the window. The renderer
-scales the world to fit the window without stretching (`render::fitView`),
-with bars where the shapes differ. Resizing changes the view, not the game.
+units), and `bounceSystem` reads only that, never the window. Resizing
+changes the view, not the game.
+
+## Camera
+
+`engine::Camera` (`engine/Camera.h`) looks from `position` at `target` and
+projects one of two ways:
+
+- **Orthographic** (the default 2D view): `orthoHalfExtent` is the world
+  area that must be visible, fitted to the window without stretching
+  (`render::fitView`), with bars where the shapes differ.
+- **Perspective** (`glm::perspective`): a 3D view; farther things look
+  smaller. Press **C** in the demo to see the playfield tilted in 3D.
+
+Both are converted to **reverse-Z** (depth 1 at the near plane, 0 at the far
+plane), which spreads floating-point depth precision evenly. Each frame the
+game puts `camera.viewProjection(viewport)` in `FrameData`, and the renderer
+copies it into a per-frame **uniform buffer** that the vertex shader reads
+(descriptor set 0, binding 0).
+
+`camera.screenToWorld(cursor, windowSize)` turns a mouse position into the
+point on the gameplay plane under it, by casting a ray through the inverse
+view-projection, so it works in both projections. The demo uses it to aim
+bullets and, with `engine::pickSprite`, to remove the sprite you right-click.
+
+![The 3D (perspective) view](docs/perspective-3d.png)
 
 ## Drawing a frame
 
@@ -138,21 +164,35 @@ with bars where the shapes differ. Resizing changes the view, not the game.
 1. **Wait** for the GPU to finish the frame that last used this slot (two
    frames in flight).
 2. **Acquire** a swapchain image to draw into.
-3. **Write the sprites** straight into this frame slot's storage buffer:
-   host-visible memory, mapped once and kept mapped. The buffer doubles if a
-   frame has more sprites than it holds.
-4. **Record:** move the image into the drawing layout, clear it, bind the
-   sprite pipeline, push the buffer's GPU address and the view (16 bytes),
-   and draw **all** sprites with one `vkCmdDraw(6 vertices, N instances)`;
-   then move the image into the present layout.
+3. **Write the sprites** straight into this frame slot's storage buffer
+   (host-visible, mapped once and kept mapped; it doubles when outgrown):
+   opaque sprites first, then translucent ones sorted back to front. Write
+   the camera matrix into this slot's uniform buffer.
+4. **Record:** clear the image and the depth buffer, then draw **all**
+   sprites with at most two instanced draws, `vkCmdDraw(6 vertices, N
+   instances)`: opaque sprites with depth writes, then translucent ones
+   without (they still depth-test). Then move the image into the present
+   layout.
 5. **Submit** to the graphics queue.
 6. **Present** the image to the window.
 
 The vertex shader (`render/shaders/sprite.vert`) picks its sprite with
-`gl_InstanceIndex` and reads it through a buffer reference
-(`GL_EXT_buffer_reference`): the storage buffer is found by its 64-bit GPU
-address, so no descriptor sets are needed. The quad's corners are constants
-in the shader. World units are centred on (0, 0) with +y up. The shaders are compiled by `glslc` during the build and
+`gl_InstanceIndex`, reads it through a buffer reference
+(`GL_EXT_buffer_reference`: the storage buffer is found by its 64-bit GPU
+address), and multiplies by the camera matrix from the uniform buffer. The
+quad's corners are constants in the shader.
+
+**Depth.** A `D32_SFLOAT` depth buffer (reverse-Z: cleared to 0, test
+`GREATER_OR_EQUAL`), rebuilt with the swapchain. A sprite's `layer` is its
+world z, so higher layers are in front whatever the draw order; equal
+layers keep draw order. Translucent sprites follow the standard rule for
+transparency: sorted back to front, depth tested but not written, so they
+blend with what is behind them and many of them on one plane do not
+z-fight in the 3D view.
+
+**Frame capture.** `requestCapture()` / `takeCapture()` copy a rendered
+frame back to the CPU as RGBA; the renderer tests use it to check actual
+pixel colours (depth order, translucency, the camera). The shaders are compiled by `glslc` during the build and
 embedded in the executable (see `cmake/Shaders.cmake`), so there are no shader
 files to ship. When the window is resized, or present reports the swapchain is
 out of date, the swapchain is rebuilt at the new size.

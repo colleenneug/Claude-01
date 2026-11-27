@@ -149,7 +149,10 @@ Result<Swapchain> Swapchain::create(const Context& context, const SwapchainDesc&
       .imageColorSpace = format.colorSpace,
       .imageExtent = extent,
       .imageArrayLayers = 1,
-      .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,  // we render straight into it
+      // We render straight into it; TRANSFER_SRC also lets a frame be copied
+      // back to the CPU (screenshots, pixel tests) where the surface allows.
+      .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                    (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT),
       .imageSharingMode = shared ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
       .queueFamilyIndexCount = shared ? 0u : 2u,
       .pQueueFamilyIndices = shared ? nullptr : familyIndices.data(),
@@ -170,6 +173,7 @@ Result<Swapchain> Swapchain::create(const Context& context, const SwapchainDesc&
   swapchain.format_ = format.format;
   swapchain.extent_ = extent;
   swapchain.presentMode_ = presentMode;
+  swapchain.canCopyFrom_ = (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
 
   // --- The images, and a view of each --------------------------------------
   // The driver may create more images than we asked for.
@@ -216,6 +220,7 @@ Swapchain::Swapchain(Swapchain&& other) noexcept
       format_(other.format_),
       extent_(other.extent_),
       presentMode_(other.presentMode_),
+      canCopyFrom_(other.canCopyFrom_),
       images_(std::move(other.images_)),
       views_(std::move(other.views_)) {}
 
@@ -227,6 +232,7 @@ Swapchain& Swapchain::operator=(Swapchain&& other) noexcept {
     format_ = other.format_;
     extent_ = other.extent_;
     presentMode_ = other.presentMode_;
+    canCopyFrom_ = other.canCopyFrom_;
     images_ = std::move(other.images_);
     views_ = std::move(other.views_);
   }

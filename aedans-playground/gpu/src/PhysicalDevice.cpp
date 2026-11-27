@@ -2,6 +2,7 @@
 
 #include "Requirements.h"
 #include "playground/core/Log.h"
+#include "playground/gpu/Image.h"
 #include "playground/gpu/Instance.h"
 #include "playground/gpu/VulkanCheck.h"
 
@@ -130,6 +131,13 @@ Result<Candidate> evaluate(VkPhysicalDevice device, VkSurfaceKHR surface) {
   vkGetPhysicalDeviceFeatures2(device, &supported.core);
   for (const std::string& feature : detail::missingFeatures(supported)) {
     rejections.push_back(std::format("missing feature {}", feature));
+  }
+
+  // Depth buffer format.
+  VkFormatProperties depthFormat{};
+  vkGetPhysicalDeviceFormatProperties(device, kDepthFormat, &depthFormat);
+  if ((depthFormat.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0) {
+    rejections.emplace_back("no D32_SFLOAT depth buffers");
   }
 
   // Queues.

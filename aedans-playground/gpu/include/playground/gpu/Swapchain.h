@@ -65,6 +65,8 @@ class Swapchain {
   [[nodiscard]] u32 imageCount() const noexcept { return static_cast<u32>(images_.size()); }
   [[nodiscard]] VkImage image(u32 index) const noexcept { return images_[index]; }
   [[nodiscard]] VkImageView imageView(u32 index) const noexcept { return views_[index].get(); }
+  // Whether its images can be copied from (frame capture).
+  [[nodiscard]] bool canCopyFrom() const noexcept { return canCopyFrom_; }
 
  private:
   Swapchain() = default;
@@ -75,6 +77,7 @@ class Swapchain {
   VkFormat format_ = VK_FORMAT_UNDEFINED;
   VkExtent2D extent_{};
   VkPresentModeKHR presentMode_ = VK_PRESENT_MODE_FIFO_KHR;
+  bool canCopyFrom_ = false;
   std::vector<VkImage> images_;    // owned by the swapchain itself
   std::vector<ImageView> views_;   // owned by us
 };

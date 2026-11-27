@@ -16,6 +16,8 @@
 
 #include <cstdio>
 #include <memory>
+
+#include <glm/ext/matrix_clip_space.hpp>
 #include <vector>
 
 using namespace playground;
@@ -93,6 +95,8 @@ TEST_CASE("resizing the window rebuilds the swapchain at the new size") {
     CHECK(resized);
     CHECK(app->stopReason() == engine::StopReason::QuitRequested);
     CHECK(renderer->swapchainRecreations() >= 1);
+    CHECK(renderer->depthBuffer().extent().width == 480);  // the depth buffer was rebuilt too
+    CHECK(renderer->depthBuffer().extent().height == 360);
   }
   CHECK(render::gpuValidationCounts().errors == 0);
 }
@@ -130,7 +134,7 @@ TEST_CASE("25,000 sprites are drawn in one instanced draw with no validation err
     auto app = makeApp(10);
     render::VulkanRenderer* renderer = attachRenderer(*app);
     app->setExtract([](render::FrameData& frame, f64) {
-      frame.viewHalfExtent = {800.0f, 450.0f};
+      frame.viewProjection = render::reverseZ() * glm::orthoRH_ZO(-800.0f, 800.0f, -450.0f, 450.0f, -10.0f, 10.0f);
       for (int i = 0; i < 25'000; ++i) {
         const float x = static_cast<float>(i % 250) * 6.4f - 800.0f;
         const float y = static_cast<float>(i / 250) * 9.0f - 450.0f;
@@ -182,6 +186,123 @@ TEST_CASE("a frame with no sprites draws nothing and still presents") {
     CHECK(renderer->lastDrawCalls() == 0);
   }
   CHECK(render::gpuValidationCounts().errors == 0);
+}
+
+// --- Depth, camera uniforms, and pixels read back from the GPU ---------------------
+// These read the rendered frame back (requestCapture/takeCapture) and check
+// actual pixel colours, so they prove what is on screen, not just that the
+// calls succeeded. Window 320x240; with no camera, one world unit = one pixel
+// and (0, 0) is the centre, so world (x, y) is pixel (160 + x, 120 - y).
+
+namespace {
+bool near(u8 actual, u8 expected) { return actual + 3 >= expected && actual <= expected + 3; }
+void checkColour(const render::CapturedFrame& frame, u32 x, u32 y, u8 r, u8 g, u8 b) {
+  const auto p = frame.at(x, y);
+  INFO("pixel (", x, ", ", y, ") is ", int(p.r), ",", int(p.g), ",", int(p.b), "; expected ", int(r), ",", int(g), ",", int(b));
+  CHECK(near(p.r, r));
+  CHECK(near(p.g, g));
+  CHECK(near(p.b, b));
+}
+}  // namespace
+
+TEST_CASE("the depth test puts a higher layer in front whatever the draw order; equal layers keep draw order") {
+  gpu::resetValidationCounts();
+  {
+    auto app = makeApp(3);
+    render::VulkanRenderer* renderer = attachRenderer(*app);
+    app->setExtract([](render::FrameData& frame, f64) {
+      // Pair A, left: red is drawn FIRST but is nearer (depth 1); blue after, farther.
+      frame.sprites.push_back({.position = {-60.0f, 0.0f}, .size = {60.0f, 60.0f}, .colour = {1, 0, 0, 1}, .depth = 1.0f});
+      frame.sprites.push_back({.position = {-60.0f, 0.0f}, .size = {60.0f, 60.0f}, .colour = {0, 0, 1, 1}, .depth = 0.0f});
+      // Pair B, right: same depth, so the later one (yellow) is on top.
+      frame.sprites.push_back({.position = {60.0f, 0.0f}, .size = {60.0f, 60.0f}, .colour = {0, 1, 0, 1}, .depth = 0.0f});
+      frame.sprites.push_back({.position = {60.0f, 0.0f}, .size = {60.0f, 60.0f}, .colour = {1, 1, 0, 1}, .depth = 0.0f});
+    });
+    renderer->requestCapture();
+    REQUIRE(app->run().has_value());
+
+    const auto frame = renderer->takeCapture();
+    REQUIRE_MESSAGE(frame.has_value(), (frame ? "" : frame.error().message));
+    REQUIRE(frame->width == 320);
+    REQUIRE(frame->height == 240);
+    checkColour(*frame, 100, 120, 255, 0, 0);    // red: in front because nearer, though drawn first
+    checkColour(*frame, 220, 120, 255, 255, 0);  // yellow: same depth, drawn later
+    // Background where nothing is drawn: the default clear colour, sRGB-encoded.
+    const auto corner = frame->at(5, 5);
+    CHECK(corner.r < 40);
+    CHECK(corner.b < 60);
+
+    const gpu::Image& depth = renderer->depthBuffer();
+    CHECK(depth.extent().width == 320);
+    CHECK(depth.format() == gpu::kDepthFormat);
+  }
+  CHECK(render::gpuValidationCounts().errors == 0);
+}
+
+TEST_CASE("translucent sprites are sorted back to front, and hidden behind nearer opaque ones") {
+  gpu::resetValidationCounts();
+  {
+    auto app = makeApp(3);
+    render::VulkanRenderer* renderer = attachRenderer(*app);
+    app->setExtract([](render::FrameData& frame, f64) {
+      // Left: two 90%-opaque sprites given FRONT first. Sorted back to front,
+      // the nearer blue is blended over the red: the result is mostly blue.
+      frame.sprites.push_back({.position = {-60.0f, 0.0f}, .size = {60.0f, 60.0f}, .colour = {0, 0, 1, 0.9f}, .depth = 1.0f});
+      frame.sprites.push_back({.position = {-60.0f, 0.0f}, .size = {60.0f, 60.0f}, .colour = {1, 0, 0, 0.9f}, .depth = 0.0f});
+      // Right: a translucent magenta behind an opaque green. Translucent
+      // sprites draw after opaque ones, but the depth test still hides it.
+      frame.sprites.push_back({.position = {60.0f, 0.0f}, .size = {80.0f, 80.0f}, .colour = {1, 0, 1, 0.9f}, .depth = 0.0f});
+      frame.sprites.push_back({.position = {60.0f, 0.0f}, .size = {40.0f, 40.0f}, .colour = {0, 1, 0, 1}, .depth = 1.0f});
+    });
+    renderer->requestCapture();
+    REQUIRE(app->run().has_value());
+    CHECK(renderer->lastDrawCalls() == 2);  // one opaque draw, one translucent draw
+
+    const auto frame = renderer->takeCapture();
+    REQUIRE(frame.has_value());
+    const auto left = frame->at(100, 120);
+    INFO("left pixel ", int(left.r), ",", int(left.g), ",", int(left.b));
+    CHECK(left.b > 200);  // blue on top
+    CHECK(left.r < 120);  // red only faintly through it
+    checkColour(*frame, 220, 120, 0, 255, 0);  // green: the magenta behind it is hidden
+    const auto ring = frame->at(220 + 30, 120);  // outside the green, inside the magenta
+    CHECK(ring.r > 200);
+    CHECK(ring.b > 200);
+  }
+  CHECK(render::gpuValidationCounts().errors == 0);
+}
+
+TEST_CASE("the camera matrix reaches the shader through the per-frame uniform buffer") {
+  gpu::resetValidationCounts();
+  {
+    auto app = makeApp(3);
+    render::VulkanRenderer* renderer = attachRenderer(*app);
+    app->setExtract([](render::FrameData& frame, f64) {
+      // A camera looking at world (500, 300), showing 320x240 units: that
+      // point must land in the middle of the window.
+      frame.viewProjection = render::reverseZ() *
+                             glm::orthoRH_ZO(500.0f - 160.0f, 500.0f + 160.0f, 300.0f - 120.0f, 300.0f + 120.0f,
+                                             -10.0f, 10.0f);
+      frame.sprites.push_back({.position = {500.0f, 300.0f}, .size = {20.0f, 20.0f}, .colour = {0, 1, 0, 1}});
+    });
+    renderer->requestCapture();
+    REQUIRE(app->run().has_value());
+    const auto frame = renderer->takeCapture();
+    REQUIRE(frame.has_value());
+    checkColour(*frame, 160, 120, 0, 255, 0);  // the sprite is at the centre
+    const auto away = frame->at(160 + 40, 120);  // and only there
+    CHECK(away.g < 40);
+  }
+  CHECK(render::gpuValidationCounts().errors == 0);
+}
+
+TEST_CASE("takeCapture without a captured frame says so") {
+  auto app = makeApp(1);
+  render::VulkanRenderer* renderer = attachRenderer(*app);
+  REQUIRE(app->run().has_value());
+  const auto frame = renderer->takeCapture();
+  REQUIRE_FALSE(frame.has_value());
+  CHECK(frame.error().code == Errc::InvalidState);
 }
 
 int main(int argc, char** argv) {

@@ -3,6 +3,7 @@
 add_library(playground_engine STATIC
   src/Actions.cpp
   src/Application.cpp
+  src/Camera.cpp
   src/Systems.cpp)
 add_library(playground::engine ALIAS playground_engine)
 

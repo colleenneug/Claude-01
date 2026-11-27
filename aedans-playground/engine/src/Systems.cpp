@@ -60,6 +60,28 @@ void bounceSystem(ecs::World& world, const WorldBounds& bounds) {
       });
 }
 
+std::optional<ecs::Entity> pickSprite(ecs::World& world, glm::vec2 point) {
+  std::optional<ecs::Entity> best;
+  f32 bestLayer = 0.0f;
+  world.each<Transform, Sprite>([&](ecs::Entity entity, const Transform& transform, const Sprite& sprite) {
+    // Into the sprite's own frame: undo its position and rotation, then
+    // compare with its half-size.
+    const glm::vec2 offset = point - transform.position;
+    const f32 c = std::cos(-transform.rotation);
+    const f32 s = std::sin(-transform.rotation);
+    const glm::vec2 local{offset.x * c - offset.y * s, offset.x * s + offset.y * c};
+    const glm::vec2 half = 0.5f * sprite.size * glm::abs(transform.scale);
+    if (std::fabs(local.x) > half.x || std::fabs(local.y) > half.y) return;
+    // Pool order is draw order, so ">=" makes a later sprite on the same
+    // layer win, as it does on screen.
+    if (!best || sprite.layer >= bestLayer) {
+      best = entity;
+      bestLayer = sprite.layer;
+    }
+  });
+  return best;
+}
+
 glm::vec2 interpolatePosition(const Transform& transform, f32 alpha) noexcept {
   if (!transform.hasPrevious) return transform.position;  // just spawned: no streak from the origin
   return glm::mix(transform.previousPosition, transform.position, alpha);
@@ -84,6 +106,7 @@ void extractSprites(ecs::World& world, render::FrameData& frame, f64 alpha) {
         .size = sprite.size * transform.scale,
         .rotation = interpolateRotation(transform, blend),
         .colour = sprite.colour,
+        .depth = sprite.layer,
     });
   });
 }

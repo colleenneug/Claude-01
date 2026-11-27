@@ -26,6 +26,8 @@
 #include "playground/platform/Input.h"
 #include "playground/render/FrameData.h"
 
+#include <optional>
+
 #include <glm/vec2.hpp>
 
 namespace playground::engine {
@@ -49,6 +51,11 @@ void bounceSystem(ecs::World& world, const WorldBounds& bounds);
 
 // Lifetime: counts down, and destroys the entity (deferred to flush) at zero.
 void lifetimeSystem(ecs::World& world, f32 deltaSeconds);
+
+// The sprite under a world point (e.g. the mouse, via Camera::screenToWorld),
+// or empty. Exact for rotated, scaled rectangles. If several overlap, the one
+// drawn in front wins: highest layer, then the one drawn last.
+[[nodiscard]] std::optional<ecs::Entity> pickSprite(ecs::World& world, glm::vec2 point);
 
 // Transform + Sprite -> render::SpriteInstance, appended to frame.sprites,
 // drawn `alpha` of the way from the previous state to the current one

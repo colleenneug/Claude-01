@@ -7,6 +7,7 @@ add_library(playground_gpu STATIC
   src/Buffer.cpp
   src/Context.cpp
   src/Device.cpp
+  src/Image.cpp
   src/Instance.cpp
   src/PhysicalDevice.cpp
   src/Surface.cpp

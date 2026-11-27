@@ -73,6 +73,10 @@ class Window {
 
   [[nodiscard]] Extent2D framebufferSize() const noexcept;
 
+  // The window's size in window coordinates: the units the mouse cursor is
+  // reported in. Equals framebufferSize() except on high-DPI displays.
+  [[nodiscard]] Extent2D windowSize() const noexcept;
+
   // Minimised windows have a zero-sized framebuffer, and a Vulkan swapchain
   // cannot be zero-sized, so the application stops rendering while this is
   // true.
