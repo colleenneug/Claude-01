@@ -72,6 +72,11 @@ class InputState {
   [[nodiscard]] f64 mouseX() const noexcept { return mouseX_; }
   [[nodiscard]] f64 mouseY() const noexcept { return mouseY_; }
 
+  // Mouse wheel turned since the last snapshot, in "clicks" (a touchpad gives
+  // fractions): positive = away from the user (scroll up). Like a press, it is
+  // delivered to one fixed step only.
+  [[nodiscard]] f64 scroll() const noexcept { return scroll_; }
+
   // True if any key or button was pressed or released.
   [[nodiscard]] bool hasEdges() const noexcept;
 
@@ -97,6 +102,7 @@ class InputState {
   Buttons<kMouseButtonCount> mouse_;
   f64 mouseX_ = 0.0;
   f64 mouseY_ = 0.0;
+  f64 scroll_ = 0.0;
 };
 
 class InputCollector {
@@ -106,6 +112,7 @@ class InputCollector {
   void keyEvent(Key key, bool isDown) noexcept;
   void mouseButtonEvent(MouseButton button, bool isDown) noexcept;
   void cursorMoved(f64 x, f64 y) noexcept;
+  void scrolled(f64 clicks) noexcept;  // vertical wheel; added up until the next snapshot
 
   // Releases everything held (each reports `released` in the next snapshot).
   void focusLost() noexcept;

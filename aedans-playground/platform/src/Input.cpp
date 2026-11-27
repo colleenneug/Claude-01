@@ -61,6 +61,8 @@ void InputCollector::cursorMoved(f64 x, f64 y) noexcept {
   state_.mouseY_ = y;
 }
 
+void InputCollector::scrolled(f64 clicks) noexcept { state_.scroll_ += clicks; }
+
 void InputCollector::focusLost() noexcept {
   // Everything held is released: the game sees one `released` for each, so
   // "stop running" or "let go of the charge" logic still runs.
@@ -74,6 +76,7 @@ void InputCollector::focusLost() noexcept {
 
 InputState InputCollector::takeSnapshot() noexcept {
   InputState snapshot = state_;
+  state_.scroll_ = 0.0;
   state_.keys_.pressed.reset();
   state_.keys_.released.reset();
   state_.mouse_.pressed.reset();
@@ -91,10 +94,12 @@ void InputLatch::beginFrame(const InputState& frame) noexcept {
   next.keys_.released |= state_.keys_.released;
   next.mouse_.pressed |= state_.mouse_.pressed;
   next.mouse_.released |= state_.mouse_.released;
+  next.scroll_ += state_.scroll_;  // not yet delivered to a step
   state_ = next;
 }
 
 void InputLatch::consumeEdges() noexcept {
+  state_.scroll_ = 0.0;
   state_.keys_.pressed.reset();
   state_.keys_.released.reset();
   state_.mouse_.pressed.reset();

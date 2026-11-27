@@ -113,6 +113,29 @@ TEST_CASE("after focus loss, pressing the key again works normally") {
 
 // --- The fixed-step latch ---------------------------------------------------------
 
+TEST_CASE("the mouse wheel adds up within a frame and is cleared by the snapshot") {
+  platform::InputCollector collector;
+  collector.scrolled(1.0);
+  collector.scrolled(0.5);  // a touchpad gives fractions
+  CHECK(collector.takeSnapshot().scroll() == 1.5);
+  CHECK(collector.takeSnapshot().scroll() == 0.0);  // nothing new
+  collector.scrolled(-2.0);
+  CHECK(collector.takeSnapshot().scroll() == -2.0);
+}
+
+TEST_CASE("a wheel turn reaches one fixed step, or waits for the next step that runs") {
+  platform::InputCollector collector;
+  platform::InputLatch latch;
+  collector.scrolled(1.0);
+  latch.beginFrame(collector.takeSnapshot());
+  // This frame runs no step. The next frame's wheel turn is added on.
+  collector.scrolled(2.0);
+  latch.beginFrame(collector.takeSnapshot());
+  CHECK(latch.current().scroll() == 3.0);
+  latch.consumeEdges();  // the first step had it
+  CHECK(latch.current().scroll() == 0.0);
+}
+
 TEST_CASE("held keys reach every fixed step; a press reaches exactly one") {
   InputCollector collector;
   InputLatch latch;

@@ -70,6 +70,7 @@ set_tests_properties(render_tests PROPERTIES SKIP_RETURN_CODE 77 LABELS "display
 add_executable(playground_mesh_tests mesh_tests.cpp)
 target_link_libraries(playground_mesh_tests PRIVATE playground::engine playground::gpu doctest::doctest)
 target_include_directories(playground_mesh_tests PRIVATE ${PROJECT_SOURCE_DIR}/render/src)
+target_compile_definitions(playground_mesh_tests PRIVATE PLAYGROUND_DEMO_ASSETS="${PROJECT_SOURCE_DIR}/app/assets")
 playground_configure_target(playground_mesh_tests)
 add_test(NAME mesh_tests COMMAND playground_mesh_tests)
 set_tests_properties(mesh_tests PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;gpu")
@@ -88,6 +89,10 @@ if(UNIX AND NOT APPLE)
   add_test(NAME keyboard_e2e
            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/keyboard.sh $<TARGET_FILE:playground_app> keyboard_e2e.log)
   set_tests_properties(keyboard_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input" TIMEOUT 90)
+  # The same for the 3D scene's camera: Tab to fly, W to move (tests/e2e/camera.sh).
+  add_test(NAME camera_e2e
+           COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/camera.sh $<TARGET_FILE:playground_app> camera_e2e.log)
+  set_tests_properties(camera_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input" TIMEOUT 90)
 endif()
 
 # --- Sanitizer builds and Mesa's software Vulkan driver ----------------------
@@ -110,7 +115,7 @@ if(PLAYGROUND_SANITIZERS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND UNIX AND N
     # The keyboard test is a shell script driving xdotool: only the game itself
     # may get the preload, so it is passed through a variable the script reads.
     if(TEST keyboard_e2e)
-      set_tests_properties(keyboard_e2e PROPERTIES
+      set_tests_properties(keyboard_e2e camera_e2e PROPERTIES
         ENVIRONMENT "PLAYGROUND_APP_PRELOAD=${playgroundAsanRuntime}:${PLAYGROUND_MESA_LAVAPIPE}")
     endif()
   endif()

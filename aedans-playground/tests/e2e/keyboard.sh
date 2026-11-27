@@ -22,9 +22,9 @@ command -v xdotool >/dev/null 2>&1 || { echo "skipping: xdotool not installed"; 
 
 rm -f "$LOG"
 if [ -n "$PLAYGROUND_APP_PRELOAD" ]; then
-  LD_PRELOAD="$PLAYGROUND_APP_PRELOAD" "$APP" --log-file "$LOG" --sprites 10 >"$LOG.out" 2>&1 &
+  LD_PRELOAD="$PLAYGROUND_APP_PRELOAD" "$APP" --log-file "$LOG" --scene sprites --sprites 10 >"$LOG.out" 2>&1 &
 else
-  "$APP" --log-file "$LOG" --sprites 10 >"$LOG.out" 2>&1 &
+  "$APP" --log-file "$LOG" --scene sprites --sprites 10 >"$LOG.out" 2>&1 &
 fi
 pid=$!
 for t in $(seq 1 120); do grep -q 'entering main loop' "$LOG" 2>/dev/null && break; sleep 0.25; done

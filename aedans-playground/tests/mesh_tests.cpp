@@ -15,13 +15,18 @@
 #include <doctest/doctest.h>
 
 #include "VulkanRenderer.h"  // render/src: private
+#include "playground/core/JobSystem.h"
 #include "playground/core/Log.h"
 #include "playground/engine/Application.h"
+#include "playground/engine/Assets.h"
+#include "playground/engine/Camera.h"
+#include "playground/engine/Gltf.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include <glm/ext/matrix_transform.hpp>
@@ -429,6 +434,52 @@ TEST_CASE("a thousand mesh draws in one frame grow the draw list, with no valida
     REQUIRE(app->run().has_value());
     CHECK(renderer->lastMeshDrawCount() == 1000);
     CHECK(renderer->lastDrawCalls() == 1000);
+  }
+  CHECK(render::gpuValidationCounts().errors == 0);
+}
+
+TEST_CASE("a glTF model goes file -> worker decode -> GPU upload -> pixels, and clear() frees it") {
+  gpu::resetValidationCounts();
+  {
+    auto app = makeApp(3);
+    render::VulkanRenderer* renderer = attachRenderer(*app);
+    JobSystem jobs(2);
+    engine::AssetManager assets(jobs, PLAYGROUND_DEMO_ASSETS);
+    assets.registerType<engine::Model>(engine::gltfLoader(*renderer));
+
+    const auto crate = assets.load<engine::Model>("models/crate.gltf");
+    while (!assets.idle()) {
+      (void)assets.update();
+      std::this_thread::yield();
+    }
+    REQUIRE_MESSAGE(assets.state(crate) == engine::AssetState::Ready,
+                    (assets.error(crate) ? assets.error(crate)->message : std::string("not ready")));
+    const engine::Model* model = assets.get(crate);
+    REQUIRE(model != nullptr);
+    CHECK(renderer->meshCount() == 1);
+    CHECK(renderer->textureCount() == 3);  // base colour, normal, metallic-roughness
+
+    // Look straight at the crate's front face (+z), close enough to fill the middle.
+    engine::Camera camera{.projection = engine::Projection::Perspective, .position = {0.0f, 0.0f, 2.2f},
+                          .target = {0.0f, 0.0f, 0.0f}, .nearPlane = 0.05f, .farPlane = 100.0f};
+    const auto frame = renderOnce(*app, *renderer, [&](render::FrameData& f) {
+      flatLighting(f);
+      f.viewProjection = camera.viewProjection(f.viewportSize);
+      f.cameraPosition = camera.position;
+      model->extract(glm::mat4(1.0f), f);
+    });
+    // The middle of the face is wooden plank: reddish brown, r > g > b.
+    const auto wood = frame.at(160, 130);
+    INFO("centre pixel ", int(wood.r), ",", int(wood.g), ",", int(wood.b));
+    CHECK(wood.r > wood.g);
+    CHECK(wood.g > wood.b);
+    CHECK(wood.r > 80);
+    CHECK(isBackground(frame, 5, 5));  // the corner is outside the crate
+    CHECK(renderer->lastMeshDrawCount() == 1);
+
+    assets.clear();  // before the renderer goes, as the app does
+    CHECK(renderer->meshCount() == 0);
+    CHECK(renderer->textureCount() == 0);
   }
   CHECK(render::gpuValidationCounts().errors == 0);
 }

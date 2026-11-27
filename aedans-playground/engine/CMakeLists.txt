@@ -5,6 +5,7 @@ add_library(playground_engine STATIC
   src/Application.cpp
   src/Assets.cpp
   src/Camera.cpp
+  src/CameraController.cpp
   src/Gltf.cpp
   src/GltfImplementation.cpp
   src/Systems.cpp)

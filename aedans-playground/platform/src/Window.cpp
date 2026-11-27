@@ -101,6 +101,11 @@ void Window::registerInputCallbacks(GLFWwindow* handle) noexcept {
   });
 
   // The focus-loss guard: keys held during Alt+Tab never get their "up".
+  glfwSetScrollCallback(handle, [](GLFWwindow* w, double /*horizontal*/, double vertical) {
+    auto* self = static_cast<State*>(glfwGetWindowUserPointer(w));
+    if (self != nullptr) self->input.scrolled(vertical);
+  });
+
   glfwSetWindowFocusCallback(handle, [](GLFWwindow* w, int focused) {
     auto* self = static_cast<State*>(glfwGetWindowUserPointer(w));
     if (self == nullptr) return;
