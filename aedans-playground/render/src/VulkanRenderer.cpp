@@ -1,7 +1,25 @@
 // =============================================================================
-//  VulkanRenderer.cpp — draws the frame's sprites.
+//  VulkanRenderer.cpp — draws the frame's meshes, then its sprites.
 //
-//  WHAT IT DRAWS: every SpriteInstance in the FrameData the game extracted,
+//  MESHES (FrameData::meshes, render/Resources.h): lit, textured 3D geometry.
+//    - each mesh lives in device-local vertex and index buffers (Mesh.h),
+//      created once by createMesh;
+//    - each frame, one MeshDrawGpu per instance (transform, normal matrix,
+//      material factors, texture indices) goes into a per-frame storage
+//      buffer, found by the shaders through its GPU address, like sprites;
+//    - one vkCmdDrawIndexed per instance, with firstInstance = its entry, so
+//      gl_InstanceIndex finds its data; buffers are rebound only when the
+//      mesh changes;
+//    - TEXTURES are one bindless array (set 1): every texture ever created
+//      sits in a slot, and a material names its textures by slot. Two
+//      defaults (white, flat normal) fill in for textures a material lacks.
+//      The set is update-after-bind, so new textures go into free slots
+//      while frames that use the set are still on the GPU.
+//    - destroyMesh/destroyTexture retire the object: its handle goes stale
+//      at once, the memory is freed once every frame that might use it has
+//      finished (ResourcePool.h).
+//
+//  SPRITES: every SpriteInstance in the FrameData the game extracted,
 //  in order, as a coloured rectangle, in ONE instanced draw call:
 //    - each frame in flight owns a host-visible storage buffer, mapped for
 //      its whole life; after that frame's fence wait the CPU writes the
@@ -38,8 +56,11 @@
 //    3. RECORD   the commands:
 //                  barrier: image -> COLOR_ATTACHMENT_OPTIMAL
 //                  begin rendering (clear to the background colour)
-//                  bind pipeline, set viewport and scissor
-//                  push the sprite buffer's address, draw 6 x N
+//                  set viewport and scissor, bind descriptor sets 0 and 1
+//                  meshes: bind the mesh pipeline, push the draw list's
+//                  address, one indexed draw per mesh
+//                  sprites: bind a sprite pipeline, push the sprite
+//                  buffer's address, draw 6 x N (twice: opaque, translucent)
 //                  end rendering
 //                  barrier: image -> PRESENT_SRC_KHR
 //    4. SUBMIT   to the graphics queue: wait on `imageAcquired`, signal
@@ -57,6 +78,7 @@
 
 #include "VulkanRenderer.h"
 
+#include "playground/core/Assert.h"
 #include "playground/core/Log.h"
 #include "playground/gpu/Instance.h"
 #include "playground/gpu/VulkanCheck.h"
@@ -68,6 +90,9 @@
 #include <span>
 #include <utility>
 
+#include <glm/geometric.hpp>
+#include <glm/mat3x3.hpp>
+#include <glm/matrix.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 
@@ -83,6 +108,12 @@ constexpr u32 kSpriteVertSpirv[] = {
 };
 constexpr u32 kSpriteFragSpirv[] = {
 #include "sprite.frag.spv.inc"
+};
+constexpr u32 kMeshVertSpirv[] = {
+#include "mesh.vert.spv.inc"
+};
+constexpr u32 kMeshFragSpirv[] = {
+#include "mesh.frag.spv.inc"
 };
 
 // Must match `struct Sprite` in sprite.vert byte for byte (std430 layout).
@@ -101,17 +132,39 @@ static_assert(offsetof(SpriteGpu, rotation) == 16);
 static_assert(offsetof(SpriteGpu, colour) == 32);
 static_assert(sizeof(SpriteGpu) == 48);
 
-// Must match the push_constant block in sprite.vert.
+// Must match `struct MeshDraw` in mesh_common.glsl (std430).
+struct MeshDrawGpu {
+  glm::mat4 model;
+  glm::mat4 normalMatrix;  // a mat3 in a mat4: std430 would pad a mat3's columns anyway
+  glm::vec4 baseColourFactor;
+  glm::vec4 factors;    // metallic, roughness, normal scale, unused
+  glm::uvec4 textures;  // bindless slots: base colour, normal, metallic-roughness, unused
+};
+static_assert(offsetof(MeshDrawGpu, normalMatrix) == 64);
+static_assert(offsetof(MeshDrawGpu, baseColourFactor) == 128);
+static_assert(offsetof(MeshDrawGpu, factors) == 144);
+static_assert(offsetof(MeshDrawGpu, textures) == 160);
+static_assert(sizeof(MeshDrawGpu) == 176);
+
+// Must match the push_constant blocks in sprite.vert and mesh_common.glsl:
+// one GPU address, of the sprite buffer or of the mesh draw list. Both
+// stages may read it (mesh.frag looks up its material).
 struct DrawPushConstants {
-  VkDeviceAddress spriteList;  // the frame's sprite buffer, as a GPU pointer
+  VkDeviceAddress list;
 };
 static_assert(sizeof(DrawPushConstants) == 8);
+constexpr VkShaderStageFlags kPushStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-// Must match the uniform block (set 0, binding 0) in sprite.vert (std140).
+// Must match the uniform block (set 0, binding 0) in mesh_common.glsl
+// (std140). sprite.vert declares only the first member, which is allowed.
 struct FrameUniforms {
   glm::mat4 viewProjection;  // world -> clip, reverse-Z
+  glm::vec4 cameraPosition;
+  glm::vec4 sunDirection;    // normalised
+  glm::vec4 sunColour;       // colour x intensity
+  glm::vec4 ambient;
 };
-static_assert(sizeof(FrameUniforms) == 64);
+static_assert(sizeof(FrameUniforms) == 128);
 
 // How long to wait for the GPU before calling it hung. Generous: a frame
 // that takes this long is a bug, not a slow frame.
@@ -140,32 +193,7 @@ Result<gpu::Semaphore> createSemaphore(VkDevice device) {
   return gpu::Semaphore(device, semaphore);
 }
 
-// A synchronization2 image layout transition. Stage and access masks are
-// kept as narrow as the transition allows: ALL_COMMANDS everywhere "works"
-// and serialises the whole GPU.
-void transitionImage(VkCommandBuffer commands, VkImage image, VkImageLayout from, VkImageLayout to,
-                     VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
-                     VkAccessFlags2 dstAccess, VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT) {
-  const VkImageMemoryBarrier2 barrier{
-      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-      .srcStageMask = srcStage,
-      .srcAccessMask = srcAccess,
-      .dstStageMask = dstStage,
-      .dstAccessMask = dstAccess,
-      .oldLayout = from,
-      .newLayout = to,
-      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .image = image,
-      .subresourceRange = {.aspectMask = aspect, .levelCount = 1, .layerCount = 1},
-  };
-  const VkDependencyInfo dependency{
-      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-      .imageMemoryBarrierCount = 1,
-      .pImageMemoryBarriers = &barrier,
-  };
-  vkCmdPipelineBarrier2(commands, &dependency);
-}
+using gpu::transitionImage;
 
 }  // namespace
 
@@ -198,9 +226,12 @@ Result<std::unique_ptr<VulkanRenderer>> VulkanRenderer::create(platform::Platfor
 
   std::unique_ptr<VulkanRenderer> renderer(new VulkanRenderer(window, std::move(*context), desc));
 
-  // The swapchain also builds the pipeline, which needs its image format.
+  // Layouts first: the pipelines (built with the swapchain, which gives
+  // their colour format) and the descriptor sets are made from them.
+  if (Status s = renderer->createDescriptorLayouts(); !s) return tl::unexpected(std::move(s.error()));
   if (Status s = renderer->createSwapchain(window.framebufferSize()); !s) return tl::unexpected(std::move(s.error()));
   if (Status s = renderer->createFrameResources(); !s) return tl::unexpected(std::move(s.error()));
+  if (Status s = renderer->createTextureResources(); !s) return tl::unexpected(std::move(s.error()));
 
   log::info(Category::Render, "Vulkan renderer ready: {} frames in flight", kFramesInFlight);
   return renderer;
@@ -256,15 +287,26 @@ Status VulkanRenderer::createSwapchain(platform::Extent2D size) {
   return {};
 }
 
-Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
-  const VkDevice device = context_.device().handle();
+namespace {
 
-  // --- Shaders -------------------------------------------------------------
-  auto vertex = createShaderModule(device, kSpriteVertSpirv, "sprite.vert");
+// What differs between the renderer's pipelines; everything else (dynamic
+// viewport, reverse-Z depth test, dynamic rendering) is shared.
+struct PipelineSpec {
+  std::span<const u32> vertexSpirv;
+  std::span<const u32> fragmentSpirv;
+  const char* name;                                  // for errors: "mesh", "opaque sprites"...
+  const VkPipelineVertexInputStateCreateInfo* vertexInput;
+  VkCullModeFlags cullMode;
+  bool depthWrite;
+  bool blend;
+};
+
+Result<gpu::Pipeline> buildPipeline(VkDevice device, VkPipelineLayout layout, VkFormat colourFormat,
+                                    const PipelineSpec& spec) {
+  auto vertex = createShaderModule(device, spec.vertexSpirv, spec.name);
   if (!vertex) return tl::unexpected(std::move(vertex.error()));
-  auto fragment = createShaderModule(device, kSpriteFragSpirv, "sprite.frag");
+  auto fragment = createShaderModule(device, spec.fragmentSpirv, spec.name);
   if (!fragment) return tl::unexpected(std::move(fragment.error()));
-
   const std::array<VkPipelineShaderStageCreateInfo, 2> stages{{
       {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
        .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -276,10 +318,6 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
        .pName = "main"},
   }};
 
-  // --- Fixed-function state -------------------------------------------------
-  // No vertex buffers: the quad's corners are in the vertex shader.
-  const VkPipelineVertexInputStateCreateInfo vertexInput{
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
   const VkPipelineInputAssemblyStateCreateInfo inputAssembly{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -291,10 +329,12 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .viewportCount = 1,
       .scissorCount = 1,
   };
+  // Front faces are counter-clockwise as seen by the viewer: glTF's rule,
+  // and OpenGL's. The flipped viewport (recordCommands) keeps that meaning.
   const VkPipelineRasterizationStateCreateInfo rasterization{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
       .polygonMode = VK_POLYGON_MODE_FILL,
-      .cullMode = VK_CULL_MODE_NONE,  // 2D: draw quads whichever way they face
+      .cullMode = spec.cullMode,
       .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
       .lineWidth = 1.0f,
   };
@@ -302,9 +342,18 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
       .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
   };
+  // Reverse-Z depth test: keep a fragment if it is at least as near as what
+  // is there (larger depth = nearer). Equal passes, so sprites on the same
+  // layer keep their draw order.
+  const VkPipelineDepthStencilStateCreateInfo depthState{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+      .depthTestEnable = VK_TRUE,
+      .depthWriteEnable = spec.depthWrite ? VK_TRUE : VK_FALSE,
+      .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
+  };
   // Standard alpha blending: colour = src * srcAlpha + dst * (1 - srcAlpha).
   const VkPipelineColorBlendAttachmentState blendAttachment{
-      .blendEnable = VK_TRUE,
+      .blendEnable = spec.blend ? VK_TRUE : VK_FALSE,
       .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
       .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
       .colorBlendOp = VK_BLEND_OP_ADD,
@@ -325,51 +374,7 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .dynamicStateCount = static_cast<u32>(dynamicStates.size()),
       .pDynamicStates = dynamicStates.data(),
   };
-
-  // --- Layout: what the shaders read besides vertices: set 0 = the frame's
-  // uniform buffer (the camera), and a push constant with the sprite
-  // buffer's address. Both read by the vertex shader.
-  if (!pipelineLayout_) {
-    const VkDescriptorSetLayoutBinding frameBinding{
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-    };
-    const VkDescriptorSetLayoutCreateInfo setLayoutInfo{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &frameBinding,
-    };
-    VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
-    if (Status s = gpu::check(vkCreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &setLayout),
-                              "vkCreateDescriptorSetLayout");
-        !s) {
-      return s;
-    }
-    frameSetLayout_ = gpu::DescriptorSetLayout(device, setLayout);
-
-    const VkPushConstantRange pushRange{
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .offset = 0,
-        .size = sizeof(DrawPushConstants),
-    };
-    const VkPipelineLayoutCreateInfo layoutInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &setLayout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &pushRange,
-    };
-    VkPipelineLayout layout = VK_NULL_HANDLE;
-    if (Status s = gpu::check(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout), "vkCreatePipelineLayout");
-        !s) {
-      return s;
-    }
-    pipelineLayout_ = gpu::PipelineLayout(device, layout);
-  }
-
-  // --- Dynamic rendering: name the attachment formats, no VkRenderPass -----
+  // Dynamic rendering: name the attachment formats, no VkRenderPass.
   const VkPipelineRenderingCreateInfo rendering{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
       .colorAttachmentCount = 1,
@@ -377,23 +382,12 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .depthAttachmentFormat = gpu::kDepthFormat,
   };
 
-  // Reverse-Z depth test: keep a fragment if it is at least as near as what
-  // is there (larger depth = nearer). Equal passes, so sprites on the same
-  // layer keep their draw order. The opaque pipeline writes depth; the
-  // translucent one only tests it.
-  VkPipelineDepthStencilStateCreateInfo depthState{
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-      .depthTestEnable = VK_TRUE,
-      .depthWriteEnable = VK_TRUE,
-      .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
-  };
-
-  const VkGraphicsPipelineCreateInfo pipelineInfo{
+  const VkGraphicsPipelineCreateInfo info{
       .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
       .pNext = &rendering,
       .stageCount = static_cast<u32>(stages.size()),
       .pStages = stages.data(),
-      .pVertexInputState = &vertexInput,
+      .pVertexInputState = spec.vertexInput,
       .pInputAssemblyState = &inputAssembly,
       .pViewportState = &viewport,
       .pRasterizationState = &rasterization,
@@ -401,29 +395,202 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .pDepthStencilState = &depthState,
       .pColorBlendState = &colourBlend,
       .pDynamicState = &dynamic,
-      .layout = pipelineLayout_.get(),
+      .layout = layout,
       .renderPass = VK_NULL_HANDLE,  // dynamic rendering
   };
+  VkPipeline pipeline = VK_NULL_HANDLE;
+  if (Status s = gpu::check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline),
+                            "vkCreateGraphicsPipelines");
+      !s) {
+    s.error().message += std::format(" ({} pipeline)", spec.name);
+    return tl::unexpected(std::move(s.error()));
+  }
+  return gpu::Pipeline(device, pipeline);  // the shader modules are destroyed here: the pipeline no longer needs them
+}
 
-  VkPipeline opaque = VK_NULL_HANDLE;
-  if (Status s = gpu::check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &opaque),
-                            "vkCreateGraphicsPipelines (opaque sprites)");
+}  // namespace
+
+Status VulkanRenderer::createDescriptorLayouts() {
+  const VkDevice device = context_.device().handle();
+
+  // Set 0: this frame's uniform buffer. The camera is read by the vertex
+  // shaders, the lights by the mesh fragment shader.
+  const VkDescriptorSetLayoutBinding frameBinding{
+      .binding = 0,
+      .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .descriptorCount = 1,
+      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+  };
+  const VkDescriptorSetLayoutCreateInfo frameInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .bindingCount = 1,
+      .pBindings = &frameBinding,
+  };
+  VkDescriptorSetLayout frameLayout = VK_NULL_HANDLE;
+  if (Status s = gpu::check(vkCreateDescriptorSetLayout(device, &frameInfo, nullptr, &frameLayout),
+                            "vkCreateDescriptorSetLayout (frame)");
       !s) {
     return s;
   }
-  opaquePipeline_ = gpu::Pipeline(device, opaque);  // replaces (and destroys) any old one
+  frameSetLayout_ = gpu::DescriptorSetLayout(device, frameLayout);
 
-  depthState.depthWriteEnable = VK_FALSE;  // the same pipeline, without depth writes
-  VkPipeline blended = VK_NULL_HANDLE;
-  if (Status s = gpu::check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &blended),
-                            "vkCreateGraphicsPipelines (translucent sprites)");
+  // Set 1: the bindless texture array, kMaxTextures image + sampler pairs.
+  //   PARTIALLY_BOUND             slots never written are fine while no
+  //                               shader reads them;
+  //   UPDATE_AFTER_BIND,          a new texture can be written into a free
+  //   UPDATE_UNUSED_WHILE_PENDING slot while frames that bound the set are
+  //                               still on the GPU (they do not read it).
+  const VkDescriptorSetLayoutBinding textureBinding{
+      .binding = 0,
+      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .descriptorCount = kMaxTextures,
+      .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+  };
+  const VkDescriptorBindingFlags textureFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+                                                VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+                                                VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT;
+  const VkDescriptorSetLayoutBindingFlagsCreateInfo textureFlagsInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+      .bindingCount = 1,
+      .pBindingFlags = &textureFlags,
+  };
+  const VkDescriptorSetLayoutCreateInfo textureInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .pNext = &textureFlagsInfo,
+      .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+      .bindingCount = 1,
+      .pBindings = &textureBinding,
+  };
+  VkDescriptorSetLayout textureLayout = VK_NULL_HANDLE;
+  if (Status s = gpu::check(vkCreateDescriptorSetLayout(device, &textureInfo, nullptr, &textureLayout),
+                            "vkCreateDescriptorSetLayout (textures)");
       !s) {
     return s;
   }
-  blendedPipeline_ = gpu::Pipeline(device, blended);
+  textureSetLayout_ = gpu::DescriptorSetLayout(device, textureLayout);
+
+  // One layout for every pipeline: sets 0 and 1, and an 8-byte push
+  // constant (a buffer address). Sharing it means the sets stay bound across
+  // pipeline switches. Sprite shaders simply never read set 1.
+  const std::array<VkDescriptorSetLayout, 2> setLayouts{frameLayout, textureLayout};
+  const VkPushConstantRange pushRange{.stageFlags = kPushStages, .offset = 0, .size = sizeof(DrawPushConstants)};
+  const VkPipelineLayoutCreateInfo layoutInfo{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .setLayoutCount = static_cast<u32>(setLayouts.size()),
+      .pSetLayouts = setLayouts.data(),
+      .pushConstantRangeCount = 1,
+      .pPushConstantRanges = &pushRange,
+  };
+  VkPipelineLayout layout = VK_NULL_HANDLE;
+  if (Status s = gpu::check(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout), "vkCreatePipelineLayout");
+      !s) {
+    return s;
+  }
+  pipelineLayout_ = gpu::PipelineLayout(device, layout);
+  return {};
+}
+
+Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
+  const VkDevice device = context_.device().handle();
+
+  // Sprites have no vertex buffers: the quad's corners are in the shader.
+  const VkPipelineVertexInputStateCreateInfo noVertices{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+
+  // Meshes read render::Vertex (48 bytes) from binding 0.
+  const VkVertexInputBindingDescription vertexBinding{
+      .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
+  const std::array<VkVertexInputAttributeDescription, 4> attributes{{
+      {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, position)},
+      {.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, normal)},
+      {.location = 2, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = offsetof(Vertex, tangent)},
+      {.location = 3, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(Vertex, uv)},
+  }};
+  const VkPipelineVertexInputStateCreateInfo meshVertices{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+      .vertexBindingDescriptionCount = 1,
+      .pVertexBindingDescriptions = &vertexBinding,
+      .vertexAttributeDescriptionCount = static_cast<u32>(attributes.size()),
+      .pVertexAttributeDescriptions = attributes.data(),
+  };
+
+  auto mesh = buildPipeline(device, pipelineLayout_.get(), colourFormat,
+                            {.vertexSpirv = kMeshVertSpirv, .fragmentSpirv = kMeshFragSpirv, .name = "mesh",
+                             .vertexInput = &meshVertices, .cullMode = VK_CULL_MODE_BACK_BIT, .depthWrite = true,
+                             .blend = false});
+  if (!mesh) return tl::unexpected(std::move(mesh.error()));
+  // 2D sprites: drawn whichever way they face. The translucent pipeline is
+  // the same without depth writes.
+  auto opaque = buildPipeline(device, pipelineLayout_.get(), colourFormat,
+                              {.vertexSpirv = kSpriteVertSpirv, .fragmentSpirv = kSpriteFragSpirv,
+                               .name = "opaque sprites", .vertexInput = &noVertices, .cullMode = VK_CULL_MODE_NONE,
+                               .depthWrite = true, .blend = true});
+  if (!opaque) return tl::unexpected(std::move(opaque.error()));
+  auto blended = buildPipeline(device, pipelineLayout_.get(), colourFormat,
+                               {.vertexSpirv = kSpriteVertSpirv, .fragmentSpirv = kSpriteFragSpirv,
+                                .name = "translucent sprites", .vertexInput = &noVertices,
+                                .cullMode = VK_CULL_MODE_NONE, .depthWrite = false, .blend = true});
+  if (!blended) return tl::unexpected(std::move(blended.error()));
+
+  meshPipeline_ = std::move(*mesh);  // replaces (and destroys) any old ones
+  opaquePipeline_ = std::move(*opaque);
+  blendedPipeline_ = std::move(*blended);
   pipelineFormat_ = colourFormat;
-  log::info(Category::Render, "sprite pipelines (opaque, translucent) built for {}", gpu::describe(colourFormat));
-  return {};  // the shader modules are destroyed here: the pipeline no longer needs them
+  log::info(Category::Render, "pipelines (mesh; opaque and translucent sprites) built for {}",
+            gpu::describe(colourFormat));
+  return {};
+}
+
+Status VulkanRenderer::createTextureResources() {
+  const VkDevice device = context_.device().handle();
+
+  auto sampler = gpu::createSampler(context_, {.debugName = "material textures"});
+  if (!sampler) return tl::unexpected(std::move(sampler.error()));
+  sampler_ = std::move(*sampler);
+
+  const VkDescriptorPoolSize poolSize{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                      .descriptorCount = kMaxTextures};
+  const VkDescriptorPoolCreateInfo poolInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+      .maxSets = 1,
+      .poolSizeCount = 1,
+      .pPoolSizes = &poolSize,
+  };
+  VkDescriptorPool pool = VK_NULL_HANDLE;
+  if (Status s = gpu::check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &pool), "vkCreateDescriptorPool (textures)");
+      !s) {
+    return s;
+  }
+  textureDescriptorPool_ = gpu::DescriptorPool(device, pool);
+
+  const VkDescriptorSetLayout layout = textureSetLayout_.get();
+  const VkDescriptorSetAllocateInfo setInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = pool,
+      .descriptorSetCount = 1,
+      .pSetLayouts = &layout,
+  };
+  if (Status s = gpu::check(vkAllocateDescriptorSets(device, &setInfo, &textureSet_), "vkAllocateDescriptorSets (textures)");
+      !s) {
+    return s;
+  }
+
+  // The defaults, in the first slots (kWhiteTexture, kFlatNormalTexture).
+  const auto onePixel = [&](u8 r, u8 g, u8 b, std::string_view name) -> Status {
+    const std::array<std::byte, 4> rgba{std::byte{r}, std::byte{g}, std::byte{b}, std::byte{255}};
+    auto image = gpu::createTexture(context_, {.width = 1, .height = 1, .format = VK_FORMAT_R8G8B8A8_UNORM,
+                                               .pixels = rgba, .generateMips = false, .debugName = name});
+    if (!image) return tl::unexpected(std::move(image.error()));
+    auto handle = addTexture(std::move(*image), name);
+    if (!handle) return tl::unexpected(std::move(handle.error()));
+    return {};
+  };
+  if (Status s = onePixel(255, 255, 255, "default white"); !s) return s;
+  if (Status s = onePixel(128, 128, 255, "default flat normal"); !s) return s;
+  PG_VERIFY(textures_.liveCount() == kDefaultTextureCount, "the default textures must fill the first slots");
+  log::debug(Category::Render, "bindless texture array: {} slots", kMaxTextures);
+  return {};
 }
 
 Status VulkanRenderer::createFrameResources() {
@@ -579,9 +746,16 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/, const FrameData& f
     return s;
   }
 
-  // The fence wait above means the GPU has finished reading this slot's
-  // sprite buffer and uniforms, so it is safe to overwrite (or replace) them.
+  // The fence wait above means frames [0, framesPresented_ - (kFramesInFlight
+  // - 1)) have all finished: what was destroyed before then can go.
+  const u64 framesCompleted = framesPresented_ + 1 >= kFramesInFlight ? framesPresented_ + 1 - kFramesInFlight : 0;
+  meshes_.release(framesCompleted);
+  textures_.release(framesCompleted);
+
+  // It also means the GPU has finished reading this slot's sprite and mesh
+  // buffers and uniforms, so it is safe to overwrite (or replace) them.
   if (Status s = writeSprites(frame, frameData); !s) return s;
+  if (Status s = writeMeshes(frame, frameData); !s) return s;
   if (Status s = writeFrameUniforms(frame, frameData); !s) return s;
   if (Status s = prepareCapture(frame); !s) return s;
 
@@ -645,6 +819,124 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/, const FrameData& f
   frameIndex_ = (frameIndex_ + 1) % kFramesInFlight;
   ++framesPresented_;
   return {};
+}
+
+// --- Meshes and textures ------------------------------------------------------
+
+Result<MeshHandle> VulkanRenderer::createMesh(const MeshData& data, std::string_view debugName) {
+  auto mesh = Mesh::create(context_, data, debugName);
+  if (!mesh) return tl::unexpected(std::move(mesh.error()));
+  const u32 triangles = mesh->indexCount() / 3;
+  const u32 vertices = mesh->vertexCount();
+  auto handle = meshes_.add(std::move(*mesh));
+  if (!handle) return tl::unexpected(std::move(handle.error()));
+  log::debug(Category::Render, "mesh \"{}\": {} vertices, {} triangles (slot {})", debugName, vertices, triangles,
+             handle->index);
+  return handle;
+}
+
+Result<TextureHandle> VulkanRenderer::createTexture(const ImageData& image, TextureUsage usage,
+                                                    std::string_view debugName) {
+  // Colour data is stored as sRGB and decoded by the sampler; anything else
+  // (normals, metallic-roughness) must reach the shader as the numbers stored.
+  const VkFormat format = usage == TextureUsage::Colour ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+  auto texture = gpu::createTexture(context_, {.width = image.width,
+                                               .height = image.height,
+                                               .format = format,
+                                               .pixels = image.rgba,
+                                               .generateMips = true,
+                                               .debugName = debugName});
+  if (!texture) return tl::unexpected(std::move(texture.error()));
+  return addTexture(std::move(*texture), debugName);
+}
+
+Result<TextureHandle> VulkanRenderer::addTexture(gpu::Image image, std::string_view debugName) {
+  auto handle = textures_.add(std::move(image));
+  if (!handle) return tl::unexpected(std::move(handle.error()));
+  // Point the handle's slot in the bindless array at the new image. Allowed
+  // while frames are in flight: they do not read this slot (it was free, or
+  // its last user finished before it was released).
+  const gpu::Image* stored = textures_.get(*handle);
+  const VkDescriptorImageInfo imageInfo{
+      .sampler = sampler_.get(),
+      .imageView = stored->view(),
+      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+  };
+  const VkWriteDescriptorSet write{
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = textureSet_,
+      .dstBinding = 0,
+      .dstArrayElement = handle->index,
+      .descriptorCount = 1,
+      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .pImageInfo = &imageInfo,
+  };
+  vkUpdateDescriptorSets(context_.device().handle(), 1, &write, 0, nullptr);
+  log::debug(Category::Render, "texture \"{}\" in bindless slot {}", debugName, handle->index);
+  return handle;
+}
+
+void VulkanRenderer::destroyMesh(MeshHandle mesh) noexcept { (void)meshes_.retire(mesh, framesPresented_); }
+
+void VulkanRenderer::destroyTexture(TextureHandle texture) noexcept {
+  if (texture.index < kDefaultTextureCount) return;  // the defaults live as long as the renderer
+  (void)textures_.retire(texture, framesPresented_);
+}
+
+u32 VulkanRenderer::textureSlot(TextureHandle texture, u32 fallback) noexcept {
+  return texture.index >= kDefaultTextureCount && textures_.get(texture) != nullptr ? texture.index : fallback;
+}
+
+Status VulkanRenderer::writeMeshes(Frame& frame, const FrameData& frameData) {
+  const usize count = frameData.meshes.size();
+  if (count > kMaxMeshDraws) {
+    return fail(Errc::InvalidArgument, "{} meshes in one frame; the renderer's limit is {}", count, kMaxMeshDraws);
+  }
+  frame.meshCommands.clear();
+  lastMeshDraws_ = 0;
+  if (count == 0) return {};
+
+  // Grow this frame's draw list if needed, doubling (as for sprites).
+  const u64 needed = std::max<u64>(count, kInitialMeshDrawCapacity) * sizeof(MeshDrawGpu);
+  if (frame.meshDraws.size() < needed) {
+    u64 capacity = std::max<u64>(frame.meshDraws.size() / sizeof(MeshDrawGpu), kInitialMeshDrawCapacity);
+    while (capacity * sizeof(MeshDrawGpu) < needed) capacity *= 2;
+    auto grown = gpu::Buffer::create(context_.allocator(),
+                                     {.sizeBytes = capacity * sizeof(MeshDrawGpu),
+                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                      .memory = gpu::MemoryKind::HostVisible,
+                                      .debugName = "mesh draws"});
+    if (!grown) return tl::unexpected(std::move(grown.error()));
+    frame.meshDraws = std::move(*grown);  // the fence says the GPU is done with the old one
+  }
+
+  // Front to back into write-combined memory, as for sprites. A stale or
+  // invalid mesh handle (destroyed, never created) is skipped, not drawn.
+  auto* out = reinterpret_cast<MeshDrawGpu*>(frame.meshDraws.mapped().data());
+  u32 written = 0;
+  for (const MeshInstance& instance : frameData.meshes) {
+    const Mesh* mesh = meshes_.get(instance.mesh);
+    if (mesh == nullptr) continue;
+    const Material& material = instance.material;
+    // Normals need the inverse-transpose: under a non-uniform scale (a box
+    // stretched along x) the plain matrix would tilt them off the surface.
+    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(instance.transform)));
+    out[written] = MeshDrawGpu{
+        .model = instance.transform,
+        .normalMatrix = glm::mat4(normalMatrix),
+        .baseColourFactor = material.baseColourFactor,
+        .factors = {material.metallicFactor, material.roughnessFactor, material.normalScale, 0.0f},
+        .textures = {textureSlot(material.baseColour, kWhiteTexture), textureSlot(material.normal, kFlatNormalTexture),
+                     textureSlot(material.metallicRoughness, kWhiteTexture), 0u},
+    };
+    frame.meshCommands.push_back({.vertices = mesh->vertexBuffer(), .indices = mesh->indexBuffer(),
+                                  .indexCount = mesh->indexCount()});
+    ++written;
+  }
+  lastMeshDraws_ = written;
+  lastDrawCalls_ += written;
+  return frame.meshDraws.flush(0, u64{written} * sizeof(MeshDrawGpu));
 }
 
 u32 VulkanRenderer::spriteCapacity() const noexcept {
@@ -726,9 +1018,15 @@ Status VulkanRenderer::writeSprites(Frame& frame, const FrameData& frameData) {
 
 Status VulkanRenderer::writeFrameUniforms(Frame& frame, const FrameData& frameData) {
   const VkExtent2D extent = swapchain_->extent();
+  const glm::vec3 towards = frameData.sun.direction;
+  const f32 length = glm::length(towards);
   const FrameUniforms uniforms{
       .viewProjection = frameData.viewProjection.value_or(pixelViewProjection(
           {static_cast<f32>(extent.width), static_cast<f32>(extent.height)})),
+      .cameraPosition = glm::vec4(frameData.cameraPosition, 1.0f),
+      .sunDirection = glm::vec4(length > 0.0f ? towards / length : glm::vec3(0.0f, -1.0f, 0.0f), 0.0f),
+      .sunColour = glm::vec4(frameData.sun.colour * frameData.sun.intensity, 0.0f),
+      .ambient = glm::vec4(frameData.ambient, 0.0f),
   };
   return frame.uniforms.write(std::as_bytes(std::span(&uniforms, 1)));
 }
@@ -852,19 +1150,44 @@ Status VulkanRenderer::recordCommands(const Frame& frameSlot, u32 imageIndex) co
   vkCmdSetViewport(commands, 0, 1, &viewport);
   vkCmdSetScissor(commands, 0, 1, &scissor);
 
-  // At most TWO draws for every sprite: 6 vertices (two triangles) per
-  // instance, one instance per sprite; opaque instances first, then the
-  // translucent ones (firstInstance = opaqueCount, and gl_InstanceIndex
-  // includes it). The shader reads instance i's data from the buffer at
-  // `sprites`, and the camera from this frame's uniform buffer (set 0).
-  // Both pipelines share one layout, so the descriptor set and push constant
-  // stay bound across the switch.
+  // Both descriptor sets, once: every pipeline shares one layout, so they
+  // stay bound across pipeline switches. Set 0 = this frame's camera and
+  // lights, set 1 = every texture.
+  const std::array<VkDescriptorSet, 2> sets{frameSlot.descriptorSet, textureSet_};
+  vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_.get(), 0,
+                          static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
+
+  // 1. MESHES: one indexed draw each. firstInstance = i makes
+  // gl_InstanceIndex = i, the draw's entry in the meshDraws buffer
+  // (transform and material). Consecutive draws of the same mesh keep its
+  // buffers bound.
+  if (!frameSlot.meshCommands.empty()) {
+    vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline_.get());
+    const DrawPushConstants push{.list = frameSlot.meshDraws.deviceAddress()};
+    vkCmdPushConstants(commands, pipelineLayout_.get(), kPushStages, 0, sizeof(push), &push);
+    VkBuffer bound = VK_NULL_HANDLE;
+    for (u32 i = 0; i < frameSlot.meshCommands.size(); ++i) {
+      const MeshCommand& draw = frameSlot.meshCommands[i];
+      if (draw.vertices != bound) {
+        const VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commands, 0, 1, &draw.vertices, &offset);
+        vkCmdBindIndexBuffer(commands, draw.indices, 0, VK_INDEX_TYPE_UINT32);
+        bound = draw.vertices;
+      }
+      vkCmdDrawIndexed(commands, draw.indexCount, 1, 0, 0, i);
+    }
+  }
+
+  // 2. SPRITES: at most TWO draws for every sprite: 6 vertices (two
+  // triangles) per instance, one instance per sprite; opaque instances
+  // first, then the translucent ones (firstInstance = opaqueCount, and
+  // gl_InstanceIndex includes it). The shader reads instance i's data from
+  // the buffer at `sprites`. After the meshes, so translucent sprites blend
+  // over them; the depth buffer hides sprites behind a mesh.
   if (frameSlot.opaqueCount + frameSlot.blendedCount > 0) {
     vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, opaquePipeline_.get());
-    vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_.get(), 0, 1,
-                            &frameSlot.descriptorSet, 0, nullptr);
-    const DrawPushConstants push{.spriteList = sprites};
-    vkCmdPushConstants(commands, pipelineLayout_.get(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+    const DrawPushConstants push{.list = sprites};
+    vkCmdPushConstants(commands, pipelineLayout_.get(), kPushStages, 0, sizeof(push), &push);
     if (frameSlot.opaqueCount > 0) vkCmdDraw(commands, 6, frameSlot.opaqueCount, 0, 0);
     if (frameSlot.blendedCount > 0) {
       vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, blendedPipeline_.get());

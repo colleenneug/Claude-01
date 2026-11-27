@@ -18,6 +18,12 @@
 //    onFramebufferResized  Rebuild size-dependent resources (the swapchain).
 //    renderFrame           Record, submit and present one frame, drawing
 //                          what the game extracted into FrameData.
+//    createMesh,           Copy geometry or pixels to GPU memory once and
+//    createTexture         return a handle (render/Resources.h). Main
+//                          thread only, like everything here. A renderer
+//                          that cannot draw meshes returns Errc::Unsupported.
+//    destroyMesh,          Free them. Safe while frames that use them are
+//    destroyTexture        still on the GPU: the memory goes once they finish.
 //    destruction           Release every GPU resource. Runs while the window
 //                          still exists, because a Vulkan surface must be
 //                          destroyed before the window it belongs to.
@@ -33,6 +39,7 @@
 #include "playground/core/Result.h"
 #include "playground/platform/Window.h"
 #include "playground/render/FrameData.h"
+#include "playground/render/Resources.h"
 
 #include <string_view>
 
@@ -57,6 +64,19 @@ class Renderer {
   // Produces one frame showing `frame`. `time` is the same FrameTime the
   // update step saw. `frame` is only valid during the call.
   [[nodiscard]] virtual Status renderFrame(const FrameTime& time, const FrameData& frame) = 0;
+
+  // GPU resources. The defaults are for renderers that only draw sprites
+  // (tests' fakes): creating fails with Errc::Unsupported, destroying does
+  // nothing. A stale or invalid handle is ignored by destroy.
+  [[nodiscard]] virtual Result<MeshHandle> createMesh(const MeshData& /*mesh*/, std::string_view debugName) {
+    return fail(Errc::Unsupported, "the {} renderer cannot create meshes (\"{}\")", name(), debugName);
+  }
+  [[nodiscard]] virtual Result<TextureHandle> createTexture(const ImageData& /*image*/, TextureUsage /*usage*/,
+                                                            std::string_view debugName) {
+    return fail(Errc::Unsupported, "the {} renderer cannot create textures (\"{}\")", name(), debugName);
+  }
+  virtual void destroyMesh(MeshHandle /*mesh*/) noexcept {}
+  virtual void destroyTexture(TextureHandle /*texture*/) noexcept {}
 
  protected:
   Renderer() = default;

@@ -2,6 +2,10 @@
 // =============================================================================
 //  playground/render/FrameData.h — what to draw this frame, as plain data.
 //
+//  Two kinds of things are drawn: 3D MESHES (lit, textured; see
+//  render/Resources.h), then 2D SPRITES (flat colour). Both use the same
+//  camera and depth buffer, so sprites and meshes hide each other correctly.
+//
 //  The renderer never reads the ECS. Each frame the game copies what is
 //  visible into a FrameData ("extraction", engine::extractSprites), and the
 //  renderer draws that. The two sides share no pointers, which keeps them
@@ -16,6 +20,7 @@
 // =============================================================================
 
 #include "playground/core/Types.h"
+#include "playground/render/Resources.h"
 
 #include <algorithm>
 #include <optional>
@@ -26,6 +31,7 @@
 
 #include <glm/common.hpp>
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
 namespace playground::render {
@@ -39,12 +45,20 @@ struct SpriteInstance {
 };
 
 struct FrameData {
+  std::vector<MeshInstance> meshes;         // opaque 3D meshes, any order (the depth buffer sorts them)
   std::vector<SpriteInstance> sprites;      // equal depth: drawn in order, later on top
   std::optional<glm::mat4> viewProjection;  // world -> clip (reverse-Z); empty = pixels
   glm::vec2 viewportSize{0.0f};             // framebuffer pixels, filled in before extraction
 
-  // Keeps the sprites' capacity (no allocation per frame); resets the view.
+  // Lighting, for meshes (sprites are unlit).
+  glm::vec3 cameraPosition{0.0f, 0.0f, 1000.0f};  // world; shiny highlights depend on it
+  DirectionalLight sun;
+  glm::vec3 ambient{0.08f, 0.09f, 0.11f};         // light from everywhere (sky and bounces), linear RGB
+
+  // Keeps the lists' capacity (no allocation per frame); resets the view.
+  // Lighting stays as it was: it is scene state, not per-frame data.
   void clear() noexcept {
+    meshes.clear();
     sprites.clear();
     viewProjection.reset();
   }
