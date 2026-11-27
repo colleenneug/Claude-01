@@ -42,7 +42,7 @@ enum class Level : u8 { Trace, Debug, Info, Warn, Error, Critical, Off };
 
 // One per layer in the roadmap. Add a category when a subsystem is added,
 // not before.
-enum class Category : u8 { Core, Platform, Gpu, Render, Engine, Game, Count };
+enum class Category : u8 { Core, Platform, Gpu, Render, Engine, Net, Game, Count };
 
 // Lines at or above this level are pushed to disk immediately. In debug
 // builds that is every line; in release, info and above (trace and debug

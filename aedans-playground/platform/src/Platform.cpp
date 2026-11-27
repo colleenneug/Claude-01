@@ -3,7 +3,6 @@
 #include "playground/core/Log.h"
 
 #include <atomic>
-#include <csignal>
 #include <string>
 
 // GLFW_INCLUDE_VULKAN is not defined: the Vulkan queries below need no
@@ -16,12 +15,6 @@ namespace {
 using log::Category;
 
 std::atomic<bool> gPlatformAlive{false};
-
-// Written by a signal handler, so it must be lock-free; checked below.
-std::atomic<bool> gInterruptRequested{false};
-static_assert(std::atomic<bool>::is_always_lock_free, "signal handlers may only touch lock-free atomics");
-
-extern "C" void onInterruptSignal(int /*signal*/) { gInterruptRequested.store(true); }
 
 void onGlfwError(int code, const char* description) {
   log::error(Category::Platform, "GLFW error 0x{:05X}: {}", code, description ? description : "(no description)");
@@ -48,11 +41,7 @@ Result<std::unique_ptr<Platform>> Platform::create() {
     return fail(Errc::PlatformFailure, "GLFW could not initialise: {}", reason);
   }
 
-  std::unique_ptr<Platform> platform(new Platform());
-
-  gInterruptRequested.store(false);
-  platform->previousInterruptHandler_ = std::signal(SIGINT, &onInterruptSignal);
-  platform->previousTerminateHandler_ = std::signal(SIGTERM, &onInterruptSignal);
+  std::unique_ptr<Platform> platform(new Platform());  // its InterruptGuard catches Ctrl+C from here on
 
   log::info(Category::Platform, "GLFW {} initialised", glfwGetVersionString());
 
@@ -72,11 +61,6 @@ Result<std::unique_ptr<Platform>> Platform::create() {
 }
 
 Platform::~Platform() {
-  // Restore whatever was installed before us (SIG_ERR means we never
-  // replaced it).
-  if (previousInterruptHandler_ != SIG_ERR) std::signal(SIGINT, previousInterruptHandler_);
-  if (previousTerminateHandler_ != SIG_ERR) std::signal(SIGTERM, previousTerminateHandler_);
-
   glfwTerminate();
   glfwSetErrorCallback(nullptr);
   gPlatformAlive.store(false);
@@ -104,6 +88,6 @@ std::span<const char* const> Platform::requiredVulkanInstanceExtensions() const 
 
 std::string_view Platform::versionString() const noexcept { return glfwGetVersionString(); }
 
-bool Platform::interruptRequested() noexcept { return gInterruptRequested.load(); }
+bool Platform::interruptRequested() noexcept { return InterruptGuard::interruptRequested(); }
 
 }  // namespace playground::platform

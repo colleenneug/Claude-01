@@ -8,6 +8,7 @@
 //
 //  Usage: playground_app [--scene models|sprites] [--model PATH] [--environment PATH] [--frames N]
 //                        [--sprites N] [--verbose] [--log-file PATH]
+//                        [--server [--port N]] [--connect HOST[:PORT]]
 //                        [--validation | --no-validation]
 //
 //  Two demo scenes (app/Scene.h): the 3D one (glTF models, orbit and fly
@@ -20,6 +21,7 @@
 
 #include "ModelScene.h"
 #include "Scene.h"
+#include "Server.h"
 #include "SpriteScene.h"
 
 #include "playground/core/JobSystem.h"
@@ -55,6 +57,9 @@ struct Options {
   SceneChoice scene = SceneChoice::Models;
   std::optional<std::filesystem::path> model;  // --model: show this glTF file
   std::optional<std::filesystem::path> environment;  // --environment: light the 3D scene with this .hdr
+  bool server = false;                     // --server: headless dedicated server
+  std::optional<std::string> connect;      // --connect HOST[:PORT]: headless test client
+  u16 port = app::protocol::kDefaultPort;  // --port N
   u32 sprites = 25'000;  // how many bouncing squares the sprite scene spawns
 };
 
@@ -66,6 +71,9 @@ void printUsage() {
       "  --scene sprites  the 2D demo: bouncing squares and a player to steer\n"
       "  --model PATH     show this glTF 2.0 file (.gltf or .glb) in the 3D scene\n"
       "  --environment PATH  light the 3D scene with this HDR panorama (.hdr) and show it as the sky\n"
+      "  --server         run a dedicated server: no window, no GPU, 120 Hz simulation (Ctrl+C stops it)\n"
+      "  --port N         the server's UDP port (default 27015)\n"
+      "  --connect HOST[:PORT]  headless test client: connect, listen for --frames ticks, report\n"
       "  --frames N       run N frames, then exit (used by the automated tests)\n"
       "  --sprites N      how many bouncing squares to spawn (default 25000)\n"
       "  --verbose        log at debug level, including frame-time statistics\n"
@@ -108,6 +116,19 @@ Result<Options> parseOptions(std::span<char*> args) {
       } else {
         return fail(Errc::InvalidArgument, "--scene expects models or sprites, got \"{}\"", *value);
       }
+    } else if (arg == "--server") {
+      options.server = true;
+    } else if (arg == "--port") {
+      auto value = nextValue();
+      if (!value) return tl::unexpected(std::move(value.error()));
+      const auto [end, ec] = std::from_chars(value->data(), value->data() + value->size(), options.port);
+      if (ec != std::errc{} || end != value->data() + value->size()) {
+        return fail(Errc::InvalidArgument, "--port expects a number from 0 to 65535, got \"{}\"", *value);
+      }
+    } else if (arg == "--connect") {
+      auto value = nextValue();
+      if (!value) return tl::unexpected(std::move(value.error()));
+      options.connect = std::string(*value);
     } else if (arg == "--environment") {
       auto value = nextValue();
       if (!value) return tl::unexpected(std::move(value.error()));
@@ -174,6 +195,25 @@ int main(int argc, char** argv) {
   if (!logSession) {
     std::fprintf(stderr, "fatal: %s\n", logSession.error().message.c_str());
     return 1;
+  }
+
+  // The headless modes: no window, no GPU, nothing of GLFW or Vulkan started.
+  if (options->server) {
+    return app::runServer({.port = options->port, .maxTicks = options->frames});
+  }
+  if (options->connect) {
+    app::ClientOptions client{.host = *options->connect, .port = options->port};
+    if (const usize colon = options->connect->rfind(':'); colon != std::string::npos) {
+      client.host = options->connect->substr(0, colon);
+      const std::string portText = options->connect->substr(colon + 1);
+      const auto [end, ec] = std::from_chars(portText.data(), portText.data() + portText.size(), client.port);
+      if (ec != std::errc{} || end != portText.data() + portText.size()) {
+        std::fprintf(stderr, "error: --connect expects HOST[:PORT], got \"%s\"\n", options->connect->c_str());
+        return 2;
+      }
+    }
+    if (options->frames > 0) client.ticks = options->frames;
+    return app::runClient(client);
   }
 
   // Worker threads for background work (file loading today). Created before

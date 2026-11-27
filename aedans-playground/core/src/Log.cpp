@@ -20,7 +20,7 @@ namespace {
 constexpr usize kCategoryCount = static_cast<usize>(Category::Count);
 
 constexpr std::array<std::string_view, kCategoryCount> kCategoryNames{
-    "core", "platform", "gpu", "render", "engine", "game",
+    "core", "platform", "gpu", "render", "engine", "net", "game",
 };
 
 // [12:04:31.207] [warning ] [platform] message

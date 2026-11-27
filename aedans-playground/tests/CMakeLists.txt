@@ -38,6 +38,13 @@ target_link_libraries(playground_shadow_tests PRIVATE playground::render doctest
 playground_configure_target(playground_shadow_tests)
 add_test(NAME shadow_tests COMMAND playground_shadow_tests)
 
+# --- Networking: bit packing, quantization, a real loopback connection --------
+add_executable(playground_net_tests net_tests.cpp)
+target_link_libraries(playground_net_tests PRIVATE playground::net doctest::doctest)
+playground_configure_target(playground_net_tests)
+add_test(NAME net_tests COMMAND playground_net_tests)
+set_tests_properties(net_tests PROPERTIES LABELS net)
+
 # --- ECS and systems: no window, no GPU --------------------------------------
 add_executable(playground_ecs_tests ecs_tests.cpp)
 target_link_libraries(playground_ecs_tests PRIVATE playground::engine doctest::doctest)
@@ -122,6 +129,14 @@ if(UNIX AND NOT APPLE)
   add_test(NAME camera_e2e
            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/camera.sh $<TARGET_FILE:playground_app> camera_e2e.log)
   set_tests_properties(camera_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input" TIMEOUT 90)
+endif()
+
+# A dedicated server and a headless client talking over UDP, with no display
+# at all; Ctrl+C stops the server (tests/e2e/server.sh).
+if(UNIX)
+  add_test(NAME server_e2e
+           COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/server.sh $<TARGET_FILE:playground_app> server_e2e)
+  set_tests_properties(server_e2e PROPERTIES LABELS net TIMEOUT 60)
 endif()
 
 # --- Sanitizer builds and Mesa's software Vulkan driver ----------------------

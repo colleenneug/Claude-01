@@ -3,6 +3,7 @@ add_library(playground_core STATIC
   src/Assert.cpp
   src/FixedStep.cpp
   src/FrameClock.cpp
+  src/Interrupt.cpp
   src/JobSystem.cpp
   src/Log.cpp)
 add_library(playground::core ALIAS playground_core)

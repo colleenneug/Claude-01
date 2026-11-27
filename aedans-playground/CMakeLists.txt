@@ -84,11 +84,29 @@ target_include_directories(playground_gltf SYSTEM INTERFACE ${PLAYGROUND_TINYGLT
 target_link_libraries(playground_gltf INTERFACE nlohmann_json::nlohmann_json)
 target_compile_definitions(playground_gltf INTERFACE TINYGLTF_NO_STB_IMAGE TINYGLTF_NO_STB_IMAGE_WRITE)
 
+# ENet: reliable UDP, behind net/ (net/src/Host.cpp is the only file that
+# includes it). vcpkg's port provides unofficial::enet::enet; Ubuntu's
+# libenet-dev ships only a header and a library, found directly.
+find_package(unofficial-enet CONFIG QUIET)
+add_library(playground_enet INTERFACE)
+if(TARGET unofficial::enet::enet)
+  target_link_libraries(playground_enet INTERFACE unofficial::enet::enet)
+else()
+  find_path(PLAYGROUND_ENET_INCLUDE_DIR enet/enet.h REQUIRED)
+  find_library(PLAYGROUND_ENET_LIBRARY enet REQUIRED)
+  target_include_directories(playground_enet SYSTEM INTERFACE ${PLAYGROUND_ENET_INCLUDE_DIR})
+  target_link_libraries(playground_enet INTERFACE ${PLAYGROUND_ENET_LIBRARY})
+  if(WIN32)
+    target_link_libraries(playground_enet INTERFACE ws2_32 winmm)
+  endif()
+endif()
+
 add_library(playground_tl_expected INTERFACE)
 target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # --- Layers ------------------------------------------------------------------
 add_subdirectory(core)
+add_subdirectory(net)
 add_subdirectory(platform)
 add_subdirectory(ecs)
 add_subdirectory(gpu)

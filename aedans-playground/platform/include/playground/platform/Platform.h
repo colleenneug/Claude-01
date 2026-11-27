@@ -18,6 +18,7 @@
 //  At most one Platform may be alive at a time.
 // =============================================================================
 
+#include "playground/core/Interrupt.h"
 #include "playground/core/Result.h"
 #include "playground/core/Types.h"
 
@@ -63,9 +64,7 @@ class Platform {
  private:
   Platform() = default;
 
-  using SignalHandler = void (*)(int);
-  SignalHandler previousInterruptHandler_ = nullptr;
-  SignalHandler previousTerminateHandler_ = nullptr;
+  InterruptGuard interrupts_;  // Ctrl+C asks to stop, while this Platform exists (core/Interrupt.h)
 };
 
 }  // namespace playground::platform
