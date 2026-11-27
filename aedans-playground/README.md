@@ -5,25 +5,31 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 [`HANDOFF.md`](HANDOFF.md).
 
 **Current state:** a window, a fixed-timestep main loop, a Vulkan renderer
-that draws textured 3D meshes lit by the sun and by their surroundings
-(image-based lighting, with a skybox), and 2D sprites, glTF 2.0 model and
-HDR panorama loading,
+that draws textured 3D meshes lit by the sun (with real-time shadows) and
+by their surroundings (image-based lighting, with a skybox) into an HDR
+image, then adds bloom and ACES tone mapping; 2D sprites; glTF 2.0 model
+and HDR panorama loading,
 an entity component system (ECS), keyboard/mouse input, an orbit/fly
 camera, a job system (worker threads) and an asset manager that loads files
 in the background.
 
 The demo has two scenes. The default is **3D**: glTF models (a tiled floor,
-textured crates, a row of spheres from rough plastic to polished gold) lit
-by the sun and a procedural sky they reflect, which you look around with
-the mouse. `--model PATH` shows any glTF file instead, and `--environment
+textured crates, a row of spheres from rough plastic to polished gold,
+glowing lamps, and Khronos's Damaged Helmet on a pedestal) lit by a low sun
+that casts shadows and a procedural sky they reflect, which you look
+around with the mouse. `--model PATH` shows any glTF file instead, and `--environment
 PATH.hdr` lights the scene with a photographed HDR panorama. `--scene sprites` is the **2D** demo: steer a white
 square among 25,000 bouncing ones, all drawn in one instanced draw call.
 
-![The 3D scene: glTF models lit by the sun and the sky, metals reflecting it](docs/ibl-scene.png)
+![The 3D scene: sun shadows, glowing lamps with bloom, reflections, the Damaged Helmet](docs/shadows-bloom.png)
 
-*The 3D scene with image-based lighting, captured from the running app on
-Mesa's software Vulkan driver: the metal spheres reflect the sky above and
-the ground below. Before reflections: `docs/gltf-scene.png`. Earlier
+*The 3D scene, captured from the running app on Mesa's software Vulkan
+driver: soft sun shadows from every object, lamp bulbs blooming, metals
+reflecting the sky, ACES tone mapping. The helmet is "Damaged Helmet" from
+the Khronos glTF samples (© 2018 ctxwing, CC BY 4.0; based on work © 2016
+theblueturtle_, CC BY-NC 4.0: see
+`app/assets/third_party/DamagedHelmet/LICENSE.md`). Earlier: reflections
+only (`docs/ibl-scene.png`), before reflections (`docs/gltf-scene.png`),
 milestones: the first triangle (`docs/first-triangle.png`),
 the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
 (`docs/instanced-25k.png`) and the tilted 2D view (`docs/perspective-3d.png`).*
@@ -61,10 +67,10 @@ the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
 | `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
 | `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image` (+ `createTexture`, mipmaps), `Sampler`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
-| `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`), the shaders |
+| `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), `Shadow` (shadow-map framing), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess`), the shaders |
 | `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController`, `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
-| `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`), `assets/` (copied next to the executable) |
-| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, ECS, input, camera, application, GPU, renderer, meshes and environment lighting; end-to-end keyboard and camera tests |
+| `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
+| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, and shadows with post-processing; end-to-end keyboard and camera tests |
 | `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
 | `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator. tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
 
@@ -194,14 +200,21 @@ bullets and, with `engine::pickSprite`, to remove the sprite you right-click.
 4. **Write the frame's data** straight into this frame slot's buffers
    (host-visible, mapped once and kept mapped; they double when outgrown):
    the mesh draw list, the sprites (opaque first, then translucent ones
-   sorted back to front), and the camera and lights in the uniform buffer.
-5. **Record:** clear the image and the depth buffer, bind the frame's
-   uniforms (set 0) and the texture array with the environment maps (set
-   1), draw every mesh (one indexed draw each), the sky where no mesh
-   drew (if asked), then **all** sprites with at most two instanced
-   draws, `vkCmdDraw(6 vertices, N instances)`: opaque sprites with depth
-   writes, then translucent ones without (they still depth-test). Then
-   move the image into the present layout.
+   sorted back to front), and the camera, lights and the sun's shadow
+   matrix in the uniform buffer.
+5. **Record**, when there are meshes or a sky (otherwise straight to step
+   5d, as the 2D demo does):
+   1. the **shadow map**: every shadow-casting mesh, depth only, from the
+      sun;
+   2. the **scene** into the HDR image (and the depth buffer): every mesh
+      (one indexed draw each), then the sky where no mesh drew;
+   3. **bloom**, if on: down and back up the bloom chain;
+   4. the **swapchain image**: the composite (HDR + bloom, exposure, tone
+      mapping, sRGB), then **all** sprites with at most two instanced
+      draws, `vkCmdDraw(6 vertices, N instances)`: opaque sprites with
+      depth writes, then translucent ones without (they still
+      depth-test against the scene's depth). Then the image moves into
+      the present layout.
 6. **Submit** to the graphics queue.
 7. **Present** the image to the window.
 
@@ -278,14 +291,17 @@ node tree. On the main thread, `uploadModel` creates the meshes and
 textures. A `Model` destroys them when unloaded, so `AssetManager::clear()`
 runs before the renderer shuts down. Files with extensions we lack marked
 as *required* (Draco, meshopt, KTX2) fail with a message naming them.
-Skins, animation, morph targets, alpha blending and emissive are not read
-yet (see `engine/Gltf.h`).
+Emissive colour and textures are read, with `KHR_materials_emissive_strength`.
+Skins, animation, morph targets and alpha blending are not read yet (see
+`engine/Gltf.h`).
 
 The demo's models are our own, generated by `tools/make_demo_assets.py`
-(Python standard library only). Khronos's sample models (DamagedHelmet,
-Avocado, BoxTextured, NormalTangentMirrorTest) were checked with
-`--model` and render correctly, mirrored tangents included; they are not
-in the repository.
+(Python standard library only), except the Damaged Helmet from the Khronos
+samples, kept in `app/assets/third_party/` with its licence: **it may not
+be used commercially** (remove it before anything built on this engine is
+sold). Other Khronos samples (Avocado, BoxTextured,
+NormalTangentMirrorTest) were checked with `--model` and render
+correctly, mirrored tangents included; they are not in the repository.
 
 ## Reflections: image-based lighting and the sky
 
@@ -328,12 +344,64 @@ release build on the CPU driver).
 Per frame, `FrameData` chooses how it is used: `environmentIntensity`
 (0 turns it off), `drawSky` (the sky pass: one triangle on the far plane,
 drawn after the meshes so the depth test keeps it behind them, plus the
-sun's disk from `FrameData::sun`), and `exposure` / `toneMap` (Khronos PBR
-Neutral: colours below about 0.76 pass unchanged, brighter ones roll off
-towards white instead of clipping).
+sun's disk from `FrameData::sun`), and `exposure` / `toneMap` (next
+section).
 
 With `--environment`, the scene's sun stays where the game puts it; it does
 not follow the sun in the photograph.
+
+## Shadows and HDR post-processing
+
+**HDR target.** Meshes and the sky render into an offscreen
+`R16G16B16A16_SFLOAT` image with the depth buffer, so light brighter than 1
+(the sun on metal, a lamp, the sky) keeps its value. A composite pass then
+draws it onto the swapchain. The HDR image, the bloom chain and the
+descriptor sets that point at them are rebuilt with the swapchain on
+resize; a test resizes four times and checks the number of live GPU
+allocations never changes. Frames with no meshes and no sky (the 2D demo)
+skip all of it and draw straight onto the swapchain.
+
+**Sun shadows** (`FrameData::shadows`; `render/Shadow.h`,
+`render/src/ShadowMap.cpp`, `render/shaders/shadow.vert`, `pbr.frag`):
+
+- A 2048x2048 `D32_SFLOAT` shadow map is rendered from the sun each frame,
+  depth only. Its orthographic box is fitted round a **bounding sphere** of
+  the scene (every mesh drawn, or `shadows.bounds`) and its centre is
+  **snapped to whole texels**, so shadow edges do not shimmer as things
+  move.
+- Against **acne** (surfaces shadowing themselves in stripes): hardware
+  depth bias (`vkCmdSetDepthBias`, constant and slope; negative, because of
+  reverse-Z) and a **normal offset** (the point looked up is moved out
+  along the surface normal, by a number of shadow-map texels). Both are
+  settings; tests check a lit floor under a low sun has no acne and that a
+  box's shadow starts at its base (no **peter-panning**).
+- `pbr.frag` samples a `sampler2DShadow` (the hardware compares depths and
+  filters the results) at **3x3** points: soft edges. Near the edge of the
+  map, and outside its depth range, the shadow **fades out**, so what the
+  map does not cover is lit, never black.
+- Shadows dim only the sun's light: the sky still lights shadowed
+  surfaces. `MeshInstance::castsShadow` keeps a mesh out of the map.
+
+**Bloom** (`FrameData::bloom`; `render/shaders/bloom.frag`): the bright
+parts of the HDR image (above `threshold`, with a soft `knee`) go down a
+half-size mip chain of up to six levels and back up, then are added to the
+scene (`strength`). Down: 13-tap filtered halves (Jimenez's Call of Duty
+method); the first step uses the **Karis average** (each group weighted by
+1 / (1 + luminance)), so one tiny, extremely bright pixel cannot flicker
+the whole glow. Up: 3x3 tent-filtered levels added onto each other.
+
+**Composite and tone mapping** (`FrameData::exposure`, `toneMap`;
+`render/shaders/tonemap.frag`): HDR + bloom, times exposure, then `None`
+(clip), `Aces` (Stephen Hill's fit of ACES filmic: the film look, used by
+the demo) or `PbrNeutral` (base colours stay true). **sRGB is encoded
+exactly once**: an `_SRGB` swapchain encodes on write, so the shader writes
+linear values; on a `_UNORM` swapchain the shader encodes (a specialization
+constant, set per swapchain format; sprites do the same). A test renders
+the same frame through both kinds and gets the same pixels.
+
+**Emissive materials** (`Material::emissiveFactor`, `emissive` texture):
+light a surface gives off itself; with bloom, bright enough emission
+glows past its edges (the demo's lamp bulbs, the helmet's visor).
 
 ## GPU memory
 
@@ -353,8 +421,11 @@ renderer in the cloud container (a CPU doing the GPU's work, so pixel filling
 dominates): one draw per sprite took about 66 ms a frame; one instanced draw
 takes about 38 ms, with the 120 Hz simulation keeping up. The 3D scene
 (about 15,500 lit triangles plus the textured floor, 1600x900) took about
-30 ms with sun lighting only, and about 36 ms with image-based lighting and
-the sky (every pixel now draws something). Not yet measured on a real GPU.
+30 ms with sun lighting only, about 36 ms with image-based lighting and
+the sky (every pixel now draws something), and about 83 ms with the 2048²
+shadow map, 3x3 shadow filtering, bloom, the composite pass and the
+46,000-triangle helmet, all computed by the CPU. The 2D scene skips the
+HDR path and stays at about 36 ms. Not yet measured on a real GPU.
 
 ## Worker threads: the job system
 
