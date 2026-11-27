@@ -53,10 +53,20 @@ struct FrameData {
   // Lighting, for meshes (sprites are unlit).
   glm::vec3 cameraPosition{0.0f, 0.0f, 1000.0f};  // world; shiny highlights depend on it
   DirectionalLight sun;
-  glm::vec3 ambient{0.08f, 0.09f, 0.11f};         // light from everywhere (sky and bounces), linear RGB
+  glm::vec3 ambient{0.0f};           // a flat extra light from everywhere, linear RGB (a fill; usually 0)
+  f32 environmentIntensity = 1.0f;   // the environment's light on meshes (Renderer::setEnvironment); 0 = off
+
+  // Presentation, for 3D scenes.
+  bool drawSky = false;  // the environment behind everything, with the sun's disk
+  // Exposure scales mesh and sky light; tone mapping then rolls bright
+  // values off smoothly instead of clipping them to white (Khronos PBR
+  // Neutral, which keeps base colours true). Sprites are never tone mapped.
+  f32 exposure = 1.0f;
+  bool toneMap = false;
 
   // Keeps the lists' capacity (no allocation per frame); resets the view.
-  // Lighting stays as it was: it is scene state, not per-frame data.
+  // Lighting and presentation (sun, ambient, environment, sky, exposure,
+  // tone map) stay as they were: they are scene state, not per-frame data.
   void clear() noexcept {
     meshes.clear();
     sprites.clear();

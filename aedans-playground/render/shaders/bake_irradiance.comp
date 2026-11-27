@@ -1,0 +1,36 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+// =============================================================================
+//  bake_irradiance.comp — what a matte surface facing each direction sees.
+//
+//  For each output direction n: the average of the environment over the
+//  hemisphere around n, weighted by the cosine (light arriving at a slant
+//  spreads over more surface). Samples are drawn cosine-weighted, so the
+//  plain average is the answer. Stored as "radiance a white matte surface
+//  sends back": the mesh shader multiplies it by the base colour.
+//
+//  Each sample reads a blurrier mip level the more area it stands for
+//  (filtered importance sampling): few samples, no speckles.
+// =============================================================================
+#include "bake_common.glsl"
+
+layout(set = 0, binding = 0) uniform samplerCube environment;
+
+void main() {
+  uvec3 id = gl_GlobalInvocationID;
+  if (outside(id)) return;
+  vec3 n = cubeDirection(id, push.params.w);
+  mat3 frame = basisAround(n);
+  uint count = uint(push.params.y);
+  vec3 sum = vec3(0.0);
+  for (uint i = 0u; i < count; ++i) {
+    vec2 xi = hammersley(i, count);
+    float phi = 2.0 * kPi * xi.x;
+    float cosTheta = sqrt(1.0 - xi.y);
+    float sinTheta = sqrt(xi.y);
+    vec3 l = frame * vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+    float pdf = max(cosTheta / kPi, 1e-4);
+    sum += textureLod(environment, l, sampleLod(pdf, count)).rgb;
+  }
+  store(id, sum / float(count));
+}

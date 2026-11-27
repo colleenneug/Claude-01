@@ -4,7 +4,9 @@
 //
 //  The image counterpart of gpu::Buffer: memory from the Allocator (VMA),
 //  plus the VkImageView that rendering and shaders use to look at it. Used
-//  for the depth buffer and for textures.
+//  for the depth buffer, textures, and CUBE MAPS: six square images (the
+//  faces +x, -x, +y, -y, +z, -z) seen through one view, sampled with a
+//  direction instead of a 2D coordinate (the sky, reflections).
 //
 //  TEXTURES (createTexture)
 //    Pixels go CPU -> staging buffer -> image, and the GPU then builds the
@@ -27,6 +29,7 @@
 #include "playground/core/Result.h"
 #include "playground/core/Types.h"
 #include "playground/gpu/Allocator.h"
+#include "playground/gpu/DeviceHandle.h"
 
 #include <span>
 #include <string_view>
@@ -49,6 +52,8 @@ struct ImageDesc {
   VkImageUsageFlags usage = 0;
   VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
   u32 mipLevels = 1;  // the view covers all of them
+  u32 layers = 1;     // array layers; a cube map has 6
+  bool cube = false;  // six square layers seen as a cube (view type CUBE)
   std::string_view debugName;
 };
 
@@ -82,6 +87,7 @@ class Image {
   [[nodiscard]] VkFormat format() const noexcept { return format_; }
   [[nodiscard]] VkExtent2D extent() const noexcept { return extent_; }
   [[nodiscard]] u32 mipLevels() const noexcept { return mipLevels_; }
+  [[nodiscard]] u32 layers() const noexcept { return layers_; }
   [[nodiscard]] explicit operator bool() const noexcept { return image_ != VK_NULL_HANDLE; }
 
  private:
@@ -95,7 +101,17 @@ class Image {
   VkFormat format_ = VK_FORMAT_UNDEFINED;
   VkExtent2D extent_{};
   u32 mipLevels_ = 1;
+  u32 layers_ = 1;
 };
+
+// Another view of `image`: a range of its mip levels and layers, seen as
+// `type`. For example one mip level of a cube map as a 2D array, so a
+// compute shader can write its six faces.
+[[nodiscard]] Result<ImageView> createImageView(VkDevice device, const Image& image, VkImageViewType type,
+                                                u32 baseMip, u32 mipCount, u32 baseLayer, u32 layerCount);
+
+// Bytes per pixel of the formats createTexture accepts; 0 for any other.
+[[nodiscard]] u32 texelBytes(VkFormat format) noexcept;
 
 // A synchronization2 layout transition of `range` of `image`. Stage and
 // access masks should be as narrow as the transition allows: ALL_COMMANDS
@@ -112,10 +128,11 @@ void transitionImage(VkCommandBuffer commands, VkImage image, VkImageLayout from
 struct TextureDesc {
   u32 width = 0;
   u32 height = 0;
-  // 4 bytes per pixel: VK_FORMAT_R8G8B8A8_SRGB for colours (base colour),
-  // VK_FORMAT_R8G8B8A8_UNORM for data (normals, metallic-roughness).
+  // VK_FORMAT_R8G8B8A8_SRGB for colours (base colour), R8G8B8A8_UNORM for
+  // data (normals, metallic-roughness), R16G16_SFLOAT and
+  // R16G16B16A16_SFLOAT for half-float data (lookup tables, HDR images).
   VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
-  std::span<const std::byte> pixels;  // width * height * 4 bytes, top row first
+  std::span<const std::byte> pixels;  // width * height * texelBytes(format), top row first
   bool generateMips = true;
   std::string_view debugName;
 };

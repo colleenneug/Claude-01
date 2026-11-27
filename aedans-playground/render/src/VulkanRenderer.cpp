@@ -78,6 +78,8 @@
 
 #include "VulkanRenderer.h"
 
+#include "BrdfLut.h"
+
 #include "playground/core/Assert.h"
 #include "playground/core/Log.h"
 #include "playground/gpu/Instance.h"
@@ -91,6 +93,7 @@
 #include <utility>
 
 #include <glm/geometric.hpp>
+#include <glm/gtc/packing.hpp>
 #include <glm/mat3x3.hpp>
 #include <glm/matrix.hpp>
 #include <glm/vec2.hpp>
@@ -115,6 +118,18 @@ constexpr u32 kMeshVertSpirv[] = {
 constexpr u32 kMeshFragSpirv[] = {
 #include "mesh.frag.spv.inc"
 };
+constexpr u32 kSkyVertSpirv[] = {
+#include "sky.vert.spv.inc"
+};
+constexpr u32 kSkyFragSpirv[] = {
+#include "sky.frag.spv.inc"
+};
+
+// Set 1 bindings after the material array; must match frame.glsl.
+constexpr u32 kIrradianceBinding = 1;
+constexpr u32 kSpecularBinding = 2;
+constexpr u32 kBrdfLutBinding = 3;
+constexpr u32 kEnvironmentBinding = 4;
 
 // Must match `struct Sprite` in sprite.vert byte for byte (std430 layout).
 // glm::vec2 is two floats and glm::vec4 four, so these offsets are the GLSL
@@ -155,16 +170,19 @@ struct DrawPushConstants {
 static_assert(sizeof(DrawPushConstants) == 8);
 constexpr VkShaderStageFlags kPushStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-// Must match the uniform block (set 0, binding 0) in mesh_common.glsl
-// (std140). sprite.vert declares only the first member, which is allowed.
+// Must match the uniform block (set 0, binding 0) in frame.glsl (std140).
+// sprite.vert declares only the first member, which is allowed.
 struct FrameUniforms {
-  glm::mat4 viewProjection;  // world -> clip, reverse-Z
+  glm::mat4 viewProjection;         // world -> clip, reverse-Z
+  glm::mat4 inverseViewProjection;  // clip -> world (the sky)
   glm::vec4 cameraPosition;
-  glm::vec4 sunDirection;    // normalised
-  glm::vec4 sunColour;       // colour x intensity
+  glm::vec4 sunDirection;           // normalised
+  glm::vec4 sunColour;              // colour x intensity
   glm::vec4 ambient;
+  glm::vec4 environment;            // intensity, last specular mip, exposure, tone map (0/1)
 };
-static_assert(sizeof(FrameUniforms) == 128);
+static_assert(offsetof(FrameUniforms, cameraPosition) == 128);
+static_assert(sizeof(FrameUniforms) == 208);
 
 // How long to wait for the GPU before calling it hung. Generous: a frame
 // that takes this long is a bug, not a slow frame.
@@ -440,26 +458,38 @@ Status VulkanRenderer::createDescriptorLayouts() {
   //   UPDATE_AFTER_BIND,          a new texture can be written into a free
   //   UPDATE_UNUSED_WHILE_PENDING slot while frames that bound the set are
   //                               still on the GPU (they do not read it).
-  const VkDescriptorSetLayoutBinding textureBinding{
-      .binding = 0,
-      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .descriptorCount = kMaxTextures,
-      .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-  };
-  const VkDescriptorBindingFlags textureFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-                                                VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-                                                VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT;
+  // Bindings 1-4: the environment's maps and the BRDF table (frame.glsl).
+  // Replaced only by setEnvironment, after waiting for the GPU to go idle;
+  // update-after-bind because every binding of an update-after-bind pool's
+  // set must allow it to be written while the set is bound.
+  constexpr VkDescriptorBindingFlags kWholeSet = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+  const std::array<VkDescriptorSetLayoutBinding, 5> textureBindings{{
+      {.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = kMaxTextures,
+       .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+      {.binding = kIrradianceBinding, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+       .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+      {.binding = kSpecularBinding, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+       .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+      {.binding = kBrdfLutBinding, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+       .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+      {.binding = kEnvironmentBinding, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+       .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+  }};
+  const std::array<VkDescriptorBindingFlags, 5> textureFlags{
+      VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+          VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
+      kWholeSet, kWholeSet, kWholeSet, kWholeSet};
   const VkDescriptorSetLayoutBindingFlagsCreateInfo textureFlagsInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-      .bindingCount = 1,
-      .pBindingFlags = &textureFlags,
+      .bindingCount = static_cast<u32>(textureFlags.size()),
+      .pBindingFlags = textureFlags.data(),
   };
   const VkDescriptorSetLayoutCreateInfo textureInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
       .pNext = &textureFlagsInfo,
       .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-      .bindingCount = 1,
-      .pBindings = &textureBinding,
+      .bindingCount = static_cast<u32>(textureBindings.size()),
+      .pBindings = textureBindings.data(),
   };
   VkDescriptorSetLayout textureLayout = VK_NULL_HANDLE;
   if (Status s = gpu::check(vkCreateDescriptorSetLayout(device, &textureInfo, nullptr, &textureLayout),
@@ -537,12 +567,20 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
                                 .cullMode = VK_CULL_MODE_NONE, .depthWrite = false, .blend = true});
   if (!blended) return tl::unexpected(std::move(blended.error()));
 
+  // The sky: one screen-covering triangle on the far plane, behind whatever
+  // the meshes wrote (depth test GREATER_OR_EQUAL against 0), no depth write.
+  auto sky = buildPipeline(device, pipelineLayout_.get(), colourFormat,
+                           {.vertexSpirv = kSkyVertSpirv, .fragmentSpirv = kSkyFragSpirv, .name = "sky",
+                            .vertexInput = &noVertices, .cullMode = VK_CULL_MODE_NONE, .depthWrite = false,
+                            .blend = false});
+  if (!sky) return tl::unexpected(std::move(sky.error()));
+  skyPipeline_ = std::move(*sky);
   meshPipeline_ = std::move(*mesh);  // replaces (and destroys) any old ones
   doubleSidedPipeline_ = std::move(*doubleSided);
   opaquePipeline_ = std::move(*opaque);
   blendedPipeline_ = std::move(*blended);
   pipelineFormat_ = colourFormat;
-  log::info(Category::Render, "pipelines (mesh; opaque and translucent sprites) built for {}",
+  log::info(Category::Render, "pipelines (mesh, double-sided mesh, sky; opaque and translucent sprites) built for {}",
             gpu::describe(colourFormat));
   return {};
 }
@@ -555,7 +593,7 @@ Status VulkanRenderer::createTextureResources() {
   sampler_ = std::move(*sampler);
 
   const VkDescriptorPoolSize poolSize{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                      .descriptorCount = kMaxTextures};
+                                      .descriptorCount = kMaxTextures + 4};  // + the environment bindings
   const VkDescriptorPoolCreateInfo poolInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
       .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
@@ -596,7 +634,63 @@ Status VulkanRenderer::createTextureResources() {
   if (Status s = onePixel(128, 128, 255, "default flat normal"); !s) return s;
   PG_VERIFY(textures_.liveCount() == kDefaultTextureCount, "the default textures must fill the first slots");
   log::debug(Category::Render, "bindless texture array: {} slots", kMaxTextures);
+
+  // Image-based lighting: the BRDF table once, then a default environment
+  // (a fast procedural sky), so lighting works before any setEnvironment.
+  auto baker = IblBaker::create(context_);
+  if (!baker) return tl::unexpected(std::move(baker.error()));
+  baker_.emplace(std::move(*baker));
+
+  const std::vector<glm::vec2> table = makeBrdfLut(kBrdfLutSize, kBrdfLutSamples);
+  std::vector<u16> halves;
+  halves.reserve(table.size() * 2);
+  for (const glm::vec2 entry : table) {
+    halves.push_back(glm::packHalf1x16(entry.x));
+    halves.push_back(glm::packHalf1x16(entry.y));
+  }
+  auto lut = gpu::createTexture(context_, {.width = kBrdfLutSize, .height = kBrdfLutSize,
+                                           .format = VK_FORMAT_R16G16_SFLOAT,
+                                           .pixels = std::as_bytes(std::span(halves)), .generateMips = false,
+                                           .debugName = "BRDF lookup table"});
+  if (!lut) return tl::unexpected(std::move(lut.error()));
+  brdfLut_ = std::move(*lut);
+  writeEnvironmentBinding(kBrdfLutBinding, brdfLut_.view());
+  return installEnvironment(baker_->bake(ProceduralSky{}, kFastEnvironment));
+}
+
+void VulkanRenderer::writeEnvironmentBinding(u32 binding, VkImageView view) const noexcept {
+  const VkDescriptorImageInfo info{.sampler = baker_->sampler(), .imageView = view,
+                                   .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  const VkWriteDescriptorSet write{
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = textureSet_,
+      .dstBinding = binding,
+      .descriptorCount = 1,
+      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .pImageInfo = &info,
+  };
+  vkUpdateDescriptorSets(context_.device().handle(), 1, &write, 0, nullptr);
+}
+
+Status VulkanRenderer::installEnvironment(Result<EnvironmentMaps> maps) {
+  if (!maps) return tl::unexpected(std::move(maps.error()));
+  // Frames in flight may be sampling the old maps: let them finish before
+  // the old images go and their descriptors are rewritten.
+  if (Status s = context_.device().waitIdle(); !s) return s;
+  environment_ = std::move(*maps);
+  writeEnvironmentBinding(kIrradianceBinding, environment_.irradiance.view());
+  writeEnvironmentBinding(kSpecularBinding, environment_.specular.view());
+  writeEnvironmentBinding(kEnvironmentBinding, environment_.environment.view());
+  ++environmentBakes_;
   return {};
+}
+
+Status VulkanRenderer::setEnvironment(const ProceduralSky& sky, const EnvironmentQuality& quality) {
+  return installEnvironment(baker_->bake(sky, quality));
+}
+
+Status VulkanRenderer::setEnvironment(const HdrImage& panorama, const EnvironmentQuality& quality) {
+  return installEnvironment(baker_->bake(panorama, quality));
 }
 
 Status VulkanRenderer::createFrameResources() {
@@ -1033,13 +1127,20 @@ Status VulkanRenderer::writeFrameUniforms(Frame& frame, const FrameData& frameDa
   const VkExtent2D extent = swapchain_->extent();
   const glm::vec3 towards = frameData.sun.direction;
   const f32 length = glm::length(towards);
+  const glm::mat4 viewProjection = frameData.viewProjection.value_or(
+      pixelViewProjection({static_cast<f32>(extent.width), static_cast<f32>(extent.height)}));
+  frame.drawSky = frameData.drawSky;
+  if (frameData.drawSky) ++lastDrawCalls_;
   const FrameUniforms uniforms{
-      .viewProjection = frameData.viewProjection.value_or(pixelViewProjection(
-          {static_cast<f32>(extent.width), static_cast<f32>(extent.height)})),
+      .viewProjection = viewProjection,
+      .inverseViewProjection = glm::inverse(viewProjection),
       .cameraPosition = glm::vec4(frameData.cameraPosition, 1.0f),
       .sunDirection = glm::vec4(length > 0.0f ? towards / length : glm::vec3(0.0f, -1.0f, 0.0f), 0.0f),
       .sunColour = glm::vec4(frameData.sun.colour * frameData.sun.intensity, 0.0f),
       .ambient = glm::vec4(frameData.ambient, 0.0f),
+      .environment = {std::max(frameData.environmentIntensity, 0.0f),
+                      static_cast<f32>(environment_.specularMips() - 1), frameData.exposure,
+                      frameData.toneMap ? 1.0f : 0.0f},
   };
   return frame.uniforms.write(std::as_bytes(std::span(&uniforms, 1)));
 }
@@ -1194,7 +1295,14 @@ Status VulkanRenderer::recordCommands(const Frame& frameSlot, u32 imageIndex) co
     }
   }
 
-  // 2. SPRITES: at most TWO draws for every sprite: 6 vertices (two
+  // 2. THE SKY, where no mesh drew: after the meshes, so the depth test
+  // skips every covered pixel.
+  if (frameSlot.drawSky) {
+    vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline_.get());
+    vkCmdDraw(commands, 3, 1, 0, 0);
+  }
+
+  // 3. SPRITES: at most TWO draws for every sprite: 6 vertices (two
   // triangles) per instance, one instance per sprite; opaque instances
   // first, then the translucent ones (firstInstance = opaqueCount, and
   // gl_InstanceIndex includes it). The shader reads instance i's data from

@@ -24,6 +24,8 @@
 //                          that cannot draw meshes returns Errc::Unsupported.
 //    destroyMesh,          Free them. Safe while frames that use them are
 //    destroyTexture        still on the GPU: the memory goes once they finish.
+//    setEnvironment        The sky and the light it casts (image-based
+//                          lighting; render/Environment.h).
 //    destruction           Release every GPU resource. Runs while the window
 //                          still exists, because a Vulkan surface must be
 //                          destroyed before the window it belongs to.
@@ -38,6 +40,7 @@
 #include "playground/core/FrameClock.h"
 #include "playground/core/Result.h"
 #include "playground/platform/Window.h"
+#include "playground/render/Environment.h"
 #include "playground/render/FrameData.h"
 #include "playground/render/Resources.h"
 
@@ -77,6 +80,17 @@ class Renderer {
   }
   virtual void destroyMesh(MeshHandle /*mesh*/) noexcept {}
   virtual void destroyTexture(TextureHandle /*texture*/) noexcept {}
+
+  // The environment: the sky behind the scene and the light it casts
+  // (render/Environment.h). Rebuilds the lighting maps on the GPU and waits
+  // for them: a loading-time call, not a per-frame one. Until the first
+  // call, a renderer uses a default ProceduralSky at kFastEnvironment.
+  [[nodiscard]] virtual Status setEnvironment(const ProceduralSky& /*sky*/, const EnvironmentQuality& /*quality*/) {
+    return fail(Errc::Unsupported, "the {} renderer has no environment lighting", name());
+  }
+  [[nodiscard]] virtual Status setEnvironment(const HdrImage& /*panorama*/, const EnvironmentQuality& /*quality*/) {
+    return fail(Errc::Unsupported, "the {} renderer has no environment lighting", name());
+  }
 
  protected:
   Renderer() = default;

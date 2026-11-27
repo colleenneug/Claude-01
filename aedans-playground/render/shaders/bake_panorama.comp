@@ -1,0 +1,23 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+// =============================================================================
+//  bake_panorama.comp — an equirectangular HDR panorama into a cube map.
+//
+//  Longitude -> u: the middle column looks along -z, +x is to its right.
+//  Latitude -> v: the top row is straight up. The panorama has mip levels;
+//  reading at the level whose texels match a cube texel keeps a big
+//  panorama shrunk into a small cube from sparkling.
+// =============================================================================
+#include "bake_common.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D panorama;
+
+void main() {
+  uvec3 id = gl_GlobalInvocationID;
+  if (outside(id)) return;
+  vec3 d = cubeDirection(id, push.params.w);
+  vec2 uv = vec2(0.5 + atan(d.x, -d.z) / (2.0 * kPi), acos(clamp(d.y, -1.0, 1.0)) / kPi);
+  // A cube face's width covers a quarter of the panorama's width.
+  float lod = max(log2(push.params.z / (4.0 * push.params.w)), 0.0);
+  store(id, textureLod(panorama, uv, lod).rgb);
+}

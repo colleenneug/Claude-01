@@ -7,9 +7,10 @@
 // `xvfb-run -a` on Mesa's software driver. White-box: they include the
 // renderer's private header.
 //
-// Most tests light the scene with ambient light only (sun off, ambient 1):
-// a non-metal then shows exactly its base colour, so expected pixels are
-// simple. The lighting tests turn the sun on and compare brightness.
+// Most tests light the scene with a flat ambient light only (sun and
+// environment off, ambient 1): a non-metal then shows exactly its base
+// colour, so expected pixels are simple. The lighting tests turn the sun on
+// and compare brightness; environment_tests covers image-based lighting.
 
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
@@ -79,9 +80,11 @@ render::ImageData image(u32 width, u32 height, const std::vector<u8>& rgba) {
   return data;
 }
 
-// Ambient light only: a non-metal shows exactly its base colour.
+// Flat ambient light only (no sun, no environment): a non-metal shows
+// exactly its base colour.
 void flatLighting(render::FrameData& frame) {
   frame.sun.intensity = 0.0f;
+  frame.environmentIntensity = 0.0f;
   frame.ambient = {1.0f, 1.0f, 1.0f};
 }
 
@@ -233,6 +236,7 @@ TEST_CASE("a double-sided material shows its back face, lit as facing the viewer
     const auto frame = renderOnce(*app, *renderer, [&](render::FrameData& f) {
       f.sun = {.direction = {0.0f, 0.0f, -1.0f}, .colour = {1.0f, 1.0f, 1.0f}, .intensity = 2.0f};
       f.ambient = glm::vec3(0.0f);
+      f.environmentIntensity = 0.0f;  // the sun alone
       // Given double-sided first and single-sided last: the renderer regroups them.
       f.meshes.push_back({.mesh = back, .material = twoSided,
                           .transform = glm::translate(glm::mat4(1.0f), {-80.0f, 0.0f, 0.0f})});
@@ -288,6 +292,7 @@ TEST_CASE("the sun lights a surface turned towards it more than one turned away"
     const auto frame = renderOnce(*app, *renderer, [&](render::FrameData& f) {
       f.sun = {.direction = {0.0f, 0.0f, -1.0f}, .colour = {1.0f, 1.0f, 1.0f}, .intensity = 2.0f};  // shining into the screen
       f.ambient = glm::vec3(0.0f);
+      f.environmentIntensity = 0.0f;  // the sun alone
       f.meshes.push_back({.mesh = mesh, .material = plastic({0.5f, 0.5f, 0.5f, 1.0f}),
                           .transform = glm::translate(glm::mat4(1.0f), {-80.0f, 0.0f, 0.0f})});
       // Turned 70 degrees about y: the light hits it at a glancing angle.
@@ -325,6 +330,7 @@ TEST_CASE("a normal map bends the lighting; a flat one changes nothing") {
     const auto frame = renderOnce(*app, *renderer, [&](render::FrameData& f) {
       f.sun = {.direction = {0.0f, 0.0f, -1.0f}, .colour = {1.0f, 1.0f, 1.0f}, .intensity = 2.0f};
       f.ambient = glm::vec3(0.0f);
+      f.environmentIntensity = 0.0f;  // the sun alone
       f.meshes.push_back({.mesh = mesh, .material = plastic({0.5f, 0.5f, 0.5f, 1.0f}),
                           .transform = glm::translate(glm::mat4(1.0f), {-100.0f, 0.0f, 0.0f})});
       f.meshes.push_back({.mesh = mesh, .material = withFlat});

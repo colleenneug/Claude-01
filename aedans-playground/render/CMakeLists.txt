@@ -4,6 +4,8 @@
 # Vulkan types, so the engine and the game build without Vulkan headers and
 # cannot start depending on them by accident.
 add_library(playground_render STATIC
+  src/BrdfLut.cpp
+  src/IblBaker.cpp
   src/Mesh.cpp
   src/VulkanRenderer.cpp)
 add_library(playground::render ALIAS playground_render)
@@ -20,5 +22,12 @@ playground_compile_shader(playground_render shaders/sprite.vert)
 playground_compile_shader(playground_render shaders/sprite.frag)
 playground_compile_shader(playground_render shaders/mesh.vert)   # both #include mesh_common.glsl
 playground_compile_shader(playground_render shaders/mesh.frag)
+playground_compile_shader(playground_render shaders/sky.vert)
+playground_compile_shader(playground_render shaders/sky.frag)
+# Image-based lighting bakes (render/src/IblBaker.cpp); all #include bake_common.glsl.
+playground_compile_shader(playground_render shaders/bake_sky.comp)
+playground_compile_shader(playground_render shaders/bake_panorama.comp)
+playground_compile_shader(playground_render shaders/bake_irradiance.comp)
+playground_compile_shader(playground_render shaders/bake_specular.comp)
 
 playground_configure_target(playground_render)

@@ -1,18 +1,11 @@
 // =============================================================================
 //  mesh_common.glsl — what mesh.vert and mesh.frag share.
 //
-//  Must match FrameUniforms and MeshDrawGpu in VulkanRenderer.cpp byte for
-//  byte (static_asserts there check the C++ side).
+//  Must match MeshDrawGpu in VulkanRenderer.cpp byte for byte (static_asserts
+//  there check the C++ side). The frame's uniforms are in frame.glsl.
 // =============================================================================
 
-// Set 0, binding 0: the camera and the lights, once per frame (std140).
-layout(set = 0, binding = 0) uniform Frame {
-  mat4 viewProjection;  // world -> clip, reverse-Z
-  vec4 cameraPosition;  // xyz: world
-  vec4 sunDirection;    // xyz: the way the light travels (normalised)
-  vec4 sunColour;       // rgb: colour x intensity
-  vec4 ambient;         // rgb: light from everywhere
-} frame;
+#include "frame.glsl"
 
 // One per mesh drawn this frame, in a storage buffer found by its address.
 struct MeshDraw {

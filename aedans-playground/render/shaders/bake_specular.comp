@@ -1,0 +1,51 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+// =============================================================================
+//  bake_specular.comp — the environment as a surface of one roughness
+//  reflects it: one mip level of the prefiltered specular cube.
+//
+//  The split-sum assumption: looking straight at the surface (n = v = r).
+//  Directions are drawn from the GGX distribution of this roughness and
+//  weighted by n.l; as in the irradiance bake, each sample reads a mip level
+//  matching the area it stands for. Roughness 0 is the environment itself.
+// =============================================================================
+#include "bake_common.glsl"
+
+layout(set = 0, binding = 0) uniform samplerCube environment;
+
+vec3 importanceSampleGgx(vec2 xi, float roughness) {
+  float a = roughness * roughness;
+  float phi = 2.0 * kPi * xi.x;
+  float cosTheta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+  float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
+  return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+}
+
+void main() {
+  uvec3 id = gl_GlobalInvocationID;
+  if (outside(id)) return;
+  vec3 n = cubeDirection(id, push.params.w);
+  float roughness = push.params.x;
+  if (roughness <= 0.0) {
+    store(id, textureLod(environment, n, 0.0).rgb);
+    return;
+  }
+  mat3 frame = basisAround(n);
+  uint count = uint(push.params.y);
+  float a = roughness * roughness;
+  vec3 sum = vec3(0.0);
+  float weight = 0.0;
+  for (uint i = 0u; i < count; ++i) {
+    vec3 h = frame * importanceSampleGgx(hammersley(i, count), roughness);
+    vec3 l = 2.0 * dot(n, h) * h - n;
+    float nDotL = dot(n, l);
+    if (nDotL <= 0.0) continue;
+    float nDotH = max(dot(n, h), 0.0);
+    float d = (nDotH * nDotH * (a * a - 1.0) + 1.0);
+    float distribution = a * a / (kPi * d * d);
+    float pdf = max(distribution / 4.0, 1e-4);  // n = v: pdf = D * n.h / (4 v.h) = D / 4
+    sum += textureLod(environment, l, sampleLod(pdf, count)).rgb * nDotL;
+    weight += nDotL;
+  }
+  store(id, sum / max(weight, 1e-4));
+}

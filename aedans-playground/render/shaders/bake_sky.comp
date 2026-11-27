@@ -1,0 +1,30 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+// =============================================================================
+//  bake_sky.comp — the procedural sky (render::ProceduralSky) into a cube map.
+//
+//  Above the horizon: horizon colour blending to the zenith (fast near the
+//  horizon, as a real sky). Below: the horizon colour fading to the ground.
+//  Round the sun: a soft glow. The sun's disk is not here: the sky pass draws
+//  it, so it is not counted twice in the lighting.
+// =============================================================================
+#include "bake_common.glsl"
+
+vec3 sky(vec3 d) {
+  vec3 colour;
+  if (d.y >= 0.0) {
+    colour = mix(push.horizon.rgb, push.zenith.rgb, pow(d.y, 0.45));
+  } else {
+    colour = mix(push.horizon.rgb, push.ground.rgb, pow(min(-d.y * 4.0, 1.0), 0.6));
+  }
+  vec3 towardsSun = -normalize(push.sunDirection.xyz);
+  float c = max(dot(d, towardsSun), 0.0);
+  colour += push.glow.rgb * push.glow.w * (pow(c, 32.0) * 0.6 + pow(c, 4.0) * 0.15);
+  return colour;
+}
+
+void main() {
+  uvec3 id = gl_GlobalInvocationID;
+  if (outside(id)) return;
+  store(id, sky(cubeDirection(id, push.params.w)));
+}

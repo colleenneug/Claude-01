@@ -21,10 +21,17 @@
 //                Schlick's Fresnel (everything gets more reflective at
 //                glancing angles). Non-metals reflect 4% head-on; metals
 //                reflect their base colour.
-//    ambient     a flat term: base colour for non-metals, the reflected
-//                colour for metals. A stand-in until image-based lighting.
+//    environment image-based lighting (render/Environment.h):
+//                diffuse   the irradiance map at the normal, x base colour,
+//                          for the part not reflected (non-metals);
+//                specular  the prefiltered map at the reflection direction,
+//                          at the mip for this roughness, x (F0 x scale +
+//                          bias) from the BRDF table (the split sum).
+//    ambient     an optional flat fill: base colour for non-metals, the
+//                reflected colour for metals.
 //
-//  Output is linear; the sRGB swapchain encodes it.
+//  Output is linear (after exposure and optional tone mapping, frame.glsl);
+//  the sRGB swapchain encodes it.
 // =============================================================================
 
 #include "mesh_common.glsl"
@@ -90,5 +97,19 @@ void main() {
   vec3 direct = (diffuse + specular) * frame.sunColour.rgb * nDotL;
   vec3 ambient = frame.ambient.rgb * mix(baseColour.rgb, f0, metallic);
 
-  outColour = vec4(direct + ambient, 1.0);
+  // Image-based lighting. Fresnel for the environment uses n.v with a
+  // roughness-aware ceiling: rough surfaces do not turn into mirrors at
+  // glancing angles.
+  vec3 environment = vec3(0.0);
+  if (frame.environment.x > 0.0) {
+    vec3 fresnelRough = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - nDotV, 5.0);
+    vec3 diffuseIbl = texture(irradianceMap, n).rgb * baseColour.rgb * (1.0 - fresnelRough) * (1.0 - metallic);
+    vec3 r = reflect(-v, n);
+    vec3 prefiltered = textureLod(specularMap, r, roughness * frame.environment.y).rgb;
+    vec2 scaleBias = texture(brdfLut, vec2(nDotV, roughness)).rg;
+    vec3 specularIbl = prefiltered * (f0 * scaleBias.x + scaleBias.y);
+    environment = (diffuseIbl + specularIbl) * frame.environment.x;
+  }
+
+  outColour = vec4(present(direct + ambient + environment), 1.0);
 }

@@ -18,6 +18,11 @@ Result<Image> Image::create(const Allocator& allocator, const ImageDesc& desc) {
     return fail(Errc::InvalidArgument, "image \"{}\" needs a size, a format and a usage (got {}x{})", desc.debugName,
                 desc.width, desc.height);
   }
+  if (desc.cube && (desc.layers != 6 || desc.width != desc.height)) {
+    return fail(Errc::InvalidArgument, "cube image \"{}\" needs 6 square layers (got {} of {}x{})", desc.debugName,
+                desc.layers, desc.width, desc.height);
+  }
+  if (desc.layers == 0) return fail(Errc::InvalidArgument, "image \"{}\" has no layers", desc.debugName);
   if (desc.mipLevels == 0 || desc.mipLevels > fullMipCount(desc.width, desc.height)) {
     return fail(Errc::InvalidArgument, "image \"{}\" ({}x{}) cannot have {} mip levels (at most {})", desc.debugName,
                 desc.width, desc.height, desc.mipLevels, fullMipCount(desc.width, desc.height));
@@ -25,11 +30,12 @@ Result<Image> Image::create(const Allocator& allocator, const ImageDesc& desc) {
 
   const VkImageCreateInfo imageInfo{
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .flags = desc.cube ? VkImageCreateFlags{VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT} : VkImageCreateFlags{0},
       .imageType = VK_IMAGE_TYPE_2D,
       .format = desc.format,
       .extent = {.width = desc.width, .height = desc.height, .depth = 1},
       .mipLevels = desc.mipLevels,
-      .arrayLayers = 1,
+      .arrayLayers = desc.layers,
       .samples = VK_SAMPLE_COUNT_1_BIT,
       .tiling = VK_IMAGE_TILING_OPTIMAL,
       .usage = desc.usage,
@@ -51,6 +57,7 @@ Result<Image> Image::create(const Allocator& allocator, const ImageDesc& desc) {
   image.format_ = desc.format;
   image.extent_ = {desc.width, desc.height};
   image.mipLevels_ = desc.mipLevels;
+  image.layers_ = desc.layers;
   if (Status s = check(vmaCreateImage(allocator.handle(), &imageInfo, &allocInfo, &image.image_, &image.allocation_,
                                       nullptr),
                        "vmaCreateImage");
@@ -64,9 +71,10 @@ Result<Image> Image::create(const Allocator& allocator, const ImageDesc& desc) {
   const VkImageViewCreateInfo viewInfo{
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
       .image = image.image_,
-      .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .viewType = desc.cube ? VK_IMAGE_VIEW_TYPE_CUBE
+                            : (desc.layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D),
       .format = desc.format,
-      .subresourceRange = {.aspectMask = desc.aspect, .levelCount = desc.mipLevels, .layerCount = 1},
+      .subresourceRange = {.aspectMask = desc.aspect, .levelCount = desc.mipLevels, .layerCount = desc.layers},
   };
   if (Status s = check(vkCreateImageView(image.device_, &viewInfo, nullptr, &image.view_), "vkCreateImageView"); !s) {
     return tl::unexpected(std::move(s.error()));  // `image` frees the memory on the way out
@@ -82,7 +90,8 @@ Image::Image(Image&& other) noexcept
       view_(std::exchange(other.view_, VK_NULL_HANDLE)),
       format_(std::exchange(other.format_, VK_FORMAT_UNDEFINED)),
       extent_(std::exchange(other.extent_, VkExtent2D{})),
-      mipLevels_(std::exchange(other.mipLevels_, 1u)) {}
+      mipLevels_(std::exchange(other.mipLevels_, 1u)),
+      layers_(std::exchange(other.layers_, 1u)) {}
 
 Image& Image::operator=(Image&& other) noexcept {
   if (this != &other) {
@@ -95,6 +104,7 @@ Image& Image::operator=(Image&& other) noexcept {
     format_ = std::exchange(other.format_, VK_FORMAT_UNDEFINED);
     extent_ = std::exchange(other.extent_, VkExtent2D{});
     mipLevels_ = std::exchange(other.mipLevels_, 1u);
+    layers_ = std::exchange(other.layers_, 1u);
   }
   return *this;
 }
@@ -147,7 +157,34 @@ void transitionImage(VkCommandBuffer commands, VkImage image, VkImageLayout from
                                           .baseMipLevel = 0,
                                           .levelCount = VK_REMAINING_MIP_LEVELS,
                                           .baseArrayLayer = 0,
-                                          .layerCount = 1});
+                                          .layerCount = VK_REMAINING_ARRAY_LAYERS});
+}
+
+Result<ImageView> createImageView(VkDevice device, const Image& image, VkImageViewType type, u32 baseMip,
+                                  u32 mipCount, u32 baseLayer, u32 layerCount) {
+  const VkImageViewCreateInfo info{
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+      .image = image.handle(),
+      .viewType = type,
+      .format = image.format(),
+      .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = baseMip, .levelCount = mipCount,
+                           .baseArrayLayer = baseLayer, .layerCount = layerCount},
+  };
+  VkImageView view = VK_NULL_HANDLE;
+  if (Status s = check(vkCreateImageView(device, &info, nullptr, &view), "vkCreateImageView"); !s) {
+    return tl::unexpected(std::move(s.error()));
+  }
+  return ImageView(device, view);
+}
+
+u32 texelBytes(VkFormat format) noexcept {
+  switch (format) {
+    case VK_FORMAT_R8G8B8A8_SRGB:
+    case VK_FORMAT_R8G8B8A8_UNORM:
+    case VK_FORMAT_R16G16_SFLOAT: return 4;
+    case VK_FORMAT_R16G16B16A16_SFLOAT: return 8;
+    default: return 0;
+  }
 }
 
 // --- Textures --------------------------------------------------------------------
@@ -164,14 +201,15 @@ i32 mipSize(u32 size, u32 level) noexcept { return static_cast<i32>(std::max(1u,
 }  // namespace
 
 Result<Image> createTexture(const Context& context, const TextureDesc& desc) {
-  if (desc.format != VK_FORMAT_R8G8B8A8_SRGB && desc.format != VK_FORMAT_R8G8B8A8_UNORM) {
-    return fail(Errc::InvalidArgument, "texture \"{}\": format {} is not a 4-byte RGBA format", desc.debugName,
+  const u32 bytesPerTexel = texelBytes(desc.format);
+  if (bytesPerTexel == 0) {
+    return fail(Errc::InvalidArgument, "texture \"{}\": format {} is not one createTexture accepts", desc.debugName,
                 describe(desc.format));
   }
-  const u64 expected = u64{desc.width} * desc.height * 4;
+  const u64 expected = u64{desc.width} * desc.height * bytesPerTexel;
   if (desc.width == 0 || desc.height == 0 || desc.pixels.size() != expected) {
-    return fail(Errc::InvalidArgument, "texture \"{}\": {}x{} RGBA needs {} bytes, got {}", desc.debugName, desc.width,
-                desc.height, expected, desc.pixels.size());
+    return fail(Errc::InvalidArgument, "texture \"{}\": {}x{} {} needs {} bytes, got {}", desc.debugName, desc.width,
+                desc.height, describe(desc.format), expected, desc.pixels.size());
   }
 
   // Mips are made by linear blits, which the format must support in optimal

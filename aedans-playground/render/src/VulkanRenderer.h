@@ -24,6 +24,7 @@
 #include "playground/render/Resources.h"
 #include "playground/render/VulkanRenderer.h"
 
+#include "IblBaker.h"
 #include "Mesh.h"
 #include "ResourcePool.h"
 
@@ -56,6 +57,9 @@ inline constexpr u32 kMaxTextures = 4096;
 inline constexpr u32 kWhiteTexture = 0;       // base colour and metallic-roughness: factors apply unchanged
 inline constexpr u32 kFlatNormalTexture = 1;  // normal map: (0.5, 0.5, 1) = straight out of the surface
 inline constexpr u32 kDefaultTextureCount = 2;
+// The split-sum BRDF table (BrdfLut.h): its size, and samples per entry.
+inline constexpr u32 kBrdfLutSize = 64;
+inline constexpr u32 kBrdfLutSamples = 128;
 
 // One frame copied back to the CPU (requestCapture / takeCapture): for pixel
 // tests and screenshots. Always RGBA, 8 bits per channel, top row first.
@@ -89,6 +93,8 @@ class VulkanRenderer final : public Renderer {
                                                     std::string_view debugName) override;
   void destroyMesh(MeshHandle mesh) noexcept override;
   void destroyTexture(TextureHandle texture) noexcept override;
+  [[nodiscard]] Status setEnvironment(const ProceduralSky& sky, const EnvironmentQuality& quality) override;
+  [[nodiscard]] Status setEnvironment(const HdrImage& panorama, const EnvironmentQuality& quality) override;
 
   // For tests and diagnostics.
   [[nodiscard]] const gpu::Context& context() const noexcept { return context_; }
@@ -101,6 +107,8 @@ class VulkanRenderer final : public Renderer {
   [[nodiscard]] u32 lastDrawCalls() const noexcept { return lastDrawCalls_; }
   [[nodiscard]] const gpu::Image& depthBuffer() const noexcept { return depth_; }
   [[nodiscard]] u32 lastMeshDrawCount() const noexcept { return lastMeshDraws_; }
+  [[nodiscard]] const EnvironmentMaps& environment() const noexcept { return environment_; }
+  [[nodiscard]] u32 environmentBakes() const noexcept { return environmentBakes_; }
   // Live resources (textures: not counting the built-in defaults), and those
   // destroyed but waiting for in-flight frames to finish.
   [[nodiscard]] usize meshCount() const noexcept { return meshes_.liveCount(); }
@@ -136,6 +144,7 @@ class VulkanRenderer final : public Renderer {
     gpu::Buffer meshDraws;         // this frame's MeshDrawGpu[], persistently mapped
     std::vector<MeshCommand> meshCommands;  // one per entry of meshDraws, in order
     u32 singleSidedCount = 0;      // meshCommands [0, n) are culled; the rest are double-sided
+    bool drawSky = false;          // FrameData::drawSky, for recording
     gpu::Buffer uniforms;          // this frame's FrameUniforms (camera, lights), persistently mapped
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;  // points the shader at `uniforms`; freed with the pool
     gpu::Buffer capture;           // a copy of the frame for takeCapture(), when requested
@@ -158,6 +167,8 @@ class VulkanRenderer final : public Renderer {
   [[nodiscard]] Status writeSprites(Frame& frame, const FrameData& frameData);
   [[nodiscard]] Status writeMeshes(Frame& frame, const FrameData& frameData);
   [[nodiscard]] Result<TextureHandle> addTexture(gpu::Image image, std::string_view debugName);
+  [[nodiscard]] Status installEnvironment(Result<EnvironmentMaps> maps);
+  void writeEnvironmentBinding(u32 binding, VkImageView view) const noexcept;
   [[nodiscard]] u32 textureSlot(TextureHandle texture, u32 fallback) noexcept;
   [[nodiscard]] Status recordCommands(const Frame& frame, u32 imageIndex) const;
 
@@ -174,6 +185,7 @@ class VulkanRenderer final : public Renderer {
   gpu::PipelineLayout pipelineLayout_;          // shared by all pipelines: sets 0 and 1, one 8-byte address
   gpu::Pipeline meshPipeline_;     // lit, textured meshes: back faces culled, depth test + write
   gpu::Pipeline doubleSidedPipeline_;  // the same, no culling (Material::doubleSided)
+  gpu::Pipeline skyPipeline_;          // the environment behind everything: far plane, no depth writes
   gpu::Pipeline opaquePipeline_;   // sprites: depth test + depth write
   gpu::Pipeline blendedPipeline_;  // sprites: depth test, NO depth write (translucent, sorted back to front)
   VkFormat pipelineFormat_ = VK_FORMAT_UNDEFINED;
@@ -183,6 +195,11 @@ class VulkanRenderer final : public Renderer {
   gpu::Sampler sampler_;                        // one for every texture: trilinear, repeat, anisotropic
   gpu::DescriptorPool textureDescriptorPool_;   // update-after-bind: textures are added while frames are in flight
   VkDescriptorSet textureSet_ = VK_NULL_HANDLE;  // freed with its pool
+  // Image-based lighting: the baker, its maps, and the BRDF table (set 1, bindings 1-4).
+  std::optional<IblBaker> baker_;
+  EnvironmentMaps environment_;
+  gpu::Image brdfLut_;
+  u32 environmentBakes_ = 0;
   // Declared last: destroyed first, while the device still exists.
   ResourcePool<gpu::Image, TextureHandle> textures_{kMaxTextures, "texture"};
   ResourcePool<Mesh, MeshHandle> meshes_{kMaxMeshes, "mesh"};
