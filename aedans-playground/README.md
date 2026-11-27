@@ -5,21 +5,26 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 [`HANDOFF.md`](HANDOFF.md).
 
 **Current state:** a window, a fixed-timestep main loop, a Vulkan renderer
-that draws textured, lit 3D meshes and 2D sprites, glTF 2.0 model loading,
+that draws textured 3D meshes lit by the sun and by their surroundings
+(image-based lighting, with a skybox), and 2D sprites, glTF 2.0 model and
+HDR panorama loading,
 an entity component system (ECS), keyboard/mouse input, an orbit/fly
 camera, a job system (worker threads) and an asset manager that loads files
 in the background.
 
 The demo has two scenes. The default is **3D**: glTF models (a tiled floor,
 textured crates, a row of spheres from rough plastic to polished gold) lit
-by the sun, which you look around with the mouse. `--model PATH` shows any
-glTF file instead. `--scene sprites` is the **2D** demo: steer a white
+by the sun and a procedural sky they reflect, which you look around with
+the mouse. `--model PATH` shows any glTF file instead, and `--environment
+PATH.hdr` lights the scene with a photographed HDR panorama. `--scene sprites` is the **2D** demo: steer a white
 square among 25,000 bouncing ones, all drawn in one instanced draw call.
 
-![The 3D scene: glTF models with base colour, normal and metallic-roughness textures](docs/gltf-scene.png)
+![The 3D scene: glTF models lit by the sun and the sky, metals reflecting it](docs/ibl-scene.png)
 
-*The 3D scene, captured from the running app on Mesa's software Vulkan
-driver. Earlier milestones: the first triangle (`docs/first-triangle.png`),
+*The 3D scene with image-based lighting, captured from the running app on
+Mesa's software Vulkan driver: the metal spheres reflect the sky above and
+the ground below. Before reflections: `docs/gltf-scene.png`. Earlier
+milestones: the first triangle (`docs/first-triangle.png`),
 the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
 (`docs/instanced-25k.png`) and the tilted 2D view (`docs/perspective-3d.png`).*
 
@@ -56,10 +61,10 @@ the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
 | `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
 | `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image` (+ `createTexture`, mipmaps), `Sampler`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
-| `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), the Vulkan renderer (`Mesh`, `ResourcePool`), the shaders |
-| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController`, `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
+| `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`), the shaders |
+| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController`, `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
 | `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`), `assets/` (copied next to the executable) |
-| `tests/` | | doctest suites for core, jobs, assets, glTF, ECS, input, camera, application, GPU, renderer and meshes; end-to-end keyboard and camera tests |
+| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, ECS, input, camera, application, GPU, renderer, meshes and environment lighting; end-to-end keyboard and camera tests |
 | `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
 | `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator. tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
 
@@ -191,8 +196,9 @@ bullets and, with `engine::pickSprite`, to remove the sprite you right-click.
    the mesh draw list, the sprites (opaque first, then translucent ones
    sorted back to front), and the camera and lights in the uniform buffer.
 5. **Record:** clear the image and the depth buffer, bind the frame's
-   uniforms (set 0) and the texture array (set 1), draw every mesh (one
-   indexed draw each), then **all** sprites with at most two instanced
+   uniforms (set 0) and the texture array with the environment maps (set
+   1), draw every mesh (one indexed draw each), the sky where no mesh
+   drew (if asked), then **all** sprites with at most two instanced
    draws, `vkCmdDraw(6 vertices, N instances)`: opaque sprites with depth
    writes, then translucent ones without (they still depth-test). Then
    move the image into the present layout.
@@ -247,9 +253,9 @@ lists `MeshInstance`s (mesh, material, transform) in `FrameData`.
   `vkCmdDrawIndexed` per instance with `firstInstance` = its entry.
   Double-sided materials use a second pipeline without culling.
 - **Shading** (`render/shaders/mesh.frag`): glTF's metallic-roughness model,
-  GGX/Smith/Schlick specular, normal mapping, one directional sun and a
-  flat ambient term. No shadows or environment reflections yet, so metals
-  look dark away from their highlight.
+  GGX/Smith/Schlick specular, normal mapping, one directional sun, the
+  environment's light (next section), and an optional flat ambient fill.
+  No shadows yet.
 - **Destroying** a mesh or texture makes its handle stale at once; the
   memory is freed after every frame that might still use it has finished.
 
@@ -281,6 +287,54 @@ Avocado, BoxTextured, NormalTangentMirrorTest) were checked with
 `--model` and render correctly, mirrored tangents included; they are not
 in the repository.
 
+## Reflections: image-based lighting and the sky
+
+Real objects are lit by everything around them: the sky from above, the
+ground from below, and shiny surfaces mirror their surroundings. The
+renderer takes an **environment** (`render/Environment.h`), either a
+`ProceduralSky` (colours for the zenith, horizon and ground, and a glow
+round the sun; computed in a shader, so it needs no file and bakes in
+milliseconds) or an `HdrImage` (a photographed panorama, equirectangular,
+from a Radiance `.hdr` file), and **bakes** it on the GPU into three cube
+maps (`render/src/IblBaker.cpp`, four compute shaders, one submission):
+
+| Map | What it holds | Used for |
+|---|---|---|
+| environment | the sky itself, with mips | the skybox; the source of the other two |
+| irradiance | for each direction, the light a matte surface facing it gets (cosine-weighted average of the hemisphere) | diffuse light on non-metals |
+| specular | the sky as surfaces of each roughness reflect it: mip 0 sharp, the last fully rough (GGX-weighted) | reflections |
+
+Each blurred map reads blurrier mips for samples that stand for larger
+areas (filtered importance sampling), so a few dozen samples per texel give
+smooth results; reads stop at 4x4 faces so sky and ground do not bleed into
+each other. A fourth piece, the **split-sum BRDF table** (how much of the
+reflection a surface returns, by viewing angle and roughness), does not
+depend on the environment: it is computed once on the CPU
+(`render/src/BrdfLut.cpp`) and uploaded as a half-float texture.
+
+```cpp
+renderer.setEnvironment(render::ProceduralSky{.sunDirection = sun}, render::EnvironmentQuality{});
+// or, from a file, in the background:
+assets.registerType<engine::EnvironmentAsset>(engine::environmentLoader(renderer));
+assets.load<engine::EnvironmentAsset>("skies/meadow.hdr");
+```
+
+A renderer starts with a small procedural sky (`kFastEnvironment`, about
+0.2 s to bake in a debug build on the CPU driver), so headless tests stay
+fast; the demo bakes a sharper one, and panoramas use `kDetailedEnvironment`
+(512-texel cube, 256 samples: about 0.2 s for a 3200x1600 panorama in a
+release build on the CPU driver).
+
+Per frame, `FrameData` chooses how it is used: `environmentIntensity`
+(0 turns it off), `drawSky` (the sky pass: one triangle on the far plane,
+drawn after the meshes so the depth test keeps it behind them, plus the
+sun's disk from `FrameData::sun`), and `exposure` / `toneMap` (Khronos PBR
+Neutral: colours below about 0.76 pass unchanged, brighter ones roll off
+towards white instead of clipping).
+
+With `--environment`, the scene's sun stays where the game puts it; it does
+not follow the sun in the photograph.
+
 ## GPU memory
 
 `gpu::Allocator` wraps the Vulkan Memory Allocator (VMA), owned by
@@ -298,8 +352,9 @@ Speed, 25,000 sprites, release build, validation off, on the software
 renderer in the cloud container (a CPU doing the GPU's work, so pixel filling
 dominates): one draw per sprite took about 66 ms a frame; one instanced draw
 takes about 38 ms, with the 120 Hz simulation keeping up. The 3D scene
-(about 15,500 lit triangles plus the textured floor, 1600x900) takes about
-30 ms. Not yet measured on a real GPU.
+(about 15,500 lit triangles plus the textured floor, 1600x900) took about
+30 ms with sun lighting only, and about 36 ms with image-based lighting and
+the sky (every pixel now draws something). Not yet measured on a real GPU.
 
 ## Worker threads: the job system
 
@@ -509,6 +564,7 @@ Every failure is one `critical` line naming the step and the reason.
 |---|---|
 | `--scene models` / `--scene sprites` | the 3D scene (default) or the 2D one |
 | `--model PATH` | show this glTF 2.0 file (`.gltf` or `.glb`) in the 3D scene |
+| `--environment PATH` | light the 3D scene with this HDR panorama (`.hdr`) and show it as the sky |
 | `--frames N` | exit after N frames |
 | `--sprites N` | how many bouncing squares the 2D scene spawns (default 25000; implies `--scene sprites`) |
 | `--verbose` | debug-level logging: frame-time statistics, Vulkan loader messages |
