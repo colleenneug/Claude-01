@@ -8,7 +8,8 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 that draws textured 3D meshes lit by the sun (with real-time shadows) and
 by their surroundings (image-based lighting, with a skybox) into an HDR
 image, then adds bloom and ACES tone mapping; 2D sprites; glTF 2.0 model
-and HDR panorama loading,
+and HDR panorama loading; networking (ENet transport, bit-packed
+quantized messages) and a headless dedicated server (`--server`);
 an entity component system (ECS), keyboard/mouse input, an orbit/fly
 camera, a job system (worker threads) and an asset manager that loads files
 in the background.
@@ -63,14 +64,15 @@ the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
 
 | Folder | Library | Contents |
 |---|---|---|
-| `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock`, `FixedStep`, `JobSystem` |
-| `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
+| `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock`, `FixedStep`, `JobSystem`, `InterruptGuard` (Ctrl+C) |
+| `net/` | `playground_net` (`engine_net`) | `BitWriter`/`BitReader`, quantization, `Host`/`Peer`/`Packet` over ENet (hidden). Depends on core only |
+| `platform/` | `playground_platform` | `Platform` (GLFW lifetime), `Window` |
 | `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image` (+ `createTexture`, mipmaps), `Sampler`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), `Shadow` (shadow-map framing), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess`), the shaders |
 | `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController`, `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
-| `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
-| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, and shadows with post-processing; end-to-end keyboard and camera tests |
+| `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`), the dedicated server and test client (`Server`, `Protocol`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
+| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, and networking; end-to-end keyboard, camera and dedicated-server tests |
 | `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
 | `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator. tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
 
@@ -403,6 +405,57 @@ the same frame through both kinds and gets the same pixels.
 light a surface gives off itself; with bloom, bright enough emission
 glows past its edges (the demo's lamp bulbs, the helmet's visor).
 
+## Networking and the dedicated server
+
+The `net/` library carries messages between game processes. It depends on
+`core` only, and ENet (reliable UDP) is hidden inside `net/src/Host.cpp`:
+no ENet or socket header reaches anything that includes `net/`.
+
+**Transport** (`net/Host.h`). A `Host` is a server (`Host::listen(port)`;
+port 0 picks a free one) or a client (`Host::client()`, then
+`connect(host, port)`). `service(timeoutMs)` runs the network and returns
+what happened: `Connected`, `Disconnected`, `Received`. A `Peer` is a
+number the host gave a connection (never reused, so a stale one matches
+nothing); a `Packet` owns its bytes and names its channel:
+
+| Channel | Delivery | For |
+|---|---|---|
+| `Reliable` | arrives once, in order; resent until acknowledged | spawns, hits, state changes, chat |
+| `Unreliable` | sent once, unsequenced; may be lost | input every tick, position snapshots |
+
+**Bit packing** (`net/BitStream.h`). `BitWriter` appends values of 1 to 64
+bits with no gaps (least significant bit first, by shifts and masks: no
+struct casts, so the same bytes on every CPU); floats travel as their exact
+bits; small numbers as varints; strings with a checked length.
+`BitReader` never reads past its data: a short or hostile packet gives
+zeros and a sticky `ok() == false`, so a message is decoded and then
+checked once.
+
+**Quantization** (`net/Quantize.h`). Floats with a known range as N-bit
+steps (error at most half a step; clamped; NaN-safe), 2D/3D vectors, and
+rotations as **smallest-three** quaternions: drop the largest component,
+send its index and the other three in [-0.71, 0.71]: 32 bits instead of
+128, within a quarter of a degree.
+
+**Dedicated server** (`app/Server.cpp`, `--server [--port N]`). The 120 Hz
+fixed-step simulation (the same `FixedStepAccumulator` as the windowed
+game) with no window and no GPU: neither GLFW nor Vulkan is started, so it
+runs on a machine with no display. Waiting for the network until the next
+tick is due is the loop's sleep. It welcomes each client (reliable) and
+sends quantized snapshots of its entities 20 times a second (unreliable,
+`app/Protocol.h`: about 6 bytes an entity). Ctrl+C or SIGTERM
+(`core/Interrupt.h`) stops it in order: every client is told goodbye
+first. `--connect HOST[:PORT]` is a headless test client that reports what
+it received.
+
+```bash
+./build/debug/app/playground_app --server --port 27015
+```
+
+```bash
+./build/debug/app/playground_app --connect 127.0.0.1:27015 --frames 600
+```
+
 ## GPU memory
 
 `gpu::Allocator` wraps the Vulkan Memory Allocator (VMA), owned by
@@ -638,6 +691,9 @@ Every failure is one `critical` line naming the step and the reason.
 | `--environment PATH` | light the 3D scene with this HDR panorama (`.hdr`) and show it as the sky |
 | `--frames N` | exit after N frames |
 | `--sprites N` | how many bouncing squares the 2D scene spawns (default 25000; implies `--scene sprites`) |
+| `--server` | run a dedicated server: no window, no GPU, the 120 Hz simulation; Ctrl+C stops it. With `--frames N`: stop after N ticks |
+| `--port N` | the server's UDP port (default 27015; 0: any free port, logged) |
+| `--connect HOST[:PORT]` | headless test client: connect, listen for `--frames` ticks (default 240 = 2 s), log what arrived |
 | `--verbose` | debug-level logging: frame-time statistics, Vulkan loader messages |
 | `--log-file PATH` | where the log goes (default `playground.log`) |
 | `--validation` / `--no-validation` | force Vulkan validation on or off (default: on in debug builds, off in release) |
