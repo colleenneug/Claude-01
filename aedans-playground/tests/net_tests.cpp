@@ -394,3 +394,112 @@ TEST_CASE("a port already in use is refused with a message naming it") {
   CHECK(second.error().code == Errc::IoFailure);
   CHECK(second.error().message.find(std::to_string(first->port())) != std::string::npos);
 }
+
+// --- Simulated network conditions (Host::simulate) ---------------------------------------
+
+namespace {
+
+struct ConnectedPair {
+  net::Host server;
+  net::Host client;
+  net::Peer toServer;
+  net::Peer toClient;
+};
+
+// A server and a client, connected (with no simulated conditions yet).
+ConnectedPair connectPair() {
+  auto server = net::Host::listen(0);
+  REQUIRE(server.has_value());
+  auto client = net::Host::client();
+  REQUIRE(client.has_value());
+  auto toServer = client->connect("127.0.0.1", server->port());
+  REQUIRE(toServer.has_value());
+  net::Peer toClient;
+  bool connected = false;
+  REQUIRE(pump(*server, *client,
+               [&](net::Host& host, const net::Event& e) {
+                 if (e.type != EventType::Connected) return;
+                 if (&host == &*server) toClient = e.peer;
+                 else connected = true;
+               },
+               [&] { return toClient.valid() && connected; }));
+  return {std::move(*server), std::move(*client), *toServer, toClient};
+}
+
+net::Packet numbered(net::Channel channel, u32 i) {
+  BitWriter out;
+  out.writeU32(i);
+  return net::Packet(channel, out.take());
+}
+
+}  // namespace
+
+TEST_CASE("simulated latency: nothing arrives before the delay, everything after it") {
+  ConnectedPair pair = connectPair();
+  pair.client.simulate({.latencyMs = 60});
+  CHECK(pair.client.simulated().active());
+  const auto sent = std::chrono::steady_clock::now();
+  REQUIRE(pair.client.send(pair.toServer, numbered(net::Channel::Unreliable, 7)).has_value());
+  REQUIRE(pair.client.send(pair.toServer, numbered(net::Channel::Reliable, 8)).has_value());
+  pair.client.flush();  // too early: still held back
+  std::vector<std::chrono::steady_clock::time_point> arrivals;
+  REQUIRE(pump(pair.server, pair.client,
+               [&](net::Host& host, const net::Event& e) {
+                 if (&host == &pair.server && e.type == EventType::Received) arrivals.push_back(std::chrono::steady_clock::now());
+               },
+               [&] { return arrivals.size() == 2; }));
+  for (const auto& at : arrivals) {
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(at - sent).count() >= 60);
+  }
+  CHECK(pair.client.simulationStats().delayed == 2);
+}
+
+TEST_CASE("simulated loss: about the asked share of unreliable packets is lost; reliable ones never, in order") {
+  ConnectedPair pair = connectPair();
+  pair.client.simulate({.latencyMs = 5, .jitterMs = 5, .lossPercent = 30.0f, .seed = 42});
+  constexpr u32 kCount = 1000;
+  for (u32 i = 0; i < kCount; ++i) {
+    REQUIRE(pair.client.send(pair.toServer, numbered(net::Channel::Unreliable, i)).has_value());
+  }
+  for (u32 i = 0; i < 100; ++i) {
+    REQUIRE(pair.client.send(pair.toServer, numbered(net::Channel::Reliable, i)).has_value());
+  }
+  u32 unreliable = 0;
+  std::vector<u32> reliable;
+  const auto onEvent = [&](net::Host& host, const net::Event& e) {
+    if (&host != &pair.server || e.type != EventType::Received) return;
+    if (e.packet.channel() == net::Channel::Unreliable) ++unreliable;
+    else reliable.push_back(BitReader(e.packet.bytes()).readU32());
+  };
+  REQUIRE(pump(pair.server, pair.client, onEvent, [&] { return reliable.size() == 100; }));
+  (void)pump(pair.server, pair.client, onEvent, [&] { return unreliable + pair.client.simulationStats().dropped >= kCount; });
+
+  const u64 dropped = pair.client.simulationStats().dropped;
+  INFO("dropped " << dropped << ", arrived " << unreliable);
+  CHECK(dropped > 230);  // 30% of 1000 is 300; a fixed seed keeps it stable
+  CHECK(dropped < 370);
+  CHECK(unreliable + dropped == kCount);
+  for (u32 i = 0; i < 100; ++i) CHECK(reliable[i] == i);
+  CHECK(pair.client.simulationStats().reliableHeldBack > 0);  // some were "lost" and so came later, still in order
+}
+
+TEST_CASE("disconnectAfterSending: the last message arrives before the goodbye, even when delayed") {
+  ConnectedPair pair = connectPair();
+  pair.server.simulate({.latencyMs = 40});
+  REQUIRE(pair.server.send(pair.toClient, numbered(net::Channel::Reliable, 99)).has_value());
+  pair.server.disconnectAfterSending(pair.toClient);
+  bool gotMessage = false;
+  bool messageBeforeGoodbye = false;
+  bool goodbye = false;
+  REQUIRE(pump(pair.server, pair.client,
+               [&](net::Host& host, const net::Event& e) {
+                 if (&host != &pair.client) return;
+                 if (e.type == EventType::Received) gotMessage = BitReader(e.packet.bytes()).readU32() == 99;
+                 if (e.type == EventType::Disconnected) {
+                   goodbye = true;
+                   messageBeforeGoodbye = gotMessage;
+                 }
+               },
+               [&] { return goodbye; }));
+  CHECK(messageBeforeGoodbye);
+}

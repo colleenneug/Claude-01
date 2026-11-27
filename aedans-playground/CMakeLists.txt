@@ -112,6 +112,7 @@ add_subdirectory(ecs)
 add_subdirectory(gpu)
 add_subdirectory(render)
 add_subdirectory(engine)
+add_subdirectory(game)
 add_subdirectory(app)
 
 if(PLAYGROUND_BUILD_TESTS)

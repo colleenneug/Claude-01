@@ -9,7 +9,9 @@ that draws textured 3D meshes lit by the sun (with real-time shadows) and
 by their surroundings (image-based lighting, with a skybox) into an HDR
 image, then adds bloom and ACES tone mapping; 2D sprites; glTF 2.0 model
 and HDR panorama loading; networking (ENet transport, bit-packed
-quantized messages) and a headless dedicated server (`--server`);
+quantized messages) with an authoritative headless dedicated server
+(`--server`) and a windowed client (`--connect`) that predicts its own
+player and interpolates everything else;
 an entity component system (ECS), keyboard/mouse input, an orbit/fly
 camera, a job system (worker threads) and an asset manager that loads files
 in the background.
@@ -71,8 +73,9 @@ the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), `Shadow` (shadow-map framing), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess`), the shaders |
 | `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController`, `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
-| `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`), the dedicated server and test client (`Server`, `Protocol`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
-| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, and networking; end-to-end keyboard, camera and dedicated-server tests |
+| `game/` | `playground_game` | the networked game: `Protocol` (v2), `Simulation` (the movement rule both sides run), `InputQueue` (the server's rate limit), `Prediction`, `Interpolation`, `GameServer`, `GameClient`. No window, no GPU |
+| `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`, `NetScene`), the dedicated server and headless bot (`Server`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
+| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, networking, the game's pieces, and a server with two clients over a bad simulated network; end-to-end keyboard, camera, dedicated-server and windowed-client tests |
 | `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
 | `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator. tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
 
@@ -437,23 +440,65 @@ rotations as **smallest-three** quaternions: drop the largest component,
 send its index and the other three in [-0.71, 0.71]: 32 bits instead of
 128, within a quarter of a degree.
 
-**Dedicated server** (`app/Server.cpp`, `--server [--port N]`). The 120 Hz
-fixed-step simulation (the same `FixedStepAccumulator` as the windowed
-game) with no window and no GPU: neither GLFW nor Vulkan is started, so it
-runs on a machine with no display. Waiting for the network until the next
-tick is due is the loop's sleep. It welcomes each client (reliable) and
-sends quantized snapshots of its entities 20 times a second (unreliable,
-`app/Protocol.h`: about 6 bytes an entity). Ctrl+C or SIGTERM
+**A worse network, on purpose** (`Host::simulate(NetworkConditions)`).
+For testing: everything a host sends waits `latencyMs` (plus up to
+`jitterMs` more) in a queue before it goes, and `lossPercent` of the
+unreliable packets are thrown away. Reliable packets are never lost (ENet
+would resend them): a "lost" one arrives a round trip later instead, still
+in order. `--net-latency MS` and `--net-loss PERCENT` turn it on for
+either end.
+
+**The game** (`game/`). The server is the **authority**: it alone decides
+where everything is. Each client controls one player entity.
+
+| Step | What happens |
+|---|---|
+| Connect | the client says **Hello** with its protocol version. Another version: **Reject** ("protocol version mismatch"), then goodbye. Silent for 3 s (a half-open connection): disconnected |
+| Join | the server spawns the client's player and sends **Welcome** (its entity id and exact start) and a **Spawn** list of everything; every other client gets a Spawn of the newcomer. All reliable |
+| Play | every 120 Hz tick the client sends its **Input** (unreliable, numbered, with the last 8 repeated, so a lost packet loses nothing). The server applies at most **one input a tick** on average to that player (a small bucket allows a burst of 3 after a hiccup), so sending inputs faster does not make anyone faster |
+| Snapshots | 20 a second, one per client: the server tick, `lastAckedInputSeq` (the newest of that client's inputs applied) and exactly where that left its player, then every entity, quantized (about 6 bytes each) |
+| Leave | the player is destroyed and everyone else gets a **Despawn** (reliable) |
+
+**Prediction** (`game/Prediction.h`). The client moves its own player at
+once, with the same rule as the server (`game/Simulation.h`) on the same
+quantized input, and remembers `{input number, input, result}` in a ring.
+When a snapshot says "inputs up to N applied, you are at P", it compares P
+with what it predicted for N: if they differ (an input was lost or
+capped), the server wins: it starts from P and **replays** every input
+after N. Snapshots older than the newest seen are dropped. With a ping so
+high the ring (2 s) fills, the oldest entries are overwritten and the
+client simply takes the server's word. A correction is shown as a short
+glide, not a snap.
+
+**Interpolation** (`game/Interpolation.h`). Everything else is drawn about
+0.1 s in the past, blended between the two snapshots either side, so it
+moves smoothly even though snapshots arrive only 20 times a second and
+some are lost.
+
+**Dedicated server** (`app/Server.cpp`, `--server [--port N]`). The game's
+120 Hz loop with no window and no GPU: neither GLFW nor Vulkan is started,
+so it runs on a machine with no display. Waiting for the network until the
+next tick is due is the loop's sleep. Ctrl+C or SIGTERM
 (`core/Interrupt.h`) stops it in order: every client is told goodbye
-first. `--connect HOST[:PORT]` is a headless test client that reports what
-it received.
+first.
 
 ```bash
 ./build/debug/app/playground_app --server --port 27015
 ```
 
+Then, in another terminal, play (WASD or the arrow keys; you are the white
+square, other players are orange), here over a pretend bad connection:
+
 ```bash
-./build/debug/app/playground_app --connect 127.0.0.1:27015 --frames 600
+./build/debug/app/playground_app --connect 127.0.0.1:27015 --net-latency 60 --net-loss 5
+```
+
+`--headless` with `--connect` runs a bot instead of a window: it walks a
+circle for `--frames` ticks and reports, including how far its prediction
+ended from the server's answer (it should be 0.000):
+
+```bash
+./build/debug/app/playground_app --connect 127.0.0.1:27015 --headless --frames 600
 ```
 
 ## GPU memory
@@ -693,7 +738,10 @@ Every failure is one `critical` line naming the step and the reason.
 | `--sprites N` | how many bouncing squares the 2D scene spawns (default 25000; implies `--scene sprites`) |
 | `--server` | run a dedicated server: no window, no GPU, the 120 Hz simulation; Ctrl+C stops it. With `--frames N`: stop after N ticks |
 | `--port N` | the server's UDP port (default 27015; 0: any free port, logged) |
-| `--connect HOST[:PORT]` | headless test client: connect, listen for `--frames` ticks (default 240 = 2 s), log what arrived |
+| `--connect HOST[:PORT]` | play on a server: a window showing its world; WASD moves your player. Exit code 1 if rejected or dropped |
+| `--headless` | with `--connect`: no window; a bot walks for `--frames` ticks (default 240 = 2 s), then logs a summary |
+| `--net-latency MS` | testing: delay everything this end sends by MS (plus up to MS/5 jitter) |
+| `--net-loss PERCENT` | testing: lose this share of the unreliable packets this end sends |
 | `--verbose` | debug-level logging: frame-time statistics, Vulkan loader messages |
 | `--log-file PATH` | where the log goes (default `playground.log`) |
 | `--validation` / `--no-validation` | force Vulkan validation on or off (default: on in debug builds, off in release) |

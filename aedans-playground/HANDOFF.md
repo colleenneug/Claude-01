@@ -8,13 +8,13 @@ to build, run and troubleshoot is in `README.md`.
   engine architecture, memory management and data-oriented design, and to
   host **Erebus Cradle** (the OpenGL 4.1 game in `../cpp/`) once it is ready.
 - **Where:** repository `colleenneug/Claude-01`, folder `aedans-playground/`,
-  branch `claude/relaxed-cray-5kc2fl` (29 commits, `d065ae6` → this one). No
+  branch `claude/relaxed-cray-5kc2fl` (31 commits, `d065ae6` → this one). No
   pull request open.
-- **Size:** about 14,600 lines of engine code and shaders, and 5,600 lines
+- **Size:** about 16,500 lines of engine code and shaders, and 6,600 lines
   of tests.
 - **State at this snapshot:**
-  - `xvfb-run -a ctest --preset debug` passes **21/21**: 16 suites with
-    **205 test cases**, plus 5 end-to-end and smoke checks.
+  - `xvfb-run -a ctest --preset debug` passes **24/24**: 18 suites with
+    **226 test cases**, plus 6 end-to-end and smoke checks.
   - A clean rebuild has **0 warnings** (warnings are errors).
   - **0 Vulkan validation errors**. (The one `[error] [gpu]` line in the
     test log is gpu_tests' deliberately injected "expected" message.)
@@ -55,7 +55,9 @@ appears outside `net/src/Host.cpp`; tinygltf and stb never appear outside
 `engine/src/Gltf*.cpp` and `EnvironmentAsset.cpp`.
 
 ```
-            app  (the game: scenes, --server, --connect)
+            app  (scenes, --server, --connect)
+             │
+            game (protocol, prediction, server, client)
            /   \
       engine    net ──────────┐
        /  \                   │
@@ -76,8 +78,9 @@ appears outside `net/src/Host.cpp`; tinygltf and stb never appear outside
 | **ecs** (`playground_ecs`) | core | sparse-set entity/component storage, generational entity handles, multi-component iteration, deferred destruction | `World`, `Entity`, `ComponentPool<T>` |
 | **render** (`playground_render`) | platform, glm; gpu **private** | the `Renderer` interface and Vulkan-free frame description (`FrameData`, meshes, materials, lights, environment, shadow/bloom/tone-map settings); the Vulkan renderer: instanced sprites, meshes with bindless PBR textures, image-based lighting baked on the GPU, a skybox, sun shadow maps, an HDR target, bloom, ACES/PBR Neutral tone mapping, sRGB-correct composite, frame capture for pixel tests; GPU resources behind generational handles with deferred freeing | `Renderer`, `FrameData`, `MeshData`, `Material`, `MeshInstance`, `ProceduralSky`, `HdrImage`, `Aabb`, `directionalShadowMatrix`; private: `VulkanRenderer`, `Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess` |
 | **engine** (`playground_engine`) | render, ecs; tinygltf + stb **private** | the application loop (window + fixed steps + update + extract + render); cameras (orthographic/perspective, reverse-Z, screen ↔ world) and an orbit/fly controller; the **asset manager** (decode on workers, finalize on the main thread, generational handles, cache by path); glTF 2.0 models and HDR panoramas as assets; components and systems (movement, bounce, input, lifetime, sprite extraction, picking); input actions | `Application`, `Camera`, `CameraController`, `AssetManager`, `AssetHandle<T>`, `Model`, `gltfLoader`, `EnvironmentAsset`, `ActionMap`, `Transform`, `Velocity`, `Sprite` |
-| **net** (`playground_net`, alias `engine_net`) | core, glm; ENet **private** | the network transport (server or client hosts; reliable-ordered and unreliable-unsequenced channels; events), bit-level serialization (endian-safe, overrun-proof), quantization (bounded floats, vectors, smallest-three quaternions) | `Host`, `Peer`, `Packet`, `Event`, `Channel`, `BitWriter`, `BitReader`, `quantize`, `writeQuaternion` |
-| **app** (`playground_app`) | engine, net | the program: start-up order, command-line options; the **3D scene** (floor, crates, PBR spheres, lamps, the helmet; sun shadows, sky, bloom; orbit/fly camera; `--model`, `--environment`); the **2D scene** (25,000 bouncing sprites, a player, bullets aimed with the mouse); the **dedicated server** and a headless test client; the game's wire protocol | `Scene`, `ModelScene`, `SpriteScene`, `runServer`, `runClient`, `protocol::Welcome/Snapshot` |
+| **net** (`playground_net`, alias `engine_net`) | core, glm; ENet **private** | the network transport (server or client hosts; reliable-ordered and unreliable-unsequenced channels; events; `disconnectAfterSending`), **simulated latency, jitter and loss** for tests, bit-level serialization (endian-safe, overrun-proof), quantization (bounded floats, vectors, smallest-three quaternions) | `Host`, `Peer`, `Packet`, `Event`, `Channel`, `NetworkConditions`, `BitWriter`, `BitReader`, `quantize`, `writeQuaternion` |
+| **game** (`playground_game`) | engine, net | the networked game, with no window or GPU: the **wire protocol v2** (Hello, Welcome, Reject, Spawn, Despawn, Input, Snapshot); the **movement rule** both sides run; the server's per-client **input queue** (ordered, deduplicated, rate-limited); client **prediction** (ring, reconcile, replay) and **interpolation** (snapshot buffer, render clock); the authoritative **server** and the **client** | `protocol::*`, `stepPlayer`, `InputQueue`, `Prediction`, `SnapshotBuffer`, `InterpolationClock`, `GameServer`, `GameClient` |
+| **app** (`playground_app`) | engine, game | the program: start-up order, command-line options; the **3D scene** (floor, crates, PBR spheres, lamps, the helmet; sun shadows, sky, bloom; orbit/fly camera; `--model`, `--environment`); the **2D scene** (25,000 bouncing sprites, a player, bullets aimed with the mouse); the **network scene** (`--connect`: the server's world, your player predicted); the **dedicated server** and a headless bot | `Scene`, `ModelScene`, `SpriteScene`, `NetScene`, `runServer`, `runClient` |
 
 Also: `tests/` (doctest suites, end-to-end shell scripts), `tools/`
 (`make_demo_assets.py`), `third_party/` (`tl::expected`, VMA), `cmake/`
@@ -174,29 +177,67 @@ procedural sky is baked at start-up, so headless tests stay quick.
 
 ### The dedicated server (`playground_app --server [--port N]`)
 - It branches off straight after logging starts: no GLFW, no window, no
-  Vulkan, no job system.
-- An `InterruptGuard` turns Ctrl+C or SIGTERM into a stop request.
-- `net::Host::listen(port)` starts the network; the world is 64 bouncing
-  entities in an ECS.
-- Each loop:
-  1. `host.service(time until the next tick, at most 8 ms)` is both the
-     network pump and the loop's sleep. A client connecting gets a
-     **Welcome** (reliable); departures are logged.
-  2. The same `FixedStepAccumulator` as the client runs 0..n steps of
-     movement, bounce and flush. Every 6th tick (20 Hz) it broadcasts a
-     **Snapshot** (unreliable): tick, then per entity its id, a
-     16-bit × 2 position and a 10-bit angle. About 6 B per entity.
-  3. `host.flush()`; a status line every 5 s.
+  Vulkan, no job system. An `InterruptGuard` turns Ctrl+C or SIGTERM into
+  a stop request.
+- `game::GameServer::start` listens (a few connection slots more than
+  players, so a full server can say so) and spawns 64 bouncing balls in an
+  ECS. `--net-latency` / `--net-loss` make its outgoing traffic worse.
+- Each loop (`app/Server.cpp`):
+  1. `pumpNetwork(time until the next tick, at most 8 ms)`: the network
+     pump is the loop's sleep. Per event:
+     - **connect:** a handshake deadline (3 s) starts;
+     - **Hello:** wrong version → `Reject` + `disconnectAfterSending`;
+       full → `Reject`; otherwise spawn a player entity (Transform +
+       PlayerTag, no Velocity), send `Welcome` (its id, exact spawn) and
+       a `Spawn` of everything, and a `Spawn` of the newcomer to the rest;
+     - **Input:** into that client's `InputQueue`;
+     - **disconnect:** destroy its player, `Despawn` to the rest;
+     - then any client past its handshake deadline is disconnected.
+  2. The same `FixedStepAccumulator` as the client runs 0..n
+     `GameServer::step()`s: each client's queue applies its inputs
+     (a token bucket: +1 a tick, at most 3, one per input) with
+     `stepPlayer`; balls move and bounce; every 6th tick (20 Hz) each
+     client gets its own **Snapshot**: tick, `lastAckedInputSeq`, its exact
+     position, then every entity quantized (~6 B each). Then `flush()`.
+  3. A status line every 5 s, with each client's inputs applied, dropped
+     (over the rate limit) and lost.
 - On stopping: goodbye to every client, waiting up to 500 ms for their
   acknowledgements, then exit 0.
 
+### The network client (`playground_app --connect HOST[:PORT]`)
+- The windowed game with `NetScene` instead of a demo scene; the same
+  start-up and frame as above. `--headless` swaps the window for a
+  scripted bot (`app/Server.cpp`, `runClient`).
+- `game::GameClient`: connect → `Hello` → `Welcome` (Playing) or `Reject`
+  (Rejected); no welcome within 5 s → Disconnected with the reason.
+- Each fixed step (`NetScene::fixedUpdate`): `pumpNetwork(0)`, then
+  `step(input)`:
+  1. the input is quantized exactly as the server will decode it;
+  2. **predicted:** `stepPlayer` applied at once, stored in a 256-entry
+     ring `{seq, input, state}`;
+  3. sent unreliably with every unacknowledged input up to 8 (redundancy);
+  4. the interpolation clock advances a tick.
+- Each snapshot: dropped if `tick <= newest seen`. Otherwise buffered for
+  interpolation, and **reconciled**: the predicted state at
+  `lastAckedInputSeq` is compared with the server's exact position; if
+  further than 0.01 units, rewind to the server's and replay the later
+  inputs. If the ring no longer holds that input (a ping over 2 s), take
+  the server's state and replay what is left. The visible jump is spread
+  over ~0.25 s (an offset that fades).
+- Each frame: the local player is drawn blended between its last two
+  predicted ticks (alpha); everything else at the interpolation clock
+  (~14 ticks, 117 ms, behind the newest snapshot heard, nudged gently,
+  jumping only after a stall), blended between the two snapshots around
+  it, holding (not extrapolating) past the newest. Only entities the
+  server has spawned for us are drawn.
+
 ### How they fit together today
 - The client and server share core (clock, fixed step), the ECS and its
-  systems, and the `net/` library. `app/Protocol.h` defines the messages.
-- **The windowed game does not connect to a server yet.** The headless
-  `--connect HOST[:PORT]` client receives and decodes snapshots, and the
-  end-to-end test checks it. Making the windowed game a real client is the
-  next step.
+  systems, `net/`, and `game/` (the protocol and the movement rule: one
+  copy, so prediction matches).
+- `netsync_tests` runs a server and two clients in one process over a
+  simulated 40 ± 10 ms, 10%-loss network both ways and checks they
+  converge exactly.
 
 ---
 
@@ -267,6 +308,22 @@ test still passing.
   - The headless `--server` loop at 120 Hz with snapshots.
   - Ctrl+C handling moved into `core`.
   - `--connect` test client; a server end-to-end test with no display.
+- [x] **Step 9: Client-server gameplay sync** (this commit)
+  - The `game/` library; protocol v2 with a **handshake** (version check
+    and Reject with a reason, 3 s half-open timeout) and reliable
+    **Spawn/Despawn** of one player entity per client.
+  - **Input streaming** every 120 Hz tick (unreliable, numbered, the last
+    8 repeated); the server applies them in its tick with a **rate limit**
+    (token bucket) and acknowledges `lastAckedInputSeq` in each snapshot.
+  - **Prediction and reconciliation** for the local player (ring buffer,
+    out-of-order snapshots dropped, rewind and replay past epsilon, safe
+    ring overflow) and **interpolation** for everything else.
+  - The windowed `--connect` client (`NetScene`); `--headless` bot.
+  - **Simulated latency, jitter and loss** in `net::Host`
+    (`--net-latency`, `--net-loss`).
+  - Tests: `game_tests`, `netsync_tests` (server + 2 clients converging
+    over a bad network, rejection, timeout, speed hack, ring overflow),
+    simulated-network cases in `net_tests`, `netclient_e2e`.
 
 **Verification as of this snapshot:**
 
@@ -274,13 +331,14 @@ test still passing.
 |---|---|
 | core (22), ecs (26), input (15), camera (16) | errors, logging, fixed step; ECS; input edges and actions; cameras and the controller |
 | job (10), asset (10) | thread pool, async assets (also under ThreadSanitizer) |
-| gltf (14), ibl (5), shadow (6), net (12) | glTF and HDR decoding; BRDF table maths; shadow framing; bit packing, quantization, loopback networking |
+| gltf (14), ibl (5), shadow (6), net (15) | glTF and HDR decoding; BRDF table maths; shadow framing; bit packing, quantization, loopback networking, simulated latency and loss |
+| game (13), netsync (5) | protocol round trips and malformed packets; the movement rule; the input queue and its rate limit; prediction (confirm, replay, overflow); interpolation; a server and two clients over a bad network (convergence, despawn, version rejection, handshake timeout, speed hack, 2.4 s ping) |
 | app (14) | the main loop with a fake renderer |
 | gpu (17), render (12), mesh (11), environment (6), postfx (9) | Vulkan bring-up, memory and textures; sprites, depth, camera, capture; meshes and materials; image-based lighting and sky; shadows, bloom, ACES, UNORM vs sRGB, resizing (pixels read back from the GPU; every test asserts 0 validation errors) |
-| app_smoke, keyboard_e2e, camera_e2e, server_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; server + client with no display, then Ctrl+C; a clear error with no display |
+| app_smoke, keyboard_e2e, camera_e2e, server_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
 
-- Debug, release, Clang and ASan+UBSan: 21/21.
-- TSan: the threaded suites and `net_tests`, with 0 race reports.
+- Debug, release, Clang and ASan+UBSan: 24/24.
+- TSan: the threaded suites, with 0 race reports.
 - Every build at `-Werror`.
 
 ---
@@ -294,25 +352,36 @@ test still passing.
   under Xvfb. Speeds measured there (release, 1600×900): 3D scene ~83 ms
   a frame, 2D scene ~36 ms.
 - **High-DPI displays.**
-- **A real network:** only loopback so far, with no loss, latency or
-  reordering simulated.
+- **A real network:** only loopback, with latency, jitter and loss
+  simulated (`net::NetworkConditions`); never across real machines, Wi-Fi
+  or NAT. ENet's own acknowledgements are not delayed by the simulation.
 - **The cloud environment's setup script**, until a fresh session runs it.
 - `environment_tests` failed once when the virtual display (Xvfb) did not
   start. It hasn't recurred.
 
 ### Known limitations (no known bugs)
 - **Networking:**
-  - the windowed game isn't a client;
-  - no client input, prediction, interpolation or handshake (the version
-    is sent, not enforced);
-  - full snapshots capped at 128 entities;
-  - no authentication or encryption;
-  - IPv4 only;
-  - each `Host` is single-threaded.
+  - full snapshots (no delta compression), capped at 128 entities (64
+    balls + up to 16 players, checked at start-up);
+  - players only move: no shooting or collision between players yet (the
+    Fire button is sent but unused), so nothing needs lag compensation;
+  - the movement rule is deterministic within one build; a client built
+    with another compiler could disagree by float rounding (it would just
+    be corrected);
+  - entity ids on the wire are ECS indices (a reused index after a
+    despawn is fine because Spawn/Despawn are reliable and ordered, but a
+    very late snapshot could briefly show the old entity's position for
+    the new one);
+  - the input rate limit trims a client's queue past 12 inputs (100 ms):
+    after a long freeze a client is corrected rather than allowed to catch
+    up all at once;
+  - no authentication or encryption; IPv4 only; each `Host` is
+    single-threaded; the windowed client shows status in the log, not on
+    screen (no HUD text yet).
 
   Note: ROADMAP §4.11 planned to keep networking inside the game. At the
-  user's request we built a generic engine transport (`net/`). Game
-  messages still live in the game (`app/Protocol.h`).
+  user's request we built a generic engine transport (`net/`); game
+  messages live in `game/`, not in the engine.
 - **Rendering:**
   - one shadow map, no cascades;
   - lamps glow but light nothing (no point lights);
@@ -328,13 +397,11 @@ test still passing.
   - no profiler (Tracy) and no debug overlay.
 
 ### Remaining roadmap, in order
-1. **Finish networking:**
-   - the windowed game as a client (`--connect`), interpolating snapshots;
-   - client input every tick (unreliable, sequence-numbered, redundant);
-   - client-side **prediction and reconciliation** for the local player;
-   - a **handshake** (version check with a reason, timeouts);
-   - a packet-loss and latency test shim;
-   - delta snapshots.
+1. **Networking polish** (optional before physics):
+   - delta snapshots against the client's last acknowledged one;
+   - an on-screen network HUD (ping, corrections) once there is HUD text;
+   - shooting with server-side lag compensation (rewind other players by
+     the shooter's interpolation delay).
 2. **Physics (Jolt):**
    - first, per ROADMAP §4.8: the game's AABB colliders and its tested
      kinematic player controller behind a query interface (sweep,
@@ -372,4 +439,4 @@ test still passing.
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
 debug` passes (if configure cannot find a package, install the list in
 `README.md`; `xdotool` is needed for the e2e tests), then start Remaining
-Roadmap step 1."
+Roadmap step 2 (physics), or step 1 if networking polish comes first."

@@ -8,18 +8,21 @@
 //
 //  Usage: playground_app [--scene models|sprites] [--model PATH] [--environment PATH] [--frames N]
 //                        [--sprites N] [--verbose] [--log-file PATH]
-//                        [--server [--port N]] [--connect HOST[:PORT]]
+//                        [--server [--port N]] [--connect HOST[:PORT] [--headless]]
+//                        [--net-latency MS] [--net-loss PERCENT]
 //                        [--validation | --no-validation]
 //
-//  Two demo scenes (app/Scene.h): the 3D one (glTF models, orbit and fly
+//  Demo scenes (app/Scene.h): the 3D one (glTF models, orbit and fly
 //  camera; ModelScene.h) by default, the 2D one (SpriteScene.h) with
-//  --scene sprites.
+//  --scene sprites, and the network client (NetScene.h) with --connect.
+//  --server, and --connect with --headless, open no window (Server.h).
 //
 //  Exit codes: 0 clean exit, 1 start-up or runtime failure (including any
 //  Vulkan validation error), 2 bad arguments.
 // =============================================================================
 
 #include "ModelScene.h"
+#include "NetScene.h"
 #include "Scene.h"
 #include "Server.h"
 #include "SpriteScene.h"
@@ -57,9 +60,11 @@ struct Options {
   SceneChoice scene = SceneChoice::Models;
   std::optional<std::filesystem::path> model;  // --model: show this glTF file
   std::optional<std::filesystem::path> environment;  // --environment: light the 3D scene with this .hdr
-  bool server = false;                     // --server: headless dedicated server
-  std::optional<std::string> connect;      // --connect HOST[:PORT]: headless test client
-  u16 port = app::protocol::kDefaultPort;  // --port N
+  bool server = false;                      // --server: headless dedicated server
+  std::optional<std::string> connect;       // --connect HOST[:PORT]: play on a server
+  bool headless = false;                    // --headless: with --connect, the scripted bot, no window
+  u16 port = game::protocol::kDefaultPort;  // --port N
+  net::NetworkConditions network;           // --net-latency, --net-loss
   u32 sprites = 25'000;  // how many bouncing squares the sprite scene spawns
 };
 
@@ -73,7 +78,10 @@ void printUsage() {
       "  --environment PATH  light the 3D scene with this HDR panorama (.hdr) and show it as the sky\n"
       "  --server         run a dedicated server: no window, no GPU, 120 Hz simulation (Ctrl+C stops it)\n"
       "  --port N         the server's UDP port (default 27015)\n"
-      "  --connect HOST[:PORT]  headless test client: connect, listen for --frames ticks, report\n"
+      "  --connect HOST[:PORT]  play on a server: a window showing its world, WASD moves your player\n"
+      "  --headless       with --connect: no window, a bot walks for --frames ticks and reports\n"
+      "  --net-latency MS     testing: delay everything this end sends by MS (plus up to MS/5 jitter)\n"
+      "  --net-loss PERCENT   testing: lose this share of the unreliable packets this end sends\n"
       "  --frames N       run N frames, then exit (used by the automated tests)\n"
       "  --sprites N      how many bouncing squares to spawn (default 25000)\n"
       "  --verbose        log at debug level, including frame-time statistics\n"
@@ -129,6 +137,24 @@ Result<Options> parseOptions(std::span<char*> args) {
       auto value = nextValue();
       if (!value) return tl::unexpected(std::move(value.error()));
       options.connect = std::string(*value);
+    } else if (arg == "--headless") {
+      options.headless = true;
+    } else if (arg == "--net-latency") {
+      auto value = nextValue();
+      if (!value) return tl::unexpected(std::move(value.error()));
+      const auto [end, ec] = std::from_chars(value->data(), value->data() + value->size(), options.network.latencyMs);
+      if (ec != std::errc{} || end != value->data() + value->size() || options.network.latencyMs > 10'000) {
+        return fail(Errc::InvalidArgument, "--net-latency expects milliseconds from 0 to 10000, got \"{}\"", *value);
+      }
+      options.network.jitterMs = options.network.latencyMs / 5;
+    } else if (arg == "--net-loss") {
+      auto value = nextValue();
+      if (!value) return tl::unexpected(std::move(value.error()));
+      const auto [end, ec] = std::from_chars(value->data(), value->data() + value->size(), options.network.lossPercent);
+      if (ec != std::errc{} || end != value->data() + value->size() || !(options.network.lossPercent >= 0.0f) ||
+          options.network.lossPercent > 100.0f) {
+        return fail(Errc::InvalidArgument, "--net-loss expects a percentage from 0 to 100, got \"{}\"", *value);
+      }
     } else if (arg == "--environment") {
       auto value = nextValue();
       if (!value) return tl::unexpected(std::move(value.error()));
@@ -199,21 +225,19 @@ int main(int argc, char** argv) {
 
   // The headless modes: no window, no GPU, nothing of GLFW or Vulkan started.
   if (options->server) {
-    return app::runServer({.port = options->port, .maxTicks = options->frames});
+    return app::runServer({.port = options->port, .maxTicks = options->frames, .network = options->network});
   }
+  app::ClientOptions client{.port = options->port, .network = options->network};
   if (options->connect) {
-    app::ClientOptions client{.host = *options->connect, .port = options->port};
-    if (const usize colon = options->connect->rfind(':'); colon != std::string::npos) {
-      client.host = options->connect->substr(0, colon);
-      const std::string portText = options->connect->substr(colon + 1);
-      const auto [end, ec] = std::from_chars(portText.data(), portText.data() + portText.size(), client.port);
-      if (ec != std::errc{} || end != portText.data() + portText.size()) {
-        std::fprintf(stderr, "error: --connect expects HOST[:PORT], got \"%s\"\n", options->connect->c_str());
-        return 2;
-      }
+    if (Status s = app::parseAddress(*options->connect, client); !s) {
+      std::fprintf(stderr, "error: %s\n", s.error().message.c_str());
+      return 2;
     }
     if (options->frames > 0) client.ticks = options->frames;
-    return app::runClient(client);
+    if (options->headless) return app::runClient(client);
+  } else if (options->headless) {
+    std::fprintf(stderr, "error: --headless only goes with --connect\n");
+    return 2;
   }
 
   // Worker threads for background work (file loading today). Created before
@@ -258,7 +282,14 @@ int main(int argc, char** argv) {
   // The scene. Declared after the Application, so it is destroyed first;
   // shutdown() also drops the callbacks below that refer to it.
   std::unique_ptr<app::Scene> scene;
-  if (options->scene == SceneChoice::Sprites) {
+  if (options->connect) {
+    auto netScene = app::NetScene::create(application, client);
+    if (!netScene) {
+      log::critical(Category::Net, "network client could not start: {}", netScene.error().message);
+      return 1;
+    }
+    scene = std::move(*netScene);
+  } else if (options->scene == SceneChoice::Sprites) {
     scene = std::make_unique<app::SpriteScene>(application, options->sprites);
   } else {
     scene = std::make_unique<app::ModelScene>(assets, renderer, options->model, options->environment);
@@ -291,6 +322,7 @@ int main(int argc, char** argv) {
   const Status status = application.run();
 
   scene->logSummary();  // the end-to-end tests read it
+  const int sceneExitCode = scene->exitCode();
   assets.clear();       // every GPU asset goes back to the renderer while it still exists
   application.shutdown();  // renderer, then window, then GLFW
 
@@ -308,6 +340,7 @@ int main(int argc, char** argv) {
   } else if (counts.warnings > 0) {
     log::warn(Category::Gpu, "{} Vulkan validation warning(s) this run; see the log above", counts.warnings);
   }
+  if (sceneExitCode != 0) return sceneExitCode;
   log::info(Category::Engine, "clean exit");
   return 0;
 }

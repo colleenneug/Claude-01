@@ -86,6 +86,33 @@ struct Event {
   Packet packet;  // Received only
 };
 
+// A worse network than the real one, for testing: what a game sees over
+// Wi-Fi or across the world, on one machine. Applied to what THIS host
+// sends (set it on both ends for both directions):
+//   latencyMs    every packet waits this long before it leaves;
+//   jitterMs     plus a random 0..jitterMs more (so unreliable packets can
+//                overtake each other, as on the internet);
+//   lossPercent  this share of unreliable packets is thrown away. Reliable
+//                ones are never lost, as ENet would resend them: a "lost"
+//                reliable packet is instead held back one more round trip,
+//                and reliable packets to a peer always leave in order.
+// Off (all zero) by default, and then costs nothing.
+struct NetworkConditions {
+  u32 latencyMs = 0;
+  u32 jitterMs = 0;
+  f32 lossPercent = 0.0f;  // 0..100
+  u32 seed = 1;            // the same seed, the same losses
+
+  [[nodiscard]] bool active() const noexcept { return latencyMs > 0 || jitterMs > 0 || lossPercent > 0.0f; }
+};
+
+// What the simulated network did (all zero while it is off).
+struct SimulationStats {
+  u64 delayed = 0;           // packets that went through the delay queue
+  u64 dropped = 0;           // unreliable packets thrown away
+  u64 reliableHeldBack = 0;  // reliable packets "lost" and so delayed a round trip more
+};
+
 struct PeerInfo {
   std::string address;  // "127.0.0.1:52144"
   u32 roundTripMs = 0;  // ENet's smoothed estimate
@@ -127,6 +154,9 @@ class Host {
   // Politely: the peer is told, and a Disconnected event follows once it
   // has acknowledged (or after a timeout).
   void disconnect(Peer peer);
+  // The same, but only after every packet already queued for it has gone
+  // (a "you are rejected, because..." message, then goodbye).
+  void disconnectAfterSending(Peer peer);
   void disconnectAll();
 
   [[nodiscard]] u16 port() const noexcept;  // the local port
@@ -135,6 +165,12 @@ class Host {
   // goodbye. Zero once every Disconnected event has been delivered.
   [[nodiscard]] usize knownPeers() const noexcept;
   [[nodiscard]] std::optional<PeerInfo> info(Peer peer) const;
+
+  // Testing: make this host's outgoing traffic slower and lossier (see
+  // NetworkConditions). Takes effect for packets sent from now on.
+  void simulate(const NetworkConditions& conditions);
+  [[nodiscard]] const NetworkConditions& simulated() const noexcept;
+  [[nodiscard]] SimulationStats simulationStats() const noexcept;
 
  private:
   struct Impl;

@@ -1,42 +1,38 @@
 // =============================================================================
-//  Server.cpp — the dedicated server and a headless test client (see Server.h).
+//  Server.cpp — the dedicated server and the headless bot client (Server.h).
 //
 //  THE SERVER LOOP, with no window and no GPU:
 //
 //    while not stopped (Ctrl+C / SIGTERM, or --frames N ticks):
-//      1. service the network, waiting at most until the next tick is due:
-//         the wait for packets IS the sleep, so the loop neither spins a
-//         core nor oversleeps a tick;
+//      1. the network, waiting at most until the next tick is due: the
+//         wait for packets IS the sleep, so the loop neither spins a core
+//         nor oversleeps a tick;
 //      2. FrameClock + FixedStepAccumulator (core/FixedStep.h, the same
-//         rules as the windowed game): run 0..n 120 Hz steps of the
-//         simulation, broadcasting a snapshot every 6th tick (20 Hz);
+//         rules as the windowed game): 0..n 120 Hz GameServer steps (inputs,
+//         balls, a snapshot to each client every 6th tick);
 //      3. every 5 s, a status line.
-//    then: tell every client goodbye and give them up to half a second to
-//    acknowledge, so they see a clean disconnect, not a timeout.
+//    then: goodbye to every client, waiting up to half a second for each to
+//    answer, so they see a clean disconnect, not a timeout.
+//
+//  The bot client runs the same loop shape around a GameClient.
 // =============================================================================
 
 #include "Server.h"
-
-#include "Protocol.h"
 
 #include "playground/core/FixedStep.h"
 #include "playground/core/FrameClock.h"
 #include "playground/core/Interrupt.h"
 #include "playground/core/Log.h"
-#include "playground/ecs/World.h"
-#include "playground/engine/Components.h"
-#include "playground/engine/Systems.h"
-#include "playground/engine/WorldBounds.h"
-#include "playground/net/Host.h"
+#include "playground/game/GameClient.h"
+#include "playground/game/GameServer.h"
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <numbers>
-#include <optional>
-#include <string>
-#include <random>
-#include <unordered_map>
+
+#include <glm/geometric.hpp>
 
 namespace playground::app {
 namespace {
@@ -44,194 +40,123 @@ namespace {
 using log::Category;
 using Clock = std::chrono::steady_clock;
 
-// What the server simulates: squares bouncing round the same world as the 2D
-// demo, from a fixed seed (every run, and every client, sees the same).
-void spawn(ecs::World& world, u32 count, glm::vec2 halfArea) {
-  std::mt19937 rng(20261127u);
-  auto uniform = [&rng](f32 lo, f32 hi) { return std::uniform_real_distribution<f32>(lo, hi)(rng); };
-  for (u32 i = 0; i < count; ++i) {
-    const ecs::Entity entity = world.create();
-    const f32 heading = uniform(0.0f, 2.0f * std::numbers::pi_v<f32>);
-    world.add<engine::Transform>(entity, engine::Transform{
-        .position = {uniform(-halfArea.x, halfArea.x), uniform(-halfArea.y, halfArea.y)},
-        .rotation = uniform(0.0f, std::numbers::pi_v<f32>)});
-    world.add<engine::Velocity>(entity, engine::Velocity{
-        .linear = uniform(60.0f, 260.0f) * glm::vec2{std::cos(heading), std::sin(heading)},
-        .angular = uniform(-3.0f, 3.0f)});
-    world.add<engine::Sprite>(entity, engine::Sprite{.size = {16.0f, 16.0f}});
-  }
-}
-
-protocol::Snapshot snapshotOf(ecs::World& world, u32 tick) {
-  protocol::Snapshot snapshot{.tick = tick};
-  world.each<engine::Transform>([&](ecs::Entity entity, engine::Transform& t) {
-    if (snapshot.entities.size() < protocol::kMaxSnapshotEntities) {
-      snapshot.entities.push_back({.id = entity.index, .position = t.position, .rotation = t.rotation});
-    }
-  });
-  return snapshot;
-}
-
-// Says goodbye to everyone and waits (up to `limitMs`) until each has
-// answered: a peer saying goodbye is no longer "connected" at once, before
-// the goodbye has even been sent, so wait for its Disconnected event.
-void disconnectEveryone(net::Host& host, u32 limitMs) {
-  host.disconnectAll();
-  const auto deadline = Clock::now() + std::chrono::milliseconds(limitMs);
-  while (host.knownPeers() > 0 && Clock::now() < deadline) {
-    for (const net::Event& e : host.service(10)) {
-      if (e.type == net::EventType::Disconnected) log::info(Category::Net, "peer {} said goodbye", e.peer.id);
-    }
-  }
+// How long to wait for packets before the next fixed step is due.
+u32 msUntilNextStep(const FixedStepAccumulator& steps) {
+  const f64 untilNextTick = std::max(0.0, steps.stepSeconds() - steps.accumulatedSeconds());
+  return static_cast<u32>(std::clamp(untilNextTick * 1000.0, 0.0, 8.0));
 }
 
 }  // namespace
 
+Status parseAddress(std::string_view text, ClientOptions& options) {
+  const usize colon = text.rfind(':');
+  options.host = std::string(text.substr(0, colon));
+  if (colon == std::string_view::npos) return {};
+  const std::string_view portText = text.substr(colon + 1);
+  const auto [end, ec] = std::from_chars(portText.data(), portText.data() + portText.size(), options.port);
+  if (ec != std::errc{} || end != portText.data() + portText.size() || options.host.empty()) {
+    return fail(Errc::InvalidArgument, "--connect expects HOST[:PORT], got \"{}\"", text);
+  }
+  return {};
+}
+
 int runServer(const ServerOptions& options) {
   InterruptGuard interrupts;  // Ctrl+C / SIGTERM: stop in order, not mid-tick
-  auto host = net::Host::listen(options.port, options.maxClients);
-  if (!host) {
-    log::critical(Category::Net, "dedicated server could not start: {}", host.error().message);
+  auto server = game::GameServer::start({.port = options.port, .maxClients = options.maxClients,
+                                         .balls = options.balls, .network = options.network});
+  if (!server) {
+    log::critical(Category::Net, "dedicated server could not start: {}", server.error().message);
     return 1;
   }
+  game::GameServer& game = **server;
 
-  const engine::WorldBounds bounds{.halfSize = {800.0f, 450.0f}};
-  ecs::World world;
-  spawn(world, options.entities, bounds.halfSize);
   FrameClock clock;
-  FixedStepAccumulator steps;
-  const u16 tickRate = static_cast<u16>(std::lround(1.0 / steps.stepSeconds()));
-  log::info(Category::Game, "dedicated server: {} Hz, UDP port {}, {} entities, up to {} clients; Ctrl+C stops it",
-            tickRate, host->port(), options.entities, options.maxClients);
+  FixedStepAccumulator steps(1.0 / game::protocol::kTickRate);
+  log::info(Category::Game, "dedicated server: protocol {}, {} Hz, UDP port {}, {} balls, up to {} players; "
+            "Ctrl+C stops it", game::protocol::kVersion, game::protocol::kTickRate, game.port(), options.balls,
+            options.maxClients);
   log::info(Category::Engine, "entering server loop");
 
-  u32 tick = 0;
-  u64 snapshotsSent = 0;
   auto lastStatus = Clock::now();
   u32 ticksAtLastStatus = 0;
-  std::unordered_map<u32, std::string> clients;  // peer id -> address, for the log
+  while (!InterruptGuard::interruptRequested() && (options.maxTicks == 0 || game.tick() < options.maxTicks)) {
+    game.pumpNetwork(msUntilNextStep(steps));
+    const FixedStepPlan plan = steps.advance(clock.tick().rawDeltaSeconds);
+    for (u32 i = 0; i < plan.steps; ++i) game.step();
 
-  while (!InterruptGuard::interruptRequested() && (options.maxTicks == 0 || tick < options.maxTicks)) {
-    // 1. The network, waiting until (about) the next tick is due.
-    const f64 untilNextTick = std::max(0.0, steps.stepSeconds() - steps.accumulatedSeconds());
-    const auto waitMs = static_cast<u32>(std::clamp(untilNextTick * 1000.0, 0.0, 8.0));
-    for (const net::Event& e : host->service(waitMs)) {
-      if (e.type == net::EventType::Connected) {
-        const auto info = host->info(e.peer);
-        clients[e.peer.id] = info ? info->address : "?";
-        log::info(Category::Net, "client {} connected from {} ({} connected)", e.peer.id, clients[e.peer.id],
-                  host->connectedPeers());
-        const protocol::Welcome welcome{.tickRate = tickRate, .tick = tick,
-                                        .entityCount = static_cast<u32>(world.count<engine::Transform>())};
-        if (Status s = host->send(e.peer, net::Packet(net::Channel::Reliable, protocol::encode(welcome))); !s) {
-          log::warn(Category::Net, "could not welcome client {}: {}", e.peer.id, s.error().message);
-        }
-      } else if (e.type == net::EventType::Disconnected) {
-        log::info(Category::Net, "client {} ({}) disconnected ({} connected)", e.peer.id, clients[e.peer.id],
-                  host->connectedPeers());
-        clients.erase(e.peer.id);
-      } else {
-        log::debug(Category::Net, "{} bytes from client {} on the {} channel (ignored for now)", e.packet.size(),
-                   e.peer.id, net::describe(e.packet.channel()));
-      }
-    }
-
-    // 2. The simulation: fixed 1/120 s steps.
-    const FrameTime time = clock.tick();
-    const FixedStepPlan plan = steps.advance(time.rawDeltaSeconds);
-    for (u32 i = 0; i < plan.steps; ++i) {
-      const auto dt = static_cast<f32>(steps.stepSeconds());
-      engine::movementSystem(world, dt);
-      engine::bounceSystem(world, bounds);
-      world.flush();
-      ++tick;
-      if (tick % protocol::kSnapshotEveryTicks == 0 && host->connectedPeers() > 0) {
-        host->broadcast(net::Packet(net::Channel::Unreliable, protocol::encode(snapshotOf(world, tick))));
-        ++snapshotsSent;
-      }
-    }
-    host->flush();  // snapshots out now, not at the next service()
-
-    // 3. Now and then, how it is going.
     if (Clock::now() - lastStatus >= std::chrono::seconds(5)) {
       const f64 seconds = std::chrono::duration<f64>(Clock::now() - lastStatus).count();
-      log::info(Category::Game, "server: tick {}, {:.1f} ticks/s, {} client(s), {} snapshots sent", tick,
-                (tick - ticksAtLastStatus) / seconds, host->connectedPeers(), snapshotsSent);
+      log::info(Category::Game, "server: tick {}, {:.1f} ticks/s, {} player(s), {} snapshots sent", game.tick(),
+                (game.tick() - ticksAtLastStatus) / seconds, game.playerCount(), game.stats().snapshotsSent);
+      for (const game::ServerClientStats& c : game.clientStats()) {
+        log::info(Category::Game, "  client {}: entity {} at ({:.0f}, {:.0f}), input {} applied ({} applied, {} over "
+                  "the rate limit, {} lost)", c.peer, c.playerId, c.position.x, c.position.y, c.lastAckedInputSeq,
+                  c.inputsApplied, c.inputsDropped, c.inputsSkipped);
+      }
       lastStatus = Clock::now();
-      ticksAtLastStatus = tick;
+      ticksAtLastStatus = game.tick();
     }
   }
 
   log::info(Category::Engine, "server stopping: {}",
             InterruptGuard::interruptRequested() ? "interrupted (Ctrl+C or SIGTERM)" : "tick limit reached");
-  disconnectEveryone(*host, 500);
-  log::info(Category::Game, "dedicated server stopped after {} ticks, {} snapshots sent", tick, snapshotsSent);
+  game.shutdown(500);
+  const game::ServerStats& stats = game.stats();
+  log::info(Category::Game, "dedicated server stopped after {} ticks: {} snapshots sent, {} joined, {} rejected, "
+            "{} handshake timeouts, {} malformed packets", game.tick(), stats.snapshotsSent, stats.joined,
+            stats.rejected, stats.handshakeTimeouts, stats.malformedPackets);
   return 0;
 }
 
 int runClient(const ClientOptions& options) {
   InterruptGuard interrupts;
-  auto host = net::Host::client();
-  if (!host) {
-    log::critical(Category::Net, "client could not start: {}", host.error().message);
+  auto connected = game::GameClient::connect({.host = options.host, .port = options.port, .name = "headless bot",
+                                              .network = options.network});
+  if (!connected) {
+    log::critical(Category::Net, "client could not start: {}", connected.error().message);
     return 1;
   }
-  auto server = host->connect(options.host, options.port);
-  if (!server) {
-    log::critical(Category::Net, "client could not connect: {}", server.error().message);
-    return 1;
-  }
+  game::GameClient& client = **connected;
 
-  const auto started = Clock::now();
-  const auto runFor = std::chrono::duration<f64>(static_cast<f64>(options.ticks) / 120.0);
-  bool connected = false;
-  bool lost = false;
-  std::optional<protocol::Welcome> welcome;
-  u64 snapshots = 0;
-  u64 rejected = 0;
-  u32 lastTick = 0;
-  usize lastEntityCount = 0;
-
-  while (!InterruptGuard::interruptRequested() && !lost) {
-    const auto elapsed = Clock::now() - started;
-    if (!connected && elapsed > std::chrono::seconds(5)) break;  // nobody answered
-    if (connected && options.ticks > 0 && elapsed >= runFor) break;
-    for (const net::Event& e : host->service(8)) {
-      if (e.type == net::EventType::Connected) {
-        connected = true;
-        log::info(Category::Net, "client: connected to {}:{}", options.host, options.port);
-      } else if (e.type == net::EventType::Disconnected) {
-        log::warn(Category::Net, "client: the server closed the connection");
-        lost = true;
-      } else if (const auto kind = protocol::peekKind(e.packet.bytes())) {
-        if (*kind == protocol::MessageKind::Welcome) {
-          welcome = protocol::decodeWelcome(e.packet.bytes());
-          if (welcome) {
-            log::info(Category::Net, "client: welcome from the server: protocol {}, {} Hz, tick {}, {} entities",
-                      welcome->version, welcome->tickRate, welcome->tick, welcome->entityCount);
-          }
-        } else if (const auto snapshot = protocol::decodeSnapshot(e.packet.bytes())) {
-          ++snapshots;
-          lastTick = std::max(lastTick, snapshot->tick);
-          lastEntityCount = snapshot->entities.size();
-        } else {
-          ++rejected;
-        }
-      } else {
-        ++rejected;
+  // Walk a circle for `ticks` ticks, then stand still long enough for every
+  // input to come back acknowledged (well over a round trip).
+  constexpr u64 kSettleTicks = 60;
+  FrameClock clock;
+  FixedStepAccumulator steps(1.0 / game::protocol::kTickRate);
+  u64 played = 0;
+  while (!InterruptGuard::interruptRequested()) {
+    client.pumpNetwork(msUntilNextStep(steps));
+    const game::ClientState state = client.state();
+    if (state == game::ClientState::Rejected || state == game::ClientState::Disconnected) break;
+    if (options.ticks > 0 && played >= options.ticks + kSettleTicks) break;
+    const FixedStepPlan plan = steps.advance(clock.tick().rawDeltaSeconds);
+    for (u32 i = 0; i < plan.steps; ++i) {
+      game::PlayerInput input;
+      if (state == game::ClientState::Playing && (options.ticks == 0 || played < options.ticks)) {
+        const f32 angle = static_cast<f32>(played) * 2.0f * std::numbers::pi_v<f32> / 240.0f;
+        input.move = {std::cos(angle), std::sin(angle)};
       }
+      client.step(input);
+      if (state == game::ClientState::Playing) ++played;
     }
   }
 
-  if (!connected) {
-    log::critical(Category::Net, "client: no answer from {}:{} within 5 s", options.host, options.port);
-    return 1;
+  const game::ClientStats stats = client.stats();
+  const bool welcomed = played > 0;
+  log::info(Category::Game, "client summary: welcome {}, player entity {}, {} snapshots ({} out of order), last "
+            "server tick {}, {} entities known, {} malformed packets, {} inputs sent, {} acknowledged, {} "
+            "corrections, prediction error {:.3f} units",
+            welcomed ? "received" : "MISSING", client.playerId(), stats.snapshots, stats.outOfOrder,
+            client.lastServerTick(), client.knownEntityCount(), stats.malformed, client.inputSeq(),
+            client.lastAckedInputSeq(), stats.prediction.corrections,
+            glm::length(client.predictedPosition() - client.serverPosition()));
+  const bool lost = client.state() == game::ClientState::Disconnected || client.state() == game::ClientState::Rejected;
+  if (lost) {
+    log::error(Category::Net, "client: {}", client.failure());
+  } else {
+    client.disconnect(500);
   }
-  log::info(Category::Game, "client summary: welcome {}, {} snapshots, last server tick {}, {} entities per "
-            "snapshot, {} malformed packets", welcome ? "received" : "MISSING", snapshots, lastTick, lastEntityCount,
-            rejected);
-  if (!lost) disconnectEveryone(*host, 500);
-  return welcome && !lost ? 0 : 1;
+  return welcomed && !lost ? 0 : 1;
 }
 
 }  // namespace playground::app

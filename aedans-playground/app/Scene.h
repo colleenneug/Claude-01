@@ -26,6 +26,8 @@ class Scene {
   virtual void extract(render::FrameData& frame, f64 alpha) = 0;
   // A line for the log when the game ends (the end-to-end tests read it).
   virtual void logSummary() = 0;
+  // Non-zero if the scene failed (the network client was rejected or dropped).
+  [[nodiscard]] virtual int exitCode() const { return 0; }
 };
 
 }  // namespace playground::app

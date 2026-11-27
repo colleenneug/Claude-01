@@ -45,6 +45,20 @@ playground_configure_target(playground_net_tests)
 add_test(NAME net_tests COMMAND playground_net_tests)
 set_tests_properties(net_tests PROPERTIES LABELS net)
 
+# --- The game's pieces: protocol, movement, input queue, prediction, interpolation
+add_executable(playground_game_tests game_tests.cpp)
+target_link_libraries(playground_game_tests PRIVATE playground::game doctest::doctest)
+playground_configure_target(playground_game_tests)
+add_test(NAME game_tests COMMAND playground_game_tests)
+set_tests_properties(game_tests PROPERTIES LABELS net)
+
+# --- A server and two clients in one process, over a bad simulated network --
+add_executable(playground_netsync_tests netsync_tests.cpp)
+target_link_libraries(playground_netsync_tests PRIVATE playground::game doctest::doctest)
+playground_configure_target(playground_netsync_tests)
+add_test(NAME netsync_tests COMMAND playground_netsync_tests)
+set_tests_properties(netsync_tests PROPERTIES LABELS net TIMEOUT 60)
+
 # --- ECS and systems: no window, no GPU --------------------------------------
 add_executable(playground_ecs_tests ecs_tests.cpp)
 target_link_libraries(playground_ecs_tests PRIVATE playground::engine doctest::doctest)
@@ -138,6 +152,13 @@ if(UNIX)
            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/server.sh $<TARGET_FILE:playground_app> server_e2e)
   set_tests_properties(server_e2e PROPERTIES LABELS net TIMEOUT 60)
 endif()
+# The windowed client (--connect) against a dedicated server: joins, draws
+# the server's world for 240 frames, leaves (tests/e2e/netclient.sh).
+if(UNIX AND NOT APPLE)
+  add_test(NAME netclient_e2e
+           COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/netclient.sh $<TARGET_FILE:playground_app> netclient_e2e)
+  set_tests_properties(netclient_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;net" TIMEOUT 90)
+endif()
 
 # --- Sanitizer builds and Mesa's software Vulkan driver ----------------------
 # Mesa's presentation thread keeps its allocations reachable only from the
@@ -159,7 +180,7 @@ if(PLAYGROUND_SANITIZERS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND UNIX AND N
     # The keyboard test is a shell script driving xdotool: only the game itself
     # may get the preload, so it is passed through a variable the script reads.
     if(TEST keyboard_e2e)
-      set_tests_properties(keyboard_e2e camera_e2e PROPERTIES
+      set_tests_properties(keyboard_e2e camera_e2e netclient_e2e PROPERTIES
         ENVIRONMENT "PLAYGROUND_APP_PRELOAD=${playgroundAsanRuntime}:${PLAYGROUND_MESA_LAVAPIPE}")
     endif()
   endif()
