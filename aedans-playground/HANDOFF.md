@@ -66,6 +66,46 @@ post-processing; start of this milestone: commit `8f0d485`).
 
 ## 1. Current Architecture State
 
+**Final state, verified at wrap-up:**
+- a clean rebuild of the debug preset: **0 warnings**;
+- `xvfb-run -a ctest --preset debug`: **21/21** in 33 s;
+- **0 Vulkan validation errors** (the one `[error] [gpu]` line in the test
+  log is gpu_tests' deliberately injected "expected" message).
+
+**Active libraries** (each layer includes only those below it; Vulkan
+stops at render, ENet stops inside net):
+
+| Library | Depends on | Role |
+|---|---|---|
+| `playground_core` | spdlog (private) | Result/Error, logging, asserts, frame clock, fixed-step accumulator, job system, Ctrl+C guard |
+| `playground_net` (`engine_net`) | core, glm; ENet (private) | Bit packing, quantization, reliable/unreliable transport |
+| `playground_platform` | core, GLFW | Window, input |
+| `playground_ecs` | core | Sparse-set entity/component world |
+| `playground_gpu` | platform, Vulkan, VMA | Vulkan bring-up, buffers, images, samplers, swapchain |
+| `playground_render` | platform, glm; gpu (private) | Renderer interface, frame data; the Vulkan renderer (PBR, IBL, shadows, HDR, bloom, tone mapping, sprites) |
+| `playground_engine` | render, ecs; tinygltf + stb (private) | Application loop, camera, assets (glTF, HDR), systems |
+| `playground_app` | engine, net | The game: 3D and 2D scenes, `--server`, `--connect` |
+
+**How the loops flow**
+- **Windowed game:** `Application::run()`, per frame:
+  1. poll input;
+  2. `FixedStepAccumulator`: 0..n simulation steps at 1/120 s;
+  3. `update` (the camera, `assets.update()` finishing loads);
+  4. `extract` into `FrameData`;
+  5. `VulkanRenderer::renderFrame`: wait on the fence, acquire, write
+     the buffers, then record: **shadow map → HDR scene (meshes, sky) →
+     bloom → composite (tone map, sRGB) + sprites** (a sprites-only frame
+     skips the first three); submit; present.
+- **Dedicated server** (`--server`), per loop:
+  1. `Host::service(time until the next tick)`, which is also the loop's
+     sleep (welcomes, goodbyes);
+  2. the same `FixedStepAccumulator`: 0..n steps of
+     movement/bounce/flush, broadcasting a snapshot every 6th tick;
+  3. `flush()`.
+
+  No GLFW, no Vulkan. Ctrl+C (`InterruptGuard`) ends the loop, then every
+  client is told goodbye.
+
 ```
 core      Result, Log (+ "net" category), Assert, FrameClock, FixedStep, Types, JobSystem,
           InterruptGuard (new: Ctrl+C / SIGTERM as a stop request)
@@ -164,6 +204,12 @@ GCC + TSan; Mesa llvmpipe, Xvfb):
 
 ## 2. Exact Files & Classes Modified
 
+(This milestone, since `8f0d485`.)
+
+Deleted: **none**. Moved: Ctrl+C signal handling, from
+`platform/src/Platform.cpp` into `core/src/Interrupt.cpp`. (Earlier
+milestones renamed `render/shaders/mesh.*` to `pbr.*`.)
+
 New:
 
 | File | Contents |
@@ -243,7 +289,7 @@ for (u32 i = 0; i < 4; ++i)
 // reading: the dropped one is sqrt(1 - sum of the others' squares)
 ```
 
-## 4. Known Bugs & Incomplete Tasks
+## 4. Known Bugs, Unverified Platforms & Incomplete Tasks
 
 No known bugs.
 
