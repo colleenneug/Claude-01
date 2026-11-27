@@ -7,7 +7,7 @@
 #  the scene logged at exit:
 #    - the camera ended in fly mode,
 #    - it moved about 3 units (2 to 4.5: key timing is not exact),
-#    - every model of the scene had loaded (4 of 4),
+#    - every model of the scene had loaded (N of N),
 #    - Escape ended the game cleanly.
 #
 #  Needs a display and xdotool; without either it exits 77 (CTest: skipped).
@@ -25,9 +25,13 @@ else
   "$APP" --log-file "$LOG" >"$LOG.out" 2>&1 &
 fi
 pid=$!
-# Wait until the loop runs and the models are in (they load in the background).
-for t in $(seq 1 160); do grep -q 'spheres ready' "$LOG" 2>/dev/null && break; sleep 0.25; done
-grep -q 'spheres ready' "$LOG" || { echo "FAIL: the 3D scene did not load"; tail -20 "$LOG"; kill $pid; exit 1; }
+# Wait until the loop runs and every model is in (they load in the background).
+loaded() {
+  total=$(sed -n 's/.*3D scene: \([0-9]*\) object(s) loading.*/\1/p' "$LOG" 2>/dev/null | head -1)
+  [ -n "$total" ] && [ "$(grep -c ' ready: ' "$LOG")" -ge "$total" ]
+}
+for t in $(seq 1 160); do loaded && break; sleep 0.25; done
+loaded || { echo "FAIL: the 3D scene did not load"; tail -20 "$LOG"; kill $pid; exit 1; }
 
 win=$(xdotool search --name "Aedan" | head -1)
 [ -n "$win" ] || { echo "FAIL: game window not found"; kill $pid; exit 1; }
@@ -55,5 +59,7 @@ moved=$(echo "$line" | sed -n 's/^[a-z]* mode, \([0-9.]*\) units.*/\1/p')
 grep -q 'camera: fly' "$LOG" || { echo "FAIL: Tab did not switch to fly mode"; exit 1; }
 [ "$mode" = "fly" ] || { echo "FAIL: camera ended in '$mode' mode, expected fly"; exit 1; }
 awk -v m="$moved" 'BEGIN { exit !(m >= 2.0 && m <= 4.5) }' || { echo "FAIL: camera moved $moved units, expected about 3"; exit 1; }
-echo "$line" | grep -q '4 of 4 object(s) ready' || { echo "FAIL: not every model loaded"; exit 1; }
+ready=$(echo "$line" | sed -n 's/.*; \([0-9]*\) of \([0-9]*\) object(s) ready.*/\1 \2/p')
+set -- $ready
+[ -n "$1" ] && [ "$1" = "$2" ] || { echo "FAIL: not every model loaded ($ready)"; exit 1; }
 echo "PASS"

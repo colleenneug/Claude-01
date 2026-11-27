@@ -57,7 +57,7 @@ struct BloomSettings {
   bool enabled = false;
   f32 threshold = 1.0f;  // light below this (linear, after nothing) does not glow
   f32 knee = 0.5f;       // softness of the threshold, in the same units
-  f32 strength = 0.04f;  // how much of the glow is mixed in (it redistributes light; adds none)
+  f32 strength = 0.1f;   // how much of the glow is added to the scene
 };
 
 // The sun's shadows (render/Shadow.h, render/shaders/shadow.vert, pbr.frag).

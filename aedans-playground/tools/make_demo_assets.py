@@ -16,6 +16,8 @@ Only the Python standard library is used (zlib for PNG, struct for binary).
                 rough plastic to polished gold. One mesh, seven nodes.
   floor.gltf    A 24 x 24 floor whose checker texture repeats 12 times
                 (sampler REPEAT, mipmaps and anisotropic filtering show here).
+  lamp.glb      A dark post with a glowing bulb: emissiveFactor x
+                KHR_materials_emissive_strength (12x), bright enough to bloom.
 """
 
 import json
@@ -239,15 +241,15 @@ def crate():
 # --- The spheres ----------------------------------------------------------------------
 
 
-def spheres():
-    rings, segments = 24, 48
+def sphere_geometry(radius=0.5, rings=24, segments=48, centre=(0.0, 0.0, 0.0)):
+    """A UV sphere: positions, normals, uvs, indices (counter-clockwise from outside)."""
     positions, normals, uvs, indices = [], [], [], []
     for r in range(rings + 1):
         theta = math.pi * r / rings  # 0 at the north pole
         for s in range(segments + 1):
             phi = 2 * math.pi * s / segments
             n = (math.sin(theta) * math.sin(phi), math.cos(theta), math.sin(theta) * math.cos(phi))
-            positions.append(tuple(0.5 * c for c in n))
+            positions.append(tuple(radius * c + centre[k] for k, c in enumerate(n)))
             normals.append(n)
             uvs.append((s / segments, r / rings))
     for r in range(rings):
@@ -260,6 +262,31 @@ def spheres():
             if r != rings - 1:
                 indices.extend((a + 1, b, b + 1))
     check_winding(positions, normals, indices)
+    return positions, normals, uvs, indices
+
+
+def box_geometry(size, centre):
+    """An axis-aligned box: 24 vertices (flat faces), counter-clockwise from outside."""
+    positions, normals, uvs, indices = [], [], [], []
+    for axis in range(3):
+        for sign in (1.0, -1.0):
+            n = [0.0, 0.0, 0.0]
+            n[axis] = sign
+            u = [0.0, 0.0, 0.0]
+            u[(axis + 1) % 3] = 1.0
+            v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]]
+            base = len(positions)
+            for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                positions.append(tuple(centre[k] + 0.5 * size[k] * (n[k] + su * u[k] + sv * v[k]) for k in range(3)))
+                normals.append(tuple(n))
+                uvs.append(((su + 1) / 2, (sv + 1) / 2))
+            indices.extend(base + i for i in (0, 1, 2, 0, 2, 3))
+    check_winding(positions, normals, indices)
+    return positions, normals, uvs, indices
+
+
+def spheres():
+    positions, normals, uvs, indices = sphere_geometry()
 
     g = Gltf()
     # From rough plastic to polished gold.
@@ -280,6 +307,28 @@ def spheres():
             {"attributes": {"POSITION": pos, "NORMAL": nrm, "TEXCOORD_0": tex}, "indices": idx, "material": i}]})
         g.node("sphere %d" % i, i, translation=[(i - 3) * 1.25, 0.0, 0.0])
     g.write_glb(OUT / "spheres.glb")
+
+
+# --- The lamp ---------------------------------------------------------------------------
+
+
+def lamp():
+    g = Gltf()
+    g.doc["extensionsUsed"] = ["KHR_materials_emissive_strength"]
+    g.doc["materials"] = [
+        {"name": "post", "pbrMetallicRoughness": {"baseColorFactor": [0.06, 0.06, 0.07, 1.0],
+                                                  "metallicFactor": 0.8, "roughnessFactor": 0.4}},
+        # glTF caps emissiveFactor at 1; the extension multiplies it, for a light brighter than white.
+        {"name": "bulb", "emissiveFactor": [1.0, 0.62, 0.28],
+         "extensions": {"KHR_materials_emissive_strength": {"emissiveStrength": 12.0}},
+         "pbrMetallicRoughness": {"baseColorFactor": [1.0, 0.9, 0.8, 1.0], "metallicFactor": 0.0,
+                                  "roughnessFactor": 0.3}},
+    ]
+    post = g.mesh("post", *box_geometry((0.08, 1.5, 0.08), (0.0, 0.75, 0.0)), 0)
+    bulb = g.mesh("bulb", *sphere_geometry(radius=0.14, rings=16, segments=32, centre=(0.0, 1.62, 0.0)), 1)
+    g.node("post", post)
+    g.node("bulb", bulb)
+    g.write_glb(OUT / "lamp.glb")
 
 
 # --- The floor ------------------------------------------------------------------------
@@ -316,6 +365,7 @@ if __name__ == "__main__":
     (OUT / "textures").mkdir(parents=True, exist_ok=True)
     crate()
     spheres()
+    lamp()
     floor()
     for path in sorted(OUT.rglob("*")):
         if path.is_file():

@@ -96,6 +96,14 @@ playground_configure_target(playground_environment_tests)
 add_test(NAME environment_tests COMMAND playground_environment_tests)
 set_tests_properties(environment_tests PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;gpu")
 
+# --- Shadows and HDR post-processing: pixels read back. White-box. -------------
+add_executable(playground_postfx_tests postfx_tests.cpp)
+target_link_libraries(playground_postfx_tests PRIVATE playground::engine playground::gpu doctest::doctest)
+target_include_directories(playground_postfx_tests PRIVATE ${PROJECT_SOURCE_DIR}/render/src)
+playground_configure_target(playground_postfx_tests)
+add_test(NAME postfx_tests COMMAND playground_postfx_tests)
+set_tests_properties(postfx_tests PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;gpu")
+
 # --- The real executable -----------------------------------------------------
 # Opens a window, runs 120 frames, exits 0.
 add_test(NAME app_smoke COMMAND playground_app --frames 120 --verbose --log-file app_smoke.log)
@@ -131,7 +139,7 @@ if(PLAYGROUND_SANITIZERS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND UNIX AND N
   find_file(PLAYGROUND_MESA_LAVAPIPE libvulkan_lvp.so
             PATHS /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE} /usr/lib64 /usr/lib NO_DEFAULT_PATH)
   if(EXISTS "${playgroundAsanRuntime}" AND PLAYGROUND_MESA_LAVAPIPE)
-    set_tests_properties(gpu_tests render_tests mesh_tests environment_tests app_smoke PROPERTIES
+    set_tests_properties(gpu_tests render_tests mesh_tests environment_tests postfx_tests app_smoke PROPERTIES
       ENVIRONMENT "LD_PRELOAD=${playgroundAsanRuntime}:${PLAYGROUND_MESA_LAVAPIPE}")
     # The keyboard test is a shell script driving xdotool: only the game itself
     # may get the preload, so it is passed through a variable the script reads.

@@ -3,8 +3,9 @@
 // =============================================================================
 //  tonemap.frag — the last step: the HDR scene (+ bloom) onto the screen.
 //
-//    1. the scene's pixel, plus bloom: mix(scene, bloom, strength), the
-//       energy-preserving way (bloom redistributes light, adds none);
+//    1. the scene's pixel, plus bloom: scene + glow x strength. Added, not
+//       mixed: the glow holds only what passed the threshold, so mixing it
+//       in would darken everything below the threshold.
 //    2. exposure;
 //    3. tone mapping: none, ACES filmic (Stephen Hill's fit of the Academy
 //       Color Encoding System's reference transform: the film-like look,
@@ -62,7 +63,7 @@ void main() {
   if (push.a.w > 0.5) {
     vec2 uv = gl_FragCoord.xy / vec2(textureSize(source, 0));
     vec3 glow = textureLod(bloom, uv, 0.0).rgb * push.b.x;  // the top level sums every level: average them
-    colour = mix(colour, glow, push.a.z);
+    colour += glow * push.a.z;
   }
   colour *= push.a.x;
   if (push.a.y > 1.5) {

@@ -15,7 +15,9 @@ namespace {
 using log::Category;
 
 // The sun, shared by the light and the sky it is baked into.
-constexpr glm::vec3 kSunDirection{-0.45f, -1.0f, -0.55f};
+// Low, from behind and to the left: shadows reach towards the camera, and
+// the sun's disk sits near the top of the starting view (where it blooms).
+constexpr glm::vec3 kSunDirection{0.55f, -0.62f, 0.55f};
 
 glm::mat4 at(glm::vec3 position, f32 yawDegrees = 0.0f, f32 scale = 1.0f) {
   return glm::scale(glm::rotate(glm::translate(glm::mat4(1.0f), position), glm::radians(yawDegrees), {0, 1, 0}),
@@ -49,6 +51,12 @@ ModelScene::ModelScene(engine::AssetManager& assets, render::Renderer& renderer,
     add("crate", "models/crate.gltf", at({-1.4f, 0.5f, 0.6f}, 0.0f), /*spin=*/0.35f);
     add("small crate", "models/crate.gltf", at({1.5f, 0.35f, 0.9f}, 28.0f, 0.7f));  // the same file: loaded once
     add("spheres", "models/spheres.glb", at({0.0f, 0.5f, -1.6f}));
+    add("pedestal", "models/crate.gltf", at({0.1f, 0.3f, 1.4f}, 10.0f, 0.6f));
+    // The Khronos sample helmet (app/assets/third_party/DamagedHelmet/LICENSE.md:
+    // credited, non-commercial use only).
+    add("helmet", "third_party/DamagedHelmet/DamagedHelmet.glb", at({0.1f, 0.98f, 1.4f}, 15.0f, 0.38f));
+    add("lamp", "models/lamp.glb", at({-2.7f, 0.0f, -0.4f}));
+    add("lamp 2", "models/lamp.glb", at({2.8f, 0.0f, -0.2f}));  // the same file: loaded once
   }
   resetView();
   log::info(Category::Game, "3D scene: {} object(s) loading; drag to orbit (left), pan (right), wheel to zoom, "
@@ -123,7 +131,19 @@ void ModelScene::extract(render::FrameData& frame, f64 /*alpha*/) {
   frame.environmentIntensity = 1.0f;
   frame.drawSky = true;
   frame.toneMap = render::ToneMap::Aces;  // sun + sky add up past 1: roll off instead of clipping
-  frame.exposure = 1.0f;
+  frame.exposure = 1.15f;                 // ACES darkens mid-tones a little: lift them back
+  frame.bloom = {.enabled = true, .threshold = 1.2f, .knee = 0.6f, .strength = 0.12f};
+  frame.shadows.enabled = true;
+  if (!showingOneModel_) {
+    // Frame the shadow map round the objects, not the whole 24 m floor: a
+    // much finer map where the shadows are.
+    render::Aabb objects;
+    objects.add({-3.5f, 0.0f, -2.6f});
+    objects.add({3.5f, 2.0f, 2.4f});
+    frame.shadows.bounds = objects;
+  } else {
+    frame.shadows.bounds.reset();  // --model: whatever the model covers
+  }
   for (const Object& object : objects_) {
     if (const engine::Model* model = assets_.get(object.model)) {
       const glm::mat4 spun =
