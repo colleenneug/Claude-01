@@ -32,6 +32,12 @@ target_include_directories(playground_ibl_tests PRIVATE ${PROJECT_SOURCE_DIR}/re
 playground_configure_target(playground_ibl_tests)
 add_test(NAME ibl_tests COMMAND playground_ibl_tests)
 
+# --- Shadow-map projection maths: no window, no GPU --------------------------
+add_executable(playground_shadow_tests shadow_tests.cpp)
+target_link_libraries(playground_shadow_tests PRIVATE playground::render doctest::doctest)
+playground_configure_target(playground_shadow_tests)
+add_test(NAME shadow_tests COMMAND playground_shadow_tests)
+
 # --- ECS and systems: no window, no GPU --------------------------------------
 add_executable(playground_ecs_tests ecs_tests.cpp)
 target_link_libraries(playground_ecs_tests PRIVATE playground::engine doctest::doctest)

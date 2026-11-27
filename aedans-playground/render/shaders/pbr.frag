@@ -3,7 +3,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_GOOGLE_include_directive : require
 // =============================================================================
-//  mesh.frag — glTF's metallic-roughness material, lit by the sun.
+//  pbr.frag — glTF's metallic-roughness material, lit by the sun.
 //
 //  TEXTURES come from one big ("bindless") array, set 1, binding 0: each
 //  draw names its textures by index, so changing material needs no
@@ -29,9 +29,21 @@
 //                          bias) from the BRDF table (the split sum).
 //    ambient     an optional flat fill: base colour for non-metals, the
 //                reflected colour for metals.
+//    emissive    light the surface gives off itself (lamps, screens), added
+//                last; bright enough, it blooms.
 //
-//  Output is linear (after exposure and optional tone mapping, frame.glsl);
-//  the sRGB swapchain encodes it.
+//  SHADOWS (frame.shadow.x = 1) dim the SUN's light only: the environment
+//  still lights shadowed surfaces, as the sky does. Looked up in the sun's
+//  shadow map:
+//    - moved out along the surface normal first (normal offset, against
+//      acne on surfaces at a slant to the light);
+//    - 3x3 taps of a sampler2DShadow: each tap compares the depth in
+//      hardware and filters the 2x2 results, so the nine together give a
+//      soft edge (percentage-closer filtering, PCF);
+//    - faded out near the edges of the map and outside its depth range,
+//      so what the map does not cover is lit, never black.
+//
+//  Output is linear HDR; the composite pass tone maps it (tonemap.frag).
 // =============================================================================
 
 #include "mesh_common.glsl"
@@ -47,6 +59,26 @@ layout(location = 4) flat in uint inDrawIndex;
 layout(location = 0) out vec4 outColour;
 
 const float kPi = 3.14159265359;
+
+// How much of the sun reaches this point: 1 lit, 0 in full shadow.
+float sunVisibility(vec3 worldPosition, vec3 surfaceNormal) {
+  if (frame.shadow.x < 0.5) return 1.0;
+  vec4 clip = frame.lightViewProjection * vec4(worldPosition + surfaceNormal * frame.shadow.y, 1.0);
+  vec3 ndc = clip.xyz / clip.w;
+  vec2 uv = ndc.xy * 0.5 + 0.5;  // the shadow pass's viewport is not flipped: uv follows ndc
+  float edge = max(abs(ndc.x), abs(ndc.y));
+  float inside = (1.0 - smoothstep(0.9, 1.0, edge)) * step(0.0, ndc.z) * step(ndc.z, 1.0);
+  if (inside <= 0.0) return 1.0;
+  float texel = frame.shadow.w;
+  float lit = 0.0;
+  for (int y = -1; y <= 1; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+      lit += texture(shadowMap, vec3(uv + vec2(x, y) * texel, ndc.z));  // 1 where ndc.z >= stored (reverse-Z: not behind)
+    }
+  }
+  lit /= 9.0;
+  return mix(1.0, lit, inside * frame.shadow.z);
+}
 
 float distributionGgx(float nDotH, float roughness) {
   float a = roughness * roughness;  // "perceptual" roughness squared, as glTF specifies
@@ -95,6 +127,7 @@ void main() {
                   (4.0 * nDotV * max(nDotL, 1e-4));
   vec3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * baseColour.rgb / kPi;
   vec3 direct = (diffuse + specular) * frame.sunColour.rgb * nDotL;
+  if (nDotL > 0.0) direct *= sunVisibility(inWorldPosition, normalize(gl_FrontFacing ? inNormal : -inNormal));
   vec3 ambient = frame.ambient.rgb * mix(baseColour.rgb, f0, metallic);
 
   // Image-based lighting. Fresnel for the environment uses n.v with a
@@ -111,5 +144,7 @@ void main() {
     environment = (diffuseIbl + specularIbl) * frame.environment.x;
   }
 
-  outColour = vec4(present(direct + ambient + environment), 1.0);
+  vec3 emitted = texture(textures[draw.textures.w], inUv).rgb * draw.emissive.rgb;
+
+  outColour = vec4(direct + ambient + environment + emitted, 1.0);  // linear HDR
 }

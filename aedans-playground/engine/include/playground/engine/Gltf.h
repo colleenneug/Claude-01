@@ -56,6 +56,7 @@
 #include "playground/render/FrameData.h"
 #include "playground/render/Renderer.h"
 #include "playground/render/Resources.h"
+#include "playground/render/Shadow.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -70,16 +71,8 @@
 
 namespace playground::engine {
 
-// Axis-aligned bounding box, world (model) units. Empty when min > max.
-struct Bounds {
-  glm::vec3 min{1e30f};
-  glm::vec3 max{-1e30f};
-
-  [[nodiscard]] bool empty() const noexcept { return min.x > max.x; }
-  [[nodiscard]] glm::vec3 centre() const noexcept { return 0.5f * (min + max); }
-  [[nodiscard]] glm::vec3 size() const noexcept { return empty() ? glm::vec3(0.0f) : max - min; }
-  void add(glm::vec3 point) noexcept;
-};
+// Axis-aligned bounding box, world (model) units (render/Shadow.h).
+using Bounds = render::Aabb;
 
 // A model on the CPU: what decodeGltf makes, on a worker thread.
 struct ModelData {
@@ -92,6 +85,8 @@ struct ModelData {
     f32 roughnessFactor = 1.0f;
     f32 normalScale = 1.0f;
     bool doubleSided = false;
+    glm::vec3 emissiveFactor{0.0f};  // glTF emissiveFactor x KHR_materials_emissive_strength
+    i32 emissiveImage = -1;
     i32 baseColourImage = -1;
     i32 normalImage = -1;
     i32 metallicRoughnessImage = -1;

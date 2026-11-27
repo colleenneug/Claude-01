@@ -39,11 +39,6 @@ namespace playground::engine {
 
 using log::Category;
 
-void Bounds::add(glm::vec3 point) noexcept {
-  min = glm::min(min, point);
-  max = glm::max(max, point);
-}
-
 namespace {
 
 // --- Images ----------------------------------------------------------------------
@@ -381,6 +376,17 @@ class Decoder {
       material.metallicRoughnessImage = imageOf(pbr.metallicRoughnessTexture.index,
                                                 pbr.metallicRoughnessTexture.texCoord, m.name, "metallic-roughness");
       material.normalImage = imageOf(m.normalTexture.index, m.normalTexture.texCoord, m.name, "normal");
+      material.emissiveImage = imageOf(m.emissiveTexture.index, m.emissiveTexture.texCoord, m.name, "emissive");
+      if (m.emissiveFactor.size() == 3) {
+        material.emissiveFactor = {static_cast<f32>(m.emissiveFactor[0]), static_cast<f32>(m.emissiveFactor[1]),
+                                   static_cast<f32>(m.emissiveFactor[2])};
+      }
+      // KHR_materials_emissive_strength: emissiveFactor is capped at 1, so
+      // glTF scales it by this for lamps brighter than white.
+      if (const auto it = m.extensions.find("KHR_materials_emissive_strength"); it != m.extensions.end()) {
+        const tinygltf::Value& strength = it->second.Get("emissiveStrength");
+        if (strength.IsNumber()) material.emissiveFactor *= static_cast<f32>(strength.GetNumberAsDouble());
+      }
       if (!m.alphaMode.empty() && m.alphaMode != "OPAQUE") {
         log::warn(Category::Engine, "glTF \"{}\": material \"{}\" has alpha mode {}; drawn opaque for now", file_,
                   m.name, m.alphaMode);
@@ -560,12 +566,7 @@ class Decoder {
 
   void addDraw(u32 primitive, const glm::mat4& transform) {
     out_.draws.push_back({.primitive = primitive, .transform = transform});
-    const Bounds& local = out_.primitives[primitive].bounds;
-    for (int corner = 0; corner < 8; ++corner) {
-      const glm::vec3 p{(corner & 1) ? local.max.x : local.min.x, (corner & 2) ? local.max.y : local.min.y,
-                        (corner & 4) ? local.max.z : local.min.z};
-      out_.bounds.add(glm::vec3(transform * glm::vec4(p, 1.0f)));
-    }
+    out_.bounds.add(out_.primitives[primitive].bounds.transformed(transform));
   }
 
   const tinygltf::Model& gltf_;
@@ -688,14 +689,18 @@ Result<Model> uploadModel(render::Renderer& renderer, ModelData&& data, std::str
     if (!normal) return tl::unexpected(std::move(normal.error()));
     auto metallicRoughness = texture(m.metallicRoughnessImage, render::TextureUsage::Data);
     if (!metallicRoughness) return tl::unexpected(std::move(metallicRoughness.error()));
+    auto emissive = texture(m.emissiveImage, render::TextureUsage::Colour);
+    if (!emissive) return tl::unexpected(std::move(emissive.error()));
     model.materials_.push_back({.baseColourFactor = m.baseColourFactor,
                                 .metallicFactor = m.metallicFactor,
                                 .roughnessFactor = m.roughnessFactor,
                                 .normalScale = m.normalScale,
                                 .doubleSided = m.doubleSided,
+                                .emissiveFactor = m.emissiveFactor,
                                 .baseColour = *baseColour,
                                 .normal = *normal,
-                                .metallicRoughness = *metallicRoughness});
+                                .metallicRoughness = *metallicRoughness,
+                                .emissive = *emissive});
   }
 
   for (const ModelData::Primitive& primitive : data.primitives) {

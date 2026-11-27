@@ -122,7 +122,7 @@ void ModelScene::extract(render::FrameData& frame, f64 /*alpha*/) {
   frame.ambient = glm::vec3(0.0f);  // the environment lights the shadows now
   frame.environmentIntensity = 1.0f;
   frame.drawSky = true;
-  frame.toneMap = true;  // sun + sky add up past 1: roll off instead of clipping
+  frame.toneMap = render::ToneMap::Aces;  // sun + sky add up past 1: roll off instead of clipping
   frame.exposure = 1.0f;
   for (const Object& object : objects_) {
     if (const engine::Model* model = assets_.get(object.model)) {

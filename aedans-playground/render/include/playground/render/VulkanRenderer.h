@@ -36,6 +36,8 @@ struct VulkanRendererDesc {
   // Linear RGBA. The default is a very dark blue, so missing sprites are
   // easy to tell from a missing window.
   std::array<f32, 4> clearColour{0.01f, 0.01f, 0.03f, 1.0f};
+  u32 shadowMapSize = 2048;           // the sun's shadow map, texels per side
+  bool preferUnormSwapchain = false;  // for tests: the shaders then encode sRGB themselves
 };
 
 // Brings up Vulkan (instance, surface, GPU, device), creates the swapchain,

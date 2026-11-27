@@ -14,9 +14,12 @@ namespace {
 
 using log::Category;
 
-VkSurfaceFormatKHR chooseFormat(const std::vector<VkSurfaceFormatKHR>& available) {
-  constexpr std::array<VkFormat, 2> kPreferred{VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB};
-  for (VkFormat wanted : kPreferred) {
+VkSurfaceFormatKHR chooseFormat(const std::vector<VkSurfaceFormatKHR>& available, bool preferSrgb) {
+  constexpr std::array<VkFormat, 4> kSrgbFirst{VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB,
+                                               VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM};
+  constexpr std::array<VkFormat, 4> kUnormFirst{VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+                                                VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB};
+  for (VkFormat wanted : preferSrgb ? kSrgbFirst : kUnormFirst) {
     for (const VkSurfaceFormatKHR& f : available) {
       if (f.format == wanted && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) return f;
     }
@@ -123,7 +126,7 @@ Result<Swapchain> Swapchain::create(const Context& context, const SwapchainDesc&
   }
 
   // --- Choices -------------------------------------------------------------
-  const VkSurfaceFormatKHR format = chooseFormat(formats);
+  const VkSurfaceFormatKHR format = chooseFormat(formats, desc.preferSrgb);
   const VkPresentModeKHR presentMode = choosePresentMode(modes, desc.vsync);
   const VkExtent2D extent = chooseExtent(caps, desc.framebufferSize);
   if (extent.width == 0 || extent.height == 0) {

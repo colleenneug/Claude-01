@@ -21,6 +21,7 @@
 
 #include "playground/core/Types.h"
 #include "playground/render/Resources.h"
+#include "playground/render/Shadow.h"
 
 #include <algorithm>
 #include <optional>
@@ -44,6 +45,38 @@ struct SpriteInstance {
   f32 depth = 0.0f;                  // world z: larger is nearer the viewer
 };
 
+// How the HDR scene is squeezed into the screen's 0..1 (the composite pass).
+enum class ToneMap : u8 {
+  None,        // exposure only; anything above 1 clips to white
+  Aces,        // ACES filmic: film-like contrast, highlights roll off to white
+  PbrNeutral,  // Khronos PBR Neutral: base colours stay true, only bright light rolls off
+};
+
+// The glow round very bright light (render/shaders/bloom.frag).
+struct BloomSettings {
+  bool enabled = false;
+  f32 threshold = 1.0f;  // light below this (linear, after nothing) does not glow
+  f32 knee = 0.5f;       // softness of the threshold, in the same units
+  f32 strength = 0.04f;  // how much of the glow is mixed in (it redistributes light; adds none)
+};
+
+// The sun's shadows (render/Shadow.h, render/shaders/shadow.vert, pbr.frag).
+struct ShadowSettings {
+  bool enabled = false;
+  f32 strength = 1.0f;      // 1: shadowed sunlight is gone; 0: no shadow
+  // Against SHADOW ACNE (surfaces shadowing themselves in stripes, because
+  // the map's texels are coarser than the surface): the depth stored in the
+  // map is pushed away from the light (hardware depth bias, constant and by
+  // slope), and the point looked up is moved out along the surface normal
+  // (normal offset, in shadow-map texels). Too much of either and shadows
+  // detach from their objects (PETER-PANNING).
+  f32 depthBias = 1.5f;
+  f32 slopeBias = 2.0f;
+  f32 normalOffset = 1.5f;
+  // What the map must cover. Empty: every mesh drawn this frame.
+  std::optional<Aabb> bounds;
+};
+
 struct FrameData {
   std::vector<MeshInstance> meshes;         // opaque 3D meshes, any order (the depth buffer sorts them)
   std::vector<SpriteInstance> sprites;      // equal depth: drawn in order, later on top
@@ -56,13 +89,15 @@ struct FrameData {
   glm::vec3 ambient{0.0f};           // a flat extra light from everywhere, linear RGB (a fill; usually 0)
   f32 environmentIntensity = 1.0f;   // the environment's light on meshes (Renderer::setEnvironment); 0 = off
 
-  // Presentation, for 3D scenes.
+  ShadowSettings shadows;
+
+  // Presentation, for 3D scenes. Meshes and the sky render into an HDR
+  // image; the composite pass then applies bloom, exposure and tone mapping
+  // on the way to the screen. Sprites are drawn after that, untouched.
   bool drawSky = false;  // the environment behind everything, with the sun's disk
-  // Exposure scales mesh and sky light; tone mapping then rolls bright
-  // values off smoothly instead of clipping them to white (Khronos PBR
-  // Neutral, which keeps base colours true). Sprites are never tone mapped.
   f32 exposure = 1.0f;
-  bool toneMap = false;
+  ToneMap toneMap = ToneMap::None;
+  BloomSettings bloom;
 
   // Keeps the lists' capacity (no allocation per frame); resets the view.
   // Lighting and presentation (sun, ambient, environment, sky, exposure,

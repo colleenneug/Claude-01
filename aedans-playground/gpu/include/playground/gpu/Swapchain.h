@@ -44,6 +44,10 @@ struct SwapchainDesc {
   platform::Extent2D framebufferSize{};
   bool vsync = true;
   VkSwapchainKHR oldSwapchain = VK_NULL_HANDLE;  // when recreating
+  // _SRGB formats encode on write; _UNORM ones store what shaders write (the
+  // renderer then encodes in its shaders). sRGB is preferred; false prefers
+  // UNORM, so that path can be tested where both exist.
+  bool preferSrgb = true;
 };
 
 class Swapchain {

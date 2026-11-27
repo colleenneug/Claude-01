@@ -88,9 +88,11 @@ struct Material {
   f32 roughnessFactor = 1.0f;        // 0 = mirror-smooth; 1 = fully matte
   f32 normalScale = 1.0f;            // how strongly the normal map bends the surface
   bool doubleSided = false;          // draw back faces too (leaves, cloth, thin walls); lit from both sides
+  glm::vec3 emissiveFactor{0.0f};    // light the surface gives off itself, linear RGB; may exceed 1 (lamps, screens)
   TextureHandle baseColour;
   TextureHandle normal;
   TextureHandle metallicRoughness;  // glTF packing: roughness in green, metallic in blue
+  TextureHandle emissive;           // multiplies emissiveFactor (sRGB colour)
 };
 
 // One mesh to draw this frame.
@@ -98,6 +100,7 @@ struct MeshInstance {
   MeshHandle mesh;
   Material material;
   glm::mat4 transform{1.0f};  // model -> world
+  bool castsShadow = true;    // drawn into the sun's shadow map (it receives shadows either way)
 };
 
 // Sunlight: parallel rays from far away.

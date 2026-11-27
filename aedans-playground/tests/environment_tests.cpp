@@ -261,13 +261,13 @@ TEST_CASE("tone mapping rolls bright light off below white instead of clipping; 
     auto app = makeApp(2);
     render::VulkanRenderer* renderer = attachRenderer(*app);
     const render::MeshHandle tile = createMesh(*renderer, floorTile());
-    const auto shade = [&](f32 exposure, bool toneMap) {
+    const auto shade = [&](f32 exposure, bool toneMap) {  // PBR Neutral: dim colours pass through
       return renderOnce(*app, *renderer, [&](render::FrameData& f) {
                environmentOnly(f, lookingDown());
                f.environmentIntensity = 0.0f;
                f.ambient = glm::vec3(1.0f);  // flat light: a non-metal shows its base colour x exposure
                f.exposure = exposure;
-               f.toneMap = toneMap;
+               f.toneMap = toneMap ? render::ToneMap::PbrNeutral : render::ToneMap::None;
                f.meshes.push_back({.mesh = tile,
                                    .material = {.baseColourFactor = {0.5f, 0.5f, 0.5f, 1.0f}, .metallicFactor = 0.0f},
                                    .transform = glm::scale(glm::mat4(1.0f), glm::vec3(2.0f))});

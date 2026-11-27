@@ -20,5 +20,5 @@ void main() {
   // it reads on screen; a soft edge so it is not a hard-edged coin.
   float c = dot(direction, -frame.sunDirection.xyz);
   colour += frame.sunColour.rgb * 12.0 * smoothstep(0.99990, 0.99997, c);
-  outColour = vec4(present(colour), 1.0);
+  outColour = vec4(colour, 1.0);  // linear HDR: tone mapped by the composite pass
 }

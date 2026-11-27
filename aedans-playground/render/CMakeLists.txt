@@ -7,6 +7,9 @@ add_library(playground_render STATIC
   src/BrdfLut.cpp
   src/IblBaker.cpp
   src/Mesh.cpp
+  src/PostProcess.cpp
+  src/Shadow.cpp
+  src/ShadowMap.cpp
   src/VulkanRenderer.cpp)
 add_library(playground::render ALIAS playground_render)
 
@@ -20,10 +23,15 @@ target_link_libraries(playground_render
 
 playground_compile_shader(playground_render shaders/sprite.vert)
 playground_compile_shader(playground_render shaders/sprite.frag)
-playground_compile_shader(playground_render shaders/mesh.vert)   # both #include mesh_common.glsl
-playground_compile_shader(playground_render shaders/mesh.frag)
+playground_compile_shader(playground_render shaders/pbr.vert)   # both #include mesh_common.glsl
+playground_compile_shader(playground_render shaders/pbr.frag)
+playground_compile_shader(playground_render shaders/shadow.vert)  # depth only, for the sun's shadow map
 playground_compile_shader(playground_render shaders/sky.vert)
 playground_compile_shader(playground_render shaders/sky.frag)
+# Post-processing (render/src/PostProcess.cpp): bloom and the final composite.
+playground_compile_shader(playground_render shaders/fullscreen.vert)
+playground_compile_shader(playground_render shaders/bloom.frag)      # #include post_common.glsl
+playground_compile_shader(playground_render shaders/tonemap.frag)
 # Image-based lighting bakes (render/src/IblBaker.cpp); all #include bake_common.glsl.
 playground_compile_shader(playground_render shaders/bake_sky.comp)
 playground_compile_shader(playground_render shaders/bake_panorama.comp)

@@ -113,10 +113,10 @@ constexpr u32 kSpriteFragSpirv[] = {
 #include "sprite.frag.spv.inc"
 };
 constexpr u32 kMeshVertSpirv[] = {
-#include "mesh.vert.spv.inc"
+#include "pbr.vert.spv.inc"
 };
 constexpr u32 kMeshFragSpirv[] = {
-#include "mesh.frag.spv.inc"
+#include "pbr.frag.spv.inc"
 };
 constexpr u32 kSkyVertSpirv[] = {
 #include "sky.vert.spv.inc"
@@ -130,6 +130,18 @@ constexpr u32 kIrradianceBinding = 1;
 constexpr u32 kSpecularBinding = 2;
 constexpr u32 kBrdfLutBinding = 3;
 constexpr u32 kEnvironmentBinding = 4;
+constexpr u32 kShadowBinding = 5;
+
+// The sRGB curve, for clearing a _UNORM swapchain to the same colour an
+// _SRGB one shows (it encodes on write; a _UNORM one stores the number).
+f32 encodeSrgb(f32 linear) {
+  linear = std::clamp(linear, 0.0f, 1.0f);
+  return linear <= 0.0031308f ? linear * 12.92f : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+}
+
+bool isSrgbFormat(VkFormat format) noexcept {
+  return format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB;
+}
 
 // Must match `struct Sprite` in sprite.vert byte for byte (std430 layout).
 // glm::vec2 is two floats and glm::vec4 four, so these offsets are the GLSL
@@ -153,17 +165,19 @@ struct MeshDrawGpu {
   glm::mat4 normalMatrix;  // a mat3 in a mat4: std430 would pad a mat3's columns anyway
   glm::vec4 baseColourFactor;
   glm::vec4 factors;    // metallic, roughness, normal scale, unused
-  glm::uvec4 textures;  // bindless slots: base colour, normal, metallic-roughness, unused
+  glm::uvec4 textures;  // bindless slots: base colour, normal, metallic-roughness, emissive
+  glm::vec4 emissive;   // rgb: emissive factor
 };
 static_assert(offsetof(MeshDrawGpu, normalMatrix) == 64);
 static_assert(offsetof(MeshDrawGpu, baseColourFactor) == 128);
 static_assert(offsetof(MeshDrawGpu, factors) == 144);
 static_assert(offsetof(MeshDrawGpu, textures) == 160);
-static_assert(sizeof(MeshDrawGpu) == 176);
+static_assert(offsetof(MeshDrawGpu, emissive) == 176);
+static_assert(sizeof(MeshDrawGpu) == 192);
 
 // Must match the push_constant blocks in sprite.vert and mesh_common.glsl:
 // one GPU address, of the sprite buffer or of the mesh draw list. Both
-// stages may read it (mesh.frag looks up its material).
+// stages may read it (pbr.frag looks up its material).
 struct DrawPushConstants {
   VkDeviceAddress list;
 };
@@ -175,14 +189,16 @@ constexpr VkShaderStageFlags kPushStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADE
 struct FrameUniforms {
   glm::mat4 viewProjection;         // world -> clip, reverse-Z
   glm::mat4 inverseViewProjection;  // clip -> world (the sky)
+  glm::mat4 lightViewProjection;    // world -> the sun's shadow map
   glm::vec4 cameraPosition;
   glm::vec4 sunDirection;           // normalised
   glm::vec4 sunColour;              // colour x intensity
   glm::vec4 ambient;
-  glm::vec4 environment;            // intensity, last specular mip, exposure, tone map (0/1)
+  glm::vec4 environment;            // intensity, last specular mip, unused, unused
+  glm::vec4 shadow;                 // on (0/1), normal offset (world units), strength, one texel (uv)
 };
-static_assert(offsetof(FrameUniforms, cameraPosition) == 128);
-static_assert(sizeof(FrameUniforms) == 208);
+static_assert(offsetof(FrameUniforms, cameraPosition) == 192);
+static_assert(sizeof(FrameUniforms) == 288);
 
 // How long to wait for the GPU before calling it hung. Generous: a frame
 // that takes this long is a bug, not a slow frame.
@@ -247,6 +263,7 @@ Result<std::unique_ptr<VulkanRenderer>> VulkanRenderer::create(platform::Platfor
   // Layouts first: the pipelines (built with the swapchain, which gives
   // their colour format) and the descriptor sets are made from them.
   if (Status s = renderer->createDescriptorLayouts(); !s) return tl::unexpected(std::move(s.error()));
+  if (Status s = renderer->createPostAndShadows(); !s) return tl::unexpected(std::move(s.error()));
   if (Status s = renderer->createSwapchain(window.framebufferSize()); !s) return tl::unexpected(std::move(s.error()));
   if (Status s = renderer->createFrameResources(); !s) return tl::unexpected(std::move(s.error()));
   if (Status s = renderer->createTextureResources(); !s) return tl::unexpected(std::move(s.error()));
@@ -276,6 +293,7 @@ Status VulkanRenderer::createSwapchain(platform::Extent2D size) {
                                                     .framebufferSize = size,
                                                     .vsync = desc_.vsync,
                                                     .oldSwapchain = recreating ? swapchain_->handle() : VK_NULL_HANDLE,
+                                                    .preferSrgb = !desc_.preferUnormSwapchain,
                                                 });
   if (!fresh) return tl::unexpected(std::move(fresh.error()));
   swapchain_.reset();  // destroy the old one only after the new one exists
@@ -292,8 +310,15 @@ Status VulkanRenderer::createSwapchain(platform::Extent2D size) {
     renderFinished_.push_back(std::move(*semaphore));
   }
 
-  // The depth buffer matches the swapchain's size.
+  // The depth buffer and the HDR target (with its bloom chain and their
+  // descriptor sets) match the swapchain's size. The old ones go as the new
+  // ones replace them: the GPU is idle (waited for above).
   if (Status s = createDepthBuffer(swapchain_->extent()); !s) return s;
+  if (Status s = post_->resize(swapchain_->extent()); !s) return s;
+  for (usize i = 0; i < 4; ++i) {
+    swapchainClear_[i] = isSrgbFormat(swapchain_->format()) || i == 3 ? desc_.clearColour[i]
+                                                                       : encodeSrgb(desc_.clearColour[i]);
+  }
 
   // The pipeline is built for one colour format; rebuild it if that changed.
   if (swapchain_->format() != pipelineFormat_) {
@@ -317,6 +342,7 @@ struct PipelineSpec {
   VkCullModeFlags cullMode;
   bool depthWrite;
   bool blend;
+  bool encodeSrgb = false;  // fragment specialization constant 0 (sprite.frag on a _UNORM swapchain)
 };
 
 Result<gpu::Pipeline> buildPipeline(VkDevice device, VkPipelineLayout layout, VkFormat colourFormat,
@@ -325,6 +351,10 @@ Result<gpu::Pipeline> buildPipeline(VkDevice device, VkPipelineLayout layout, Vk
   if (!vertex) return tl::unexpected(std::move(vertex.error()));
   auto fragment = createShaderModule(device, spec.fragmentSpirv, spec.name);
   if (!fragment) return tl::unexpected(std::move(fragment.error()));
+  const VkBool32 encode = spec.encodeSrgb ? VK_TRUE : VK_FALSE;
+  const VkSpecializationMapEntry entry{.constantID = 0, .offset = 0, .size = sizeof(VkBool32)};
+  const VkSpecializationInfo specialization{.mapEntryCount = 1, .pMapEntries = &entry, .dataSize = sizeof(encode),
+                                            .pData = &encode};
   const std::array<VkPipelineShaderStageCreateInfo, 2> stages{{
       {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
        .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -333,7 +363,8 @@ Result<gpu::Pipeline> buildPipeline(VkDevice device, VkPipelineLayout layout, Vk
       {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
        .module = fragment->get(),
-       .pName = "main"},
+       .pName = "main",
+       .pSpecializationInfo = &specialization},
   }};
 
   const VkPipelineInputAssemblyStateCreateInfo inputAssembly{
@@ -463,7 +494,7 @@ Status VulkanRenderer::createDescriptorLayouts() {
   // update-after-bind because every binding of an update-after-bind pool's
   // set must allow it to be written while the set is bound.
   constexpr VkDescriptorBindingFlags kWholeSet = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-  const std::array<VkDescriptorSetLayoutBinding, 5> textureBindings{{
+  const std::array<VkDescriptorSetLayoutBinding, 6> textureBindings{{
       {.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = kMaxTextures,
        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
       {.binding = kIrradianceBinding, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -474,11 +505,13 @@ Status VulkanRenderer::createDescriptorLayouts() {
        .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
       {.binding = kEnvironmentBinding, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
        .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+      {.binding = kShadowBinding, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+       .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
   }};
-  const std::array<VkDescriptorBindingFlags, 5> textureFlags{
+  const std::array<VkDescriptorBindingFlags, 6> textureFlags{
       VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
           VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
-      kWholeSet, kWholeSet, kWholeSet, kWholeSet};
+      kWholeSet, kWholeSet, kWholeSet, kWholeSet, kWholeSet};
   const VkDescriptorSetLayoutBindingFlagsCreateInfo textureFlagsInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
       .bindingCount = static_cast<u32>(textureFlags.size()),
@@ -544,12 +577,15 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
       .pVertexAttributeDescriptions = attributes.data(),
   };
 
-  auto mesh = buildPipeline(device, pipelineLayout_.get(), colourFormat,
+  // Meshes and the sky draw into the HDR target; sprites, after the
+  // composite, onto the swapchain (encoding sRGB themselves on _UNORM).
+  const bool encode = !isSrgbFormat(colourFormat);
+  auto mesh = buildPipeline(device, pipelineLayout_.get(), kHdrFormat,
                             {.vertexSpirv = kMeshVertSpirv, .fragmentSpirv = kMeshFragSpirv, .name = "mesh",
                              .vertexInput = &meshVertices, .cullMode = VK_CULL_MODE_BACK_BIT, .depthWrite = true,
                              .blend = false});
   if (!mesh) return tl::unexpected(std::move(mesh.error()));
-  auto doubleSided = buildPipeline(device, pipelineLayout_.get(), colourFormat,
+  auto doubleSided = buildPipeline(device, pipelineLayout_.get(), kHdrFormat,
                                    {.vertexSpirv = kMeshVertSpirv, .fragmentSpirv = kMeshFragSpirv,
                                     .name = "double-sided mesh", .vertexInput = &meshVertices,
                                     .cullMode = VK_CULL_MODE_NONE, .depthWrite = true, .blend = false});
@@ -559,17 +595,18 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
   auto opaque = buildPipeline(device, pipelineLayout_.get(), colourFormat,
                               {.vertexSpirv = kSpriteVertSpirv, .fragmentSpirv = kSpriteFragSpirv,
                                .name = "opaque sprites", .vertexInput = &noVertices, .cullMode = VK_CULL_MODE_NONE,
-                               .depthWrite = true, .blend = true});
+                               .depthWrite = true, .blend = true, .encodeSrgb = encode});
   if (!opaque) return tl::unexpected(std::move(opaque.error()));
   auto blended = buildPipeline(device, pipelineLayout_.get(), colourFormat,
                                {.vertexSpirv = kSpriteVertSpirv, .fragmentSpirv = kSpriteFragSpirv,
                                 .name = "translucent sprites", .vertexInput = &noVertices,
-                                .cullMode = VK_CULL_MODE_NONE, .depthWrite = false, .blend = true});
+                                .cullMode = VK_CULL_MODE_NONE, .depthWrite = false, .blend = true,
+                                .encodeSrgb = encode});
   if (!blended) return tl::unexpected(std::move(blended.error()));
 
   // The sky: one screen-covering triangle on the far plane, behind whatever
   // the meshes wrote (depth test GREATER_OR_EQUAL against 0), no depth write.
-  auto sky = buildPipeline(device, pipelineLayout_.get(), colourFormat,
+  auto sky = buildPipeline(device, pipelineLayout_.get(), kHdrFormat,
                            {.vertexSpirv = kSkyVertSpirv, .fragmentSpirv = kSkyFragSpirv, .name = "sky",
                             .vertexInput = &noVertices, .cullMode = VK_CULL_MODE_NONE, .depthWrite = false,
                             .blend = false});
@@ -579,9 +616,12 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
   doubleSidedPipeline_ = std::move(*doubleSided);
   opaquePipeline_ = std::move(*opaque);
   blendedPipeline_ = std::move(*blended);
+  if (Status s = post_->buildComposite(colourFormat); !s) return s;
+  if (Status s = shadowMap_->buildPipeline(pipelineLayout_.get()); !s) return s;
   pipelineFormat_ = colourFormat;
-  log::info(Category::Render, "pipelines (mesh, double-sided mesh, sky; opaque and translucent sprites) built for {}",
-            gpu::describe(colourFormat));
+  log::info(Category::Render, "pipelines built: mesh, double-sided mesh and sky into the HDR target; shadow map; "
+            "sprites and composite for {} ({})", gpu::describe(colourFormat),
+            encode ? "the shaders encode sRGB" : "the swapchain encodes sRGB");
   return {};
 }
 
@@ -593,7 +633,7 @@ Status VulkanRenderer::createTextureResources() {
   sampler_ = std::move(*sampler);
 
   const VkDescriptorPoolSize poolSize{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                      .descriptorCount = kMaxTextures + 4};  // + the environment bindings
+                                      .descriptorCount = kMaxTextures + 5};  // + environment and shadow bindings
   const VkDescriptorPoolCreateInfo poolInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
       .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
@@ -655,12 +695,28 @@ Status VulkanRenderer::createTextureResources() {
   if (!lut) return tl::unexpected(std::move(lut.error()));
   brdfLut_ = std::move(*lut);
   writeEnvironmentBinding(kBrdfLutBinding, brdfLut_.view());
+  writeSetOneBinding(kShadowBinding, shadowMap_->view(), shadowMap_->sampler(),
+                     VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
   return installEnvironment(baker_->bake(ProceduralSky{}, kFastEnvironment));
 }
 
+Status VulkanRenderer::createPostAndShadows() {
+  auto post = PostProcess::create(context_);
+  if (!post) return tl::unexpected(std::move(post.error()));
+  post_.emplace(std::move(*post));
+  auto shadow = ShadowMap::create(context_, desc_.shadowMapSize);
+  if (!shadow) return tl::unexpected(std::move(shadow.error()));
+  shadowMap_.emplace(std::move(*shadow));
+  return {};
+}
+
 void VulkanRenderer::writeEnvironmentBinding(u32 binding, VkImageView view) const noexcept {
-  const VkDescriptorImageInfo info{.sampler = baker_->sampler(), .imageView = view,
-                                   .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  writeSetOneBinding(binding, view, baker_->sampler(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+void VulkanRenderer::writeSetOneBinding(u32 binding, VkImageView view, VkSampler sampler,
+                                        VkImageLayout layout) const noexcept {
+  const VkDescriptorImageInfo info{.sampler = sampler, .imageView = view, .imageLayout = layout};
   const VkWriteDescriptorSet write{
       .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
       .dstSet = textureSet_,
@@ -995,6 +1051,8 @@ Status VulkanRenderer::writeMeshes(Frame& frame, const FrameData& frameData) {
   frame.meshCommands.clear();
   frame.singleSidedCount = 0;
   lastMeshDraws_ = 0;
+  lastShadowCasters_ = 0;
+  lastSceneBounds_ = Aabb{};
   if (count == 0) return {};
 
   // Grow this frame's draw list if needed, doubling (as for sprites).
@@ -1034,10 +1092,14 @@ Status VulkanRenderer::writeMeshes(Frame& frame, const FrameData& frameData) {
         .baseColourFactor = material.baseColourFactor,
         .factors = {material.metallicFactor, material.roughnessFactor, material.normalScale, 0.0f},
         .textures = {textureSlot(material.baseColour, kWhiteTexture), textureSlot(material.normal, kFlatNormalTexture),
-                     textureSlot(material.metallicRoughness, kWhiteTexture), 0u},
+                     textureSlot(material.metallicRoughness, kWhiteTexture),
+                     textureSlot(material.emissive, kWhiteTexture)},
+        .emissive = glm::vec4(material.emissiveFactor, 0.0f),
     };
     frame.meshCommands.push_back({.vertices = mesh->vertexBuffer(), .indices = mesh->indexBuffer(),
-                                  .indexCount = mesh->indexCount()});
+                                  .indexCount = mesh->indexCount(), .castsShadow = instance.castsShadow});
+    lastSceneBounds_.add(mesh->bounds().transformed(instance.transform));
+    lastShadowCasters_ += instance.castsShadow ? 1 : 0;
     ++written;
   }
   }
@@ -1131,16 +1193,36 @@ Status VulkanRenderer::writeFrameUniforms(Frame& frame, const FrameData& frameDa
       pixelViewProjection({static_cast<f32>(extent.width), static_cast<f32>(extent.height)}));
   frame.drawSky = frameData.drawSky;
   if (frameData.drawSky) ++lastDrawCalls_;
+  // The HDR path only when there is something 3D to draw: a sprites-only
+  // frame (the 2D demo) goes straight to the swapchain, as before.
+  frame.useHdr = !frame.meshCommands.empty() || frameData.drawSky;
+  frame.drawShadows = frame.useHdr && frameData.shadows.enabled && lastShadowCasters_ > 0;
+  frame.shadows = frameData.shadows;
+  frame.bloom = frameData.bloom;
+  frame.exposure = frameData.exposure;
+  frame.toneMap = frameData.toneMap;
+  lastFrameUsedHdr_ = frame.useHdr;
+
+  glm::vec4 shadow{0.0f};
+  if (frame.drawShadows) {
+    const Aabb& bounds = frameData.shadows.bounds ? *frameData.shadows.bounds : lastSceneBounds_;
+    const ShadowProjection projection =
+        directionalShadowMatrix(frameData.sun.direction, bounds, shadowMap_->size());
+    lastLightViewProjection_ = projection.viewProjection;
+    shadow = {1.0f, frameData.shadows.normalOffset * projection.texelWorldSize,
+              std::clamp(frameData.shadows.strength, 0.0f, 1.0f), 1.0f / static_cast<f32>(shadowMap_->size())};
+  }
   const FrameUniforms uniforms{
       .viewProjection = viewProjection,
       .inverseViewProjection = glm::inverse(viewProjection),
+      .lightViewProjection = lastLightViewProjection_,
       .cameraPosition = glm::vec4(frameData.cameraPosition, 1.0f),
       .sunDirection = glm::vec4(length > 0.0f ? towards / length : glm::vec3(0.0f, -1.0f, 0.0f), 0.0f),
       .sunColour = glm::vec4(frameData.sun.colour * frameData.sun.intensity, 0.0f),
       .ambient = glm::vec4(frameData.ambient, 0.0f),
       .environment = {std::max(frameData.environmentIntensity, 0.0f),
-                      static_cast<f32>(environment_.specularMips() - 1), frameData.exposure,
-                      frameData.toneMap ? 1.0f : 0.0f},
+                      static_cast<f32>(environment_.specularMips() - 1), 0.0f, 0.0f},
+      .shadow = shadow,
   };
   return frame.uniforms.write(std::as_bytes(std::span(&uniforms, 1)));
 }
@@ -1206,43 +1288,147 @@ Status VulkanRenderer::recordCommands(const Frame& frameSlot, u32 imageIndex) co
 
   const VkImage image = swapchain_->image(imageIndex);
   const VkExtent2D extent = swapchain_->extent();
+  constexpr VkPipelineStageFlags2 kDepthStages =
+      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
 
-  // UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL. "Undefined" says we do not care
-  // what was in the image: it is about to be cleared. The source stage is
-  // the one the acquire semaphore waits at, which chains the two together.
-  transitionImage(commands, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                  VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
-                  VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+  // Negative height flips Vulkan's y-down clip space to y-up, so positions
+  // mean the same as in OpenGL and GLM (roadmap §4.4). y starts at the
+  // bottom edge for the same reason. Used by the scene and sprite passes.
+  const auto width = static_cast<f32>(extent.width);
+  const auto height = static_cast<f32>(extent.height);
+  const VkViewport viewport{.x = 0.0f, .y = height, .width = width, .height = -height, .minDepth = 0.0f,
+                            .maxDepth = 1.0f};
+  const VkRect2D scissor{.offset = {0, 0}, .extent = extent};
 
-  const VkRenderingAttachmentInfo colour{
-      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-      .imageView = swapchain_->imageView(imageIndex),
-      .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-      .clearValue = {.color = {.float32 = {desc_.clearColour[0], desc_.clearColour[1], desc_.clearColour[2],
-                                           desc_.clearColour[3]}}},
+  // Sets 0 (this frame's camera and lights) and 1 (every texture, the
+  // environment and the shadow map), shared by every scene pipeline.
+  const std::array<VkDescriptorSet, 2> sets{frameSlot.descriptorSet, textureSet_};
+  const auto bindSceneSets = [&] {
+    vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_.get(), 0,
+                            static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
   };
+  // Mesh draws: buffers rebound only when the mesh changes; firstInstance =
+  // i makes gl_InstanceIndex = i, the draw's entry in the meshDraws buffer.
+  const auto drawMeshes = [&](bool castersOnly, bool switchToDoubleSided) {
+    const DrawPushConstants push{.list = frameSlot.meshDraws.deviceAddress()};
+    vkCmdPushConstants(commands, pipelineLayout_.get(), kPushStages, 0, sizeof(push), &push);
+    VkBuffer bound = VK_NULL_HANDLE;
+    for (u32 i = 0; i < frameSlot.meshCommands.size(); ++i) {
+      const MeshCommand& draw = frameSlot.meshCommands[i];
+      if (switchToDoubleSided && i == frameSlot.singleSidedCount) {  // same layout: sets and push stay bound
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, doubleSidedPipeline_.get());
+      }
+      if (castersOnly && !draw.castsShadow) continue;
+      if (draw.vertices != bound) {
+        const VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commands, 0, 1, &draw.vertices, &offset);
+        vkCmdBindIndexBuffer(commands, draw.indices, 0, VK_INDEX_TYPE_UINT32);
+        bound = draw.vertices;
+      }
+      vkCmdDrawIndexed(commands, draw.indexCount, 1, 0, 0, i);
+    }
+  };
+
   // The depth buffer: its old contents are not needed (it is cleared), so
   // UNDEFINED -> DEPTH_ATTACHMENT_OPTIMAL. It is shared by both frames in
   // flight, so the source side waits for the previous frame's depth tests
   // and writes to finish before this frame clears it.
-  constexpr VkPipelineStageFlags2 kDepthStages =
-      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
   transitionImage(commands, depth_.handle(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
                   kDepthStages, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, kDepthStages,
                   VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                   VK_IMAGE_ASPECT_DEPTH_BIT);
 
+  if (frameSlot.useHdr) {
+    // 1. THE SHADOW MAP: every shadow-casting mesh, as the sun sees it.
+    if (frameSlot.drawShadows) {
+      shadowMap_->record(commands, frameSlot.shadows, [&](VkCommandBuffer) {
+        bindSceneSets();
+        drawMeshes(/*castersOnly=*/true, /*switchToDoubleSided=*/false);
+      });
+    }
+
+    // 2. THE SCENE, into the HDR target: meshes, then the sky where no mesh
+    // drew. The previous frame's composite may still be reading the target.
+    const VkImage hdr = post_->hdr().handle();
+    transitionImage(commands, hdr, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_NONE,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    const VkRenderingAttachmentInfo hdrColour{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = post_->hdr().view(),
+        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = {.color = {.float32 = {desc_.clearColour[0], desc_.clearColour[1], desc_.clearColour[2],
+                                             desc_.clearColour[3]}}},  // linear: the composite passes it through
+    };
+    const VkRenderingAttachmentInfo sceneDepth{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = depth_.view(),
+        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,  // kept: the sprites test against it after the composite
+        .clearValue = {.depthStencil = {.depth = 0.0f, .stencil = 0}},  // reverse-Z: 0 is the far plane
+    };
+    const VkRenderingInfo sceneRendering{.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                                         .renderArea = {.offset = {0, 0}, .extent = extent},
+                                         .layerCount = 1,
+                                         .colorAttachmentCount = 1,
+                                         .pColorAttachments = &hdrColour,
+                                         .pDepthAttachment = &sceneDepth};
+    vkCmdBeginRendering(commands, &sceneRendering);
+    vkCmdSetViewport(commands, 0, 1, &viewport);
+    vkCmdSetScissor(commands, 0, 1, &scissor);
+    bindSceneSets();
+    if (!frameSlot.meshCommands.empty()) {
+      vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline_.get());
+      drawMeshes(/*castersOnly=*/false, /*switchToDoubleSided=*/true);
+    }
+    if (frameSlot.drawSky) {
+      vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline_.get());
+      vkCmdDraw(commands, 3, 1, 0, 0);
+    }
+    vkCmdEndRendering(commands);
+    transitionImage(commands, hdr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    // The scene's depth stays for the sprites: same layout, but its writes
+    // must land before their depth tests.
+    transitionImage(commands, depth_.handle(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                    VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, kDepthStages,
+                    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, kDepthStages,
+                    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    // 3. BLOOM: the bright parts, down the mip chain and back up.
+    if (frameSlot.bloom.enabled) post_->recordBloom(commands, frameSlot.bloom);
+  }
+
+  // 4. THE SWAPCHAIN IMAGE: the composite (HDR + bloom -> exposure -> tone
+  // map -> sRGB), then the sprites, untouched by tone mapping, against the
+  // scene's depth. UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL: its old contents
+  // do not matter. The source stage is the one the acquire semaphore waits
+  // at, which chains the two together.
+  transitionImage(commands, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                  VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
+                  VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+  const VkRenderingAttachmentInfo colour{
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+      .imageView = swapchain_->imageView(imageIndex),
+      .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .loadOp = frameSlot.useHdr ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_CLEAR,  // the composite covers it
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .clearValue = {.color = {.float32 = {swapchainClear_[0], swapchainClear_[1], swapchainClear_[2],
+                                           swapchainClear_[3]}}},
+  };
   const VkRenderingAttachmentInfo depthAttachment{
       .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
       .imageView = depth_.view(),
       .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .loadOp = frameSlot.useHdr ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR,
       .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,  // not needed after the frame
-      .clearValue = {.depthStencil = {.depth = 0.0f, .stencil = 0}},  // reverse-Z: 0 is the far plane
+      .clearValue = {.depthStencil = {.depth = 0.0f, .stencil = 0}},
   };
-
   const VkRenderingInfo rendering{
       .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
       .renderArea = {.offset = {0, 0}, .extent = extent},
@@ -1252,63 +1438,17 @@ Status VulkanRenderer::recordCommands(const Frame& frameSlot, u32 imageIndex) co
       .pDepthAttachment = &depthAttachment,
   };
   vkCmdBeginRendering(commands, &rendering);
-
-  // Negative height flips Vulkan's y-down clip space to y-up, so positions
-  // mean the same as in OpenGL and GLM (roadmap §4.4). y starts at the
-  // bottom edge for the same reason.
-  const auto width = static_cast<f32>(extent.width);
-  const auto height = static_cast<f32>(extent.height);
-  const VkViewport viewport{.x = 0.0f, .y = height, .width = width, .height = -height, .minDepth = 0.0f,
-                            .maxDepth = 1.0f};
-  const VkRect2D scissor{.offset = {0, 0}, .extent = extent};
   vkCmdSetViewport(commands, 0, 1, &viewport);
   vkCmdSetScissor(commands, 0, 1, &scissor);
+  if (frameSlot.useHdr) post_->recordComposite(commands, frameSlot.exposure, frameSlot.toneMap, frameSlot.bloom);
 
-  // Both descriptor sets, once: every pipeline shares one layout, so they
-  // stay bound across pipeline switches. Set 0 = this frame's camera and
-  // lights, set 1 = every texture.
-  const std::array<VkDescriptorSet, 2> sets{frameSlot.descriptorSet, textureSet_};
-  vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_.get(), 0,
-                          static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
-
-  // 1. MESHES: one indexed draw each. firstInstance = i makes
-  // gl_InstanceIndex = i, the draw's entry in the meshDraws buffer
-  // (transform and material). Consecutive draws of the same mesh keep its
-  // buffers bound.
-  if (!frameSlot.meshCommands.empty()) {
-    vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline_.get());
-    const DrawPushConstants push{.list = frameSlot.meshDraws.deviceAddress()};
-    vkCmdPushConstants(commands, pipelineLayout_.get(), kPushStages, 0, sizeof(push), &push);
-    VkBuffer bound = VK_NULL_HANDLE;
-    for (u32 i = 0; i < frameSlot.meshCommands.size(); ++i) {
-      if (i == frameSlot.singleSidedCount) {  // the double-sided run: same layout, so sets and push stay bound
-        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, doubleSidedPipeline_.get());
-      }
-      const MeshCommand& draw = frameSlot.meshCommands[i];
-      if (draw.vertices != bound) {
-        const VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(commands, 0, 1, &draw.vertices, &offset);
-        vkCmdBindIndexBuffer(commands, draw.indices, 0, VK_INDEX_TYPE_UINT32);
-        bound = draw.vertices;
-      }
-      vkCmdDrawIndexed(commands, draw.indexCount, 1, 0, 0, i);
-    }
-  }
-
-  // 2. THE SKY, where no mesh drew: after the meshes, so the depth test
-  // skips every covered pixel.
-  if (frameSlot.drawSky) {
-    vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline_.get());
-    vkCmdDraw(commands, 3, 1, 0, 0);
-  }
-
-  // 3. SPRITES: at most TWO draws for every sprite: 6 vertices (two
+  // SPRITES: at most TWO draws for every sprite: 6 vertices (two
   // triangles) per instance, one instance per sprite; opaque instances
   // first, then the translucent ones (firstInstance = opaqueCount, and
   // gl_InstanceIndex includes it). The shader reads instance i's data from
-  // the buffer at `sprites`. After the meshes, so translucent sprites blend
-  // over them; the depth buffer hides sprites behind a mesh.
+  // the buffer at `sprites`.
   if (frameSlot.opaqueCount + frameSlot.blendedCount > 0) {
+    bindSceneSets();  // the composite bound its own layout's set
     vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, opaquePipeline_.get());
     const DrawPushConstants push{.list = sprites};
     vkCmdPushConstants(commands, pipelineLayout_.get(), kPushStages, 0, sizeof(push), &push);

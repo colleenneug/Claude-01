@@ -17,6 +17,7 @@
 #include "playground/gpu/Buffer.h"
 #include "playground/gpu/Context.h"
 #include "playground/render/Resources.h"
+#include "playground/render/Shadow.h"
 
 #include <string_view>
 
@@ -34,12 +35,14 @@ class Mesh {
   [[nodiscard]] VkBuffer indexBuffer() const noexcept { return indices_.handle(); }
   [[nodiscard]] u32 vertexCount() const noexcept { return vertexCount_; }
   [[nodiscard]] u32 indexCount() const noexcept { return indexCount_; }
+  [[nodiscard]] const Aabb& bounds() const noexcept { return bounds_; }  // model space
 
  private:
   gpu::Buffer vertices_;
   gpu::Buffer indices_;
   u32 vertexCount_ = 0;
   u32 indexCount_ = 0;
+  Aabb bounds_;
 };
 
 }  // namespace playground::render

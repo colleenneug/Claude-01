@@ -26,7 +26,9 @@
 
 #include "IblBaker.h"
 #include "Mesh.h"
+#include "PostProcess.h"
 #include "ResourcePool.h"
+#include "ShadowMap.h"
 
 #include <array>
 #include <memory>
@@ -109,6 +111,14 @@ class VulkanRenderer final : public Renderer {
   [[nodiscard]] u32 lastMeshDrawCount() const noexcept { return lastMeshDraws_; }
   [[nodiscard]] const EnvironmentMaps& environment() const noexcept { return environment_; }
   [[nodiscard]] u32 environmentBakes() const noexcept { return environmentBakes_; }
+  [[nodiscard]] const PostProcess& post() const noexcept { return *post_; }
+  [[nodiscard]] const ShadowMap& shadowMap() const noexcept { return *shadowMap_; }
+  // Did the last frame go through the HDR target (meshes or sky), or straight
+  // to the swapchain (sprites only)? How many meshes went into the shadow map?
+  [[nodiscard]] bool lastFrameUsedHdr() const noexcept { return lastFrameUsedHdr_; }
+  [[nodiscard]] u32 lastShadowCasters() const noexcept { return lastShadowCasters_; }
+  // World -> shadow map, as used by the last frame with shadows.
+  [[nodiscard]] const glm::mat4& lastLightViewProjection() const noexcept { return lastLightViewProjection_; }
   // Live resources (textures: not counting the built-in defaults), and those
   // destroyed but waiting for in-flight frames to finish.
   [[nodiscard]] usize meshCount() const noexcept { return meshes_.liveCount(); }
@@ -132,6 +142,7 @@ class VulkanRenderer final : public Renderer {
     VkBuffer vertices = VK_NULL_HANDLE;
     VkBuffer indices = VK_NULL_HANDLE;
     u32 indexCount = 0;
+    bool castsShadow = true;
   };
 
   struct Frame {
@@ -145,6 +156,12 @@ class VulkanRenderer final : public Renderer {
     std::vector<MeshCommand> meshCommands;  // one per entry of meshDraws, in order
     u32 singleSidedCount = 0;      // meshCommands [0, n) are culled; the rest are double-sided
     bool drawSky = false;          // FrameData::drawSky, for recording
+    bool useHdr = false;           // meshes or sky this frame: scene -> HDR -> composite; else sprites only
+    bool drawShadows = false;      // render the shadow map this frame
+    ShadowSettings shadows;        // its bias settings
+    BloomSettings bloom;
+    f32 exposure = 1.0f;
+    ToneMap toneMap = ToneMap::None;
     gpu::Buffer uniforms;          // this frame's FrameUniforms (camera, lights), persistently mapped
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;  // points the shader at `uniforms`; freed with the pool
     gpu::Buffer capture;           // a copy of the frame for takeCapture(), when requested
@@ -157,6 +174,7 @@ class VulkanRenderer final : public Renderer {
   VulkanRenderer(platform::Window& window, gpu::Context context, const VulkanRendererDesc& desc);
 
   [[nodiscard]] Status createDescriptorLayouts();
+  [[nodiscard]] Status createPostAndShadows();
   [[nodiscard]] Status createTextureResources();
   [[nodiscard]] Status createSwapchain(platform::Extent2D size);
   [[nodiscard]] Status createDepthBuffer(VkExtent2D extent);
@@ -169,6 +187,7 @@ class VulkanRenderer final : public Renderer {
   [[nodiscard]] Result<TextureHandle> addTexture(gpu::Image image, std::string_view debugName);
   [[nodiscard]] Status installEnvironment(Result<EnvironmentMaps> maps);
   void writeEnvironmentBinding(u32 binding, VkImageView view) const noexcept;
+  void writeSetOneBinding(u32 binding, VkImageView view, VkSampler sampler, VkImageLayout layout) const noexcept;
   [[nodiscard]] u32 textureSlot(TextureHandle texture, u32 fallback) noexcept;
   [[nodiscard]] Status recordCommands(const Frame& frame, u32 imageIndex) const;
 
@@ -197,6 +216,10 @@ class VulkanRenderer final : public Renderer {
   VkDescriptorSet textureSet_ = VK_NULL_HANDLE;  // freed with its pool
   // Image-based lighting: the baker, its maps, and the BRDF table (set 1, bindings 1-4).
   std::optional<IblBaker> baker_;
+  // The HDR scene target, bloom and composite; the sun's shadow map (set 1, binding 5).
+  std::optional<PostProcess> post_;
+  std::optional<ShadowMap> shadowMap_;
+  std::array<f32, 4> swapchainClear_{};  // desc_.clearColour, sRGB-encoded for a _UNORM swapchain
   EnvironmentMaps environment_;
   gpu::Image brdfLut_;
   u32 environmentBakes_ = 0;
@@ -211,6 +234,10 @@ class VulkanRenderer final : public Renderer {
   u32 lastSpriteCount_ = 0;
   u32 lastDrawCalls_ = 0;
   u32 lastMeshDraws_ = 0;
+  bool lastFrameUsedHdr_ = false;
+  u32 lastShadowCasters_ = 0;
+  Aabb lastSceneBounds_;  // every mesh drawn this frame, world space (for framing the shadow map)
+  glm::mat4 lastLightViewProjection_{1.0f};
   bool captureRequested_ = false;
   std::vector<u32> blendedOrder_;  // scratch for sorting translucent sprites; reused every frame
 };

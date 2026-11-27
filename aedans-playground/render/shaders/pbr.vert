@@ -2,7 +2,7 @@
 #extension GL_EXT_buffer_reference : require
 #extension GL_GOOGLE_include_directive : require
 // =============================================================================
-//  mesh.vert — one vertex of a mesh: into world space for lighting, and into
+//  pbr.vert — one vertex of a mesh: into world space for lighting, and into
 //  clip space for the rasteriser.
 // =============================================================================
 

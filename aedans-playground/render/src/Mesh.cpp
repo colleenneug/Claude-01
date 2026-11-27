@@ -43,6 +43,7 @@ Result<Mesh> Mesh::create(const gpu::Context& context, const MeshData& data, std
   mesh.indices_ = std::move(*indices);
   mesh.vertexCount_ = static_cast<u32>(data.vertices.size());
   mesh.indexCount_ = static_cast<u32>(data.indices.size());
+  for (const Vertex& v : data.vertices) mesh.bounds_.add(v.position);  // for fitting the shadow map
   return mesh;
 }
 
