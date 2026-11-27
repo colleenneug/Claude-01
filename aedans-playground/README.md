@@ -7,9 +7,10 @@ A C++20 / Vulkan engine being built to host Erebus Cradle. The plan is in
 **Current state:** a window, a fixed-timestep main loop, a Vulkan renderer,
 an entity component system (ECS), and keyboard/mouse input. The demo is
 playable: steer the white square with **WASD** or the **arrow keys**, fire
-with **Space** or the **left mouse button**, quit with **Escape**. 200 other
-entities bounce around a fixed 1600×900 world; the window shows that world
-scaled to fit, whatever its size.
+with **Space** or the **left mouse button**, quit with **Escape**. 25,000
+other entities bounce around a fixed 1600×900 world, all drawn in a single
+instanced draw call; the window shows that world scaled to fit, whatever its
+size.
 
 | Key | Action |
 |---|---|
@@ -17,10 +18,12 @@ scaled to fit, whatever its size.
 | Space, left mouse button | Fire |
 | Escape | Quit |
 
-![200 ECS entities drawn as sprites](docs/ecs-sprites.png)
+![25,000 sprites in one instanced draw call](docs/instanced-25k.png)
 
-*Captured from the running app on Mesa's software Vulkan driver. The
-earlier milestone, one hardcoded triangle, is in `docs/first-triangle.png`.*
+*25,000 sprites and the player (white, centre), captured from the running
+app on Mesa's software Vulkan driver. Earlier milestones: the first triangle
+(`docs/first-triangle.png`) and the first 200 ECS sprites
+(`docs/ecs-sprites.png`).*
 
 ## Layout
 
@@ -28,13 +31,13 @@ earlier milestone, one hardcoded triangle, is in `docs/first-triangle.png`.*
 |---|---|---|
 | `core/` | `playground_core` | `Result`, `Log`, `Assert`, `FrameClock` |
 | `platform/` | `playground_platform` | `Platform` (GLFW lifetime, Ctrl+C), `Window` |
-| `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Context`, `Swapchain`, `DeviceHandle` |
+| `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, the Vulkan renderer, the shaders |
 | `engine/` | `playground_engine` | `Application` (main loop), components (`Transform`, `Velocity`, `Sprite`), systems |
 | `app/` | `playground_app` | `main.cpp` |
 | `tests/` | | doctest suites for core, ECS, application, GPU and renderer |
-| `third_party/` | | vendored `tl::expected` |
+| `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator |
 
 Each layer may include only the layers below it. Vulkan types stop at the
 render layer: its public headers have none, so the engine and the game build
@@ -135,18 +138,43 @@ with bars where the shapes differ. Resizing changes the view, not the game.
 1. **Wait** for the GPU to finish the frame that last used this slot (two
    frames in flight).
 2. **Acquire** a swapchain image to draw into.
-3. **Record:** move the image into the drawing layout, clear it, bind the
-   sprite pipeline, then per sprite push its 48 bytes of data (position,
-   size, rotation, colour) and `vkCmdDraw(6 vertices)`, then move the image
-   into the present layout.
-4. **Submit** to the graphics queue.
-5. **Present** the image to the window.
+3. **Write the sprites** straight into this frame slot's storage buffer:
+   host-visible memory, mapped once and kept mapped. The buffer doubles if a
+   frame has more sprites than it holds.
+4. **Record:** move the image into the drawing layout, clear it, bind the
+   sprite pipeline, push the buffer's GPU address and the view (16 bytes),
+   and draw **all** sprites with one `vkCmdDraw(6 vertices, N instances)`;
+   then move the image into the present layout.
+5. **Submit** to the graphics queue.
+6. **Present** the image to the window.
 
-The quad's corners are in `render/shaders/sprite.vert`; no vertex buffer yet.
-World units are pixels, with (0, 0) at the centre of the window and +y up. The shaders are compiled by `glslc` during the build and
+The vertex shader (`render/shaders/sprite.vert`) picks its sprite with
+`gl_InstanceIndex` and reads it through a buffer reference
+(`GL_EXT_buffer_reference`): the storage buffer is found by its 64-bit GPU
+address, so no descriptor sets are needed. The quad's corners are constants
+in the shader. World units are centred on (0, 0) with +y up. The shaders are compiled by `glslc` during the build and
 embedded in the executable (see `cmake/Shaders.cmake`), so there are no shader
 files to ship. When the window is resized, or present reports the swapchain is
 out of date, the swapchain is rebuilt at the new size.
+
+## GPU memory
+
+`gpu::Allocator` wraps the Vulkan Memory Allocator (VMA), owned by
+`gpu::Context` and destroyed just before the device; it logs an error for any
+buffer still alive at that point. `gpu::Buffer` is an RAII buffer of one of
+three kinds:
+
+| Kind | Use |
+|---|---|
+| `HostVisible` | written by the CPU every frame; mapped for its whole life (the sprite buffers) |
+| `DeviceLocal` | the GPU's own memory; filled once through a staging copy (`createDeviceLocalBuffer`) |
+| `HostReadback` | GPU results read by the CPU (tests, later screenshots) |
+
+Speed, 25,000 sprites, release build, validation off, on the software
+renderer in the cloud container (a CPU doing the GPU's work, so pixel filling
+dominates): one draw per sprite took about 66 ms a frame; one instanced draw
+takes about 38 ms, with the 120 Hz simulation keeping up. Not yet measured on
+a real GPU.
 
 ## Getting it running on Windows
 
@@ -294,7 +322,7 @@ Every failure is one `critical` line naming the step and the reason.
 | Option | Effect |
 |---|---|
 | `--frames N` | exit after N frames |
-| `--sprites N` | how many bouncing squares the demo spawns (default 200) |
+| `--sprites N` | how many bouncing squares the demo spawns (default 25000) |
 | `--verbose` | debug-level logging: frame-time statistics, Vulkan loader messages |
 | `--log-file PATH` | where the log goes (default `playground.log`) |
 | `--validation` / `--no-validation` | force Vulkan validation on or off (default: on in debug builds, off in release) |

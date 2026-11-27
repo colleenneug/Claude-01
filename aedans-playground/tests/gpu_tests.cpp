@@ -11,13 +11,16 @@
 #include <doctest/doctest.h>
 
 #include "playground/core/Log.h"
+#include "playground/gpu/Buffer.h"
 #include "playground/gpu/Context.h"
 #include "playground/gpu/VulkanCheck.h"
 
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 using namespace playground;
 
@@ -152,6 +155,109 @@ TEST_CASE("a failure names the bring-up step it happened in") {
   REQUIRE_FALSE(context.has_value());
   CHECK(context.error().code == Errc::InvalidArgument);
   CHECK(context.error().message.starts_with("step 2 (window surface):"));
+}
+
+// --- GPU memory: allocator and buffers -----------------------------------------
+
+TEST_CASE("buffers are counted by the allocator and freed when they die") {
+  gpu::resetValidationCounts();
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+  const gpu::Allocator& allocator = context->allocator();
+  CHECK(allocator.stats().allocationCount == 0);
+  {
+    auto a = gpu::Buffer::create(allocator, {.sizeBytes = 4096, .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                             .memory = gpu::MemoryKind::HostVisible, .debugName = "test a"});
+    auto b = gpu::Buffer::create(allocator, {.sizeBytes = 1 << 20, .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                             .memory = gpu::MemoryKind::DeviceLocal, .debugName = "test b"});
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    CHECK(allocator.stats().allocationCount == 2);
+    CHECK(allocator.stats().allocationBytes >= 4096 + (1 << 20));
+
+    gpu::Buffer moved = std::move(*a);  // moving transfers ownership, not a copy
+    CHECK(moved.size() == 4096);
+    CHECK_FALSE(static_cast<bool>(*a));
+    CHECK(allocator.stats().allocationCount == 2);
+  }
+  CHECK(allocator.stats().allocationCount == 0);  // nothing leaked
+  CHECK(gpu::validationCounts().errors == 0);
+}
+
+TEST_CASE("a host-visible buffer is persistently mapped and has a GPU address") {
+  gpu::resetValidationCounts();
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+
+  auto buffer = gpu::Buffer::create(context->allocator(),
+                                    {.sizeBytes = 256,
+                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                     .memory = gpu::MemoryKind::HostVisible,
+                                     .debugName = "mapped"});
+  REQUIRE(buffer.has_value());
+  CHECK(buffer->isHostVisible());
+  CHECK(buffer->mapped().size() == 256);
+  CHECK(buffer->deviceAddress() != 0);
+
+  const std::vector<std::byte> data(64, std::byte{0x5A});
+  REQUIRE(buffer->write(data, 32).has_value());
+  CHECK(buffer->mapped()[32] == std::byte{0x5A});
+  CHECK(buffer->mapped()[95] == std::byte{0x5A});
+  CHECK(gpu::validationCounts().errors == 0);
+}
+
+TEST_CASE("a staging upload to device-local memory round-trips byte for byte") {
+  gpu::resetValidationCounts();
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+
+  // 64 KiB of a recognisable pattern.
+  std::vector<std::byte> data(64 * 1024);
+  for (std::size_t i = 0; i < data.size(); ++i) data[i] = static_cast<std::byte>((i * 31 + 7) & 0xFF);
+
+  // CPU -> staging -> device-local (the upload path)...
+  auto deviceLocal = gpu::createDeviceLocalBuffer(*context, data, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, "round trip");
+  REQUIRE_MESSAGE(deviceLocal.has_value(), (deviceLocal ? "" : deviceLocal.error().message));
+  CHECK_FALSE(deviceLocal->isHostVisible());
+
+  // ...then device-local -> readback buffer -> CPU, to check what arrived.
+  auto readback = gpu::Buffer::create(context->allocator(), {.sizeBytes = data.size(),
+                                                             .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                             .memory = gpu::MemoryKind::HostReadback,
+                                                             .debugName = "readback"});
+  REQUIRE(readback.has_value());
+  REQUIRE(gpu::copyBuffer(*context, *deviceLocal, *readback, data.size()).has_value());
+  REQUIRE(readback->invalidate().has_value());
+  CHECK(std::memcmp(readback->mapped().data(), data.data(), data.size()) == 0);
+  CHECK(gpu::validationCounts().errors == 0);
+}
+
+TEST_CASE("buffer misuse is reported, not undefined behaviour") {
+  TestWindow test;
+  auto context = gpu::Context::create(*test.platform, *test.window, {.enableValidation = true});
+  REQUIRE(context.has_value());
+
+  const auto empty = gpu::Buffer::create(context->allocator(), {.sizeBytes = 0, .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT});
+  REQUIRE_FALSE(empty.has_value());
+  CHECK(empty.error().code == Errc::InvalidArgument);
+
+  auto deviceOnly = gpu::Buffer::create(context->allocator(), {.sizeBytes = 64, .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                               .memory = gpu::MemoryKind::DeviceLocal, .debugName = "gpu only"});
+  REQUIRE(deviceOnly.has_value());
+  const std::vector<std::byte> bytes(16);
+  const Status cpuWrite = deviceOnly->write(bytes);
+  REQUIRE_FALSE(cpuWrite.has_value());
+  CHECK(cpuWrite.error().code == Errc::InvalidState);
+
+  auto small = gpu::Buffer::create(context->allocator(), {.sizeBytes = 64, .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                          .memory = gpu::MemoryKind::HostVisible, .debugName = "small"});
+  REQUIRE(small.has_value());
+  const Status overrun = small->write(bytes, 56);  // 16 bytes at 56 > 64
+  REQUIRE_FALSE(overrun.has_value());
+  CHECK(overrun.error().code == Errc::InvalidArgument);
 }
 
 int main(int argc, char** argv) {

@@ -22,11 +22,13 @@ Error atStep(int step, std::string_view what, Error error) {
 
 }  // namespace
 
-Context::Context(Instance instance, Surface surface, PhysicalDeviceInfo physicalDevice, Device device) noexcept
+Context::Context(Instance instance, Surface surface, PhysicalDeviceInfo physicalDevice, Device device,
+                 Allocator allocator) noexcept
     : instance_(std::move(instance)),
       surface_(std::move(surface)),
       physicalDevice_(std::move(physicalDevice)),
-      device_(std::move(device)) {}
+      device_(std::move(device)),
+      allocator_(std::move(allocator)) {}
 
 Result<Context> Context::create(platform::Platform& platform, platform::Window& window, const ContextDesc& desc) {
   if (!platform.vulkanSupported()) {
@@ -55,9 +57,14 @@ Result<Context> Context::create(platform::Platform& platform, platform::Window& 
   auto device = Device::create(*physicalDevice);
   if (!device) return tl::unexpected(atStep(4, "logical device", std::move(device.error())));
 
+  // 5. GPU memory allocator.
+  auto allocator = Allocator::create(instance->handle(), physicalDevice->handle, device->handle());
+  if (!allocator) return tl::unexpected(atStep(5, "memory allocator", std::move(allocator.error())));
+
   log::info(Category::Gpu, "GPU ready: {} with Vulkan {}", physicalDevice->name,
             versionString(physicalDevice->apiVersion));
-  return Context(std::move(*instance), std::move(*surface), std::move(*physicalDevice), std::move(*device));
+  return Context(std::move(*instance), std::move(*surface), std::move(*physicalDevice), std::move(*device),
+                 std::move(*allocator));
 }
 
 Context::~Context() = default;  // members destroy themselves in reverse order

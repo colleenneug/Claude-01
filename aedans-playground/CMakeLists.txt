@@ -49,6 +49,21 @@ find_package(Vulkan 1.3 REQUIRED COMPONENTS glslc)   # glslc compiles the shader
 
 # tl::expected is a single vendored header (see third_party/tl/README.md).
 # SYSTEM, so its internals are not held to our warning flags.
+# Vulkan Memory Allocator: vcpkg's package when there is one (Windows),
+# otherwise the vendored single header (Ubuntu does not package it; see
+# third_party/vma/README.md). Its Vulkan functions are taken straight from
+# the loader we link, so VMA loads none itself.
+find_package(VulkanMemoryAllocator CONFIG QUIET)
+add_library(playground_vma INTERFACE)
+if(TARGET GPUOpen::VulkanMemoryAllocator)
+  target_link_libraries(playground_vma INTERFACE GPUOpen::VulkanMemoryAllocator)
+  message(STATUS "Vulkan Memory Allocator: package")
+else()
+  target_include_directories(playground_vma SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vma)
+  message(STATUS "Vulkan Memory Allocator: vendored v3.3.0")
+endif()
+target_compile_definitions(playground_vma INTERFACE VMA_STATIC_VULKAN_FUNCTIONS=1 VMA_DYNAMIC_VULKAN_FUNCTIONS=0)
+
 add_library(playground_tl_expected INTERFACE)
 target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 

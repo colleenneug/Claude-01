@@ -21,6 +21,7 @@
 #include "playground/engine/WorldBounds.h"
 #include "playground/render/VulkanRenderer.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdio>
@@ -41,14 +42,14 @@ struct Options {
   bool verbose = false;
   std::string logFile = "playground.log";
   bool validation = render::VulkanRendererDesc{}.enableValidation;  // on in debug builds
-  u32 sprites = 200;  // how many bouncing squares the demo spawns
+  u32 sprites = 25'000;  // how many bouncing squares the demo spawns
 };
 
 void printUsage() {
   std::puts(
       "usage: playground_app [--frames N] [--sprites N] [--verbose] [--log-file PATH] [--validation | --no-validation]\n"
       "  --frames N       run N frames, then exit (used by the automated tests)\n"
-      "  --sprites N      how many bouncing squares to spawn (default 200)\n"
+      "  --sprites N      how many bouncing squares to spawn (default 25000)\n"
       "  --verbose        log at debug level, including frame-time statistics\n"
       "  --log-file PATH  where to write the log (default: playground.log)\n"
       "  --validation     turn Vulkan validation on (default in debug builds)\n"
@@ -124,9 +125,16 @@ void spawnBouncingSprites(ecs::World& world, u32 count, glm::vec2 halfArea) {
   std::mt19937 rng(20261126u);
   auto uniform = [&rng](f32 lo, f32 hi) { return std::uniform_real_distribution<f32>(lo, hi)(rng); };
 
+  // Sprite size from the count, so the crowd covers the world about twice
+  // over whatever its number: big squares for a few hundred, small ones for
+  // tens of thousands.
+  const f32 worldArea = 4.0f * halfArea.x * halfArea.y;
+  const f32 typicalSize =
+      std::clamp(std::sqrt(2.0f * worldArea / static_cast<f32>(std::max(count, 1u))), 6.0f, 30.0f);
+
   for (u32 i = 0; i < count; ++i) {
     const ecs::Entity entity = world.create();
-    const f32 size = uniform(12.0f, 48.0f);
+    const f32 size = uniform(0.5f * typicalSize, 1.5f * typicalSize);
     const f32 heading = uniform(0.0f, 2.0f * std::numbers::pi_v<f32>);
     const f32 speed = uniform(60.0f, 260.0f);
     world.add<engine::Transform>(entity, engine::Transform{

@@ -1,26 +1,40 @@
 #version 450
+#extension GL_EXT_buffer_reference : require
 // =============================================================================
-//  sprite.vert — one coloured, rotated rectangle per draw.
+//  sprite.vert — every sprite in one instanced draw.
 //
-//  No vertex buffer: vkCmdDraw(cmd, 6, ...) runs this 6 times, and
-//  gl_VertexIndex picks a corner of the two triangles that make the quad.
+//  vkCmdDraw(cmd, 6, spriteCount, 0, 0) runs this 6 x spriteCount times:
+//    gl_VertexIndex   (0..5) picks a corner of the quad's two triangles;
+//    gl_InstanceIndex (0..spriteCount-1) picks the sprite.
 //
-//  PUSH CONSTANTS carry the sprite: 48 bytes recorded straight into the
-//  command buffer with each draw. The C++ side is SpritePushConstants in
-//  VulkanRenderer.cpp; the two layouts must match byte for byte.
+//  THE SPRITE DATA lives in a storage buffer the CPU rewrites each frame
+//  (one per frame in flight, persistently mapped). The shader finds it
+//  through the buffer's 64-bit GPU address, passed in a push constant: a
+//  "buffer reference". No descriptor sets are needed.
 //
-//  World units with (0, 0) at the view's centre and +y up (the renderer
-//  flips the viewport). `viewportHalf` is half the WORLD area visible
-//  (render::fitView), so dividing by it gives clip space directly.
+//  The struct layouts must match SpriteGpu and DrawPushConstants in
+//  VulkanRenderer.cpp byte for byte (static_asserts there check the C++ side).
+//
+//  World units, (0, 0) at the view's centre, +y up (the renderer flips the
+//  viewport). `viewHalf` is half the world area visible (render::fitView).
 // =============================================================================
 
-layout(push_constant) uniform Sprite {
-  vec2 position;      // offset  0: centre, pixels
-  vec2 halfSize;      // offset  8: half width and height, pixels
-  vec2 rotation;      // offset 16: (cos, sin) of the angle
-  vec2 viewportHalf;  // offset 24: half the visible world area, world units
-  vec4 colour;        // offset 32: linear RGBA
-} sprite;
+struct Sprite {
+  vec2 position;   // offset  0: centre, world units
+  vec2 halfSize;   // offset  8
+  vec2 rotation;   // offset 16: (cos, sin), computed once per sprite on the CPU
+  vec2 unused;     // offset 24: keeps colour 16-byte aligned
+  vec4 colour;     // offset 32: linear RGBA
+};                 // 48 bytes
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer SpriteList {
+  Sprite sprites[];
+};
+
+layout(push_constant) uniform Draw {
+  SpriteList spriteList;  // offset 0: GPU address of this frame's sprite buffer
+  vec2 viewHalf;          // offset 8
+} draw;
 
 layout(location = 0) out vec4 outColour;
 
@@ -29,10 +43,10 @@ const vec2 kCorners[6] = vec2[](
     vec2(-1.0, -1.0), vec2( 1.0,  1.0), vec2(-1.0,  1.0));  // second triangle
 
 void main() {
+  Sprite sprite = draw.spriteList.sprites[gl_InstanceIndex];
   vec2 local = kCorners[gl_VertexIndex] * sprite.halfSize;
   vec2 rotated = vec2(local.x * sprite.rotation.x - local.y * sprite.rotation.y,
                       local.x * sprite.rotation.y + local.y * sprite.rotation.x);
-  vec2 world = rotated + sprite.position;
-  gl_Position = vec4(world / sprite.viewportHalf, 0.0, 1.0);
+  gl_Position = vec4((rotated + sprite.position) / draw.viewHalf, 0.0, 1.0);
   outColour = sprite.colour;
 }

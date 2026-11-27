@@ -2,10 +2,16 @@
 //  VulkanRenderer.cpp — draws the frame's sprites.
 //
 //  WHAT IT DRAWS: every SpriteInstance in the FrameData the game extracted,
-//  in order, as a coloured rectangle. Each sprite is one vkCmdDraw of 6
-//  vertices with its data in push constants (sprite.vert). Simple and
-//  plenty for hundreds of sprites; thousands want one instanced draw from
-//  a buffer, which needs the GPU memory work of roadmap Milestone 2.
+//  in order, as a coloured rectangle, in ONE instanced draw call:
+//    - each frame in flight owns a host-visible storage buffer, mapped for
+//      its whole life; after that frame's fence wait the CPU writes the
+//      sprites straight into it (no copy, no map/unmap per frame);
+//    - the vertex shader finds the buffer through its GPU address (a push
+//      constant) and picks its sprite with gl_InstanceIndex;
+//    - vkCmdDraw(6 vertices, N instances) draws them all.
+//  The buffer doubles when a frame has more sprites than it holds. One
+//  buffer per frame in flight, because the GPU may still be reading frame
+//  N's sprites while the CPU writes frame N+1's.
 //
 //  ONE FRAME (renderFrame), in order:
 //
@@ -17,7 +23,7 @@
 //                  barrier: image -> COLOR_ATTACHMENT_OPTIMAL
 //                  begin rendering (clear to the background colour)
 //                  bind pipeline, set viewport and scissor
-//                  per sprite: push constants, draw 6 vertices
+//                  push the sprite buffer's address, draw 6 x N
 //                  end rendering
 //                  barrier: image -> PRESENT_SRC_KHR
 //    4. SUBMIT   to the graphics queue: wait on `imageAcquired`, signal
@@ -39,6 +45,7 @@
 #include "playground/gpu/Instance.h"
 #include "playground/gpu/VulkanCheck.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <format>
@@ -62,23 +69,29 @@ constexpr u32 kSpriteFragSpirv[] = {
 #include "sprite.frag.spv.inc"
 };
 
-// Must match the push_constant block in sprite.vert byte for byte. glm::vec2
-// is two floats and glm::vec4 four, so these offsets are the GLSL ones; the
-// static_asserts make a mismatch a build error instead of garbled sprites.
-struct SpritePushConstants {
+// Must match `struct Sprite` in sprite.vert byte for byte (std430 layout).
+// glm::vec2 is two floats and glm::vec4 four, so these offsets are the GLSL
+// ones; the static_asserts make a mismatch a build error, not garbled sprites.
+struct SpriteGpu {
   glm::vec2 position;
   glm::vec2 halfSize;
-  glm::vec2 rotation;      // (cos, sin)
-  glm::vec2 viewportHalf;
+  glm::vec2 rotation;  // (cos, sin)
+  glm::vec2 unused;    // pads colour to a 16-byte boundary, as std430 does
   glm::vec4 colour;
 };
-static_assert(offsetof(SpritePushConstants, position) == 0);
-static_assert(offsetof(SpritePushConstants, halfSize) == 8);
-static_assert(offsetof(SpritePushConstants, rotation) == 16);
-static_assert(offsetof(SpritePushConstants, viewportHalf) == 24);
-static_assert(offsetof(SpritePushConstants, colour) == 32);
-static_assert(sizeof(SpritePushConstants) == 48);
-// Vulkan guarantees at least 128 bytes of push constants on every device.
+static_assert(offsetof(SpriteGpu, position) == 0);
+static_assert(offsetof(SpriteGpu, halfSize) == 8);
+static_assert(offsetof(SpriteGpu, rotation) == 16);
+static_assert(offsetof(SpriteGpu, colour) == 32);
+static_assert(sizeof(SpriteGpu) == 48);
+
+// Must match the push_constant block in sprite.vert.
+struct DrawPushConstants {
+  VkDeviceAddress spriteList;  // the frame's sprite buffer, as a GPU pointer
+  glm::vec2 viewHalf;
+};
+static_assert(offsetof(DrawPushConstants, viewHalf) == 8);
+static_assert(sizeof(DrawPushConstants) == 16);
 
 // How long to wait for the GPU before calling it hung. Generous: a frame
 // that takes this long is a bug, not a slow frame.
@@ -296,7 +309,7 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
     const VkPushConstantRange pushRange{
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .offset = 0,
-        .size = sizeof(SpritePushConstants),
+        .size = sizeof(DrawPushConstants),
     };
     const VkPipelineLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -436,6 +449,10 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/, const FrameData& f
     return s;
   }
 
+  // The fence wait above means the GPU has finished reading this slot's
+  // sprite buffer, so it is safe to overwrite (or replace) now.
+  if (Status s = writeSprites(frame, frameData); !s) return s;
+
   // Reset the fence only once we are sure to submit work that signals it.
   // Resetting before a failed acquire would leave it unsignalled forever,
   // and the next wait on it would hang.
@@ -443,7 +460,9 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/, const FrameData& f
 
   // 3. RECORD.
   if (Status s = gpu::check(vkResetCommandBuffer(frame.commandBuffer, 0), "vkResetCommandBuffer"); !s) return s;
-  if (Status s = recordCommands(frame.commandBuffer, imageIndex, frameData); !s) return s;
+  if (Status s = recordCommands(frame.commandBuffer, imageIndex, frameData, frame.sprites.deviceAddress()); !s) {
+    return s;
+  }
 
   // 4. SUBMIT. The colour writes wait for the image to be acquired; the
   // semaphore for present and the fence for the CPU fire when it is drawn.
@@ -498,7 +517,58 @@ Status VulkanRenderer::renderFrame(const FrameTime& /*time*/, const FrameData& f
   return {};
 }
 
-Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex, const FrameData& frame) const {
+u32 VulkanRenderer::spriteCapacity() const noexcept {
+  u64 largest = 0;
+  for (const Frame& frame : frames_) largest = std::max(largest, frame.sprites.size());
+  return static_cast<u32>(largest / sizeof(SpriteGpu));
+}
+
+Status VulkanRenderer::writeSprites(Frame& frame, const FrameData& frameData) {
+  const usize count = frameData.sprites.size();
+  if (count > kMaxSprites) {
+    return fail(Errc::InvalidArgument, "{} sprites in one frame; the renderer's limit is {}", count, kMaxSprites);
+  }
+  lastSpriteCount_ = static_cast<u32>(count);
+  lastDrawCalls_ = count > 0 ? 1u : 0u;  // all sprites, one instanced draw
+
+  // Grow this frame's buffer if it is too small (or does not exist yet):
+  // double until it fits, so a steadily growing scene reallocates rarely.
+  const u64 needed = std::max<u64>(count, kInitialSpriteCapacity) * sizeof(SpriteGpu);
+  if (frame.sprites.size() < needed) {
+    u64 capacity = std::max<u64>(frame.sprites.size() / sizeof(SpriteGpu), kInitialSpriteCapacity);
+    while (capacity * sizeof(SpriteGpu) < needed) capacity *= 2;
+    auto grown = gpu::Buffer::create(context_.allocator(),
+                                     {.sizeBytes = capacity * sizeof(SpriteGpu),
+                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                      .memory = gpu::MemoryKind::HostVisible,
+                                      .debugName = "sprite instances"});
+    if (!grown) return tl::unexpected(std::move(grown.error()));
+    frame.sprites = std::move(*grown);  // the old one is destroyed: the fence says the GPU is done with it
+    log::debug(Category::Render, "sprite buffer for frame slot {} now holds {} sprites ({} KiB)", frameIndex_,
+               capacity, capacity * sizeof(SpriteGpu) / 1024);
+  }
+  if (count == 0) return {};
+
+  // Straight into mapped memory, front to back: on a discrete GPU this is
+  // write-combined memory, which is fast to write in order and must never
+  // be read back.
+  auto* out = reinterpret_cast<SpriteGpu*>(frame.sprites.mapped().data());
+  for (usize i = 0; i < count; ++i) {
+    const SpriteInstance& sprite = frameData.sprites[i];
+    out[i] = SpriteGpu{
+        .position = sprite.position,
+        .halfSize = 0.5f * sprite.size,
+        .rotation = {std::cos(sprite.rotation), std::sin(sprite.rotation)},
+        .unused = {0.0f, 0.0f},
+        .colour = sprite.colour,
+    };
+  }
+  return frame.sprites.flush(0, count * sizeof(SpriteGpu));  // a no-op on host-coherent memory
+}
+
+Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex, const FrameData& frame,
+                                      VkDeviceAddress sprites) const {
   const VkCommandBufferBeginInfo begin{
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
       .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -546,21 +616,18 @@ Status VulkanRenderer::recordCommands(VkCommandBuffer commands, u32 imageIndex, 
   vkCmdSetViewport(commands, 0, 1, &viewport);
   vkCmdSetScissor(commands, 0, 1, &scissor);
 
-  // One draw per sprite: its data in push constants, 6 vertices (two
-  // triangles) placed by the vertex shader.
-  // How much of the world the window shows: all of frame.viewHalfExtent,
-  // scaled to fit without stretching (or pixels, if the game set none).
-  const glm::vec2 viewportHalf = fitView({0.5f * width, 0.5f * height}, frame.viewHalfExtent);
-  for (const SpriteInstance& sprite : frame.sprites) {
-    const SpritePushConstants push{
-        .position = sprite.position,
-        .halfSize = 0.5f * sprite.size,
-        .rotation = {std::cos(sprite.rotation), std::sin(sprite.rotation)},
-        .viewportHalf = viewportHalf,
-        .colour = sprite.colour,
+  // ONE draw for every sprite: 6 vertices (two triangles) per instance, one
+  // instance per sprite. The shader reads instance i's data from the buffer
+  // at `sprites`. How much of the world the window shows: all of
+  // frame.viewHalfExtent, scaled to fit without stretching (or pixels, if
+  // the game set none). Instances draw in order, so later sprites are on top.
+  if (!frame.sprites.empty()) {
+    const DrawPushConstants push{
+        .spriteList = sprites,
+        .viewHalf = fitView({0.5f * width, 0.5f * height}, frame.viewHalfExtent),
     };
     vkCmdPushConstants(commands, pipelineLayout_.get(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-    vkCmdDraw(commands, 6, 1, 0, 0);
+    vkCmdDraw(commands, 6, static_cast<u32>(frame.sprites.size()), 0, 0);
   }
 
   vkCmdEndRendering(commands);

@@ -16,6 +16,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <vector>
 
 using namespace playground;
 
@@ -119,6 +120,68 @@ TEST_CASE("the public factory hides Vulkan behind render::Renderer") {
   CHECK((*renderer)->name() == "vulkan");
   app->setRenderer(std::move(*renderer));
   CHECK(app->run().has_value());
+}
+
+// --- Instanced sprites ------------------------------------------------------------
+
+TEST_CASE("25,000 sprites are drawn in one instanced draw with no validation errors") {
+  gpu::resetValidationCounts();
+  {
+    auto app = makeApp(10);
+    render::VulkanRenderer* renderer = attachRenderer(*app);
+    app->setExtract([](render::FrameData& frame, f64) {
+      frame.viewHalfExtent = {800.0f, 450.0f};
+      for (int i = 0; i < 25'000; ++i) {
+        const float x = static_cast<float>(i % 250) * 6.4f - 800.0f;
+        const float y = static_cast<float>(i / 250) * 9.0f - 450.0f;
+        frame.sprites.push_back({.position = {x, y}, .size = {4.0f, 4.0f}, .rotation = 0.1f * static_cast<float>(i)});
+      }
+    });
+
+    REQUIRE(app->run().has_value());
+    CHECK(renderer->framesPresented() == 10);
+    CHECK(renderer->lastSpriteCount() == 25'000);
+    CHECK(renderer->lastDrawCalls() == 1);  // not 25,000
+    CHECK(renderer->spriteCapacity() >= 25'000);
+  }
+  CHECK(render::gpuValidationCounts().errors == 0);
+}
+
+TEST_CASE("the sprite buffer grows when a frame needs more, and does not shrink") {
+  gpu::resetValidationCounts();
+  {
+    auto app = makeApp(12);
+    render::VulkanRenderer* renderer = attachRenderer(*app);
+    int frame = 0;
+    std::vector<u32> capacities;
+    app->setExtract([&](render::FrameData& data, f64) {
+      // 10 sprites, then 5,000 (beyond the initial 1,024), then 10 again.
+      const int count = (frame >= 4 && frame < 8) ? 5'000 : 10;
+      for (int i = 0; i < count; ++i) data.sprites.push_back({.position = {0.0f, 0.0f}, .size = {2.0f, 2.0f}});
+      ++frame;
+    });
+    app->setUpdate([&](const FrameTime&, const platform::InputState&) {
+      capacities.push_back(renderer->spriteCapacity());
+    });
+
+    REQUIRE(app->run().has_value());
+    CHECK(capacities.front() <= render::kInitialSpriteCapacity);  // before any frame grew it
+    CHECK(renderer->spriteCapacity() >= 5'000);  // grew for the big frames...
+    CHECK(renderer->lastSpriteCount() == 10);    // ...and kept that room for the small ones
+  }
+  CHECK(render::gpuValidationCounts().errors == 0);
+}
+
+TEST_CASE("a frame with no sprites draws nothing and still presents") {
+  gpu::resetValidationCounts();
+  {
+    auto app = makeApp(3);
+    render::VulkanRenderer* renderer = attachRenderer(*app);
+    REQUIRE(app->run().has_value());  // no extract hook: an empty FrameData
+    CHECK(renderer->framesPresented() == 3);
+    CHECK(renderer->lastDrawCalls() == 0);
+  }
+  CHECK(render::gpuValidationCounts().errors == 0);
 }
 
 int main(int argc, char** argv) {
