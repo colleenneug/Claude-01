@@ -65,8 +65,9 @@ void main() {
   float metallic = clamp(metallicRoughness.x * draw.factors.x, 0.0, 1.0);
   float roughness = clamp(metallicRoughness.y * draw.factors.y, 0.04, 1.0);  // 0 makes a pinpoint highlight
 
-  // The surface normal, bent by the normal map.
-  vec3 n = normalize(inNormal);
+  // The surface normal, bent by the normal map. A double-sided material's
+  // back face is lit as a surface facing the other way.
+  vec3 n = normalize(gl_FrontFacing ? inNormal : -inNormal);
   vec3 t = normalize(inTangent.xyz - n * dot(n, inTangent.xyz));  // re-orthogonalise after interpolation
   vec3 b = cross(n, t) * inTangent.w;
   vec3 mapped = texture(textures[draw.textures.y], inUv).xyz * 2.0 - 1.0;

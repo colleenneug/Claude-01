@@ -135,6 +135,7 @@ class VulkanRenderer final : public Renderer {
     u32 blendedCount = 0;          // ...the next blendedCount are translucent, back to front
     gpu::Buffer meshDraws;         // this frame's MeshDrawGpu[], persistently mapped
     std::vector<MeshCommand> meshCommands;  // one per entry of meshDraws, in order
+    u32 singleSidedCount = 0;      // meshCommands [0, n) are culled; the rest are double-sided
     gpu::Buffer uniforms;          // this frame's FrameUniforms (camera, lights), persistently mapped
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;  // points the shader at `uniforms`; freed with the pool
     gpu::Buffer capture;           // a copy of the frame for takeCapture(), when requested
@@ -172,6 +173,7 @@ class VulkanRenderer final : public Renderer {
   gpu::DescriptorSetLayout textureSetLayout_;   // set 1: every texture (bindless array)
   gpu::PipelineLayout pipelineLayout_;          // shared by all pipelines: sets 0 and 1, one 8-byte address
   gpu::Pipeline meshPipeline_;     // lit, textured meshes: back faces culled, depth test + write
+  gpu::Pipeline doubleSidedPipeline_;  // the same, no culling (Material::doubleSided)
   gpu::Pipeline opaquePipeline_;   // sprites: depth test + depth write
   gpu::Pipeline blendedPipeline_;  // sprites: depth test, NO depth write (translucent, sorted back to front)
   VkFormat pipelineFormat_ = VK_FORMAT_UNDEFINED;

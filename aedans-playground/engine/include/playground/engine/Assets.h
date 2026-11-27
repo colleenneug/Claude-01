@@ -138,12 +138,18 @@ class AssetManager {
   // calling thread helps decode (JobCounter::wait).
   void waitForDecodes();
 
+  // Unloads every asset of every type (cancelling loads in flight), after
+  // waiting for files still being decoded. For shutdown: GPU assets must go
+  // before the renderer, which is destroyed before the manager.
+  void clear();
+
   [[nodiscard]] usize waitingToFinalize() const;
   [[nodiscard]] bool idle() const;  // nothing decoding, nothing waiting to finalize
 
  private:
   struct StoreBase {
     virtual ~StoreBase() = default;
+    virtual void clear() = 0;  // unload everything
   };
 
   template <class T>
@@ -168,6 +174,20 @@ class AssetManager {
     }
     [[nodiscard]] const Slot* find(AssetHandle<T> handle) const {
       return const_cast<Store*>(this)->find(handle);
+    }
+
+    void clear() override {
+      freeSlots.clear();
+      for (u32 i = 0; i < slots.size(); ++i) {
+        Slot& slot = slots[i];
+        if (slot.state != AssetState::Invalid) ++slot.generation;  // old handles go stale
+        slot.value.reset();
+        slot.error.reset();
+        slot.key.clear();
+        slot.state = AssetState::Invalid;
+        freeSlots.push_back(i);
+      }
+      byKey.clear();
     }
   };
 

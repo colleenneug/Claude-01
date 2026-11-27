@@ -519,6 +519,11 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
                              .vertexInput = &meshVertices, .cullMode = VK_CULL_MODE_BACK_BIT, .depthWrite = true,
                              .blend = false});
   if (!mesh) return tl::unexpected(std::move(mesh.error()));
+  auto doubleSided = buildPipeline(device, pipelineLayout_.get(), colourFormat,
+                                   {.vertexSpirv = kMeshVertSpirv, .fragmentSpirv = kMeshFragSpirv,
+                                    .name = "double-sided mesh", .vertexInput = &meshVertices,
+                                    .cullMode = VK_CULL_MODE_NONE, .depthWrite = true, .blend = false});
+  if (!doubleSided) return tl::unexpected(std::move(doubleSided.error()));
   // 2D sprites: drawn whichever way they face. The translucent pipeline is
   // the same without depth writes.
   auto opaque = buildPipeline(device, pipelineLayout_.get(), colourFormat,
@@ -533,6 +538,7 @@ Status VulkanRenderer::createPipeline(VkFormat colourFormat) {
   if (!blended) return tl::unexpected(std::move(blended.error()));
 
   meshPipeline_ = std::move(*mesh);  // replaces (and destroys) any old ones
+  doubleSidedPipeline_ = std::move(*doubleSided);
   opaquePipeline_ = std::move(*opaque);
   blendedPipeline_ = std::move(*blended);
   pipelineFormat_ = colourFormat;
@@ -893,6 +899,7 @@ Status VulkanRenderer::writeMeshes(Frame& frame, const FrameData& frameData) {
     return fail(Errc::InvalidArgument, "{} meshes in one frame; the renderer's limit is {}", count, kMaxMeshDraws);
   }
   frame.meshCommands.clear();
+  frame.singleSidedCount = 0;
   lastMeshDraws_ = 0;
   if (count == 0) return {};
 
@@ -913,9 +920,14 @@ Status VulkanRenderer::writeMeshes(Frame& frame, const FrameData& frameData) {
 
   // Front to back into write-combined memory, as for sprites. A stale or
   // invalid mesh handle (destroyed, never created) is skipped, not drawn.
+  // Two passes: culled meshes first, then double-sided ones, so each group
+  // is one run of draws with one pipeline.
   auto* out = reinterpret_cast<MeshDrawGpu*>(frame.meshDraws.mapped().data());
   u32 written = 0;
+  for (const bool doubleSided : {false, true}) {
+  if (doubleSided) frame.singleSidedCount = written;
   for (const MeshInstance& instance : frameData.meshes) {
+    if (instance.material.doubleSided != doubleSided) continue;
     const Mesh* mesh = meshes_.get(instance.mesh);
     if (mesh == nullptr) continue;
     const Material& material = instance.material;
@@ -933,6 +945,7 @@ Status VulkanRenderer::writeMeshes(Frame& frame, const FrameData& frameData) {
     frame.meshCommands.push_back({.vertices = mesh->vertexBuffer(), .indices = mesh->indexBuffer(),
                                   .indexCount = mesh->indexCount()});
     ++written;
+  }
   }
   lastMeshDraws_ = written;
   lastDrawCalls_ += written;
@@ -1167,6 +1180,9 @@ Status VulkanRenderer::recordCommands(const Frame& frameSlot, u32 imageIndex) co
     vkCmdPushConstants(commands, pipelineLayout_.get(), kPushStages, 0, sizeof(push), &push);
     VkBuffer bound = VK_NULL_HANDLE;
     for (u32 i = 0; i < frameSlot.meshCommands.size(); ++i) {
+      if (i == frameSlot.singleSidedCount) {  // the double-sided run: same layout, so sets and push stay bound
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, doubleSidedPipeline_.get());
+      }
       const MeshCommand& draw = frameSlot.meshCommands[i];
       if (draw.vertices != bound) {
         const VkDeviceSize offset = 0;

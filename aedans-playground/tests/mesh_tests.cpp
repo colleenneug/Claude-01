@@ -51,11 +51,12 @@ render::VulkanRenderer* attachRenderer(engine::Application& app) {
 }
 
 // A square facing +z (the viewer), `half` units from centre to edge, at depth
-// z. Counter-clockwise seen from the front; `flipped` reverses the winding.
+// z. Counter-clockwise seen from the front; `flipped` reverses the winding
+// and the normals, so it faces away (-z) and the viewer sees its back.
 // uv (0, 0) is the top-left corner, like an image.
 render::MeshData quad(f32 half, f32 z = 0.0f, bool flipped = false) {
   render::MeshData mesh;
-  const glm::vec3 n{0.0f, 0.0f, 1.0f};
+  const glm::vec3 n{0.0f, 0.0f, flipped ? -1.0f : 1.0f};
   const glm::vec4 t{1.0f, 0.0f, 0.0f, 1.0f};
   mesh.vertices = {
       {.position = {-half, -half, z}, .normal = n, .tangent = t, .uv = {0.0f, 1.0f}},  // bottom left
@@ -211,6 +212,33 @@ TEST_CASE("back faces are culled: a triangle wound clockwise towards the viewer 
     });
     checkColour(frame, 80, 120, 255, 255, 255);  // counter-clockwise: the front
     CHECK(isBackground(frame, 240, 120));         // clockwise: its back, culled
+  }
+  CHECK(render::gpuValidationCounts().errors == 0);
+}
+
+TEST_CASE("a double-sided material shows its back face, lit as facing the viewer") {
+  gpu::resetValidationCounts();
+  {
+    auto app = makeApp(3);
+    render::VulkanRenderer* renderer = attachRenderer(*app);
+    const render::MeshHandle back = createMesh(*renderer, quad(40.0f, 0.0f, /*flipped=*/true));
+    render::Material twoSided = plastic({0.5f, 0.5f, 0.5f, 1.0f});
+    twoSided.doubleSided = true;
+    render::Material oneSided = plastic({0.5f, 0.5f, 0.5f, 1.0f});
+    const auto frame = renderOnce(*app, *renderer, [&](render::FrameData& f) {
+      f.sun = {.direction = {0.0f, 0.0f, -1.0f}, .colour = {1.0f, 1.0f, 1.0f}, .intensity = 2.0f};
+      f.ambient = glm::vec3(0.0f);
+      // Given double-sided first and single-sided last: the renderer regroups them.
+      f.meshes.push_back({.mesh = back, .material = twoSided,
+                          .transform = glm::translate(glm::mat4(1.0f), {-80.0f, 0.0f, 0.0f})});
+      f.meshes.push_back({.mesh = back, .material = oneSided,
+                          .transform = glm::translate(glm::mat4(1.0f), {80.0f, 0.0f, 0.0f})});
+    });
+    // Its back faces the viewer and the sun, and its normal is flipped to
+    // match: lit, not black.
+    CHECK(brightness(frame, 80, 120) > 150);
+    CHECK(isBackground(frame, 240, 120));
+    CHECK(renderer->lastMeshDrawCount() == 2);
   }
   CHECK(render::gpuValidationCounts().errors == 0);
 }

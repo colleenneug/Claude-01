@@ -87,6 +87,7 @@ struct Material {
   f32 metallicFactor = 1.0f;         // 0 = plastic, wood, stone...; 1 = metal
   f32 roughnessFactor = 1.0f;        // 0 = mirror-smooth; 1 = fully matte
   f32 normalScale = 1.0f;            // how strongly the normal map bends the surface
+  bool doubleSided = false;          // draw back faces too (leaves, cloth, thin walls); lit from both sides
   TextureHandle baseColour;
   TextureHandle normal;
   TextureHandle metallicRoughness;  // glTF packing: roughness in green, metallic in blue

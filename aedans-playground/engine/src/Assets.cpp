@@ -103,6 +103,21 @@ usize AssetManager::update(usize budget) {
 
 void AssetManager::waitForDecodes() { inFlight_.wait(); }
 
+void AssetManager::clear() {
+  assertMainThread();
+  inFlight_.wait();  // no job may post a result after this
+  usize dropped = 0;
+  {
+    const std::scoped_lock lock(completedMutex_);
+    dropped = completed_.size();
+    completed_.clear();
+  }
+  for (const auto& store : stores_) {
+    if (store) store->clear();
+  }
+  log::debug(Category::Engine, "asset manager cleared ({} decoded result(s) dropped)", dropped);
+}
+
 usize AssetManager::waitingToFinalize() const {
   const std::scoped_lock lock(completedMutex_);
   return completed_.size();

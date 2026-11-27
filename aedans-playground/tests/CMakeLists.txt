@@ -18,6 +18,13 @@ playground_configure_target(playground_asset_tests)
 add_test(NAME asset_tests COMMAND playground_asset_tests)
 set_tests_properties(asset_tests PROPERTIES LABELS threads)
 
+# --- glTF loader: no window, no GPU (a recording fake renderer); also TSan. ---
+add_executable(playground_gltf_tests gltf_tests.cpp)
+target_link_libraries(playground_gltf_tests PRIVATE playground::engine doctest::doctest)
+playground_configure_target(playground_gltf_tests)
+add_test(NAME gltf_tests COMMAND playground_gltf_tests)
+set_tests_properties(gltf_tests PROPERTIES LABELS threads)
+
 # --- ECS and systems: no window, no GPU --------------------------------------
 add_executable(playground_ecs_tests ecs_tests.cpp)
 target_link_libraries(playground_ecs_tests PRIVATE playground::engine doctest::doctest)
