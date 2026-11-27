@@ -35,7 +35,9 @@ theblueturtle_, CC BY-NC 4.0: see
 only (`docs/ibl-scene.png`), before reflections (`docs/gltf-scene.png`),
 milestones: the first triangle (`docs/first-triangle.png`),
 the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
-(`docs/instanced-25k.png`) and the tilted 2D view (`docs/perspective-3d.png`).*
+(`docs/instanced-25k.png`), the tilted 2D view (`docs/perspective-3d.png`)
+and the network client (`docs/network-client.png`: you in white, a bot in
+orange, the server's 64 balls).*
 
 **3D scene** (camera: `engine/CameraController.h`)
 
