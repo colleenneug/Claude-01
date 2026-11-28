@@ -8,13 +8,13 @@ to build, run and troubleshoot is in `README.md`.
   engine architecture, memory management and data-oriented design, and to
   host **Erebus Cradle** (the OpenGL 4.1 game in `../cpp/`) once it is ready.
 - **Where:** repository `colleenneug/Claude-01`, folder `aedans-playground/`,
-  branch `claude/relaxed-cray-5kc2fl` (36 commits, `d065ae6` → this one). No
+  branch `claude/relaxed-cray-5kc2fl` (37 commits, `d065ae6` → this one). No
   pull request open.
-- **Size:** about 19,800 lines of engine code and shaders (plus Jolt and
-  Dear ImGui, vendored), and 7,700 lines of tests.
+- **Size:** about 20,700 lines of engine code and shaders (plus Jolt, Dear
+  ImGui and miniaudio, vendored), and 8,100 lines of tests.
 - **State at this snapshot:**
-  - `xvfb-run -a ctest --preset debug` passes **28/28**: 20 suites with
-    **254 test cases**, plus 8 end-to-end and smoke checks.
+  - `xvfb-run -a ctest --preset debug` passes **29/29**: 21 suites with
+    **267 test cases**, plus 8 end-to-end and smoke checks.
   - A clean rebuild has **0 warnings** (warnings are errors).
   - **0 Vulkan validation errors**. (The one `[error] [gpu]` line in the
     test log is gpu_tests' deliberately injected "expected" message.)
@@ -78,9 +78,10 @@ render physics ─ ecs          │
 | **gpu** (`playground_gpu`) | platform, Vulkan 1.3, VMA (vendored v3.3.0 on Linux) | Vulkan bring-up: instance and validation (messages counted; any error fails the app), surface, GPU selection with every rejection reason logged, logical device and queues (dynamic rendering, synchronization2, timeline semaphores, descriptor indexing with update-after-bind, buffer device address, optional anisotropy); memory (VMA); buffers (host-visible, device-local via staging, readback); images (2D, cube, arrays, mip chains built by blits); samplers; swapchain (sRGB or UNORM, rebuilt on resize); RAII for every handle | `Context`, `Device`, `Allocator`, `Buffer`, `Image`, `createTexture`, `Sampler`, `Swapchain`, `DeviceHandle<T>`, `transitionImage` |
 | **ecs** (`playground_ecs`) | core | sparse-set entity/component storage, generational entity handles, multi-component iteration, deferred destruction | `World`, `Entity`, `ComponentPool<T>` |
 | **render** (`playground_render`) | platform, glm; gpu and Dear ImGui **private** | the `Renderer` interface and Vulkan-free frame description (`FrameData`, meshes, materials, lights, environment, shadow/bloom/tone-map settings); the Vulkan renderer: instanced sprites, meshes with bindless PBR textures, image-based lighting baked on the GPU, a skybox, sun shadow maps, an HDR target, bloom, ACES/PBR Neutral tone mapping, sRGB-correct composite, frame capture for pixel tests; GPU resources behind generational handles with deferred freeing | `Renderer`, `FrameData`, `MeshData`, `Material`, `MeshInstance`, `ProceduralSky`, `HdrImage`, `Aabb`, `directionalShadowMatrix`; private: `VulkanRenderer`, `Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess` |
-| **engine** (`playground_engine`) | render, ecs, physics; tinygltf + stb **private** | the application loop (window + fixed steps + update + extract + render); cameras (orthographic/perspective, reverse-Z, screen ↔ world) and an orbit/fly/walk controller; `Transform3D` and the physics components (`RigidBody`, `Collider`, `CharacterController`) with `PhysicsSystem`, the fixed-step sync; the **asset manager** (decode on workers, finalize on the main thread, generational handles, cache by path); glTF 2.0 models and HDR panoramas as assets; components and systems (movement, bounce, input, lifetime, sprite extraction, picking); input actions | `Application`, `Camera`, `CameraController`, `AssetManager`, `AssetHandle<T>`, `Model`, `gltfLoader`, `EnvironmentAsset`, `ActionMap`, `Transform`, `Velocity`, `Sprite` |
+| **engine** (`playground_engine`) | render, ecs, physics, audio; tinygltf + stb **private** | the application loop (window + fixed steps + update + extract + render); cameras (orthographic/perspective, reverse-Z, screen ↔ world) and an orbit/fly/walk controller; `Transform3D` and the physics components (`RigidBody`, `Collider`, `CharacterController`) with `PhysicsSystem`, the fixed-step sync; the **asset manager** (decode on workers, finalize on the main thread, generational handles, cache by path); glTF 2.0 models and HDR panoramas as assets; components and systems (movement, bounce, input, lifetime, sprite extraction, picking); input actions | `Application`, `Camera`, `CameraController`, `AssetManager`, `AssetHandle<T>`, `Model`, `gltfLoader`, `EnvironmentAsset`, `ActionMap`, `Transform`, `Velocity`, `Sprite` |
 | **net** (`playground_net`, alias `engine_net`) | core, glm; ENet **private** | the network transport (server or client hosts; reliable-ordered and unreliable-unsequenced channels; events; `disconnectAfterSending`), **simulated latency, jitter and loss** for tests, bit-level serialization (endian-safe, overrun-proof), quantization (bounded floats, vectors, smallest-three quaternions) | `Host`, `Peer`, `Packet`, `Event`, `Channel`, `NetworkConditions`, `BitWriter`, `BitReader`, `quantize`, `writeQuaternion` |
 | **game** (`playground_game`) | engine, net | the networked game, with no window or GPU: the **wire protocol v3** (Hello, Welcome, Reject, Spawn, Despawn, Input, Snapshot) with **delta snapshots**; the **movement rule** both sides run; the server's per-client **input queue** (ordered, deduplicated, rate-limited); client **prediction** (ring, reconcile, replay) and **interpolation** (snapshot buffer, render clock); the authoritative **server** and the **client** | `protocol::*`, `stepPlayer`, `InputQueue`, `Prediction`, `SnapshotBuffer`, `InterpolationClock`, `GameServer`, `GameClient` |
+| **audio** (`playground_audio`, alias `engine_audio`) | core, glm; miniaudio **private** | `AudioEngine` over miniaudio 0.11.21 (`ma_engine`): clips and voices, a listener, inverse-distance attenuation, panning, Doppler; output to the sound device, else miniaudio's null device (`PLAYGROUND_AUDIO=null` forces it), or manual mixing for tests; `synth` (laser, explosion, impact, hum, tones) | `AudioEngine`, `Output`, `ClipId`, `VoiceId`, `PlayDesc`, `Listener`, `distanceGain`, `synth::*` |
 | **physics** (`playground_physics`, alias `engine_physics`) | core, ecs, glm; Jolt **private** | `PhysicsWorld` over Jolt Physics v5.3.0 (vendored in `third_party/JoltPhysics`, built cross-platform deterministic by `cmake/jolt`): bodies (box/sphere/capsule/mesh; static/kinematic/dynamic), characters (`JPH::CharacterVirtual`: slopes, stairs, walls, pushing), raycasts with layer masks, a bridge running Jolt's jobs on our `JobSystem` | `PhysicsWorld`, `BodyDesc`, `ShapeDesc`, `BodyId`, `CharacterDesc`, `CharacterMove`, `CharacterState`, `RaycastHit`, `Layer` |
 | **app** (`playground_app`) | engine, game, physics | the program: start-up order, command-line options; the **3D scene** (floor, crates, PBR spheres, lamps, the helmet, a ramp, stairs, a falling stack; all physics bodies in an ECS; sun shadows, sky, bloom; orbit/fly/walk camera; hitscan shooting and mouse picking; `--model`, `--environment`); the **2D scene** (25,000 bouncing sprites, a player, bullets aimed with the mouse); the **network scene** (`--connect`: the server's world, your player predicted); the **dedicated server** and a headless bot | `Scene`, `ModelScene`, `SpriteScene`, `NetScene`, `runServer`, `runClient` |
 
@@ -251,7 +252,7 @@ procedural sky is baked at start-up, so headless tests stay quick.
 
 ---
 
-## 3. Completed Milestones (Steps 1–11)
+## 3. Completed Milestones (Steps 1–12)
 
 Each item was run and verified: tests in that step, plus every earlier
 test still passing.
@@ -366,7 +367,7 @@ test still passing.
     fake `__has_feature` that hid TSan from Jolt); UBSan's vptr check is
     off for Jolt's sources only (a deliberate Jolt trick it flags).
 
-- [x] **Step 11: Developer UI, profiler and scene files** (this commit)
+- [x] **Step 11: Developer UI, profiler and scene files** (`54cffcf`)
   - Dear ImGui v1.91.9b vendored (`third_party/imgui`, core + GLFW and
     Vulkan backends; vcpkg's `imgui` with both bindings where it exists);
     `nlohmann-json` in `vcpkg.json`.
@@ -396,6 +397,29 @@ test still passing.
     `ui_e2e` (F1, Ctrl+S, Ctrl+O, F1, Escape; 0 validation errors); a
     manual check of four live resizes with the UI open (clean).
 
+- [x] **Step 12: Spatial audio** (this commit)
+  - `audio/` (`engine_audio`): miniaudio 0.11.21 (the file Erebus Cradle
+    vendors; vcpkg's `miniaudio` where it exists) behind
+    `audio::AudioEngine`. Sound device, else the null device (also when
+    miniaudio silently falls back to it, which is reported honestly), or
+    manual mixing.
+  - `audio::synth`: deterministic laser, explosion, impact, hum, tones.
+  - `engine/Audio.h`: `AudioSource`, `AudioListener`, `audioSystem` (the
+    listener follows its entity, sources start on spawn or on request and
+    follow theirs with velocity for Doppler, teleports are not velocity,
+    destroyed entities' voices stop).
+  - Physics `takeContactEvents()`: new contacts with entities, point,
+    normal and closing speed, sorted so the result is thread-independent.
+  - Demo: laser and impact sounds for shooting, crates knocking on
+    contact, humming lamps, a listener entity on the camera; the 2D
+    scene's Fire plays a panned laser. The profiler shows audio.
+  - Tests: `audio_tests` (12 cases: manual and null-device start, the
+    voice lifecycle, refusals, distance attenuation measured in the mix,
+    panning both ways and when turned round, Doppler within 1% of
+    c/(c−v), the generators, `audioSystem`), a contact-event case in
+    `physics_tests`, `physics_e2e` checks sounds played. The CTest app
+    tests force the null device.
+
 **Verification as of this snapshot:**
 
 | Suite (test cases) | What it covers |
@@ -403,14 +427,16 @@ test still passing.
 | core (22), ecs (26), input (15), camera (16) | errors, logging, fixed step; ECS; input edges and actions; cameras and the controller |
 | job (10), asset (10) | thread pool, async assets (also under ThreadSanitizer) |
 | gltf (14), ibl (5), shadow (6), net (15) | glTF and HDR decoding; BRDF table maths; shadow framing; bit packing, quantization, loopback networking, simulated latency and loss |
-| physics (17) | see Step 10 |
+| physics (18) | see Step 10 (and contact events, Step 12) |
 | scene (6) | see Step 11 |
+| audio (12) | see Step 12 |
 | game (17), netsync (6) | protocol round trips and malformed packets; delta snapshots (exact rebuilds, refused without their baseline, random changes); the movement rule; the input queue and its rate limit; prediction (confirm, replay, overflow); interpolation; a server and two clients over a bad network (convergence with deltas, despawn, version rejection, handshake timeout, speed hack, 2.4 s ping); bytes with and without deltas |
 | app (14) | the main loop with a fake renderer |
 | gpu (17), render (12), mesh (11), environment (6), postfx (9) | Vulkan bring-up, memory and textures; sprites, depth, camera, capture; meshes and materials; image-based lighting and sky; shadows, bloom, ACES, UNORM vs sRGB, resizing (pixels read back from the GPU; every test asserts 0 validation errors) |
 | app_smoke, keyboard_e2e, camera_e2e, physics_e2e, ui_e2e, server_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; walking and shooting in the physics scene; the developer UI saving and loading the scene; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
 
-- Debug, release, Clang and ASan+UBSan: 28/28.
+- Debug, release, Clang and ASan+UBSan: 29/29.
+- TSan includes the audio tests (miniaudio's real-time thread).
 - TSan: the threaded suites (physics included), with 0 race reports.
 - Every build at `-Werror`.
 
@@ -473,7 +499,7 @@ test still passing.
     `Transform3D.scale`;
   - characters are not bodies: raycasts and dynamic bodies do not hit them
     (they push bodies; bodies do not push them);
-  - no contact events, triggers, joints or ragdolls yet;
+  - contact events exist (new contacts only); no triggers, joints or ragdolls yet;
   - physics runs in the 3D demo only: the network game's players still
     move by `game::stepPlayer` (2D, no physics), so there is no
     server-authoritative physics yet.
@@ -482,6 +508,13 @@ test still passing.
     in the scene, not yet a shared engine system);
   - glTF without skins, animation, morph targets or alpha modes;
   - the profiler is our own timings, not Tracy; no Vulkan debug names.
+- **Audio:**
+  - sounds are made from maths or given as PCM: no file loading wired up
+    yet (miniaudio's decoders are compiled in, for WAV/FLAC/MP3 later);
+  - `AudioSource` is not saved in scene files (clips are runtime ids);
+  - no reverb, occlusion or mixer groups; one listener;
+  - never heard on this machine (no sound card): device output is
+    untested; mixing, 3D and the null device are tested.
 - **Developer UI:**
   - the inspector edits components in place; there is no undo, and
     entities cannot be created or have components added from the UI yet;
@@ -493,8 +526,8 @@ test still passing.
 
 ### Remaining roadmap, in order
 0. **Queued by the user, in this order** (each tested and pushed before
-   the next; Prompt 10, the developer UI, is done): Prompt
-   11, miniaudio spatial audio (null backend when headless); Prompt 12, a
+   the next; Prompts 10 and 11, the developer UI and spatial audio, are
+   done): Prompt 12, a
    cutscene and camera sequencer (spline camera tracks, timed events and
    subtitles, input lock, letterbox, skip; solo plays it on the local
    world, co-op has the server send StartCutscene so all players enter and
@@ -514,9 +547,9 @@ test still passing.
    - frame timings, render toggles (shadows, bloom, tone mapping), an
      entity/component inspector, and live material and light editing;
    - Vulkan debug names (RenderDoc) and Tracy profiling zones.
-4. **Spatial audio** (ROADMAP §4.9): move Erebus Cradle's miniaudio
-   `Audio.cpp` over, then enable miniaudio's spatialiser (positional sound
-   from entities, a listener on the camera).
+4. **Audio, next:** load sound files (miniaudio's decoders), name clips
+   so scene files can save `AudioSource`, mixer groups (music, effects,
+   UI), and Erebus Cradle's own sounds.
 5. **3D in the ECS:** `Transform3D` and `MeshRenderer` components, an
    extraction system; point lights (the clustered binner from `engine/` in
    the repository root); cascaded shadows.

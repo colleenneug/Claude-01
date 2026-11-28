@@ -14,6 +14,8 @@ quantized messages) with an authoritative headless dedicated server
 player and interpolates everything else; 3D physics (Jolt Physics:
 rigid bodies, a walking character controller, raycasts) stepped at the
 fixed 120 Hz on the job system;
+3D spatial audio (miniaudio: distance, panning, Doppler; procedural sound
+effects; silent but working with no sound card);
 a developer UI (Dear ImGui, F1: entity hierarchy and live inspector, a
 frame and network profiler, saving and loading scenes as JSON);
 an entity component system (ECS), keyboard/mouse input, an orbit/fly/walk
@@ -85,13 +87,14 @@ the ramp, the stairs, and the stack of crates fallen and settled).*
 | `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image` (+ `createTexture`, mipmaps), `Sampler`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), `Shadow` (shadow-map framing), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess`), the shaders |
+| `audio/` | `playground_audio` (`engine_audio`) | `AudioEngine`: miniaudio (hidden): clips, voices, a listener, 3D (distance, panning, Doppler), a null device when there is no sound card, manual mixing for tests; `synth`: laser, explosion, impact, hum and tones made from maths. Depends on core only |
 | `physics/` | `playground_physics` (`engine_physics`) | `PhysicsWorld`: Jolt Physics (hidden) behind our own types: bodies (box, sphere, capsule, mesh; static, kinematic, dynamic), characters (`JPH::CharacterVirtual`), raycasts with layer masks, a bridge from Jolt's jobs to our `JobSystem`. Depends on core and ecs |
 | `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController` (orbit, fly, walk), `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Name`, `Transform`, `Transform3D`, `Velocity`, `Sprite`, `MeshRenderer`, `Material`, `Light`, `RigidBody`, `Collider`, `CharacterController`), systems, `PhysicsSystem`, `pickSprite`, `SceneSerializer` (JSON), `DebugUi` and `Editor` (the developer UI) |
 | `game/` | `playground_game` | the networked game: `Protocol` (v3, with delta snapshots), `Simulation` (the movement rule both sides run), `InputQueue` (the server's rate limit), `Prediction`, `Interpolation`, `GameServer`, `GameClient`. No window, no GPU |
 | `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`, `NetScene`), the dedicated server and headless bot (`Server`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
 | `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, networking, the game's pieces, a server with two clients over a bad simulated network, physics, and scene files; end-to-end keyboard, camera, walking-and-shooting, developer-UI, dedicated-server and windowed-client tests |
 | `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
-| `third_party/` | | vendored `tl::expected`, Vulkan Memory Allocator, and Jolt Physics v5.3.0 (`JoltPhysics/`: its `Jolt/` sources and MIT licence, built by `cmake/jolt`; vcpkg's `joltphysics` is used instead where it exists), and Dear ImGui v1.91.9b (`imgui/`: the core, the GLFW and Vulkan backends, MIT; vcpkg's `imgui` where it exists). tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
+| `third_party/` | | vendored `tl::expected`, Vulkan Memory Allocator, and Jolt Physics v5.3.0 (`JoltPhysics/`: its `Jolt/` sources and MIT licence, built by `cmake/jolt`; vcpkg's `joltphysics` is used instead where it exists), Dear ImGui v1.91.9b (`imgui/`: the core, the GLFW and Vulkan backends, MIT; vcpkg's `imgui` where it exists), and miniaudio 0.11.21 (`miniaudio/`: one header, public domain or MIT-0, the same file Erebus Cradle uses; vcpkg's `miniaudio` where it exists). tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
 
 Each layer may include only the layers below it. Vulkan types stop at the
 render layer: its public headers have none, so the engine and the game build
@@ -515,6 +518,43 @@ ended from the server's answer (it should be 0.000):
 ```bash
 ./build/debug/app/playground_app --connect 127.0.0.1:27015 --headless --frames 600
 ```
+
+## Sound
+
+`audio/` wraps **miniaudio** behind `audio::AudioEngine`; only `audio/src`
+includes it. Sounds are **clips** (PCM in memory) played as **voices**, each
+with a volume, pitch, looping, and, when spatial, a position and velocity
+heard from a **listener**:
+
+| Effect | How |
+|---|---|
+| Distance | inverse distance: full volume within `minDistance`, then `min / (min + rolloff × (d − min))`, no quieter past `maxDistance` (`audio::distanceGain`) |
+| Panning | left/right from the direction to the source, relative to where the listener faces |
+| Doppler | pitch × c / (c − v) as source and listener approach (c = 343.3 m/s) |
+
+**No sound card?** The engine asks for the sound device and, if there is
+none (a server, a container, CI, `xvfb-run`), uses miniaudio's **null
+device** (`MA_BACKEND_NULL`): sounds start, move and finish in real time,
+unheard, and the log says so. `PLAYGROUND_AUDIO=null` forces it (the CTest
+app tests set it, so tests never sound on your speakers). `--server` and
+`--headless` never start audio at all. Tests use a third mode, **manual**,
+which mixes on request so they can measure what was heard.
+
+**No sound files needed:** `audio::synth` makes them from maths,
+deterministically: a laser "pew", an explosion, an impact knock, a looping
+mains hum, and plain tones.
+
+In the ECS (`engine/Audio.h`), an `AudioSource` (clip, volume, pitch, loop,
+distances, spatial, play on spawn) and an `AudioListener` sit on entities
+with a `Transform3D`; `audioSystem(world, engine, dt)` each frame points
+the listener, starts sources, moves their voices with their entities
+(velocity from movement, for Doppler; teleports are not velocity) and stops
+the voices of destroyed entities.
+
+In the demo: shooting plays a laser (in both ears) and an impact where the
+shot lands; crates hitting things knock where and as hard as they hit
+(physics contact events); the two lamps hum in 3D. In the 2D scene, Fire
+plays the laser, panned to where the player is.
 
 ## The developer UI (F1)
 

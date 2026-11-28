@@ -175,12 +175,26 @@ struct RaycastHit {
   f32 distance = 0.0f;
 };
 
+// Two bodies that just touched (a contact that did not exist last step),
+// hitting each other at least PhysicsWorldDesc::minContactSpeed: for impact
+// sounds, sparks, damage. Not reported again while they stay in contact.
+struct ContactEvent {
+  ecs::Entity a;
+  ecs::Entity b;
+  BodyId bodyA;
+  BodyId bodyB;
+  glm::vec3 point{0.0f};   // where, on a's surface
+  glm::vec3 normal{0.0f};  // from a towards b
+  f32 speed = 0.0f;        // how fast they closed along the normal, m/s
+};
+
 struct PhysicsWorldDesc {
   u32 maxBodies = 4096;
   u32 maxBodyPairs = 8192;
   u32 maxContactConstraints = 4096;
   glm::vec3 gravity{0.0f, -9.81f, 0.0f};
   usize tempMemoryBytes = 8u * 1024u * 1024u;  // per-step scratch memory
+  f32 minContactSpeed = 0.5f;  // m/s: gentler touches are not ContactEvents
 };
 
 struct PhysicsStats {
@@ -227,6 +241,11 @@ class PhysicsWorld {
 
   // Advances every body by `dt` seconds.
   void step(f32 dt);
+  // The new contacts since the last call, in a fixed order (by body), so the
+  // same simulation reports the same events on any number of threads. At
+  // most kMaxContactEvents are kept between calls.
+  static constexpr usize kMaxContactEvents = 1024;
+  [[nodiscard]] std::vector<ContactEvent> takeContactEvents();
 
   // The first body hit by a ray from `origin` along `direction` (need not
   // be unit length) within `maxDistance`, among the layers in `mask`.

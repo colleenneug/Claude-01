@@ -138,6 +138,23 @@ else()
   target_link_libraries(playground_imgui INTERFACE playground_imgui_vendored)
 endif()
 
+# miniaudio (third_party/miniaudio, 0.11.21, public domain or MIT-0: the same
+# file Erebus Cradle uses): sound output, mixing and 3D, behind audio/. One
+# header, compiled once in audio/src/MiniaudioImplementation.cpp. It finds
+# PulseAudio/ALSA (or WASAPI, CoreAudio) at run time, so a machine without
+# them still starts: audio::AudioEngine falls back to its null device. vcpkg's
+# miniaudio port where there is one.
+find_package(miniaudio CONFIG QUIET)
+add_library(playground_miniaudio INTERFACE)
+if(TARGET miniaudio::miniaudio)
+  target_link_libraries(playground_miniaudio INTERFACE miniaudio::miniaudio)
+else()
+  target_include_directories(playground_miniaudio SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio)
+  find_package(Threads REQUIRED)
+  target_link_libraries(playground_miniaudio INTERFACE Threads::Threads ${CMAKE_DL_LIBS})
+endif()
+target_compile_definitions(playground_miniaudio INTERFACE MA_NO_ENCODING)  # playback only
+
 add_library(playground_tl_expected INTERFACE)
 target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
@@ -147,6 +164,7 @@ add_subdirectory(net)
 add_subdirectory(platform)
 add_subdirectory(ecs)
 add_subdirectory(physics)
+add_subdirectory(audio)
 add_subdirectory(gpu)
 add_subdirectory(render)
 add_subdirectory(engine)

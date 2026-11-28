@@ -27,6 +27,7 @@
 #include "Server.h"
 #include "SpriteScene.h"
 
+#include "playground/audio/AudioEngine.h"
 #include "playground/core/JobSystem.h"
 #include "playground/core/Log.h"
 #include "playground/engine/Application.h"
@@ -290,6 +291,15 @@ int main(int argc, char** argv) {
   const auto welcome = assets.load<engine::TextAsset>("welcome.txt");
   bool welcomeShown = false;
 
+  // Sound: the sound card, or miniaudio's null device where there is none
+  // (never stops the game). Declared before the scene, which holds its clips.
+  std::unique_ptr<audio::AudioEngine> sound;
+  if (auto created = audio::AudioEngine::create()) {
+    sound = std::move(*created);
+  } else {
+    log::warn(Category::Engine, "no sound: {}", created.error().message);
+  }
+
   // The scene. Declared after the Application, so it is destroyed first;
   // shutdown() also drops the callbacks below that refer to it.
   std::unique_ptr<app::Scene> scene;
@@ -301,10 +311,10 @@ int main(int argc, char** argv) {
     }
     scene = std::move(*netScene);
   } else if (options->scene == SceneChoice::Sprites) {
-    scene = std::make_unique<app::SpriteScene>(application, options->sprites, options->sceneFile);
+    scene = std::make_unique<app::SpriteScene>(application, options->sprites, options->sceneFile, sound.get());
   } else {
     auto modelScene = app::ModelScene::create(assets, renderer, jobs, options->model, options->environment,
-                                              options->sceneFile);
+                                              options->sceneFile, sound.get());
     if (!modelScene) {
       log::critical(Category::Engine, "3D scene could not start ({}): {}", describe(modelScene.error().code),
                     modelScene.error().message);

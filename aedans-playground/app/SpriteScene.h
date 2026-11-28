@@ -7,6 +7,8 @@
 
 #include "Scene.h"
 
+#include "playground/audio/AudioEngine.h"
+
 #include "playground/ecs/World.h"
 #include "playground/engine/Actions.h"
 #include "playground/engine/Application.h"
@@ -22,7 +24,8 @@ namespace playground::app {
 
 class SpriteScene final : public Scene {
  public:
-  SpriteScene(engine::Application& application, u32 spriteCount, std::filesystem::path sceneFile = "scene.json");
+  SpriteScene(engine::Application& application, u32 spriteCount, std::filesystem::path sceneFile = "scene.json",
+              audio::AudioEngine* sound = nullptr);
 
   void fixedUpdate(const FixedStep& step, const platform::InputState& input) override;
   void update(const FrameTime& time, const platform::InputState& input) override;
@@ -44,6 +47,8 @@ class SpriteScene final : public Scene {
   engine::Camera camera_;
   u32 bulletsFired_ = 0;
   engine::Editor editor_;
+  audio::AudioEngine* sound_ = nullptr;  // null: no sound
+  audio::ClipId laserClip_;
 };
 
 }  // namespace playground::app

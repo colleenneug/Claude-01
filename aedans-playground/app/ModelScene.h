@@ -38,6 +38,7 @@
 
 #include "Scene.h"
 
+#include "playground/audio/AudioEngine.h"
 #include "playground/core/JobSystem.h"
 #include "playground/core/Result.h"
 #include "playground/ecs/World.h"
@@ -76,7 +77,8 @@ class ModelScene final : public Scene {
                                                                   render::Renderer& renderer, JobSystem& jobs,
                                                                   std::optional<std::filesystem::path> model,
                                                                   std::optional<std::filesystem::path> environment,
-                                                                  std::filesystem::path sceneFile = "scene.json");
+                                                                  std::filesystem::path sceneFile = "scene.json",
+                                                                  audio::AudioEngine* sound = nullptr);
 
   void fixedUpdate(const FixedStep& step, const platform::InputState& input) override;
   void update(const FrameTime& time, const platform::InputState& input) override;
@@ -86,7 +88,7 @@ class ModelScene final : public Scene {
 
  private:
   ModelScene(engine::AssetManager& assets, std::unique_ptr<physics::PhysicsWorld> physics,
-             std::filesystem::path sceneFile);
+             std::filesystem::path sceneFile, audio::AudioEngine* sound);
   void build(render::Renderer& renderer, std::optional<std::filesystem::path> model,
              std::optional<std::filesystem::path> environment);
 
@@ -126,6 +128,16 @@ class ModelScene final : public Scene {
   bool started_ = false;
   f32 travelled_ = 0.0f;  // how far the camera moved, for the summary (tests/e2e/camera.sh)
   glm::vec3 lastEye_{0.0f};
+
+  // Sound (null: none): the clips, made from maths at start-up, and the
+  // listener entity riding the camera.
+  audio::AudioEngine* sound_;
+  audio::ClipId laserClip_;
+  audio::ClipId impactClip_;
+  audio::ClipId humClip_;
+  ecs::Entity listener_;
+  void playAt(audio::ClipId clip, glm::vec3 where, f32 volume, bool spatial = true);
+  void playImpacts();
 
   ecs::Entity spinner_;  // the turning crate (kinematic), if there is one
   f64 simulatedSeconds_ = 0.0;

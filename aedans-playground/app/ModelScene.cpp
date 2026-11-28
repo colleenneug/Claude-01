@@ -2,6 +2,8 @@
 
 #include "playground/core/Log.h"
 #include "playground/engine/Components.h"
+#include "playground/audio/Synth.h"
+#include "playground/engine/Audio.h"
 #include "playground/engine/Systems.h"
 
 #include <algorithm>
@@ -61,17 +63,18 @@ std::string_view describe(engine::CameraMode mode) {
 Result<std::unique_ptr<ModelScene>> ModelScene::create(engine::AssetManager& assets, render::Renderer& renderer,
                                                        JobSystem& jobs, std::optional<std::filesystem::path> model,
                                                        std::optional<std::filesystem::path> environment,
-                                                       std::filesystem::path sceneFile) {
+                                                       std::filesystem::path sceneFile, audio::AudioEngine* sound) {
   auto physicsWorld = physics::PhysicsWorld::create({}, &jobs);
   if (!physicsWorld) return tl::unexpected(std::move(physicsWorld.error()));
-  std::unique_ptr<ModelScene> scene(new ModelScene(assets, std::move(*physicsWorld), std::move(sceneFile)));
+  std::unique_ptr<ModelScene> scene(new ModelScene(assets, std::move(*physicsWorld), std::move(sceneFile), sound));
   scene->build(renderer, std::move(model), std::move(environment));
   return scene;
 }
 
 ModelScene::ModelScene(engine::AssetManager& assets, std::unique_ptr<physics::PhysicsWorld> physics,
-                       std::filesystem::path sceneFile)
-    : assets_(assets), physicsWorld_(std::move(physics)), physics_(*physicsWorld_), editor_(std::move(sceneFile)) {}
+                       std::filesystem::path sceneFile, audio::AudioEngine* sound)
+    : assets_(assets), physicsWorld_(std::move(physics)), physics_(*physicsWorld_), editor_(std::move(sceneFile)),
+      sound_(sound) {}
 
 void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem::path> model,
                        std::optional<std::filesystem::path> environment) {
@@ -95,6 +98,18 @@ void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem
   world_.add<engine::Name>(sun, engine::Name{"sun"});
   world_.add<engine::Light>(sun, engine::Light{.direction = glm::normalize(kSunDirection),
                                                .colour = {1.0f, 0.95f, 0.88f}, .intensity = 3.2f});
+
+  // Sounds, made from maths (audio/Synth.h): no files needed.
+  if (sound_ != nullptr) {
+    auto clip = [&](const audio::Pcm& pcm, const char* name) {
+      auto id = sound_->addClip(pcm.samples, 1, pcm.sampleRate, name);
+      if (!id) log::warn(Category::Game, "no \"{}\" sound: {}", name, id.error().message);
+      return id ? *id : audio::ClipId{};
+    };
+    laserClip_ = clip(audio::synth::laser(sound_->sampleRate()), "laser");
+    impactClip_ = clip(audio::synth::impact(sound_->sampleRate()), "impact");
+    humClip_ = clip(audio::synth::hum(sound_->sampleRate()), "hum");
+  }
 
   // The ground: a solid slab under y = 0, in both kinds of scene.
   invisible("ground", {0.0f, -0.5f, 0.0f}, ShapeDesc::box({12.0f, 0.5f, 12.0f}));
@@ -125,7 +140,11 @@ void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem
                                    yawDegrees(15.0f), glm::vec3(0.38f));
     solid(helmet, MotionType::Static, ShapeDesc::sphere(0.34f));
     for (const auto& [name, x, z] : {std::tuple{"lamp", -2.7f, -0.4f}, std::tuple{"lamp 2", 2.8f, -0.2f}}) {
-      add(name, "models/lamp.glb", {x, 0.0f, z});  // the same file: loaded once
+      const ecs::Entity lamp = add(name, "models/lamp.glb", {x, 0.0f, z});  // the same file: loaded once
+      if (humClip_.valid()) {  // each lamp hums, placed in 3D: walk round them and it moves between your ears
+        world_.add<engine::AudioSource>(lamp, engine::AudioSource{.clip = humClip_, .volume = 0.35f, .loop = true,
+                                                                  .minDistance = 0.8f, .maxDistance = 12.0f});
+      }
       invisible(std::string(name) + " post", {x, 0.8f, z}, ShapeDesc::capsule(0.66f, 0.1f));
     }
 
@@ -226,6 +245,18 @@ void ModelScene::relink() {
     if (name.value == "crate" && body.motion == MotionType::Kinematic) spinner_ = e;
   });
   if (walker_.valid()) walkerStart_ = world_.get<engine::Transform3D>(walker_).position;
+  // The ears: an entity riding the camera (made again after a scene load,
+  // which keeps only what scene files hold).
+  listener_ = {};
+  world_.each<engine::AudioListener>([&](ecs::Entity e, engine::AudioListener&) {
+    if (!listener_.valid()) listener_ = e;
+  });
+  if (!listener_.valid()) {
+    listener_ = world_.create();
+    world_.add<engine::Name>(listener_, engine::Name{"listener (camera)"});
+    world_.add<engine::Transform3D>(listener_);
+    world_.add<engine::AudioListener>(listener_);
+  }
 }
 
 void ModelScene::resetView() {
@@ -265,6 +296,7 @@ void ModelScene::fixedUpdate(const FixedStep& step, const platform::InputState& 
   if (input.pressed(platform::MouseButton::Middle)) pick(input);
 
   physics_.step(world_, dt);
+  playImpacts();
 }
 
 // A hitscan shot from the eye, where the camera looks.
@@ -273,12 +305,14 @@ void ModelScene::shoot() {
   ++shots_;
   const glm::vec3 eye = world_.get<engine::Transform3D>(walker_).position + glm::vec3(0.0f, kEyeHeight, 0.0f);
   const glm::vec3 direction = controller_.forward();
+  playAt(laserClip_, eye, 0.5f, /*spatial=*/false);  // your own gun: in both ears
   const auto hit = physicsWorld_->raycast(eye, direction, kShotRange);
   if (!hit) {
     log::info(Category::Game, "shot {}: missed", shots_);
     return;
   }
   ++hits_;
+  playAt(impactClip_, hit->point, 0.9f);  // where it hit: from that direction, that far away
   const auto body = world_.alive(hit->entity) ? world_.tryGet<engine::RigidBody>(hit->entity) : nullptr;
   const bool pushed = body != nullptr && body->motion == MotionType::Dynamic;
   if (pushed) {
@@ -288,6 +322,25 @@ void ModelScene::shoot() {
   log::info(Category::Game, "shot {}: hit {} at {:.2f} m, point ({:.2f}, {:.2f}, {:.2f}), normal ({:.2f}, {:.2f}, "
             "{:.2f}){}", shots_, nameOf(hit->entity), hit->distance, hit->point.x, hit->point.y, hit->point.z,
             hit->normal.x, hit->normal.y, hit->normal.z, pushed ? ": pushed" : "");
+}
+
+void ModelScene::playAt(audio::ClipId clip, glm::vec3 where, f32 volume, bool spatial) {
+  if (sound_ == nullptr || !clip.valid()) return;
+  if (auto voice = sound_->play(clip, {.volume = volume, .spatial = spatial, .position = where}); !voice) {
+    log::debug(Category::Game, "sound not played: {}", voice.error().message);
+  }
+}
+
+// Things hitting each other knock, where they hit, as loud as they hit:
+// the stack landing at the start, a crate shot into another. The hardest
+// few of each step (a pile landing at once would be a din, not a sound).
+void ModelScene::playImpacts() {
+  std::vector<physics::ContactEvent> contacts = physicsWorld_->takeContactEvents();
+  if (sound_ == nullptr || contacts.empty()) return;
+  std::sort(contacts.begin(), contacts.end(), [](const auto& a, const auto& b) { return a.speed > b.speed; });
+  for (usize i = 0; i < std::min<usize>(contacts.size(), 3); ++i) {
+    playAt(impactClip_, contacts[i].point, std::clamp(contacts[i].speed / 6.0f, 0.15f, 1.0f));
+  }
 }
 
 // What is under the mouse: a ray from the camera through the cursor.
@@ -354,6 +407,15 @@ void ModelScene::update(const FrameTime& time, const platform::InputState& input
     controller_.setEye(world_.get<engine::Transform3D>(walker_).position + glm::vec3(0.0f, kEyeHeight, 0.0f));
   }
   controller_.update(input, static_cast<f32>(time.deltaSeconds), camera_);
+
+  // The ears follow the camera; then every sound follows its entity.
+  if (sound_ != nullptr && world_.alive(listener_)) {
+    auto& ears = world_.get<engine::Transform3D>(listener_);
+    ears.position = camera_.position;
+    const glm::vec3 look = camera_.target - camera_.position;
+    if (glm::length(look) > 1e-6f) ears.rotation = glm::quatLookAt(glm::normalize(look), camera_.up);
+    engine::audioSystem(world_, *sound_, static_cast<f32>(time.deltaSeconds));
+  }
 
   if (!started_) {
     startEye_ = lastEye_ = camera_.position;
@@ -423,6 +485,11 @@ void ModelScene::extract(render::FrameData& frame, f64 alpha) {
 void ModelScene::drawDebugUi(engine::ProfilerData data) {
   data.entities = world_.entityCount();
   data.physics = physicsWorld_->stats();
+  if (sound_ != nullptr) {
+    data.audio = engine::AudioProfile{.output = std::string(audio::describe(sound_->output())),
+                                      .playing = sound_->stats().voicesPlaying,
+                                      .started = sound_->stats().voicesStarted};
+  }
   if (editor_.draw(world_, data, &physics_)) relink();  // a loaded scene: new entities
 }
 
@@ -447,6 +514,10 @@ void ModelScene::logSummary() {
             at.x, at.y, at.z, glm::length(at - walkerStart_),
             describe(world_.get<engine::CharacterController>(walker_).ground), shots_, hits_, pushes_, stats.steps,
             stats.bodies, stats.activeBodies);
+  if (sound_ != nullptr) {
+    log::info(Category::Game, "audio: {} sound(s) played on the {}", sound_->stats().voicesStarted,
+              audio::describe(sound_->output()));
+  }
 }
 
 }  // namespace playground::app

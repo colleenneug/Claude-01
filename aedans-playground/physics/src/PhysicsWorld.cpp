@@ -35,6 +35,7 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
@@ -299,6 +300,27 @@ class JobBridge final : public JPH::JobSystemWithBarrier {
   JobCounter pending_;
 };
 
+// New contacts, collected as Jolt finds them (on any of its threads).
+class ContactRecorder final : public JPH::ContactListener {
+ public:
+  void OnContactAdded(const JPH::Body& a, const JPH::Body& b, const JPH::ContactManifold& manifold,
+                      JPH::ContactSettings&) override {
+    const JPH::RVec3 point = manifold.GetWorldSpaceContactPointOn1(0);
+    const JPH::Vec3 relative = a.GetPointVelocity(point) - b.GetPointVelocity(point);
+    const f32 speed = std::abs(relative.Dot(manifold.mWorldSpaceNormal));
+    if (speed < minSpeed) return;
+    const std::scoped_lock lock(mutex);
+    if (events.size() >= PhysicsWorld::kMaxContactEvents) return;  // nobody is taking them: do not grow forever
+    events.push_back({.a = unpack(a.GetUserData()), .b = unpack(b.GetUserData()), .bodyA = toId(a.GetID()),
+                      .bodyB = toId(b.GetID()), .point = toGlm(JPH::Vec3(point)),
+                      .normal = toGlm(manifold.mWorldSpaceNormal), .speed = speed});
+  }
+
+  f32 minSpeed = 0.5f;
+  std::mutex mutex;
+  std::vector<ContactEvent> events;
+};
+
 struct LibraryUse {
   LibraryUse() { acquireLibrary(); }
   ~LibraryUse() { releaseLibrary(); }
@@ -329,6 +351,7 @@ struct PhysicsWorld::Impl {
   bool multithreaded = false;
   JPH::PhysicsSystem system;
   JPH::CharacterVsCharacterCollisionSimple characterVsCharacter;
+  ContactRecorder contacts;
 
   struct Character {
     JPH::Ref<JPH::CharacterVirtual> character;
@@ -400,6 +423,8 @@ Result<std::unique_ptr<PhysicsWorld>> PhysicsWorld::create(const PhysicsWorldDes
   impl->system.Init(desc.maxBodies, 0, desc.maxBodyPairs, desc.maxContactConstraints, impl->broadPhaseLayers,
                     impl->objectVsBroadPhase, impl->objectPairs);
   impl->system.SetGravity(toJolt(desc.gravity));
+  impl->contacts.minSpeed = desc.minContactSpeed;
+  impl->system.SetContactListener(&impl->contacts);
   log::info(Category::Engine, "physics: Jolt {}.{}.{} ready (up to {} bodies, {}, gravity {:.2f} m/s²)",
             JPH_VERSION_MAJOR, JPH_VERSION_MINOR, JPH_VERSION_PATCH, desc.maxBodies,
             impl->multithreaded ? std::format("{} worker threads", jobs->workerCount()) : std::string("one thread"),
@@ -630,6 +655,19 @@ std::optional<RaycastHit> PhysicsWorld::raycast(glm::vec3 origin, glm::vec3 dire
 }
 
 glm::vec3 PhysicsWorld::gravity() const noexcept { return toGlm(impl_->system.GetGravity()); }
+
+std::vector<ContactEvent> PhysicsWorld::takeContactEvents() {
+  std::vector<ContactEvent> events;
+  {
+    const std::scoped_lock lock(impl_->contacts.mutex);
+    events.swap(impl_->contacts.events);
+  }
+  // Jolt's threads find contacts in any order: sort, so the result does not depend on them.
+  std::sort(events.begin(), events.end(), [](const ContactEvent& x, const ContactEvent& y) {
+    return x.bodyA.value != y.bodyA.value ? x.bodyA.value < y.bodyA.value : x.bodyB.value < y.bodyB.value;
+  });
+  return events;
+}
 
 PhysicsStats PhysicsWorld::stats() const {
   return {.steps = impl_->steps, .bodies = impl_->system.GetNumBodies(),

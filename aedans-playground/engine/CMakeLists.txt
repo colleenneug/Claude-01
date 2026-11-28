@@ -4,6 +4,7 @@ add_library(playground_engine STATIC
   src/Actions.cpp
   src/Application.cpp
   src/Assets.cpp
+  src/Audio.cpp
   src/Camera.cpp
   src/CameraController.cpp
   src/DebugUi.cpp
@@ -18,7 +19,7 @@ add_library(playground::engine ALIAS playground_engine)
 
 target_include_directories(playground_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(playground_engine
-  PUBLIC  playground::render playground::ecs playground::physics
+  PUBLIC  playground::render playground::ecs playground::physics playground::audio
   PRIVATE playground_gltf            # tinygltf + stb_image: only Gltf.cpp sees them
           nlohmann_json::nlohmann_json   # scene files (SceneSerializer.cpp)
           playground_imgui)              # the developer UI (DebugUi.cpp, Editor.cpp)

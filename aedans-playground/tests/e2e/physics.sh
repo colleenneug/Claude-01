@@ -10,7 +10,8 @@
 #    - the walker moved (more than 1.5 m) and ended on the ground;
 #    - the shot was fired and hit something (looking down, at least the
 #      ground), and was logged with what it hit;
-#    - the physics stepped, with the scene's bodies in it.
+#    - the physics stepped, with the scene's bodies in it;
+#    - sounds played: the shot's laser and impact, and crates landing.
 #
 #  Needs a display and xdotool; without either it exits 77 (CTest: skipped).
 #  Usage: physics.sh <playground_app> <log file>
@@ -71,4 +72,9 @@ grep -q 'shot 1: hit ' "$LOG" || { echo "FAIL: the shot was not logged with what
 steps=$(echo "$line" | sed -n 's/.*physics: \([0-9]*\) steps, \([0-9]*\) bodies.*/\1 \2/p')
 set -- $steps
 [ -n "$1" ] && [ "$1" -ge 120 ] && [ "$2" -ge 20 ] || { echo "FAIL: physics steps and bodies: '$steps'"; exit 1; }
+# Sound (on the null device in tests): the shot's laser and its impact at
+# least, plus the stack's crates knocking as they land.
+sounds=$(sed -n 's/.*audio: \([0-9]*\) sound(s) played.*/\1/p' "$LOG" | head -1)
+[ -n "$sounds" ] && [ "$sounds" -ge 2 ] || { echo "FAIL: '$sounds' sounds played, expected at least 2"; exit 1; }
+echo "$sounds sounds played"
 echo "PASS"

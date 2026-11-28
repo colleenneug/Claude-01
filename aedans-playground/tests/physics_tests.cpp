@@ -502,3 +502,31 @@ TEST_CASE("ECS sync: a character walks where the game asks, jumps once per reque
   REQUIRE(hit.has_value());
   CHECK(hit->point.y == doctest::Approx(0.0f).epsilon(1e-4));
 }
+
+TEST_CASE("contact events: a box landing on the floor is reported once, with its entities and impact speed") {
+  JobSystem jobs(2);
+  auto world = makeWorld(&jobs);
+  const ecs::Entity floorEntity{.index = 1, .generation = 0};
+  const ecs::Entity boxEntity{.index = 2, .generation = 5};
+  addFloor(*world, floorEntity);
+  auto box = world->addBody({.shape = ShapeDesc::box(glm::vec3(0.5f)), .position = {0.0f, 3.0f, 0.0f},
+                             .linearDamping = 0.0f}, boxEntity);
+  REQUIRE(box.has_value());
+  std::vector<physics::ContactEvent> events;
+  for (int i = 0; i < 240; ++i) {
+    world->step(kStep);
+    for (const physics::ContactEvent& e : world->takeContactEvents()) events.push_back(e);
+  }
+  REQUIRE_FALSE(events.empty());
+  const physics::ContactEvent& first = events.front();
+  const bool floorFirst = first.a == floorEntity;
+  CHECK((floorFirst ? first.b : first.a) == boxEntity);
+  // Dropped 2.5 m (its bottom from 2.5 to 0): sqrt(2 g h) = 7 m/s.
+  CHECK(first.speed == doctest::Approx(std::sqrt(2.0f * 9.81f * 2.5f)).epsilon(0.08));
+  CHECK(std::abs(first.point.y) < 0.1f);
+  CHECK(std::abs(first.normal.y) > 0.99f);
+  // Resting there afterwards is not a new contact each step.
+  CHECK(events.size() <= 4);
+  run(*world, 120);
+  CHECK(world->takeContactEvents().empty());
+}

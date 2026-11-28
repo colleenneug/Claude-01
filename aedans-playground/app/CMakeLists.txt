@@ -1,5 +1,5 @@
 add_executable(playground_app main.cpp ModelScene.cpp NetScene.cpp Server.cpp SpriteScene.cpp)
-target_link_libraries(playground_app PRIVATE playground::engine playground::game playground::physics)
+target_link_libraries(playground_app PRIVATE playground::engine playground::game playground::physics playground::audio)
 playground_configure_target(playground_app)
 
 # Game files: text and glTF models (app/assets/models, made by

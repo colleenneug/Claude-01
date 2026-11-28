@@ -20,6 +20,7 @@
         "vulkan-binding"
       ]
     },
-    "nlohmann-json"
+    "nlohmann-json",
+    "miniaudio"
   ]
 }

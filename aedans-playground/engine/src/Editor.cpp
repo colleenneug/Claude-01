@@ -257,6 +257,11 @@ void Editor::drawProfiler(const ProfilerData& data) {
       ImGui::Text("physics      %zu bodies, %zu awake, %zu character(s)", data.physics->bodies,
                   data.physics->activeBodies, data.physics->characters);
     }
+    if (data.audio) {
+      ImGui::Text("audio        %zu playing, %llu started", data.audio->playing,
+                  static_cast<unsigned long long>(data.audio->started));
+      ImGui::TextDisabled("             %s", data.audio->output.c_str());
+    }
     if (data.net) {
       const NetProfile& n = *data.net;
       ImGui::Separator();

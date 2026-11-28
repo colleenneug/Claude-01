@@ -1,5 +1,6 @@
 #include "SpriteScene.h"
 
+#include "playground/audio/Synth.h"
 #include "playground/core/Log.h"
 #include "playground/engine/Components.h"
 #include "playground/engine/Systems.h"
@@ -82,8 +83,13 @@ void spawnBullet(ecs::World& world, glm::vec2 from, glm::vec2 direction) {
 
 }  // namespace
 
-SpriteScene::SpriteScene(engine::Application& application, u32 spriteCount, std::filesystem::path sceneFile)
-    : application_(application), editor_(std::move(sceneFile)) {
+SpriteScene::SpriteScene(engine::Application& application, u32 spriteCount, std::filesystem::path sceneFile,
+                         audio::AudioEngine* sound)
+    : application_(application), editor_(std::move(sceneFile)), sound_(sound) {
+  if (sound_ != nullptr) {
+    const audio::Pcm laser = audio::synth::laser(sound_->sampleRate());
+    if (auto clip = sound_->addClip(laser.samples, 1, laser.sampleRate, "laser")) laserClip_ = *clip;
+  }
   spawnBouncingSprites(world_, spriteCount, bounds_.halfSize);
   player_ = spawnPlayer(world_);
   // Orthographic: the whole world, fitted to the window.
@@ -130,6 +136,11 @@ void SpriteScene::fixedUpdate(const FixedStep& step, const platform::InputState&
                  direction.x, direction.y);
     }
     spawnBullet(world_, from, direction);
+    if (sound_ != nullptr && laserClip_.valid()) {
+      // Panned by where the player is: the listener sits 2 m in front of the
+      // playfield's middle, and 400 pixels count as a metre to the side.
+      (void)sound_->play(laserClip_, {.volume = 0.5f, .position = {from.x / 400.0f, 0.0f, -2.0f}, .minDistance = 3.0f});
+    }
     ++bulletsFired_;
   }
   if (input.pressed(platform::MouseButton::Right)) {  // click a sprite: it goes
@@ -144,6 +155,7 @@ void SpriteScene::fixedUpdate(const FixedStep& step, const platform::InputState&
 }
 
 void SpriteScene::update(const FrameTime& /*time*/, const platform::InputState& input) {
+  if (sound_ != nullptr) sound_->update();  // frees finished shots
   if (input.pressed(platform::Key::C)) {
     const bool to3d = camera_.projection == engine::Projection::Orthographic;
     setProjection(to3d ? engine::Projection::Perspective : engine::Projection::Orthographic);

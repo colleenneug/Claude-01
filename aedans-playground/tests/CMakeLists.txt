@@ -67,6 +67,15 @@ playground_configure_target(playground_physics_tests)
 add_test(NAME physics_tests COMMAND playground_physics_tests)
 set_tests_properties(physics_tests PROPERTIES LABELS "physics;threads")
 
+# --- Audio: miniaudio behind audio::AudioEngine, and the ECS audio system -------
+# No sound card needed (manual mixing, the null device). Also under
+# ThreadSanitizer (label "threads"): the null device has an audio thread.
+add_executable(playground_audio_tests audio_tests.cpp)
+target_link_libraries(playground_audio_tests PRIVATE playground::engine doctest::doctest)
+playground_configure_target(playground_audio_tests)
+add_test(NAME audio_tests COMMAND playground_audio_tests)
+set_tests_properties(audio_tests PROPERTIES LABELS "audio;threads")
+
 # --- Scene files: JSON round trips of an ecs::World ---------------------------
 add_executable(playground_scene_tests scene_tests.cpp)
 target_link_libraries(playground_scene_tests PRIVATE playground::engine doctest::doctest)
@@ -180,6 +189,16 @@ if(UNIX AND NOT APPLE)
            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/netclient.sh $<TARGET_FILE:playground_app> netclient_e2e)
   set_tests_properties(netclient_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;net" TIMEOUT 90)
 endif()
+
+# --- Sound in the real-app tests ----------------------------------------------
+# The game opens the sound card when there is one. Tests should never make a
+# developer's speakers go off: they use miniaudio's null device (same mixing,
+# not heard). ENVIRONMENT_MODIFICATION adds to, not replaces, any preload set below.
+foreach(appTest app_smoke keyboard_e2e camera_e2e physics_e2e ui_e2e netclient_e2e)
+  if(TEST ${appTest})
+    set_property(TEST ${appTest} APPEND PROPERTY ENVIRONMENT_MODIFICATION "PLAYGROUND_AUDIO=set:null")
+  endif()
+endforeach()
 
 # --- Sanitizer builds and Mesa's software Vulkan driver ----------------------
 # Mesa's presentation thread keeps its allocations reachable only from the

@@ -52,12 +52,19 @@ struct NetProfile {
   usize knownEntities = 0;
 };
 
+struct AudioProfile {
+  std::string output;
+  usize playing = 0;
+  u64 started = 0;
+};
+
 struct ProfilerData {
   FrameProfile frame;
   render::Renderer::FrameStats render;
   usize entities = 0;
   std::optional<physics::PhysicsStats> physics;
   std::optional<NetProfile> net;
+  std::optional<AudioProfile> audio;
 };
 
 class Editor {
