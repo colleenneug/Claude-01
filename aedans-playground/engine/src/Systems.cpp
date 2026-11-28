@@ -7,6 +7,8 @@
 #include <numbers>
 
 #include <glm/common.hpp>  // glm::abs
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace playground::engine {
 
@@ -80,6 +82,16 @@ std::optional<ecs::Entity> pickSprite(ecs::World& world, glm::vec2 point) {
     }
   });
   return best;
+}
+
+glm::mat4 interpolatedMatrix(const Transform3D& transform, f32 alpha) noexcept {
+  glm::vec3 position = transform.position;
+  glm::quat rotation = transform.rotation;
+  if (transform.hasPrevious) {
+    position = glm::mix(transform.previousPosition, transform.position, alpha);
+    rotation = glm::slerp(transform.previousRotation, transform.rotation, alpha);  // takes the short way
+  }
+  return glm::scale(glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation), transform.scale);
 }
 
 glm::vec2 interpolatePosition(const Transform& transform, f32 alpha) noexcept {

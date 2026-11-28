@@ -11,7 +11,9 @@
 
 #include "playground/core/Types.h"
 
+#include <glm/gtc/quaternion.hpp>
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
 namespace playground::engine {
@@ -50,6 +52,33 @@ struct Transform {
     position = previousPosition = newPosition;
     rotation = previousRotation = newRotation;
     hasPrevious = true;
+  }
+};
+
+// The same for the 3D world (metres; +y up): position, rotation, scale,
+// and the state at the start of the last step, to draw blended between the
+// two (interpolatedMatrix, Systems.h). Physics (Physics.h) moves it and keeps
+// `previous...` right; anything else that moves one calls snapshot() at the
+// start of its step, or teleport() to jump without a blend.
+// (2D Transform stays for sprites and the network game, which are 2D.)
+struct Transform3D {
+  glm::vec3 position{0.0f};
+  glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+  glm::vec3 scale{1.0f};  // drawing only: colliders have their own size
+
+  glm::vec3 previousPosition{0.0f};
+  glm::quat previousRotation{1.0f, 0.0f, 0.0f, 0.0f};
+  bool hasPrevious = false;  // as for Transform: no streak on the first frame
+
+  void snapshot() noexcept {
+    previousPosition = position;
+    previousRotation = rotation;
+    hasPrevious = true;
+  }
+  void teleport(glm::vec3 newPosition, glm::quat newRotation) noexcept {
+    position = newPosition;
+    rotation = newRotation;
+    snapshot();
   }
 };
 

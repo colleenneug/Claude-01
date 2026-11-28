@@ -3,7 +3,7 @@
 //  playground/engine/CameraController.h — steering a 3D camera with the
 //  mouse and keyboard.
 //
-//  Two ways to move, switched with setMode() (the demo uses Tab):
+//  Three ways to move, switched with setMode() (the demo uses Tab):
 //
 //    ORBIT  (looking at a model) The camera circles a TARGET point at a
 //           distance, always facing it, like a turntable.
@@ -18,6 +18,10 @@
 //             E / Space      up;  Q / Ctrl  down   (world up, not view up)
 //             right-drag     look around
 //             Shift          4x faster;  wheel  change the speed
+//
+//    WALK   (seeing through a character's eyes) Only looking: the game
+//           moves the eye each frame (setEye) with whatever it is walking.
+//             right-drag     look around
 //
 //  YAW is the turn left/right about the world's up axis (yaw 0 looks along
 //  -z, the way the default camera does); PITCH is the tilt up (+) or down
@@ -40,7 +44,7 @@
 
 namespace playground::engine {
 
-enum class CameraMode : u8 { Orbit, Fly };
+enum class CameraMode : u8 { Orbit, Fly, Walk };
 
 struct CameraControls {
   f32 dragRadiansPerPixel = 0.006f;  // orbit spin/tilt and fly look
@@ -65,6 +69,8 @@ class CameraController {
   void frame(glm::vec3 centre, f32 radius, f32 fovY, f32 yaw = 0.0f, f32 pitch = -0.35f) noexcept;
 
   void setMode(CameraMode mode) noexcept;  // keeps the current view
+  // Fly and Walk: put the eye here (keeps the direction it looks).
+  void setEye(glm::vec3 eye) noexcept { position_ = eye; }
   [[nodiscard]] CameraMode mode() const noexcept { return mode_; }
 
   // Applies this frame's input, then writes the result into `camera`
@@ -82,6 +88,7 @@ class CameraController {
  private:
   void updateOrbit(const platform::InputState& input, f32 dt, glm::vec2 mouseDelta) noexcept;
   void updateFly(const platform::InputState& input, f32 dt, glm::vec2 mouseDelta) noexcept;
+  void updateLook(const platform::InputState& input, glm::vec2 mouseDelta) noexcept;
   void clampPitch() noexcept;
 
   CameraControls controls_;

@@ -8,13 +8,13 @@ to build, run and troubleshoot is in `README.md`.
   engine architecture, memory management and data-oriented design, and to
   host **Erebus Cradle** (the OpenGL 4.1 game in `../cpp/`) once it is ready.
 - **Where:** repository `colleenneug/Claude-01`, folder `aedans-playground/`,
-  branch `claude/relaxed-cray-5kc2fl` (34 commits, `d065ae6` → this one). No
+  branch `claude/relaxed-cray-5kc2fl` (35 commits, `d065ae6` → this one). No
   pull request open.
-- **Size:** about 16,800 lines of engine code and shaders, and 6,800 lines
-  of tests.
+- **Size:** about 18,000 lines of engine code and shaders (plus Jolt,
+  vendored), and 7,400 lines of tests.
 - **State at this snapshot:**
-  - `xvfb-run -a ctest --preset debug` passes **24/24**: 18 suites with
-    **231 test cases**, plus 6 end-to-end and smoke checks.
+  - `xvfb-run -a ctest --preset debug` passes **26/26**: 19 suites with
+    **248 test cases**, plus 7 end-to-end and smoke checks.
   - A clean rebuild has **0 warnings** (warnings are errors).
   - **0 Vulkan validation errors**. (The one `[error] [gpu]` line in the
     test log is gpu_tests' deliberately injected "expected" message.)
@@ -51,7 +51,8 @@ to build, run and troubleshoot is in `README.md`.
 Each folder is a static library with its own public `include/`. A layer may
 include only the layers below it, so a wrong `#include` is a build error.
 Vulkan types never appear above `render`'s private sources; ENet never
-appears outside `net/src/Host.cpp`; tinygltf and stb never appear outside
+appears outside `net/src/Host.cpp`; Jolt never appears outside
+`physics/src/PhysicsWorld.cpp`; tinygltf and stb never appear outside
 `engine/src/Gltf*.cpp` and `EnvironmentAsset.cpp`.
 
 ```
@@ -60,9 +61,9 @@ appears outside `net/src/Host.cpp`; tinygltf and stb never appear outside
             game (protocol, prediction, server, client)
            /   \
       engine    net ──────────┐
-       /  \                   │
-  render   ecs                │
-    │  (gpu private)          │
+     /   |  \                 │
+render physics ─ ecs          │
+    │  (gpu private; Jolt private to physics)
    gpu                        │
     │                         │
  platform                     │
@@ -77,10 +78,11 @@ appears outside `net/src/Host.cpp`; tinygltf and stb never appear outside
 | **gpu** (`playground_gpu`) | platform, Vulkan 1.3, VMA (vendored v3.3.0 on Linux) | Vulkan bring-up: instance and validation (messages counted; any error fails the app), surface, GPU selection with every rejection reason logged, logical device and queues (dynamic rendering, synchronization2, timeline semaphores, descriptor indexing with update-after-bind, buffer device address, optional anisotropy); memory (VMA); buffers (host-visible, device-local via staging, readback); images (2D, cube, arrays, mip chains built by blits); samplers; swapchain (sRGB or UNORM, rebuilt on resize); RAII for every handle | `Context`, `Device`, `Allocator`, `Buffer`, `Image`, `createTexture`, `Sampler`, `Swapchain`, `DeviceHandle<T>`, `transitionImage` |
 | **ecs** (`playground_ecs`) | core | sparse-set entity/component storage, generational entity handles, multi-component iteration, deferred destruction | `World`, `Entity`, `ComponentPool<T>` |
 | **render** (`playground_render`) | platform, glm; gpu **private** | the `Renderer` interface and Vulkan-free frame description (`FrameData`, meshes, materials, lights, environment, shadow/bloom/tone-map settings); the Vulkan renderer: instanced sprites, meshes with bindless PBR textures, image-based lighting baked on the GPU, a skybox, sun shadow maps, an HDR target, bloom, ACES/PBR Neutral tone mapping, sRGB-correct composite, frame capture for pixel tests; GPU resources behind generational handles with deferred freeing | `Renderer`, `FrameData`, `MeshData`, `Material`, `MeshInstance`, `ProceduralSky`, `HdrImage`, `Aabb`, `directionalShadowMatrix`; private: `VulkanRenderer`, `Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess` |
-| **engine** (`playground_engine`) | render, ecs; tinygltf + stb **private** | the application loop (window + fixed steps + update + extract + render); cameras (orthographic/perspective, reverse-Z, screen ↔ world) and an orbit/fly controller; the **asset manager** (decode on workers, finalize on the main thread, generational handles, cache by path); glTF 2.0 models and HDR panoramas as assets; components and systems (movement, bounce, input, lifetime, sprite extraction, picking); input actions | `Application`, `Camera`, `CameraController`, `AssetManager`, `AssetHandle<T>`, `Model`, `gltfLoader`, `EnvironmentAsset`, `ActionMap`, `Transform`, `Velocity`, `Sprite` |
+| **engine** (`playground_engine`) | render, ecs, physics; tinygltf + stb **private** | the application loop (window + fixed steps + update + extract + render); cameras (orthographic/perspective, reverse-Z, screen ↔ world) and an orbit/fly/walk controller; `Transform3D` and the physics components (`RigidBody`, `Collider`, `CharacterController`) with `PhysicsSystem`, the fixed-step sync; the **asset manager** (decode on workers, finalize on the main thread, generational handles, cache by path); glTF 2.0 models and HDR panoramas as assets; components and systems (movement, bounce, input, lifetime, sprite extraction, picking); input actions | `Application`, `Camera`, `CameraController`, `AssetManager`, `AssetHandle<T>`, `Model`, `gltfLoader`, `EnvironmentAsset`, `ActionMap`, `Transform`, `Velocity`, `Sprite` |
 | **net** (`playground_net`, alias `engine_net`) | core, glm; ENet **private** | the network transport (server or client hosts; reliable-ordered and unreliable-unsequenced channels; events; `disconnectAfterSending`), **simulated latency, jitter and loss** for tests, bit-level serialization (endian-safe, overrun-proof), quantization (bounded floats, vectors, smallest-three quaternions) | `Host`, `Peer`, `Packet`, `Event`, `Channel`, `NetworkConditions`, `BitWriter`, `BitReader`, `quantize`, `writeQuaternion` |
 | **game** (`playground_game`) | engine, net | the networked game, with no window or GPU: the **wire protocol v3** (Hello, Welcome, Reject, Spawn, Despawn, Input, Snapshot) with **delta snapshots**; the **movement rule** both sides run; the server's per-client **input queue** (ordered, deduplicated, rate-limited); client **prediction** (ring, reconcile, replay) and **interpolation** (snapshot buffer, render clock); the authoritative **server** and the **client** | `protocol::*`, `stepPlayer`, `InputQueue`, `Prediction`, `SnapshotBuffer`, `InterpolationClock`, `GameServer`, `GameClient` |
-| **app** (`playground_app`) | engine, game | the program: start-up order, command-line options; the **3D scene** (floor, crates, PBR spheres, lamps, the helmet; sun shadows, sky, bloom; orbit/fly camera; `--model`, `--environment`); the **2D scene** (25,000 bouncing sprites, a player, bullets aimed with the mouse); the **network scene** (`--connect`: the server's world, your player predicted); the **dedicated server** and a headless bot | `Scene`, `ModelScene`, `SpriteScene`, `NetScene`, `runServer`, `runClient` |
+| **physics** (`playground_physics`, alias `engine_physics`) | core, ecs, glm; Jolt **private** | `PhysicsWorld` over Jolt Physics v5.3.0 (vendored in `third_party/JoltPhysics`, built cross-platform deterministic by `cmake/jolt`): bodies (box/sphere/capsule/mesh; static/kinematic/dynamic), characters (`JPH::CharacterVirtual`: slopes, stairs, walls, pushing), raycasts with layer masks, a bridge running Jolt's jobs on our `JobSystem` | `PhysicsWorld`, `BodyDesc`, `ShapeDesc`, `BodyId`, `CharacterDesc`, `CharacterMove`, `CharacterState`, `RaycastHit`, `Layer` |
+| **app** (`playground_app`) | engine, game, physics | the program: start-up order, command-line options; the **3D scene** (floor, crates, PBR spheres, lamps, the helmet, a ramp, stairs, a falling stack; all physics bodies in an ECS; sun shadows, sky, bloom; orbit/fly/walk camera; hitscan shooting and mouse picking; `--model`, `--environment`); the **2D scene** (25,000 bouncing sprites, a player, bullets aimed with the mouse); the **network scene** (`--connect`: the server's world, your player predicted); the **dedicated server** and a headless bot | `Scene`, `ModelScene`, `SpriteScene`, `NetScene`, `runServer`, `runClient` |
 
 Also: `tests/` (doctest suites, end-to-end shell scripts), `tools/`
 (`make_demo_assets.py`), `third_party/` (`tl::expected`, VMA), `cmake/`
@@ -249,7 +251,7 @@ procedural sky is baked at start-up, so headless tests stay quick.
 
 ---
 
-## 3. Completed Milestones (Steps 1–9)
+## 3. Completed Milestones (Steps 1–10)
 
 Each item was run and verified: tests in that step, plus every earlier
 test still passing.
@@ -340,6 +342,30 @@ test still passing.
     the demo, where all 64 balls move and spin every tick, 368 → 294
     bytes per snapshot (−20%).
 
+- [x] **Step 10: Jolt Physics** (this commit)
+  - `physics/` (`engine_physics`): Jolt v5.3.0 vendored and built by our
+    own `cmake/jolt` (deterministic, SSE4.2 baseline, no Jolt flags leaking,
+    its headers SYSTEM for us); `joltphysics` in `vcpkg.json` for Windows.
+  - `PhysicsWorld` (RAII; Jolt's globals counted like ENet's): bodies,
+    characters, impulses, kinematic moves, raycasts with layer masks; a
+    `JPH::JobSystemWithBarrier` bridge onto our `JobSystem`.
+  - `engine/`: `Transform3D`, `RigidBody`, `Collider`,
+    `CharacterController`, `PhysicsSystem` (create/remove with entities,
+    teleports and kinematic targets in, results out with clean previous
+    transforms), `interpolatedMatrix`; a Walk camera mode.
+  - The 3D demo: every solid thing a body; a turning kinematic crate, a
+    falling stack, a ramp, stairs; walk mode with jumping; hitscan
+    shooting with impulses; middle-click picking.
+  - Tests: `physics_tests` (17 cases: free fall vs ½gt², landing and
+    sleeping, restitution, mass, refusals, kinematic pushing, walking and
+    jumping, slopes, stairs, wall sliding, raycasts incl. masks and
+    meshes, determinism one thread vs four workers bit for bit, the job
+    bridge, ECS sync and interpolation), `physics_e2e` (real input walks
+    and shoots).
+  - Sanitizers: Jolt is included first in its one file (spdlog defines a
+    fake `__has_feature` that hid TSan from Jolt); UBSan's vptr check is
+    off for Jolt's sources only (a deliberate Jolt trick it flags).
+
 **Verification as of this snapshot:**
 
 | Suite (test cases) | What it covers |
@@ -347,13 +373,14 @@ test still passing.
 | core (22), ecs (26), input (15), camera (16) | errors, logging, fixed step; ECS; input edges and actions; cameras and the controller |
 | job (10), asset (10) | thread pool, async assets (also under ThreadSanitizer) |
 | gltf (14), ibl (5), shadow (6), net (15) | glTF and HDR decoding; BRDF table maths; shadow framing; bit packing, quantization, loopback networking, simulated latency and loss |
+| physics (17) | see Step 10 |
 | game (17), netsync (6) | protocol round trips and malformed packets; delta snapshots (exact rebuilds, refused without their baseline, random changes); the movement rule; the input queue and its rate limit; prediction (confirm, replay, overflow); interpolation; a server and two clients over a bad network (convergence with deltas, despawn, version rejection, handshake timeout, speed hack, 2.4 s ping); bytes with and without deltas |
 | app (14) | the main loop with a fake renderer |
 | gpu (17), render (12), mesh (11), environment (6), postfx (9) | Vulkan bring-up, memory and textures; sprites, depth, camera, capture; meshes and materials; image-based lighting and sky; shadows, bloom, ACES, UNORM vs sRGB, resizing (pixels read back from the GPU; every test asserts 0 validation errors) |
-| app_smoke, keyboard_e2e, camera_e2e, server_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
+| app_smoke, keyboard_e2e, camera_e2e, physics_e2e, server_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; walking and shooting in the physics scene; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
 
-- Debug, release, Clang and ASan+UBSan: 24/24.
-- TSan: the threaded suites, with 0 race reports.
+- Debug, release, Clang and ASan+UBSan: 26/26.
+- TSan: the threaded suites (physics included), with 0 race reports.
 - Every build at `-Werror`.
 
 ---
@@ -362,7 +389,9 @@ test still passing.
 
 ### Unverified platforms and conditions
 - **Windows** has never been built or run: the `windows` preset, MSVC
-  warnings, vcpkg's tinygltf, stb and ENet packages.
+  warnings, vcpkg's tinygltf, stb, ENet and Jolt packages (with vcpkg's
+  Jolt, `find_package(Jolt)` picks it up instead of the vendored copy; its
+  build options, e.g. determinism, are vcpkg's, not `cmake/jolt`'s).
 - **A real GPU:** everything so far ran on Mesa's CPU driver (llvmpipe)
   under Xvfb. Speeds measured there (release, 1600×900): 3D scene ~83 ms
   a frame, 2D scene ~36 ms.
@@ -407,26 +436,40 @@ test still passing.
   - `setEnvironment` and every upload wait for the GPU (`submitAndWait`);
   - fences, not timeline semaphores;
   - no Vulkan debug names; no pipeline cache.
+- **Physics:**
+  - colliders and body settings are read when the body is made (remove
+    and re-add a component to change them); shapes do not follow
+    `Transform3D.scale`;
+  - characters are not bodies: raycasts and dynamic bodies do not hit them
+    (they push bodies; bodies do not push them);
+  - no contact events, triggers, joints or ragdolls yet;
+  - physics runs in the 3D demo only: the network game's players still
+    move by `game::stepPlayer` (2D, no physics), so there is no
+    server-authoritative physics yet.
 - **Engine:**
-  - 3D objects aren't in the ECS (the 3D scene keeps a list);
+  - only physics objects are ECS entities with `Transform3D`; there is no
+    `MeshRenderer` component yet (the 3D scene keeps a list of models);
   - glTF without skins, animation, morph targets or alpha modes;
   - no profiler (Tracy) and no debug overlay.
 
 ### Remaining roadmap, in order
-1. **Networking polish** (optional before physics; Step 1's core,
-   including delta snapshots, is done):
+0. **Queued by the user, in this order** (each tested and pushed before
+   the next): Prompt 10, an ImGui developer overlay (F1), entity
+   inspector, frame and netcode profiler, and JSON scene saving; Prompt
+   11, miniaudio spatial audio (null backend when headless); Prompt 12, a
+   cutscene and camera sequencer (spline camera tracks, timed events and
+   subtitles, input lock, letterbox, skip; solo plays it on the local
+   world, co-op has the server send StartCutscene so all players enter and
+   leave on the same tick, and all must hold skip).
+1. **Networking polish** (optional; Step 1's core, including delta
+   snapshots, is done):
    - an on-screen network HUD (ping, corrections) once there is HUD text;
    - shooting with server-side lag compensation (rewind other players by
      the shooter's interpolation delay).
-2. **Physics (Jolt):**
-   - first, per ROADMAP §4.8: the game's AABB colliders and its tested
-     kinematic player controller behind a query interface (sweep,
-     raycast, overlap);
-   - then **Jolt Physics** behind the same interface for rigid bodies,
-     triangle meshes and ragdolls; the player stays kinematic;
-   - a server-authoritative simulation.
-   - Jolt is in vcpkg (`joltphysics`); on Linux it would need vendoring
-     (no Ubuntu package, and configure must not download).
+2. **Physics, next:** contact events and triggers (for impact sounds and
+   gameplay), Erebus Cradle's AABB colliders as static bodies, physics on
+   the server (players as characters, bodies in snapshots), joints and
+   ragdolls.
 3. **Developer tooling: ImGui inspector** (ROADMAP §4.12):
    - Dear ImGui on the Vulkan backend with dynamic rendering, drawn after
      the composite;
@@ -454,5 +497,5 @@ test still passing.
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
 debug` passes (if configure cannot find a package, install the list in
-`README.md`; `xdotool` is needed for the e2e tests), then start Remaining
-Roadmap step 2 (physics), or step 1 if networking polish comes first."
+`README.md`; `xdotool` is needed for the e2e tests), then continue with
+step 0 of the Remaining Roadmap (the queued prompts)."

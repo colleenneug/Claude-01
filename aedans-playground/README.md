@@ -11,8 +11,10 @@ image, then adds bloom and ACES tone mapping; 2D sprites; glTF 2.0 model
 and HDR panorama loading; networking (ENet transport, bit-packed
 quantized messages) with an authoritative headless dedicated server
 (`--server`) and a windowed client (`--connect`) that predicts its own
-player and interpolates everything else;
-an entity component system (ECS), keyboard/mouse input, an orbit/fly
+player and interpolates everything else; 3D physics (Jolt Physics:
+rigid bodies, a walking character controller, raycasts) stepped at the
+fixed 120 Hz on the job system;
+an entity component system (ECS), keyboard/mouse input, an orbit/fly/walk
 camera, a job system (worker threads) and an asset manager that loads files
 in the background.
 
@@ -20,7 +22,11 @@ The demo has two scenes. The default is **3D**: glTF models (a tiled floor,
 textured crates, a row of spheres from rough plastic to polished gold,
 glowing lamps, and Khronos's Damaged Helmet on a pedestal) lit by a low sun
 that casts shadows and a procedural sky they reflect, which you look
-around with the mouse. `--model PATH` shows any glTF file instead, and `--environment
+around with the mouse. Everything solid in it is a physics body: a ramp,
+stairs, a crate that turns and shoves what it touches, and a stack of crates
+that drops and settles. Tab twice puts you in a walking character (WASD,
+Space to jump, left click shoots a hitscan ray that knocks crates about).
+`--model PATH` shows any glTF file instead, and `--environment
 PATH.hdr` lights the scene with a photographed HDR panorama. `--scene sprites` is the **2D** demo: steer a white
 square among 25,000 bouncing ones, all drawn in one instanced draw call.
 
@@ -37,21 +43,24 @@ milestones: the first triangle (`docs/first-triangle.png`),
 the first ECS sprites (`docs/ecs-sprites.png`), 25,000 instanced sprites
 (`docs/instanced-25k.png`), the tilted 2D view (`docs/perspective-3d.png`)
 and the network client (`docs/network-client.png`: you in white, a bot in
-orange, the server's 64 balls).*
+orange, the server's 64 balls), and the physics scene (`docs/physics-scene.png`:
+the ramp, the stairs, and the stack of crates fallen and settled).*
 
 **3D scene** (camera: `engine/CameraController.h`)
 
-| Input | Orbit mode (the start) | Fly mode |
-|---|---|---|
-| Left-drag | spin around the target | |
-| Right-drag | pan the target | look around |
-| Wheel | zoom | change the fly speed |
-| W A S D, arrows | tilt and spin | move where you look |
-| Q / E | zoom out / in | down / up (also Ctrl / Space) |
-| Shift | | 4x faster |
-| Tab | switch to fly | switch to orbit |
-| R | reset the view | reset the view |
-| Escape | quit | quit |
+| Input | Orbit mode (the start) | Fly mode | Walk mode |
+|---|---|---|---|
+| Left-drag / click | spin around the target | | **shoot** (a hitscan ray from the eye; crates get a push) |
+| Right-drag | pan the target | look around | look around |
+| Middle click | pick what is under the mouse (logged) | the same | the same |
+| Wheel | zoom | change the fly speed | |
+| W A S D, arrows | tilt and spin | move where you look | walk (slopes, stairs, walls) |
+| Q / E | zoom out / in | down / up (also Ctrl / Space) | |
+| Space | | up | jump |
+| Shift | | 4x faster | run |
+| Tab | switch to fly | switch to walk | switch to orbit |
+| R | reset the view | reset the view | reset the view |
+| Escape | quit | quit | quit |
 
 **2D scene** (`--scene sprites`)
 
@@ -74,12 +83,13 @@ orange, the server's 64 balls).*
 | `gpu/` | `playground_gpu` | Vulkan: `Instance`, `Surface`, `selectPhysicalDevice`, `Device`, `Allocator` (VMA), `Buffer`, `Image` (+ `createTexture`, mipmaps), `Sampler`, `Context`, `Swapchain`, `DeviceHandle` |
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), `Shadow` (shadow-map framing), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess`), the shaders |
-| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController`, `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Transform`, `Velocity`, `Sprite`), systems, `pickSprite` |
+| `physics/` | `playground_physics` (`engine_physics`) | `PhysicsWorld`: Jolt Physics (hidden) behind our own types: bodies (box, sphere, capsule, mesh; static, kinematic, dynamic), characters (`JPH::CharacterVirtual`), raycasts with layer masks, a bridge from Jolt's jobs to our `JobSystem`. Depends on core and ecs |
+| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController` (orbit, fly, walk), `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Transform`, `Transform3D`, `Velocity`, `Sprite`, `RigidBody`, `Collider`, `CharacterController`), systems, `PhysicsSystem`, `pickSprite` |
 | `game/` | `playground_game` | the networked game: `Protocol` (v3, with delta snapshots), `Simulation` (the movement rule both sides run), `InputQueue` (the server's rate limit), `Prediction`, `Interpolation`, `GameServer`, `GameClient`. No window, no GPU |
 | `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`, `NetScene`), the dedicated server and headless bot (`Server`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
-| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, networking, the game's pieces, and a server with two clients over a bad simulated network; end-to-end keyboard, camera, dedicated-server and windowed-client tests |
+| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, networking, the game's pieces, a server with two clients over a bad simulated network, and physics; end-to-end keyboard, camera, walking-and-shooting, dedicated-server and windowed-client tests |
 | `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
-| `third_party/` | | vendored `tl::expected` and Vulkan Memory Allocator. tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
+| `third_party/` | | vendored `tl::expected`, Vulkan Memory Allocator, and Jolt Physics v5.3.0 (`JoltPhysics/`: its `Jolt/` sources and MIT licence, built by `cmake/jolt`; vcpkg's `joltphysics` is used instead where it exists).  tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
 
 Each layer may include only the layers below it. Vulkan types stop at the
 render layer: its public headers have none, so the engine and the game build
@@ -503,6 +513,30 @@ ended from the server's answer (it should be 0.000):
 ```bash
 ./build/debug/app/playground_app --connect 127.0.0.1:27015 --headless --frames 600
 ```
+
+## Physics
+
+`physics/` wraps **Jolt Physics** (v5.3.0, MIT) behind `physics::PhysicsWorld`.
+Only `physics/src/PhysicsWorld.cpp` includes Jolt; nothing above it needs
+Jolt's headers or settings.
+
+| Piece | What it does |
+|---|---|
+| Bodies | box, sphere, capsule, or triangle mesh; **static** (level), **kinematic** (moved by the game, pushing others) or **dynamic** (forces, gravity, collisions); mass (or from volume), friction, restitution, damping |
+| Characters | `JPH::CharacterVirtual`: a capsule the game moves with a wanted velocity, which walks up slopes to a limit, climbs steps, slides along walls, sticks to the floor going down, pushes crates, jumps and falls |
+| Raycasts | `raycast(origin, direction, maxDistance, layerMask)` → the entity, point, surface normal and distance of the first hit: hitscan weapons, line of sight, mouse picking |
+| Layers | Static, Moving, Debris (debris only hits static things); masks select layers for queries |
+| Threads | each step's work runs on our `JobSystem`'s workers through a bridge to Jolt's job interface; one thread if there is none |
+| Determinism | built cross-platform deterministic: the same inputs give the same results bit for bit, on one thread or many (tested) |
+
+In the ECS (`engine/Physics.h`), an entity with a `Transform3D`, a
+`RigidBody` and a `Collider` gets a body; one with a `CharacterController`
+gets a character. `PhysicsSystem::step(world, dt)`, once per 120 Hz fixed
+step, creates and removes bodies as entities come and go, pushes the game's
+changes in (a moved `Transform3D` is a teleport, or the target of a
+kinematic body), moves the characters, steps the world, and writes the
+results back with `previousPosition`/`previousRotation` set to the start of
+the step, so `interpolatedMatrix` draws them smoothly between steps.
 
 ## GPU memory
 

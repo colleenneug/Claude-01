@@ -101,6 +101,19 @@ else()
   endif()
 endif()
 
+# Jolt Physics: rigid bodies, characters and queries, behind physics/
+# (only physics/src includes it). vcpkg's port where there is one (Windows);
+# otherwise the copy in third_party/JoltPhysics (no Linux package exists, and
+# configuring must not download anything), built by cmake/jolt.
+find_package(Jolt CONFIG QUIET)
+add_library(playground_jolt INTERFACE)
+if(TARGET Jolt::Jolt)
+  target_link_libraries(playground_jolt INTERFACE Jolt::Jolt)
+else()
+  add_subdirectory(cmake/jolt ${CMAKE_CURRENT_BINARY_DIR}/third_party/jolt)
+  target_link_libraries(playground_jolt INTERFACE Jolt)
+endif()
+
 add_library(playground_tl_expected INTERFACE)
 target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
@@ -109,6 +122,7 @@ add_subdirectory(core)
 add_subdirectory(net)
 add_subdirectory(platform)
 add_subdirectory(ecs)
+add_subdirectory(physics)
 add_subdirectory(gpu)
 add_subdirectory(render)
 add_subdirectory(engine)

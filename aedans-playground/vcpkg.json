@@ -11,6 +11,7 @@
     "doctest",
     "tinygltf",
     "stb",
-    "enet"
+    "enet",
+    "joltphysics"
   ]
 }

@@ -292,7 +292,13 @@ int main(int argc, char** argv) {
   } else if (options->scene == SceneChoice::Sprites) {
     scene = std::make_unique<app::SpriteScene>(application, options->sprites);
   } else {
-    scene = std::make_unique<app::ModelScene>(assets, renderer, options->model, options->environment);
+    auto modelScene = app::ModelScene::create(assets, renderer, jobs, options->model, options->environment);
+    if (!modelScene) {
+      log::critical(Category::Engine, "3D scene could not start ({}): {}", describe(modelScene.error().code),
+                    modelScene.error().message);
+      return 1;
+    }
+    scene = std::move(*modelScene);
   }
 
   // The simulation: fixed 1/120 s steps, 0..n per frame (core/FixedStep.h).

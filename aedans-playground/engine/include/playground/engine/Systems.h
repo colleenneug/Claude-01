@@ -28,6 +28,7 @@
 
 #include <optional>
 
+#include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 
 namespace playground::engine {
@@ -66,6 +67,9 @@ void extractSprites(ecs::World& world, render::FrameData& frame, f64 alpha);
 // The blends extractSprites uses, exposed for testing. Rotation goes the
 // short way round, so 179 degrees -> -179 degrees turns 2 degrees, not 358.
 [[nodiscard]] glm::vec2 interpolatePosition(const Transform& transform, f32 alpha) noexcept;
+// A 3D transform blended `alpha` of the way from its previous state, as a
+// model matrix (translation * rotation * scale). Rotation by slerp.
+[[nodiscard]] glm::mat4 interpolatedMatrix(const Transform3D& transform, f32 alpha) noexcept;
 [[nodiscard]] f32 interpolateRotation(const Transform& transform, f32 alpha) noexcept;
 
 }  // namespace playground::engine

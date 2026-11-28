@@ -50,8 +50,8 @@ glm::vec3 CameraController::eye() const noexcept {
 
 void CameraController::setMode(CameraMode mode) noexcept {
   if (mode == mode_) return;
-  if (mode == CameraMode::Fly) {
-    position_ = eye();  // stand where the orbit camera was, looking the same way
+  if (mode != CameraMode::Orbit) {
+    if (mode_ == CameraMode::Orbit) position_ = eye();  // stand where the orbit camera was, looking the same way
   } else {
     target_ = position_ + forward() * distance_;  // orbit the point the same distance ahead
   }
@@ -67,10 +67,10 @@ void CameraController::update(const platform::InputState& input, f32 deltaSecond
   hasLastMouse_ = true;
 
   const f32 dt = std::max(deltaSeconds, 0.0f);
-  if (mode_ == CameraMode::Orbit) {
-    updateOrbit(input, dt, mouseDelta);
-  } else {
-    updateFly(input, dt, mouseDelta);
+  switch (mode_) {
+    case CameraMode::Orbit: updateOrbit(input, dt, mouseDelta); break;
+    case CameraMode::Fly: updateFly(input, dt, mouseDelta); break;
+    case CameraMode::Walk: updateLook(input, mouseDelta); break;
   }
 
   camera.projection = Projection::Perspective;
@@ -105,13 +105,17 @@ void CameraController::updateOrbit(const platform::InputState& input, f32 dt, gl
   distance_ = std::clamp(distance_, controls_.minDistance, controls_.maxDistance);
 }
 
-void CameraController::updateFly(const platform::InputState& input, f32 dt, glm::vec2 mouseDelta) noexcept {
-  // Look: drag right, look right; drag up, look up.
+// Look: drag right, look right; drag up, look up.
+void CameraController::updateLook(const platform::InputState& input, glm::vec2 mouseDelta) noexcept {
   if (input.down(MouseButton::Right)) {
     yaw_ += mouseDelta.x * controls_.dragRadiansPerPixel;
     pitch_ -= mouseDelta.y * controls_.dragRadiansPerPixel;
     clampPitch();
   }
+}
+
+void CameraController::updateFly(const platform::InputState& input, f32 dt, glm::vec2 mouseDelta) noexcept {
+  updateLook(input, mouseDelta);
   if (input.scroll() != 0.0) {
     controls_.flySpeed *= std::pow(controls_.speedPerClick, static_cast<f32>(input.scroll()));
     controls_.flySpeed = std::clamp(controls_.flySpeed, 0.01f, 1000.0f);
