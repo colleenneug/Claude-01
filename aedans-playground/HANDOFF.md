@@ -8,13 +8,13 @@ to build, run and troubleshoot is in `README.md`.
   engine architecture, memory management and data-oriented design, and to
   host **Erebus Cradle** (the OpenGL 4.1 game in `../cpp/`) once it is ready.
 - **Where:** repository `colleenneug/Claude-01`, folder `aedans-playground/`,
-  branch `claude/relaxed-cray-5kc2fl` (37 commits, `d065ae6` → this one). No
+  branch `claude/relaxed-cray-5kc2fl` (38 commits, `d065ae6` → this one). No
   pull request open.
-- **Size:** about 20,700 lines of engine code and shaders (plus Jolt, Dear
-  ImGui and miniaudio, vendored), and 8,100 lines of tests.
+- **Size:** about 21,900 lines of engine code and shaders (plus Jolt, Dear
+  ImGui and miniaudio, vendored), and 8,500 lines of tests.
 - **State at this snapshot:**
-  - `xvfb-run -a ctest --preset debug` passes **29/29**: 21 suites with
-    **267 test cases**, plus 8 end-to-end and smoke checks.
+  - `xvfb-run -a ctest --preset debug` passes **32/32**: 22 suites with
+    **277 test cases**, plus 10 end-to-end and smoke checks.
   - A clean rebuild has **0 warnings** (warnings are errors).
   - **0 Vulkan validation errors**. (The one `[error] [gpu]` line in the
     test log is gpu_tests' deliberately injected "expected" message.)
@@ -252,7 +252,7 @@ procedural sky is baked at start-up, so headless tests stay quick.
 
 ---
 
-## 3. Completed Milestones (Steps 1–12)
+## 3. Completed Milestones (Steps 1–13)
 
 Each item was run and verified: tests in that step, plus every earlier
 test still passing.
@@ -397,7 +397,7 @@ test still passing.
     `ui_e2e` (F1, Ctrl+S, Ctrl+O, F1, Escape; 0 validation errors); a
     manual check of four live resizes with the UI open (clean).
 
-- [x] **Step 12: Spatial audio** (this commit)
+- [x] **Step 12: Spatial audio** (`9a9f28a`)
   - `audio/` (`engine_audio`): miniaudio 0.11.21 (the file Erebus Cradle
     vendors; vcpkg's `miniaudio` where it exists) behind
     `audio::AudioEngine`. Sound device, else the null device (also when
@@ -420,6 +420,33 @@ test still passing.
     `physics_tests`, `physics_e2e` checks sounds played. The CTest app
     tests force the null device.
 
+- [x] **Step 13: Cutscenes, solo and co-op** (this commit)
+  - `engine/Cutscene.h`: `CutsceneSequence` (camera keys with Catmull-Rom
+    positions, slerped rotations, eased FOV; events with `fireOnSkip`;
+    subtitles; JSON loading, all or nothing), `CutscenePlayer` (plays by
+    fixed-step tick, events on exactly tick ⌈T·120⌉, hold-to-skip,
+    scheduled co-op end, eased camera handoff, letterbox amount).
+  - `engine/Hud.h` + `DebugUi::setHud`: letterbox, subtitles (a 26 px
+    font) and the skip prompt, drawn even with the developer UI hidden.
+  - The 3D scene: C or `--cutscene` plays `assets/cutscenes/intro.json`
+    (a fly-through; the sun dims and returns, a crate drops in, an
+    explosion and blast); the player is locked; Escape skips instead of
+    quitting (`Scene::consumesEscape`).
+  - Co-op (protocol v4): `CutsceneStart`/`CutsceneEnd` (reliable, ticks
+    scheduled 36 ahead), the server's movement lock and unanimous skip vote
+    (`kButtonSkip` in inputs), late joiners told; `GameClient` cue, server
+    tick estimate and local lock; `NetScene` plays `coop.json` as a
+    perspective fly-over of the 2D arena; `--cutscene-after`,
+    `--skip-cutscenes`.
+  - Tests: `cutscene_tests` (9 cases: easing, spline through keys and
+    smooth at them, short-way slerp, exact-tick events incl. 0.1 s ->
+    tick 12, waiting/playing/ending, hold-to-skip and what fires,
+    co-op end tick, camera handoff with no jump, JSON), a co-op case in
+    `netsync_tests` (same start tick, locked movement, one skipper is not
+    enough, all skipping ends it on one tick, walking after),
+    `cutscene_e2e` (C, hold Space, events fired and not), and
+    `coop_cutscene_e2e` (server + two bot processes agree on both ticks).
+
 **Verification as of this snapshot:**
 
 | Suite (test cases) | What it covers |
@@ -430,12 +457,13 @@ test still passing.
 | physics (18) | see Step 10 (and contact events, Step 12) |
 | scene (6) | see Step 11 |
 | audio (12) | see Step 12 |
+| cutscene (9) | see Step 13 |
 | game (17), netsync (6) | protocol round trips and malformed packets; delta snapshots (exact rebuilds, refused without their baseline, random changes); the movement rule; the input queue and its rate limit; prediction (confirm, replay, overflow); interpolation; a server and two clients over a bad network (convergence with deltas, despawn, version rejection, handshake timeout, speed hack, 2.4 s ping); bytes with and without deltas |
 | app (14) | the main loop with a fake renderer |
 | gpu (17), render (12), mesh (11), environment (6), postfx (9) | Vulkan bring-up, memory and textures; sprites, depth, camera, capture; meshes and materials; image-based lighting and sky; shadows, bloom, ACES, UNORM vs sRGB, resizing (pixels read back from the GPU; every test asserts 0 validation errors) |
-| app_smoke, keyboard_e2e, camera_e2e, physics_e2e, ui_e2e, server_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; walking and shooting in the physics scene; the developer UI saving and loading the scene; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
+| app_smoke, keyboard_e2e, camera_e2e, physics_e2e, cutscene_e2e, ui_e2e, server_e2e, coop_cutscene_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; walking and shooting in the physics scene; a cutscene started and skipped; the developer UI saving and loading the scene; a co-op cutscene skipped by two bot processes together; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
 
-- Debug, release, Clang and ASan+UBSan: 29/29.
+- Debug, release, Clang and ASan+UBSan: 32/32.
 - TSan includes the audio tests (miniaudio's real-time thread).
 - TSan: the threaded suites (physics included), with 0 race reports.
 - Every build at `-Werror`.
@@ -515,6 +543,16 @@ test still passing.
   - no reverb, occlusion or mixer groups; one listener;
   - never heard on this machine (no sound card): device output is
     untested; mixing, 3D and the null device are tested.
+- **Cutscenes:**
+  - co-op clients play by their estimate of the server tick (as they see
+    snapshots), so every player shows the same tick's moment, each about
+    their own latency behind the server; movement locking on the client
+    can start a round trip before the server's, which shows as a small
+    correction hidden by the cutscene;
+  - the camera track only (no animated entities or bones yet); event
+    actions mean what each scene's handler makes them mean;
+  - the 2D network client's handoff blends to an overhead perspective view
+    matching its orthographic one, then switches.
 - **Developer UI:**
   - the inspector edits components in place; there is no undo, and
     entities cannot be created or have components added from the UI yet;
@@ -525,13 +563,8 @@ test still passing.
     server's) is not editable.
 
 ### Remaining roadmap, in order
-0. **Queued by the user, in this order** (each tested and pushed before
-   the next; Prompts 10 and 11, the developer UI and spatial audio, are
-   done): Prompt 12, a
-   cutscene and camera sequencer (spline camera tracks, timed events and
-   subtitles, input lock, letterbox, skip; solo plays it on the local
-   world, co-op has the server send StartCutscene so all players enter and
-   leave on the same tick, and all must hold skip).
+0. **The user's queued prompts (9 to 12: physics, developer UI, audio,
+   cutscenes) are all done.** Next is whatever the user asks for.
 1. **Networking polish** (optional; Step 1's core, including delta
    snapshots, is done):
    - an on-screen network HUD (ping, corrections) once there is HUD text;
@@ -568,5 +601,5 @@ test still passing.
 **To resume, tell the next session:** "Read `aedans-playground/HANDOFF.md` on
 branch `claude/relaxed-cray-5kc2fl`, confirm `xvfb-run -a ctest --preset
 debug` passes (if configure cannot find a package, install the list in
-`README.md`; `xdotool` is needed for the e2e tests), then continue with
-step 0 of the Remaining Roadmap (the queued prompts)."
+`README.md`; `xdotool` is needed for the e2e tests), then pick up
+the Remaining Roadmap (or the user's next request)."

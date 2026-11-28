@@ -1,7 +1,7 @@
 #pragma once
 // =============================================================================
 //  playground/game/Protocol.h — what the game's server and clients say to
-//  each other (protocol version 3).
+//  each other (protocol version 4).
 //
 //  Every message starts with a 4-bit kind:
 //
@@ -22,6 +22,12 @@
 //      Spawn     reliable: entities that now exist (id and kind). A client
 //                draws only entities it has been told about.
 //      Despawn   reliable: entities that are gone.
+//      CutsceneStart  reliable: cutscene `sequenceId` starts on server tick
+//                `startTick` (a little ahead, so it reaches everyone first)
+//                and lasts `durationTicks`. Every player enters it on the
+//                same tick; while it plays the server ignores movement.
+//      CutsceneEnd    reliable: every player held skip, so it ends early, on
+//                server tick `endTick` (again ahead: the same tick for all).
 //      Snapshot  unreliable, 20 a second, one per client: the server tick,
 //                the newest of THIS client's inputs the server has applied
 //                (lastAckedInputSeq) and where that left its player, exactly
@@ -75,7 +81,7 @@ struct PlayerInput {
 
 namespace protocol {
 
-inline constexpr u16 kVersion = 3;
+inline constexpr u16 kVersion = 4;
 inline constexpr u16 kDefaultPort = 27015;
 inline constexpr u16 kTickRate = 120;
 inline constexpr u32 kSnapshotEveryTicks = 6;        // 120 Hz / 6 = 20 snapshots a second
@@ -87,9 +93,11 @@ inline constexpr f32 kWorldExtent = 1024.0f;         // positions in [-1024, 102
 inline constexpr u32 kPositionBits = 16;
 inline constexpr u32 kRotationBits = 10;
 inline constexpr u32 kButtonBits = 4;
+inline constexpr u8 kButtonFire = 1;
+inline constexpr u8 kButtonSkip = 2;  // held: this player votes to skip the cutscene
 inline constexpr usize kSnapshotHistory = 32;        // snapshots each side keeps as baselines (1.6 s)
 
-enum class MessageKind : u8 { Hello = 1, Welcome, Reject, Spawn, Despawn, Input, Snapshot };
+enum class MessageKind : u8 { Hello = 1, Welcome, Reject, Spawn, Despawn, Input, Snapshot, CutsceneStart, CutsceneEnd };
 
 enum class RejectReason : u8 { VersionMismatch = 1, ServerFull = 2 };
 [[nodiscard]] std::string_view describe(RejectReason reason) noexcept;
@@ -124,6 +132,19 @@ struct Spawn {
 
 struct Despawn {
   std::vector<u32> ids;
+};
+
+struct CutsceneStart {
+  u32 sequenceId = 0;
+  u32 startTick = 0;
+  u32 durationTicks = 0;
+  friend bool operator==(const CutsceneStart&, const CutsceneStart&) = default;
+};
+
+struct CutsceneEnd {
+  u32 sequenceId = 0;
+  u32 endTick = 0;
+  friend bool operator==(const CutsceneEnd&, const CutsceneEnd&) = default;
 };
 
 struct Input {
@@ -178,6 +199,8 @@ struct SnapshotTicks {
 [[nodiscard]] std::vector<std::byte> encode(const Spawn& message);
 [[nodiscard]] std::vector<std::byte> encode(const Despawn& message);
 [[nodiscard]] std::vector<std::byte> encode(const Input& message);
+[[nodiscard]] std::vector<std::byte> encode(const CutsceneStart& message);
+[[nodiscard]] std::vector<std::byte> encode(const CutsceneEnd& message);
 // Full if `baseline` is null (or not older than `message`), otherwise a
 // delta against it. `message.entities` should be sorted by id (sorted here
 // if not). `message.baselineTick` is ignored: `baseline` decides.
@@ -190,6 +213,8 @@ struct SnapshotTicks {
 [[nodiscard]] std::optional<Spawn> decodeSpawn(std::span<const std::byte> packet);
 [[nodiscard]] std::optional<Despawn> decodeDespawn(std::span<const std::byte> packet);
 [[nodiscard]] std::optional<Input> decodeInput(std::span<const std::byte> packet);
+[[nodiscard]] std::optional<CutsceneStart> decodeCutsceneStart(std::span<const std::byte> packet);
+[[nodiscard]] std::optional<CutsceneEnd> decodeCutsceneEnd(std::span<const std::byte> packet);
 [[nodiscard]] std::optional<SnapshotTicks> peekSnapshot(std::span<const std::byte> packet);
 // A delta needs `baseline`, the snapshot with the tick it names: without it
 // (or with another tick) the packet is refused, like a malformed one.

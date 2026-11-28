@@ -76,6 +76,12 @@ playground_configure_target(playground_audio_tests)
 add_test(NAME audio_tests COMMAND playground_audio_tests)
 set_tests_properties(audio_tests PROPERTIES LABELS "audio;threads")
 
+# --- Cutscenes: camera splines, exact-tick events, skipping, handoff, JSON ----
+add_executable(playground_cutscene_tests cutscene_tests.cpp)
+target_link_libraries(playground_cutscene_tests PRIVATE playground::engine doctest::doctest)
+playground_configure_target(playground_cutscene_tests)
+add_test(NAME cutscene_tests COMMAND playground_cutscene_tests)
+
 # --- Scene files: JSON round trips of an ecs::World ---------------------------
 add_executable(playground_scene_tests scene_tests.cpp)
 target_link_libraries(playground_scene_tests PRIVATE playground::engine doctest::doctest)
@@ -170,6 +176,10 @@ if(UNIX AND NOT APPLE)
   add_test(NAME physics_e2e
            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/physics.sh $<TARGET_FILE:playground_app> physics_e2e.log)
   set_tests_properties(physics_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input;physics" TIMEOUT 90)
+  # A solo cutscene: C starts it, holding Space skips it (tests/e2e/cutscene.sh).
+  add_test(NAME cutscene_e2e
+           COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/cutscene.sh $<TARGET_FILE:playground_app> cutscene_e2e.log)
+  set_tests_properties(cutscene_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input" TIMEOUT 90)
   # The developer UI: F1, save and load the scene, F1, Escape (tests/e2e/ui.sh).
   add_test(NAME ui_e2e COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/ui.sh $<TARGET_FILE:playground_app> ui_e2e.log)
   set_tests_properties(ui_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input" TIMEOUT 90)
@@ -181,6 +191,11 @@ if(UNIX)
   add_test(NAME server_e2e
            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/server.sh $<TARGET_FILE:playground_app> server_e2e)
   set_tests_properties(server_e2e PROPERTIES LABELS net TIMEOUT 60)
+  # A co-op cutscene: two bots enter and leave it on the same server ticks
+  # and skip it together (tests/e2e/coop_cutscene.sh).
+  add_test(NAME coop_cutscene_e2e
+           COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/coop_cutscene.sh $<TARGET_FILE:playground_app> coop_cutscene_e2e)
+  set_tests_properties(coop_cutscene_e2e PROPERTIES LABELS net TIMEOUT 60)
 endif()
 # The windowed client (--connect) against a dedicated server: joins, draws
 # the server's world for 240 frames, leaves (tests/e2e/netclient.sh).
@@ -194,7 +209,7 @@ endif()
 # The game opens the sound card when there is one. Tests should never make a
 # developer's speakers go off: they use miniaudio's null device (same mixing,
 # not heard). ENVIRONMENT_MODIFICATION adds to, not replaces, any preload set below.
-foreach(appTest app_smoke keyboard_e2e camera_e2e physics_e2e ui_e2e netclient_e2e)
+foreach(appTest app_smoke keyboard_e2e camera_e2e physics_e2e cutscene_e2e ui_e2e netclient_e2e)
   if(TEST ${appTest})
     set_property(TEST ${appTest} APPEND PROPERTY ENVIRONMENT_MODIFICATION "PLAYGROUND_AUDIO=set:null")
   endif()
@@ -220,7 +235,7 @@ if(PLAYGROUND_SANITIZERS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND UNIX AND N
     # The keyboard test is a shell script driving xdotool: only the game itself
     # may get the preload, so it is passed through a variable the script reads.
     if(TEST keyboard_e2e)
-      set_tests_properties(keyboard_e2e camera_e2e physics_e2e ui_e2e netclient_e2e PROPERTIES
+      set_tests_properties(keyboard_e2e camera_e2e physics_e2e cutscene_e2e ui_e2e netclient_e2e PROPERTIES
         ENVIRONMENT "PLAYGROUND_APP_PRELOAD=${playgroundAsanRuntime}:${PLAYGROUND_MESA_LAVAPIPE}")
     endif()
   endif()

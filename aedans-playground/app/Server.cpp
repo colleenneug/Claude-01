@@ -23,6 +23,7 @@
 #include "playground/core/FrameClock.h"
 #include "playground/core/Interrupt.h"
 #include "playground/core/Log.h"
+#include "playground/engine/Cutscene.h"
 #include "playground/game/GameClient.h"
 #include "playground/game/GameServer.h"
 
@@ -77,10 +78,30 @@ int runServer(const ServerOptions& options) {
             options.maxClients);
   log::info(Category::Engine, "entering server loop");
 
+  // The co-op cutscene: its length comes from the same file the clients play.
+  std::optional<u32> cutsceneTicks;
+  if (options.cutsceneAfterSeconds) {
+    if (auto sequence = engine::CutsceneSequence::loadFromFile(options.cutsceneFile.string())) {
+      cutsceneTicks = static_cast<u32>(sequence->durationTicks());
+      log::info(Category::Game, "co-op cutscene \"{}\" ({:.1f} s) will start {:.1f} s after the first player joins",
+                sequence->id, sequence->duration, *options.cutsceneAfterSeconds);
+    } else {
+      log::warn(Category::Game, "no co-op cutscene: {}", sequence.error().message);
+    }
+  }
+  std::optional<Clock::time_point> firstJoin;
+  bool cutsceneStarted = false;
+
   auto lastStatus = Clock::now();
   u32 ticksAtLastStatus = 0;
   while (!InterruptGuard::interruptRequested() && (options.maxTicks == 0 || game.tick() < options.maxTicks)) {
     game.pumpNetwork(msUntilNextStep(steps));
+    if (!firstJoin && game.playerCount() > 0) firstJoin = Clock::now();
+    if (cutsceneTicks && !cutsceneStarted && firstJoin &&
+        std::chrono::duration<f64>(Clock::now() - *firstJoin).count() >= *options.cutsceneAfterSeconds) {
+      cutsceneStarted = true;
+      if (Status s = game.startCutscene(1, *cutsceneTicks); !s) log::warn(Category::Game, "{}", s.error().message);
+    }
     const FixedStepPlan plan = steps.advance(clock.tick().rawDeltaSeconds);
     for (u32 i = 0; i < plan.steps; ++i) game.step();
 
@@ -136,6 +157,7 @@ int runClient(const ClientOptions& options) {
     const FixedStepPlan plan = steps.advance(clock.tick().rawDeltaSeconds);
     for (u32 i = 0; i < plan.steps; ++i) {
       game::PlayerInput input;
+      if (options.skipCutscenes && client.cutsceneLocked()) input.buttons |= game::protocol::kButtonSkip;
       if (state == game::ClientState::Playing && (options.ticks == 0 || played < options.ticks)) {
         const f32 angle = static_cast<f32>(played) * 2.0f * std::numbers::pi_v<f32> / 240.0f;
         input.move = {std::cos(angle), std::sin(angle)};
@@ -155,6 +177,10 @@ int runClient(const ClientOptions& options) {
             client.lastServerTick(), client.knownEntityCount(), stats.malformed, client.inputSeq(),
             client.lastAckedInputSeq(), stats.prediction.corrections,
             glm::length(client.predictedPosition() - client.serverPosition()));
+  if (const auto cue = client.cutscene()) {
+    log::info(Category::Game, "client cutscene: sequence {}, server ticks {} to {}, {}", cue->sequenceId,
+              cue->startTick, cue->endTick, cue->endedEarly ? "skipped by everyone" : "played through");
+  }
   const bool lost = client.state() == game::ClientState::Disconnected || client.state() == game::ClientState::Rejected;
   if (lost) {
     log::error(Category::Net, "client: {}", client.failure());

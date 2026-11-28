@@ -13,7 +13,12 @@
 //                 its extract;
 //    endFrame     ImGui::Render(); the renderer draws the result over the
 //                 finished frame (FrameData::drawUi; render/src/UiOverlay).
-//  Hidden, it costs nothing: no ImGui frame at all.
+//  Hidden, it costs nothing: no ImGui frame at all, unless the game wants
+//  its HUD drawn (setHud: cutscene subtitles, letterbox bars, prompts, which
+//  must show whether or not the developer panels are open). A HUD-only
+//  frame takes no input from the game.
+//
+//  Fonts: ImGui's own (13 px) for panels; hudFont() at 26 px for the HUD.
 //
 //  OWNERSHIP: this owns ImGui's context and its GLFW side; the renderer owns
 //  the Vulkan side (Renderer::enableUi). create() makes the context, then
@@ -56,12 +61,20 @@ class DebugUi {
 
   using Panel = std::function<void()>;
   void addPanel(Panel panel) { panels_.push_back(std::move(panel)); }
+  // The HUD: `wanted()` asked each frame; `draw()` (ImGui draw lists) when it says yes.
+  void setHud(std::function<bool()> wanted, Panel draw) {
+    hudWanted_ = std::move(wanted);
+    hudDraw_ = std::move(draw);
+  }
 
  private:
   DebugUi(render::Renderer& renderer, bool visible) noexcept : renderer_(renderer), visible_(visible) {}
 
   render::Renderer& renderer_;
   std::vector<Panel> panels_;
+  std::function<bool()> hudWanted_;
+  Panel hudDraw_;
+  bool hudThisFrame_ = false;
   bool visible_ = false;
   bool frameBegun_ = false;
   bool frameReady_ = false;

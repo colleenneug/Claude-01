@@ -25,6 +25,14 @@
 //    disconnect   its player is destroyed and every other client gets a
 //                 Despawn (reliable).
 //
+//  CUTSCENES (startCutscene): every client is sent CutsceneStart with a
+//  start tick far enough ahead to reach them all first, so all enter on the
+//  same server tick (a client joining mid-scene is sent it too). While it
+//  plays, inputs are still taken (and acknowledged) but move no one. A
+//  player holds skip by setting kButtonSkip in its inputs; once EVERY
+//  player has held it for the skip time, the server sends CutsceneEnd with
+//  an end tick, again ahead, the same for all.
+//
 //  One thread. The caller owns the loop and the clock (app/Server.cpp for
 //  the dedicated server, the tests for an in-process one):
 //      pumpNetwork(waitMs) as often as it likes, step() once per 1/120 s.
@@ -72,6 +80,8 @@ struct ServerStats {
   u64 rejected = 0;
   u64 joined = 0;
   u64 left = 0;
+  u64 cutscenesStarted = 0;
+  u64 cutscenesSkipped = 0;
 };
 
 class GameServer {
@@ -89,6 +99,16 @@ class GameServer {
   void step();
   // Goodbye to every client, waiting up to `waitMs` for them to answer.
   void shutdown(u32 waitMs = 500);
+
+  // Starts cutscene `sequenceId` (`durationTicks` long) for everyone, on the
+  // tick `leadTicks` from now. Errc::InvalidState while one is playing.
+  [[nodiscard]] Status startCutscene(u32 sequenceId, u32 durationTicks, u32 leadTicks = kCutsceneLeadTicks);
+  static constexpr u32 kCutsceneLeadTicks = 36;    // 300 ms: more than a round trip on any sane connection
+  static constexpr u32 kCutsceneSkipTicks = 90;    // 0.75 s held by every player (engine::kSkipHoldSeconds)
+  // The cutscene scheduled or playing, if any.
+  [[nodiscard]] std::optional<protocol::CutsceneStart> cutscene() const;
+  // Whether movement is locked on this tick (a cutscene is playing).
+  [[nodiscard]] bool cutsceneLocked() const noexcept;
 
   [[nodiscard]] u32 tick() const noexcept;
   [[nodiscard]] u16 port() const noexcept;

@@ -1,0 +1,24 @@
+{
+  "id": "intro",
+  "duration": 11.0,
+  "skippable": true,
+  "camera": [
+    { "time": 0.0,  "position": [8.0, 4.0, 9.0],   "lookAt": [0.0, 0.5, 0.0],   "fov": 55, "ease": "inOut" },
+    { "time": 3.0,  "position": [-6.0, 2.5, 6.0],  "lookAt": [-1.4, 0.5, 0.6],  "fov": 45, "ease": "inOut" },
+    { "time": 6.0,  "position": [-5.0, 2.3, 1.6],  "lookAt": [2.0, 0.6, -0.1],  "fov": 42, "ease": "inOut" },
+    { "time": 8.5,  "position": [3.2, 1.3, 3.0],   "lookAt": [0.1, 1.0, 1.4],   "fov": 32, "ease": "inOut" },
+    { "time": 11.0, "position": [0.5, 2.2, 7.5],   "lookAt": [0.0, 0.8, 0.0],   "fov": 50, "ease": "out" }
+  ],
+  "events": [
+    { "time": 1.0, "action": "light", "value": 1.2, "fireOnSkip": false },
+    { "time": 4.0, "action": "light", "value": 3.2, "fireOnSkip": true },
+    { "time": 5.5, "action": "spawn", "target": "cutscene crate", "position": [2.0, 3.5, -0.1], "fireOnSkip": true },
+    { "time": 7.0, "action": "sound", "target": "explosion", "position": [2.0, 0.5, -0.1], "value": 1.0, "fireOnSkip": false },
+    { "time": 7.0, "action": "push", "position": [2.0, 0.2, -0.1], "value": 14.0, "fireOnSkip": false }
+  ],
+  "subtitles": [
+    { "start": 0.5, "end": 3.5,  "speaker": "Narrator", "text": "Somewhere past the edge of the map, a playground was waiting." },
+    { "start": 4.0, "end": 7.0,  "speaker": "Narrator", "text": "Crates. Spheres. A helmet nobody remembers leaving here." },
+    { "start": 7.5, "end": 10.5, "speaker": "Narrator", "text": "Hold Space to skip, or stay and watch it all fall into place." }
+  ]
+}

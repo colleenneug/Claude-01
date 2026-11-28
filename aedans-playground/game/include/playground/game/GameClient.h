@@ -33,6 +33,7 @@
 #include "playground/net/Host.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -59,6 +60,14 @@ struct RemoteEntity {
   EntityKind kind = EntityKind::Ball;
   glm::vec2 position{0.0f};
   f32 rotation = 0.0f;
+};
+
+// A cutscene the server scheduled for everyone, in server ticks.
+struct CutsceneCue {
+  u32 sequenceId = 0;
+  u32 startTick = 0;
+  u32 endTick = 0;         // start + duration, or earlier once everyone skipped
+  bool endedEarly = false;
 };
 
 struct ClientStats {
@@ -106,6 +115,12 @@ class GameClient {
   // How long, smoothed, an input takes to come back acknowledged: the
   // round trip plus the server's queue and snapshot spacing.
   [[nodiscard]] f64 ackDelayMs() const noexcept;
+  // The server's tick now, as this client estimates it (cutscenes run on it).
+  [[nodiscard]] f64 serverTickNow() const noexcept;
+  // The latest cutscene the server announced (it may be over), and whether
+  // movement is locked by it right now (step() then sends no movement).
+  [[nodiscard]] std::optional<CutsceneCue> cutscene() const noexcept;
+  [[nodiscard]] bool cutsceneLocked() const noexcept;
   // ENet's smoothed round trip to the server (without simulated delay).
   [[nodiscard]] f64 roundTripMs() const;
   [[nodiscard]] ClientStats stats() const noexcept;

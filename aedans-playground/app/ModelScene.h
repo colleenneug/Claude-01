@@ -46,6 +46,7 @@
 #include "playground/engine/Camera.h"
 #include "playground/engine/CameraController.h"
 #include "playground/engine/Components.h"
+#include "playground/engine/Cutscene.h"
 #include "playground/engine/Editor.h"
 #include "playground/engine/EnvironmentAsset.h"
 #include "playground/engine/Gltf.h"
@@ -66,6 +67,13 @@
 
 namespace playground::app {
 
+// The demo's cutscene (engine/Cutscene.h): a JSON file, played with C (or at
+// start with --cutscene).
+struct ModelCutscene {
+  std::filesystem::path file;  // empty or missing: no cutscene
+  bool playAtStart = false;
+};
+
 class ModelScene final : public Scene {
  public:
   // Models and panoramas must be registered with `assets`
@@ -78,19 +86,28 @@ class ModelScene final : public Scene {
                                                                   std::optional<std::filesystem::path> model,
                                                                   std::optional<std::filesystem::path> environment,
                                                                   std::filesystem::path sceneFile = "scene.json",
-                                                                  audio::AudioEngine* sound = nullptr);
+                                                                  audio::AudioEngine* sound = nullptr,
+                                                                  ModelCutscene cutscene = {});
 
   void fixedUpdate(const FixedStep& step, const platform::InputState& input) override;
   void update(const FrameTime& time, const platform::InputState& input) override;
   void extract(render::FrameData& frame, f64 alpha) override;
   void logSummary() override;
   void drawDebugUi(engine::ProfilerData data) override;
+  [[nodiscard]] bool wantsHud() const override { return cutscene_.active() || cutscene_.handingOff(); }
+  void drawHud() override;
+  [[nodiscard]] bool consumesEscape() const override { return cutscene_.active(); }
 
  private:
   ModelScene(engine::AssetManager& assets, std::unique_ptr<physics::PhysicsWorld> physics,
              std::filesystem::path sceneFile, audio::AudioEngine* sound);
   void build(render::Renderer& renderer, std::optional<std::filesystem::path> model,
-             std::optional<std::filesystem::path> environment);
+             std::optional<std::filesystem::path> environment, const ModelCutscene& cutscene);
+  // Cutscenes: start one on this fixed-step tick; what its events do.
+  void startCutscene(u64 tick);
+  void onCutsceneEvent(const engine::CutsceneEvent& event);
+  // The player's own camera (orbit, fly or walk) as a pose.
+  [[nodiscard]] engine::CameraPose playerPose() const;
 
   // A drawn model at a place: Name, Transform3D (scale: the model's size),
   // MeshRenderer and a default Material (no physics unless solid() adds it).
@@ -138,6 +155,16 @@ class ModelScene final : public Scene {
   ecs::Entity listener_;
   void playAt(audio::ClipId clip, glm::vec3 where, f32 volume, bool spatial = true);
   void playImpacts();
+
+  audio::ClipId explosionClip_;
+
+  std::optional<engine::CutsceneSequence> intro_;
+  engine::CutscenePlayer cutscene_;
+  bool cutsceneAtStart_ = false;
+  u64 tick_ = 0;  // fixed steps so far: the cutscene clock
+  u32 cutscenesPlayed_ = 0;
+  u32 cutscenesSkipped_ = 0;
+  u32 cutsceneEvents_ = 0;
 
   ecs::Entity spinner_;  // the turning crate (kinematic), if there is one
   f64 simulatedSeconds_ = 0.0;

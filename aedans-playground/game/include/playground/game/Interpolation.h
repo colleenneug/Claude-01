@@ -71,6 +71,8 @@ class InterpolationClock {
   // One client tick passed.
   void advance() noexcept;
   [[nodiscard]] f64 renderTick() const noexcept { return renderTick_; }
+  // The server's tick now, estimated from the snapshots heard (jitter-smoothed).
+  [[nodiscard]] f64 serverTick() const noexcept { return newestHeard_; }
   [[nodiscard]] bool started() const noexcept { return started_; }
 
  private:

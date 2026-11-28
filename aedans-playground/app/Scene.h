@@ -30,6 +30,13 @@ class Scene {
   // The developer UI's panels (F1), with what the engine measured; the scene
   // adds its own numbers (entities, physics, network) and draws them.
   virtual void drawDebugUi(engine::ProfilerData data) { (void)data; }
+  // The HUD (cutscene letterbox, subtitles, prompts): drawn when wanted,
+  // whether or not the developer UI is open (engine/Hud.h).
+  [[nodiscard]] virtual bool wantsHud() const { return false; }
+  virtual void drawHud() {}
+  // True while Escape means something else (holding it skips a cutscene),
+  // so it does not quit the game.
+  [[nodiscard]] virtual bool consumesEscape() const { return false; }
   // Non-zero if the scene failed (the network client was rejected or dropped).
   [[nodiscard]] virtual int exitCode() const { return 0; }
 };

@@ -6,6 +6,7 @@ add_library(playground_engine STATIC
   src/Assets.cpp
   src/Audio.cpp
   src/Camera.cpp
+  src/Cutscene.cpp
   src/CameraController.cpp
   src/DebugUi.cpp
   src/Editor.cpp
@@ -14,6 +15,7 @@ add_library(playground_engine STATIC
   src/SceneSerializer.cpp
   src/Gltf.cpp
   src/GltfImplementation.cpp
+  src/Hud.cpp
   src/Systems.cpp)
 add_library(playground::engine ALIAS playground_engine)
 
@@ -21,7 +23,7 @@ target_include_directories(playground_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/
 target_link_libraries(playground_engine
   PUBLIC  playground::render playground::ecs playground::physics playground::audio
   PRIVATE playground_gltf            # tinygltf + stb_image: only Gltf.cpp sees them
-          nlohmann_json::nlohmann_json   # scene files (SceneSerializer.cpp)
+          nlohmann_json::nlohmann_json   # scene and cutscene files (SceneSerializer.cpp, Cutscene.cpp)
           playground_imgui)              # the developer UI (DebugUi.cpp, Editor.cpp)
 
 # Logged at start-up. $<CONFIG> is right for single- and multi-config generators.

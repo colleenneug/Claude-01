@@ -69,6 +69,9 @@ struct Options {
   net::NetworkConditions network;           // --net-latency, --net-loss
   u32 sprites = 25'000;  // how many bouncing squares the sprite scene spawns
   bool editor = false;                        // --editor: start with the developer UI shown
+  bool cutscene = false;                      // --cutscene: play the 3D scene's cutscene at start
+  std::optional<f64> cutsceneAfter;           // --cutscene-after S: the server's co-op cutscene
+  bool skipCutscenes = false;                 // --skip-cutscenes: the headless bot votes to skip
   std::filesystem::path sceneFile = "scene.json";  // --scene-file: what Ctrl+S / Ctrl+O save and load
 };
 
@@ -89,6 +92,9 @@ void printUsage() {
       "  --frames N       run N frames, then exit (used by the automated tests)\n"
       "  --sprites N      how many bouncing squares to spawn (default 25000)\n"
       "  --editor         start with the developer UI shown (F1 shows and hides it)\n"
+      "  --cutscene       play the 3D scene's cutscene at start (C plays it any time)\n"
+      "  --cutscene-after SECONDS  with --server: start the co-op cutscene that long after the first player joins\n"
+      "  --skip-cutscenes with --connect --headless: the bot holds skip during cutscenes\n"
       "  --scene-file PATH  the scene file the editor saves (Ctrl+S) and loads (Ctrl+O); default scene.json\n"
       "  --verbose        log at debug level, including frame-time statistics\n"
       "  --log-file PATH  where to write the log (default: playground.log)\n"
@@ -145,6 +151,20 @@ Result<Options> parseOptions(std::span<char*> args) {
       options.connect = std::string(*value);
     } else if (arg == "--editor") {
       options.editor = true;
+    } else if (arg == "--cutscene-after") {
+      auto value = nextValue();
+      if (!value) return tl::unexpected(std::move(value.error()));
+      f64 seconds = 0.0;
+      const auto [end, ec] = std::from_chars(value->data(), value->data() + value->size(), seconds);
+      if (ec != std::errc{} || end != value->data() + value->size() || !(seconds >= 0.0)) {
+        return fail(Errc::InvalidArgument, "--cutscene-after expects seconds, got \"{}\"", *value);
+      }
+      options.cutsceneAfter = seconds;
+    } else if (arg == "--skip-cutscenes") {
+      options.skipCutscenes = true;
+    } else if (arg == "--cutscene") {
+      options.cutscene = true;
+      options.scene = SceneChoice::Models;
     } else if (arg == "--scene-file") {
       auto value = nextValue();
       if (!value) return tl::unexpected(std::move(value.error()));
@@ -237,9 +257,13 @@ int main(int argc, char** argv) {
 
   // The headless modes: no window, no GPU, nothing of GLFW or Vulkan started.
   if (options->server) {
-    return app::runServer({.port = options->port, .maxTicks = options->frames, .network = options->network});
+    return app::runServer({.port = options->port, .maxTicks = options->frames, .network = options->network,
+                           .cutsceneAfterSeconds = options->cutsceneAfter,
+                           .cutsceneFile = std::filesystem::path(argv[0]).parent_path() / "assets" / "cutscenes" /
+                                           "coop.json"});
   }
-  app::ClientOptions client{.port = options->port, .network = options->network};
+  app::ClientOptions client{.port = options->port, .network = options->network,
+                            .skipCutscenes = options->skipCutscenes};
   if (options->connect) {
     if (Status s = app::parseAddress(*options->connect, client); !s) {
       std::fprintf(stderr, "error: %s\n", s.error().message.c_str());
@@ -304,7 +328,8 @@ int main(int argc, char** argv) {
   // shutdown() also drops the callbacks below that refer to it.
   std::unique_ptr<app::Scene> scene;
   if (options->connect) {
-    auto netScene = app::NetScene::create(application, client, options->sceneFile);
+    auto netScene = app::NetScene::create(application, client, options->sceneFile,
+                                          std::filesystem::path(argv[0]).parent_path() / "assets" / "cutscenes");
     if (!netScene) {
       log::critical(Category::Net, "network client could not start: {}", netScene.error().message);
       return 1;
@@ -314,7 +339,10 @@ int main(int argc, char** argv) {
     scene = std::make_unique<app::SpriteScene>(application, options->sprites, options->sceneFile, sound.get());
   } else {
     auto modelScene = app::ModelScene::create(assets, renderer, jobs, options->model, options->environment,
-                                              options->sceneFile, sound.get());
+                                              options->sceneFile, sound.get(),
+                                              {.file = std::filesystem::path(argv[0]).parent_path() / "assets" /
+                                                       "cutscenes" / "intro.json",
+                                               .playAtStart = options->cutscene});
     if (!modelScene) {
       log::critical(Category::Engine, "3D scene could not start ({}): {}", describe(modelScene.error().code),
                     modelScene.error().message);
@@ -339,7 +367,7 @@ int main(int argc, char** argv) {
         log::warn(Category::Game, "asset welcome.txt not loaded: {}", error->message);  // the game still runs
       }
     }
-    if (input.pressed(platform::Key::Escape)) application.requestQuit();
+    if (input.pressed(platform::Key::Escape) && !scene->consumesEscape()) application.requestQuit();
     fpsCounter.update(time);
     scene->update(time, input);
   });
@@ -355,6 +383,7 @@ int main(int argc, char** argv) {
     debugUi->addPanel([&] {
       scene->drawDebugUi({.frame = application.lastFrameProfile(), .render = renderer.lastFrameStats()});
     });
+    debugUi->setHud([&] { return scene->wantsHud(); }, [&] { scene->drawHud(); });
     application.setDebugUi(debugUi.get());
   } else {
     log::warn(Category::Engine, "no developer UI: {}", ui.error().message);

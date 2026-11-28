@@ -4,6 +4,7 @@
 #include "playground/engine/Components.h"
 #include "playground/audio/Synth.h"
 #include "playground/engine/Audio.h"
+#include "playground/engine/Hud.h"
 #include "playground/engine/Systems.h"
 
 #include <algorithm>
@@ -63,11 +64,12 @@ std::string_view describe(engine::CameraMode mode) {
 Result<std::unique_ptr<ModelScene>> ModelScene::create(engine::AssetManager& assets, render::Renderer& renderer,
                                                        JobSystem& jobs, std::optional<std::filesystem::path> model,
                                                        std::optional<std::filesystem::path> environment,
-                                                       std::filesystem::path sceneFile, audio::AudioEngine* sound) {
+                                                       std::filesystem::path sceneFile, audio::AudioEngine* sound,
+                                                       ModelCutscene cutscene) {
   auto physicsWorld = physics::PhysicsWorld::create({}, &jobs);
   if (!physicsWorld) return tl::unexpected(std::move(physicsWorld.error()));
   std::unique_ptr<ModelScene> scene(new ModelScene(assets, std::move(*physicsWorld), std::move(sceneFile), sound));
-  scene->build(renderer, std::move(model), std::move(environment));
+  scene->build(renderer, std::move(model), std::move(environment), cutscene);
   return scene;
 }
 
@@ -77,7 +79,18 @@ ModelScene::ModelScene(engine::AssetManager& assets, std::unique_ptr<physics::Ph
       sound_(sound) {}
 
 void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem::path> model,
-                       std::optional<std::filesystem::path> environment) {
+                       std::optional<std::filesystem::path> environment, const ModelCutscene& cutscene) {
+  // The cutscene, from its JSON file (a bad or missing one: no cutscene, said in the log).
+  if (!cutscene.file.empty()) {
+    if (auto loaded = engine::CutsceneSequence::loadFromFile(cutscene.file.string())) {
+      intro_ = std::move(*loaded);
+      cutsceneAtStart_ = cutscene.playAtStart;
+      log::info(Category::Game, "cutscene \"{}\" ready ({:.1f} s): C plays it", intro_->id, intro_->duration);
+    } else {
+      log::warn(Category::Game, "no cutscene: {}", loaded.error().message);
+    }
+  }
+
   // The sky and its light: a procedural sky now (a fraction of a second to
   // bake), replaced by the panorama if one was given, once it has loaded.
   if (Status s = renderer.setEnvironment(render::ProceduralSky{.sunDirection = kSunDirection}, {}); !s) {
@@ -108,6 +121,7 @@ void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem
     };
     laserClip_ = clip(audio::synth::laser(sound_->sampleRate()), "laser");
     impactClip_ = clip(audio::synth::impact(sound_->sampleRate()), "impact");
+    explosionClip_ = clip(audio::synth::explosion(sound_->sampleRate()), "explosion");
     humClip_ = clip(audio::synth::hum(sound_->sampleRate()), "hum");
   }
 
@@ -269,6 +283,22 @@ void ModelScene::resetView() {
 void ModelScene::fixedUpdate(const FixedStep& step, const platform::InputState& input) {
   const auto dt = static_cast<f32>(step.deltaSeconds);
   simulatedSeconds_ += step.deltaSeconds;
+
+  // Cutscenes run on the fixed-step clock: tick by tick, the same every run.
+  const u64 tick = tick_++;
+  if (intro_ && !cutscene_.active() && (cutsceneAtStart_ || input.pressed(platform::Key::C))) {
+    cutsceneAtStart_ = false;
+    startCutscene(tick);
+  }
+  const auto onEvent = [this](const engine::CutsceneEvent& event) { onCutsceneEvent(event); };
+  cutscene_.tick(tick, onEvent);
+  // While one plays, the player is locked: no walking, shooting or looking
+  // around. Holding Space or Escape skips it (solo: at once).
+  const bool locked = cutscene_.active();
+  if (locked && cutscene_.holdSkip(input.down(platform::Key::Space) || input.down(platform::Key::Escape))) {
+    cutscene_.skip(onEvent);
+    ++cutscenesSkipped_;
+  }
   if (world_.alive(spinner_)) {  // a kinematic body: the game says where, physics pushes others out of the way
     world_.get<engine::Transform3D>(spinner_).rotation = yawDegrees(static_cast<f32>(simulatedSeconds_) * 20.0f);
   }
@@ -276,7 +306,7 @@ void ModelScene::fixedUpdate(const FixedStep& step, const platform::InputState& 
   engine::CharacterController* walking =
       world_.alive(walker_) ? world_.tryGet<engine::CharacterController>(walker_) : nullptr;
   if (walking != nullptr) walking->moveVelocity = glm::vec3(0.0f);
-  if (walking != nullptr && controller_.mode() == engine::CameraMode::Walk) {
+  if (walking != nullptr && !locked && controller_.mode() == engine::CameraMode::Walk) {
     engine::CharacterController& walker = *walking;
     // WASD along the ground, relative to where you look.
     const f32 yaw = controller_.yaw();
@@ -293,7 +323,7 @@ void ModelScene::fixedUpdate(const FixedStep& step, const platform::InputState& 
     if (input.pressed(platform::Key::Space)) walker.jumpSpeed = kJumpSpeed;
     if (input.pressed(platform::MouseButton::Left)) shoot();
   }
-  if (input.pressed(platform::MouseButton::Middle)) pick(input);
+  if (!locked && input.pressed(platform::MouseButton::Middle)) pick(input);
 
   physics_.step(world_, dt);
   playImpacts();
@@ -322,6 +352,57 @@ void ModelScene::shoot() {
   log::info(Category::Game, "shot {}: hit {} at {:.2f} m, point ({:.2f}, {:.2f}, {:.2f}), normal ({:.2f}, {:.2f}, "
             "{:.2f}){}", shots_, nameOf(hit->entity), hit->distance, hit->point.x, hit->point.y, hit->point.z,
             hit->normal.x, hit->normal.y, hit->normal.z, pushed ? ": pushed" : "");
+}
+
+void ModelScene::startCutscene(u64 tick) {
+  if (Status s = cutscene_.start(*intro_, tick); !s) {
+    log::warn(Category::Game, "cutscene not played: {}", s.error().message);
+    return;
+  }
+  ++cutscenesPlayed_;
+}
+
+// What the cutscene's events do in this scene (data in the JSON, meaning here).
+void ModelScene::onCutsceneEvent(const engine::CutsceneEvent& event) {
+  ++cutsceneEvents_;
+  log::info(Category::Game, "cutscene event at {:.2f} s: {} {}", event.time, event.action, event.target);
+  if (event.action == "spawn") {  // a crate drops in
+    const ecs::Entity crate = add(event.target.empty() ? "cutscene crate" : event.target, "models/crate.gltf",
+                                  event.position, yawDegrees(17.0f), glm::vec3(0.5f));
+    solid(crate, MotionType::Dynamic, ShapeDesc::box(glm::vec3(0.25f)));
+    world_.get<engine::RigidBody>(crate).mass = 30.0f;
+  } else if (event.action == "light") {  // the sun dims or brightens
+    world_.each<engine::Light>([&](ecs::Entity, engine::Light& light) { light.intensity = event.value; });
+  } else if (event.action == "sound") {  // a sound where something happens
+    const audio::ClipId clip = event.target == "explosion" ? explosionClip_
+                               : event.target == "laser"   ? laserClip_
+                                                           : impactClip_;
+    playAt(clip, event.position, event.value > 0.0f ? event.value : 1.0f);
+  } else if (event.action == "push") {  // a blast: everything loose nearby is thrown outwards
+    world_.each<engine::Transform3D, engine::RigidBody>([&](ecs::Entity, engine::Transform3D& t, engine::RigidBody& rb) {
+      const glm::vec3 away = t.position - event.position;
+      const f32 distance = glm::length(away);
+      if (rb.motion != MotionType::Dynamic || !rb.body.valid() || distance > 3.0f) return;
+      const glm::vec3 direction = glm::normalize((distance > 1e-3f ? away / distance : glm::vec3(0.0f)) +
+                                                 glm::vec3(0.0f, 0.6f, 0.0f));
+      physicsWorld_->addImpulse(rb.body, direction * event.value * (1.0f - distance / 3.0f), t.position);
+    });
+  } else {
+    log::warn(Category::Game, "cutscene event \"{}\" means nothing in this scene", event.action);
+  }
+}
+
+engine::CameraPose ModelScene::playerPose() const {
+  return {.position = camera_.position, .rotation = engine::lookRotation(camera_.position, camera_.target),
+          .fovDegrees = glm::degrees(camera_.fovY)};
+}
+
+void ModelScene::drawHud() {
+  engine::hud::letterbox(cutscene_.letterbox(1.0f));
+  if (const engine::Subtitle* line = cutscene_.subtitle()) engine::hud::subtitle(line->speaker, line->text);
+  if (cutscene_.playing() && cutscene_.sequence() != nullptr && cutscene_.sequence()->skippable) {
+    engine::hud::skipPrompt("Space or Escape", cutscene_.skipProgress());
+  }
 }
 
 void ModelScene::playAt(audio::ClipId clip, glm::vec3 where, f32 volume, bool spatial) {
@@ -395,25 +476,27 @@ void ModelScene::update(const FrameTime& time, const platform::InputState& input
     }
   }
 
-  if (input.pressed(platform::Key::Tab)) {  // orbit -> fly -> walk -> orbit
+  if (!cutscene_.active() && input.pressed(platform::Key::Tab)) {  // orbit -> fly -> walk -> orbit
     const engine::CameraMode next = controller_.mode() == engine::CameraMode::Orbit ? engine::CameraMode::Fly
                                     : controller_.mode() == engine::CameraMode::Fly ? engine::CameraMode::Walk
                                                                                     : engine::CameraMode::Orbit;
     controller_.setMode(next);
     log::info(Category::Game, "camera: {}", describe(next));
   }
-  if (input.pressed(platform::Key::R)) resetView();
+  if (!cutscene_.active() && input.pressed(platform::Key::R)) resetView();
   if (controller_.mode() == engine::CameraMode::Walk && world_.alive(walker_)) {
     controller_.setEye(world_.get<engine::Transform3D>(walker_).position + glm::vec3(0.0f, kEyeHeight, 0.0f));
   }
-  controller_.update(input, static_cast<f32>(time.deltaSeconds), camera_);
+  // The player's camera stays where it was while a cutscene has the screen
+  // (the handoff blends back to it).
+  if (!cutscene_.active()) controller_.update(input, static_cast<f32>(time.deltaSeconds), camera_);
 
   // The ears follow the camera; then every sound follows its entity.
   if (sound_ != nullptr && world_.alive(listener_)) {
     auto& ears = world_.get<engine::Transform3D>(listener_);
-    ears.position = camera_.position;
-    const glm::vec3 look = camera_.target - camera_.position;
-    if (glm::length(look) > 1e-6f) ears.rotation = glm::quatLookAt(glm::normalize(look), camera_.up);
+    const engine::CameraPose heard = cutscene_.camera(playerPose(), 1.0f);  // the ears go where the camera goes
+    ears.position = heard.position;
+    ears.rotation = heard.rotation;
     engine::audioSystem(world_, *sound_, static_cast<f32>(time.deltaSeconds));
   }
 
@@ -434,8 +517,15 @@ void ModelScene::extract(render::FrameData& frame, f64 alpha) {
     camera_.position = glm::vec3(feet[3]) + glm::vec3(0.0f, kEyeHeight, 0.0f);
     camera_.target = camera_.position + controller_.forward();
   }
-  frame.viewProjection = camera_.viewProjection(frame.viewportSize);
-  frame.cameraPosition = camera_.position;
+  // A cutscene (or its handoff) owns the view; otherwise it is the player's.
+  engine::Camera view = camera_;
+  const engine::CameraPose shown = cutscene_.camera(playerPose(), blend);
+  view.position = shown.position;
+  view.target = shown.position + shown.forward();
+  view.up = glm::vec3(0.0f, 1.0f, 0.0f);
+  view.fovY = glm::radians(shown.fovDegrees);
+  frame.viewProjection = view.viewProjection(frame.viewportSize);
+  frame.cameraPosition = view.position;
   // The sun: the first Light entity (none: darkness, but for the sky's own light).
   frame.sun = {.direction = kSunDirection, .colour = glm::vec3(1.0f), .intensity = 0.0f};
   bool sunFound = false;
@@ -514,6 +604,8 @@ void ModelScene::logSummary() {
             at.x, at.y, at.z, glm::length(at - walkerStart_),
             describe(world_.get<engine::CharacterController>(walker_).ground), shots_, hits_, pushes_, stats.steps,
             stats.bodies, stats.activeBodies);
+  log::info(Category::Game, "cutscenes: {} played ({} skipped), {} event(s) fired", cutscenesPlayed_, cutscenesSkipped_,
+            cutsceneEvents_);
   if (sound_ != nullptr) {
     log::info(Category::Game, "audio: {} sound(s) played on the {}", sound_->stats().voicesStarted,
               audio::describe(sound_->output()));

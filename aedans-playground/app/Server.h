@@ -16,6 +16,10 @@
 //                                     end-to-end test (tests/e2e/server.sh).
 //  (--connect without --headless is the windowed client: app/NetScene.h.)
 //
+//  --cutscene-after SECONDS (server) starts the co-op cutscene for every
+//  player that long after the first joins; --skip-cutscenes (bot) votes to
+//  skip it.
+//
 //  --net-latency MS and --net-loss PERCENT make either end's outgoing
 //  traffic slower and lossier (net::NetworkConditions), for testing.
 // =============================================================================
@@ -25,6 +29,8 @@
 #include "playground/game/Protocol.h"
 #include "playground/net/Host.h"
 
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -36,6 +42,10 @@ struct ServerOptions {
   u32 balls = 64;
   u64 maxTicks = 0;  // 0: until Ctrl+C
   net::NetworkConditions network;
+  // --cutscene-after SECONDS: start the co-op cutscene (cutsceneFile, sent
+  // to clients as sequence 1) this long after the first player joins.
+  std::optional<f64> cutsceneAfterSeconds;
+  std::filesystem::path cutsceneFile;
 };
 
 struct ClientOptions {
@@ -43,6 +53,7 @@ struct ClientOptions {
   u16 port = game::protocol::kDefaultPort;
   u64 ticks = 240;  // how long the bot walks, in 1/120 s ticks (0: until Ctrl+C)
   net::NetworkConditions network;
+  bool skipCutscenes = false;  // --skip-cutscenes: the bot holds skip whenever a cutscene plays
 };
 
 // "HOST" or "HOST:PORT" into `options` (the port stays as it is without one).

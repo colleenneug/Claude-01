@@ -61,6 +61,12 @@ struct GameClient::Impl {
   u32 lastSnapshotTick = 0;
   std::deque<protocol::Snapshot> received;  // the newest kSnapshotHistory: baselines for deltas
   f64 ackDelayMs = 0.0;
+  std::optional<CutsceneCue> cue;
+
+  [[nodiscard]] bool locked() const {
+    const f64 now = clock.serverTick();
+    return cue && clock.started() && now >= cue->startTick && now < cue->endTick;
+  }
   ClientStats stats;
 
   Impl(const ClientConfig& clientConfig, net::Host clientHost, net::Peer serverPeer)
@@ -183,6 +189,26 @@ struct GameClient::Impl {
       case protocol::MessageKind::Snapshot:
         if (onSnapshotPacket(bytes)) return;
         break;
+      case protocol::MessageKind::CutsceneStart:
+        if (const auto m = protocol::decodeCutsceneStart(bytes)) {
+          cue = CutsceneCue{.sequenceId = m->sequenceId, .startTick = m->startTick,
+                            .endTick = m->startTick + m->durationTicks};
+          log::info(Category::Game, "client: cutscene {} starts on server tick {} ({} ticks)", m->sequenceId,
+                    m->startTick, m->durationTicks);
+          return;
+        }
+        break;
+      case protocol::MessageKind::CutsceneEnd:
+        if (const auto m = protocol::decodeCutsceneEnd(bytes)) {
+          if (cue && cue->sequenceId == m->sequenceId) {
+            cue->endTick = m->endTick;
+            cue->endedEarly = true;
+            log::info(Category::Game, "client: everyone skipped cutscene {}: it ends on server tick {}",
+                      m->sequenceId, m->endTick);
+          }
+          return;
+        }
+        break;
       case protocol::MessageKind::Hello:
       case protocol::MessageKind::Input:
         break;  // not for a client
@@ -238,7 +264,11 @@ void GameClient::step(const PlayerInput& input) {
 
   // Predict: this tick's input, as the server will see it, applied now.
   const u32 seq = m.prediction.newestSeq() + 1;
-  m.prediction.predict(seq, protocol::quantize(input));
+  // A cutscene holds everyone still (the server ignores movement then; not
+  // predicting any keeps the prediction right). Buttons, skip included, go.
+  PlayerInput sent = input;
+  if (m.locked()) sent.move = glm::vec2(0.0f);
+  m.prediction.predict(seq, protocol::quantize(sent));
   m.correctionOffset *= kCorrectionDecay;
   m.previousRender = m.currentRender;
   m.currentRender = m.prediction.current().position + m.correctionOffset;
@@ -273,6 +303,9 @@ f64 GameClient::interpolationTick() const noexcept { return impl_->clock.renderT
 u32 GameClient::inputSeq() const noexcept { return impl_->prediction.newestSeq(); }
 u32 GameClient::lastAckedInputSeq() const noexcept { return impl_->prediction.lastAcked(); }
 f64 GameClient::ackDelayMs() const noexcept { return impl_->ackDelayMs; }
+f64 GameClient::serverTickNow() const noexcept { return impl_->clock.serverTick(); }
+std::optional<CutsceneCue> GameClient::cutscene() const noexcept { return impl_->cue; }
+bool GameClient::cutsceneLocked() const noexcept { return impl_->locked(); }
 f64 GameClient::roundTripMs() const {
   const auto info = impl_->host.info(impl_->server);
   return info ? static_cast<f64>(info->roundTripMs) : 0.0;

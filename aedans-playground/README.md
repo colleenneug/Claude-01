@@ -14,6 +14,8 @@ quantized messages) with an authoritative headless dedicated server
 player and interpolates everything else; 3D physics (Jolt Physics:
 rigid bodies, a walking character controller, raycasts) stepped at the
 fixed 120 Hz on the job system;
+cutscenes (spline camera tracks, timed events and subtitles, letterbox,
+hold to skip; in co-op the server starts them for everyone on the same tick);
 3D spatial audio (miniaudio: distance, panning, Doppler; procedural sound
 effects; silent but working with no sound card);
 a developer UI (Dear ImGui, F1: entity hierarchy and live inspector, a
@@ -519,6 +521,38 @@ ended from the server's answer (it should be 0.000):
 ./build/debug/app/playground_app --connect 127.0.0.1:27015 --headless --frames 600
 ```
 
+## Cutscenes
+
+A cutscene (`engine/Cutscene.h`) is **data**: a JSON file in
+`app/assets/cutscenes/` with three tracks over its duration.
+
+| Track | What it does |
+|---|---|
+| Camera | keys of position (or `lookAt`), rotation and field of view; between keys the camera follows a **Catmull-Rom** spline through them, turns by **slerp** and eases (`linear`, `in`, `out`, `inOut`) |
+| Events | named actions at exact times (`spawn`, `light`, `sound`, `push` in the demo), each saying whether it still happens if the cutscene is skipped (`fireOnSkip`: state changes yes, effects no) |
+| Subtitles | lines of dialogue with a speaker, a start and an end |
+
+It plays on the game's **120 Hz fixed steps**, by tick number: an event at
+time T fires on tick ⌈T × 120⌉ after the start, every run, on every machine.
+While it plays the player is **locked** (no walking, shooting or looking
+round), the screen gets **letterbox bars**, subtitles and a **"Hold Space or
+Escape to skip"** prompt (drawn by Dear ImGui even with the developer UI
+hidden; Escape skips instead of quitting). Holding for 0.75 s skips: the
+remaining `fireOnSkip` events still happen, so the world ends up the same.
+Then the camera **blends back** to the player's own over 0.6 s, starting
+exactly where the cutscene left off.
+
+**Solo**: press **C** in the 3D scene (or start with `--cutscene`): it plays
+and skips on the local world at once. **Co-op**: the dedicated server
+starts one for everyone (`--server --cutscene-after SECONDS`): a reliable
+`CutsceneStart(sequence, startTick)` scheduled 300 ms ahead, so every
+player enters it on the same server tick; the server ignores movement while
+it plays; each player's input carries a "holding skip" bit, and only when
+**every** player holds skip does the server send `CutsceneEnd(endTick)`, the
+same tick for all.
+
+![A cutscene: letterbox, subtitle, skip prompt](docs/cutscene.png)
+
 ## Sound
 
 `audio/` wraps **miniaudio** behind `audio::AudioEngine`; only `audio/src`
@@ -849,6 +883,9 @@ Every failure is one `critical` line naming the step and the reason.
 | `--net-latency MS` | testing: delay everything this end sends by MS (plus up to MS/5 jitter) |
 | `--net-loss PERCENT` | testing: lose this share of the unreliable packets this end sends |
 | `--editor` | start with the developer UI shown (F1 shows and hides it) |
+| `--cutscene` | play the 3D scene's cutscene at start (C plays it any time) |
+| `--cutscene-after SECONDS` | with `--server`: start the co-op cutscene for everyone that long after the first player joins |
+| `--skip-cutscenes` | with `--connect --headless`: the bot votes to skip every cutscene |
 | `--scene-file PATH` | the scene file the editor saves (Ctrl+S) and loads (Ctrl+O); default `scene.json` |
 | `--verbose` | debug-level logging: frame-time statistics, Vulkan loader messages |
 | `--log-file PATH` | where the log goes (default `playground.log`) |

@@ -282,10 +282,46 @@ std::vector<std::byte> encode(const Snapshot& message, const Snapshot* baseline)
   return out.take();
 }
 
+std::vector<std::byte> encode(const CutsceneStart& message) {
+  net::BitWriter out = begin(MessageKind::CutsceneStart);
+  out.writeVarU32(message.sequenceId);
+  out.writeU32(message.startTick);
+  out.writeVarU32(message.durationTicks);
+  return out.take();
+}
+
+std::vector<std::byte> encode(const CutsceneEnd& message) {
+  net::BitWriter out = begin(MessageKind::CutsceneEnd);
+  out.writeVarU32(message.sequenceId);
+  out.writeU32(message.endTick);
+  return out.take();
+}
+
+std::optional<CutsceneStart> decodeCutsceneStart(std::span<const std::byte> packet) {
+  auto in = open(packet, MessageKind::CutsceneStart);
+  if (!in) return std::nullopt;
+  CutsceneStart message;
+  message.sequenceId = in->readVarU32();
+  message.startTick = in->readU32();
+  message.durationTicks = in->readVarU32();
+  if (!in->ok() || message.durationTicks == 0) return std::nullopt;
+  return message;
+}
+
+std::optional<CutsceneEnd> decodeCutsceneEnd(std::span<const std::byte> packet) {
+  auto in = open(packet, MessageKind::CutsceneEnd);
+  if (!in) return std::nullopt;
+  CutsceneEnd message;
+  message.sequenceId = in->readVarU32();
+  message.endTick = in->readU32();
+  if (!in->ok()) return std::nullopt;
+  return message;
+}
+
 std::optional<MessageKind> peekKind(std::span<const std::byte> packet) {
   net::BitReader in(packet);
   const auto kind = static_cast<u32>(in.readBits(kKindBits));
-  if (!in.ok() || kind < static_cast<u32>(MessageKind::Hello) || kind > static_cast<u32>(MessageKind::Snapshot)) {
+  if (!in.ok() || kind < static_cast<u32>(MessageKind::Hello) || kind > static_cast<u32>(MessageKind::CutsceneEnd)) {
     return std::nullopt;
   }
   return static_cast<MessageKind>(kind);

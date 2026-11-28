@@ -336,3 +336,57 @@ TEST_CASE("a ping too high for the prediction ring overflows it safely, and stil
   REQUIRE(server.has_value());
   CHECK(glm::length(client.predictedPosition() - *server) < 1e-3f);
 }
+
+TEST_CASE("co-op cutscene: everyone enters on the same tick, nobody moves, and it ends early only when all skip") {
+  const net::NetworkConditions lag{.latencyMs = 25, .jitterMs = 5};
+  Game game;
+  game.server = startServer({.network = lag});
+  game.clients.push_back(connectClient(*game.server, {.name = "a", .network = lag}));
+  game.clients.push_back(connectClient(*game.server, {.name = "b", .network = lag}));
+  GameClient& a = *game.clients[0];
+  GameClient& b = *game.clients[1];
+  REQUIRE(game.idleUntil(360, [&] { return a.knownEntityCount() == 66 && b.knownEntityCount() == 66; }));
+
+  constexpr u32 kDuration = 1200;  // 10 s: far longer than the test, so only a skip ends it
+  REQUIRE(game.server->startCutscene(7, kDuration).has_value());
+  CHECK_FALSE(game.server->startCutscene(8, 100).has_value());  // one at a time
+  const protocol::CutsceneStart scheduled = *game.server->cutscene();
+  CHECK(scheduled.startTick == game.server->tick() + GameServer::kCutsceneLeadTicks);
+
+  // Both are told, and agree on the tick (before it comes).
+  REQUIRE(game.idleUntil(120, [&] { return a.cutscene().has_value() && b.cutscene().has_value(); }));
+  CHECK(a.cutscene()->startTick == scheduled.startTick);
+  CHECK(b.cutscene()->startTick == scheduled.startTick);
+  CHECK(a.cutscene()->sequenceId == 7);
+  CHECK(game.server->tick() < scheduled.startTick);  // the lead was enough: told before it began
+
+  // Wait until the server is in it, then everyone tries to walk: nobody moves.
+  REQUIRE(game.idleUntil(240, [&] { return game.server->cutsceneLocked(); }));
+  const glm::vec2 aBefore = *game.server->playerPosition(a.playerId());
+  const glm::vec2 bBefore = *game.server->playerPosition(b.playerId());
+  // A holds skip (and walks); B only walks: not everyone, so no skip.
+  game.run(240, [](usize client, u32) {
+    return PlayerInput{.move = {1.0f, 0.0f}, .buttons = client == 0 ? protocol::kButtonSkip : u8{0}};
+  });
+  CHECK(*game.server->playerPosition(a.playerId()) == aBefore);
+  CHECK(*game.server->playerPosition(b.playerId()) == bBefore);
+  CHECK(game.server->cutsceneLocked());
+  CHECK_FALSE(a.cutscene()->endedEarly);
+  CHECK(game.server->stats().cutscenesSkipped == 0);
+
+  // Now both hold skip: it ends, early, on one tick everyone is told.
+  game.run(240, [](usize, u32) { return PlayerInput{.buttons = protocol::kButtonSkip}; },
+           [&] { return a.cutscene()->endedEarly && b.cutscene()->endedEarly; });
+  REQUIRE(a.cutscene()->endedEarly);
+  REQUIRE(b.cutscene()->endedEarly);
+  CHECK(a.cutscene()->endTick == b.cutscene()->endTick);
+  CHECK(a.cutscene()->endTick < scheduled.startTick + kDuration);
+  CHECK(game.server->stats().cutscenesSkipped == 1);
+
+  // After it: walking works again, on server and client alike.
+  REQUIRE(game.idleUntil(240, [&] { return !game.server->cutscene().has_value() && !a.cutsceneLocked(); }));
+  game.run(120, [](usize, u32) { return PlayerInput{.move = {1.0f, 0.0f}}; });
+  game.idleUntil(60, [] { return false; });
+  CHECK(game.server->playerPosition(a.playerId())->x > aBefore.x + 100.0f);
+  CHECK(glm::length(a.predictedPosition() - *game.server->playerPosition(a.playerId())) < 1e-3f);
+}

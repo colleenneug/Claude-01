@@ -58,6 +58,7 @@ struct Client {
   // Delta snapshots: what was sent lately, and the newest the client says it has.
   std::deque<protocol::Snapshot> sent;  // oldest first, at most kSnapshotHistory
   u32 ackedSnapshotTick = 0;
+  bool holdingSkip = false;  // the newest applied input's kButtonSkip
 };
 
 }  // namespace
@@ -70,6 +71,52 @@ struct GameServer::Impl {
   u32 tick = 0;
   u32 nextSlot = 0;  // spawn places, in joining order
   ServerStats stats;
+  // The cutscene scheduled or playing, and the end tick once agreed.
+  std::optional<protocol::CutsceneStart> cutscene;
+  std::optional<u32> cutsceneEnd;
+  u32 everyoneSkippingTicks = 0;
+
+  [[nodiscard]] bool locked() const {
+    return cutscene && tick >= cutscene->startTick &&
+           tick < cutsceneEnd.value_or(cutscene->startTick + cutscene->durationTicks);
+  }
+
+  void broadcastReliable(const std::vector<std::byte>& bytes) {
+    for (auto& [id, client] : clients) {
+      if (client.playing && !client.leaving) sendReliable(client.peer, bytes);
+    }
+  }
+
+  // Once a tick: the skip vote, and the end of the cutscene.
+  void stepCutscene() {
+    if (!cutscene) return;
+    const u32 end = cutsceneEnd.value_or(cutscene->startTick + cutscene->durationTicks);
+    if (tick >= end) {
+      log::info(Category::Game, "cutscene {} over on tick {}{}", cutscene->sequenceId, tick,
+                cutsceneEnd ? " (skipped by everyone)" : "");
+      cutscene.reset();
+      cutsceneEnd.reset();
+      everyoneSkippingTicks = 0;
+      return;
+    }
+    if (!locked() || cutsceneEnd) return;
+    usize players = 0;
+    usize skipping = 0;
+    for (const auto& [id, client] : clients) {
+      if (!client.playing || client.leaving) continue;
+      ++players;
+      skipping += client.holdingSkip ? 1 : 0;
+    }
+    everyoneSkippingTicks = players > 0 && skipping == players ? everyoneSkippingTicks + 1 : 0;
+    if (everyoneSkippingTicks >= GameServer::kCutsceneSkipTicks) {
+      cutsceneEnd = tick + GameServer::kCutsceneLeadTicks;
+      ++stats.cutscenesSkipped;
+      log::info(Category::Game, "cutscene {}: all {} player(s) held skip; it ends on tick {}", cutscene->sequenceId,
+                players, *cutsceneEnd);
+      broadcastReliable(protocol::encode(protocol::CutsceneEnd{.sequenceId = cutscene->sequenceId,
+                                                               .endTick = *cutsceneEnd}));
+    }
+  }
 
   Impl(const ServerConfig& serverConfig, net::Host listening) : config(serverConfig), host(std::move(listening)) {}
 
@@ -158,6 +205,14 @@ struct GameServer::Impl {
         .entities = {{.id = client.player.index, .kind = EntityKind::Player}}});
     for (auto& [otherId, other] : clients) {
       if (otherId != client.peer.id && other.playing && !other.leaving) sendReliable(other.peer, spawn);
+    }
+    // Joining mid-cutscene: into it, at the same tick as everyone else.
+    if (cutscene) {
+      sendReliable(client.peer, protocol::encode(*cutscene));
+      if (cutsceneEnd) {
+        sendReliable(client.peer, protocol::encode(protocol::CutsceneEnd{.sequenceId = cutscene->sequenceId,
+                                                                         .endTick = *cutsceneEnd}));
+      }
     }
     log::info(Category::Game, "client {} (\"{}\") joined as player entity {} at ({:.0f}, {:.0f}); {} player(s)",
               client.peer.id, client.name, client.player.index, client.state.position.x, client.state.position.y,
@@ -270,11 +325,18 @@ void GameServer::pumpNetwork(u32 waitMs) {
 
 void GameServer::step() {
   // Players: each client's queued inputs, at most a few (InputQueue.h).
+  // During a cutscene the inputs are taken (acknowledged, their skip votes
+  // counted) but move no one.
+  const bool locked = impl_->locked();
   for (auto& [id, client] : impl_->clients) {
     if (!client.playing || client.leaving) continue;
-    client.inputs.tick([&client](u32 /*seq*/, const PlayerInput& input) { client.state = stepPlayer(client.state, input); });
+    client.inputs.tick([&client, locked](u32 /*seq*/, const PlayerInput& input) {
+      client.holdingSkip = (input.buttons & protocol::kButtonSkip) != 0;
+      if (!locked) client.state = stepPlayer(client.state, input);
+    });
     impl_->world.get<engine::Transform>(client.player).position = client.state.position;
   }
+  impl_->stepCutscene();
   // Balls: the same systems as the 2D demo.
   engine::movementSystem(impl_->world, kStepSeconds);
   engine::bounceSystem(impl_->world, kWorldBounds);
@@ -295,6 +357,26 @@ void GameServer::shutdown(u32 waitMs) {
     }
   }
 }
+
+Status GameServer::startCutscene(u32 sequenceId, u32 durationTicks, u32 leadTicks) {
+  if (impl_->cutscene) {
+    return fail(Errc::InvalidState, "server: cutscene {} is still playing", impl_->cutscene->sequenceId);
+  }
+  if (durationTicks == 0) return fail(Errc::InvalidArgument, "server: a cutscene needs a duration");
+  impl_->cutscene = protocol::CutsceneStart{.sequenceId = sequenceId, .startTick = impl_->tick + leadTicks,
+                                            .durationTicks = durationTicks};
+  impl_->cutsceneEnd.reset();
+  impl_->everyoneSkippingTicks = 0;
+  ++impl_->stats.cutscenesStarted;
+  impl_->broadcastReliable(protocol::encode(*impl_->cutscene));
+  impl_->host.flush();
+  log::info(Category::Game, "cutscene {} starts for {} player(s) on tick {} ({} ticks)", sequenceId,
+            impl_->playerCount(), impl_->cutscene->startTick, durationTicks);
+  return {};
+}
+
+std::optional<protocol::CutsceneStart> GameServer::cutscene() const { return impl_->cutscene; }
+bool GameServer::cutsceneLocked() const noexcept { return impl_->locked(); }
 
 u32 GameServer::tick() const noexcept { return impl_->tick; }
 u16 GameServer::port() const noexcept { return impl_->host.port(); }

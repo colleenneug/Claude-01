@@ -23,6 +23,12 @@ Result<std::unique_ptr<DebugUi>> DebugUi::create(platform::Window& window, rende
   io.IniFilename = nullptr;  // no imgui.ini dropped in the working directory: the layout starts the same every run
   io.LogFilename = nullptr;
   ImGui::StyleColorsDark();
+  // Fonts: the default for panels; the same, rasterised at twice the size
+  // (crisp, not a blurry scale-up), for the HUD's subtitles.
+  io.Fonts->AddFontDefault();
+  ImFontConfig large;
+  large.SizePixels = 26.0f;
+  io.Fonts->AddFontDefault(&large);
   ImGui::GetStyle().WindowRounding = 4.0f;
 
   // GLFW's side chains to the window's own callbacks (installed first), so
@@ -54,11 +60,13 @@ void DebugUi::beginFrame(platform::InputState& input) {
     visible_ = !visible_;
     log::info(Category::Engine, "debug UI {}", visible_ ? "shown" : "hidden");
   }
-  if (!visible_) return;
+  hudThisFrame_ = hudWanted_ && hudDraw_ && hudWanted_();
+  if (!visible_ && !hudThisFrame_) return;
   ImGui_ImplVulkan_NewFrame();
   ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
   frameBegun_ = true;
+  if (!visible_) return;  // HUD only: nothing to click, nothing taken from the game
   const ImGuiIO& io = ImGui::GetIO();
   if (io.WantCaptureMouse) input.dropMouse();
   // The keyboard only while typing in a field: a focused panel must not
@@ -68,7 +76,10 @@ void DebugUi::beginFrame(platform::InputState& input) {
 
 void DebugUi::endFrame() {
   if (!frameBegun_) return;
-  for (const Panel& panel : panels_) panel();
+  if (visible_) {
+    for (const Panel& panel : panels_) panel();
+  }
+  if (hudThisFrame_) hudDraw_();
   ImGui::Render();
   frameBegun_ = false;
   frameReady_ = true;

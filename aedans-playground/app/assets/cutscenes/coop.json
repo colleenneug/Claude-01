@@ -1,0 +1,19 @@
+{
+  "id": "coop flyover",
+  "duration": 8.0,
+  "skippable": true,
+  "camera": [
+    { "time": 0.0, "position": [0.0, -1150.0, 700.0],  "lookAt": [0.0, -60.0, 0.0],  "fov": 60, "ease": "inOut" },
+    { "time": 3.0, "position": [-750.0, -350.0, 420.0], "lookAt": [-150.0, 120.0, 0.0], "fov": 55, "ease": "inOut" },
+    { "time": 5.5, "position": [700.0, 250.0, 480.0],   "lookAt": [0.0, 0.0, 0.0],     "fov": 58, "ease": "inOut" },
+    { "time": 8.0, "position": [0.0, 0.0, 780.0],       "lookAt": [0.0, 0.0, 0.0],     "fov": 60, "ease": "out" }
+  ],
+  "events": [
+    { "time": 4.0, "action": "flash", "target": "arena", "fireOnSkip": false }
+  ],
+  "subtitles": [
+    { "start": 0.4, "end": 3.0, "speaker": "Server", "text": "Everyone, eyes up: the arena is live." },
+    { "start": 3.3, "end": 6.0, "speaker": "Server", "text": "Sixty-four balls. No mercy. Good luck." },
+    { "start": 6.2, "end": 7.8, "speaker": "Server", "text": "All players hold Space to skip." }
+  ]
+}
