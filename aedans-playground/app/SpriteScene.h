@@ -13,6 +13,7 @@
 #include "playground/engine/Camera.h"
 #include "playground/engine/WorldBounds.h"
 
+#include <filesystem>
 #include <optional>
 
 #include <glm/vec2.hpp>
@@ -21,12 +22,13 @@ namespace playground::app {
 
 class SpriteScene final : public Scene {
  public:
-  SpriteScene(engine::Application& application, u32 spriteCount);
+  SpriteScene(engine::Application& application, u32 spriteCount, std::filesystem::path sceneFile = "scene.json");
 
   void fixedUpdate(const FixedStep& step, const platform::InputState& input) override;
   void update(const FrameTime& time, const platform::InputState& input) override;
   void extract(render::FrameData& frame, f64 alpha) override;
   void logSummary() override;
+  void drawDebugUi(engine::ProfilerData data) override;
 
  private:
   void setProjection(engine::Projection projection);
@@ -41,6 +43,7 @@ class SpriteScene final : public Scene {
   ecs::Entity player_;
   engine::Camera camera_;
   u32 bulletsFired_ = 0;
+  engine::Editor editor_;
 };
 
 }  // namespace playground::app

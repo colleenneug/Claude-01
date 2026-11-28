@@ -67,6 +67,12 @@ playground_configure_target(playground_physics_tests)
 add_test(NAME physics_tests COMMAND playground_physics_tests)
 set_tests_properties(physics_tests PROPERTIES LABELS "physics;threads")
 
+# --- Scene files: JSON round trips of an ecs::World ---------------------------
+add_executable(playground_scene_tests scene_tests.cpp)
+target_link_libraries(playground_scene_tests PRIVATE playground::engine doctest::doctest)
+playground_configure_target(playground_scene_tests)
+add_test(NAME scene_tests COMMAND playground_scene_tests)
+
 # --- ECS and systems: no window, no GPU --------------------------------------
 add_executable(playground_ecs_tests ecs_tests.cpp)
 target_link_libraries(playground_ecs_tests PRIVATE playground::engine doctest::doctest)
@@ -155,6 +161,9 @@ if(UNIX AND NOT APPLE)
   add_test(NAME physics_e2e
            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/physics.sh $<TARGET_FILE:playground_app> physics_e2e.log)
   set_tests_properties(physics_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input;physics" TIMEOUT 90)
+  # The developer UI: F1, save and load the scene, F1, Escape (tests/e2e/ui.sh).
+  add_test(NAME ui_e2e COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/e2e/ui.sh $<TARGET_FILE:playground_app> ui_e2e.log)
+  set_tests_properties(ui_e2e PROPERTIES SKIP_RETURN_CODE 77 LABELS "display;input" TIMEOUT 90)
 endif()
 
 # A dedicated server and a headless client talking over UDP, with no display
@@ -192,7 +201,7 @@ if(PLAYGROUND_SANITIZERS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND UNIX AND N
     # The keyboard test is a shell script driving xdotool: only the game itself
     # may get the preload, so it is passed through a variable the script reads.
     if(TEST keyboard_e2e)
-      set_tests_properties(keyboard_e2e camera_e2e physics_e2e netclient_e2e PROPERTIES
+      set_tests_properties(keyboard_e2e camera_e2e physics_e2e ui_e2e netclient_e2e PROPERTIES
         ENVIRONMENT "PLAYGROUND_APP_PRELOAD=${playgroundAsanRuntime}:${PLAYGROUND_MESA_LAVAPIPE}")
     endif()
   endif()

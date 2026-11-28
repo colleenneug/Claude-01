@@ -12,6 +12,14 @@
     "tinygltf",
     "stb",
     "enet",
-    "joltphysics"
+    "joltphysics",
+    {
+      "name": "imgui",
+      "features": [
+        "glfw-binding",
+        "vulkan-binding"
+      ]
+    },
+    "nlohmann-json"
   ]
 }

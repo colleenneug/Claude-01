@@ -27,6 +27,11 @@
 //  eye: crates hit get a push; every hit is logged). Middle click, in any
 //  mode, picks what is under the mouse (logged).
 //
+//  F1 opens the developer UI: the scene is an ECS world (Name, Transform3D,
+//  MeshRenderer, Material, the sun as a Light, RigidBody, Collider, the
+//  walker's CharacterController) to inspect, edit, save (Ctrl+S) and load
+//  (Ctrl+O, --scene-file).
+//
 //  Models and panoramas load in the background (engine::AssetManager): the
 //  window opens at once, and each appears when it is ready.
 // =============================================================================
@@ -39,6 +44,8 @@
 #include "playground/engine/Assets.h"
 #include "playground/engine/Camera.h"
 #include "playground/engine/CameraController.h"
+#include "playground/engine/Components.h"
+#include "playground/engine/Editor.h"
 #include "playground/engine/EnvironmentAsset.h"
 #include "playground/engine/Gltf.h"
 #include "playground/engine/Physics.h"
@@ -68,32 +75,33 @@ class ModelScene final : public Scene {
   [[nodiscard]] static Result<std::unique_ptr<ModelScene>> create(engine::AssetManager& assets,
                                                                   render::Renderer& renderer, JobSystem& jobs,
                                                                   std::optional<std::filesystem::path> model,
-                                                                  std::optional<std::filesystem::path> environment);
+                                                                  std::optional<std::filesystem::path> environment,
+                                                                  std::filesystem::path sceneFile = "scene.json");
 
   void fixedUpdate(const FixedStep& step, const platform::InputState& input) override;
   void update(const FrameTime& time, const platform::InputState& input) override;
   void extract(render::FrameData& frame, f64 alpha) override;
   void logSummary() override;
+  void drawDebugUi(engine::ProfilerData data) override;
 
  private:
-  struct Object {
-    std::string name;
-    engine::AssetHandle<engine::Model> model;
-    ecs::Entity entity;            // its Transform3D (scale: the model's size)
-    bool reported = false;         // ready/failed has been logged
-  };
-
-  ModelScene(engine::AssetManager& assets, std::unique_ptr<physics::PhysicsWorld> physics);
+  ModelScene(engine::AssetManager& assets, std::unique_ptr<physics::PhysicsWorld> physics,
+             std::filesystem::path sceneFile);
   void build(render::Renderer& renderer, std::optional<std::filesystem::path> model,
              std::optional<std::filesystem::path> environment);
 
-  // A drawn model at a place (no physics unless a body is added to its entity).
+  // A drawn model at a place: Name, Transform3D (scale: the model's size),
+  // MeshRenderer and a default Material (no physics unless solid() adds it).
   ecs::Entity add(const std::string& name, const std::filesystem::path& path, glm::vec3 position,
                   glm::quat rotation = glm::quat(1, 0, 0, 0), glm::vec3 scale = glm::vec3(1.0f));
-  // Physics for an entity (or, with no entity, an invisible solid).
+  // Physics for an entity (or, with invisible(), an invisible solid).
   void solid(ecs::Entity entity, physics::MotionType motion, physics::ShapeDesc shape);
   ecs::Entity invisible(const std::string& name, glm::vec3 position, physics::ShapeDesc shape,
                         glm::quat rotation = glm::quat(1, 0, 0, 0));
+  // Finds the entities the scene drives (the walker, the turning crate),
+  // after building and after a scene file is loaded.
+  void relink();
+  [[nodiscard]] const engine::Model* modelOf(const engine::MeshRenderer& renderer);
   void resetView();
   void shoot();
   void pick(const platform::InputState& input);
@@ -103,8 +111,9 @@ class ModelScene final : public Scene {
   std::unique_ptr<physics::PhysicsWorld> physicsWorld_;
   engine::PhysicsSystem physics_;
   ecs::World world_;
-  std::vector<Object> objects_;
-  std::unordered_map<u32, std::string> names_;  // entity index -> name, for logs
+  engine::Editor editor_;
+  std::unordered_map<std::string, engine::AssetHandle<engine::Model>> models_;  // by MeshRenderer::model
+  std::unordered_map<u32, u32> reported_;  // entity index -> generation whose model's ready/failed was logged
   std::optional<engine::AssetHandle<engine::EnvironmentAsset>> environment_;
   bool environmentReported_ = false;
   bool showingOneModel_ = false;  // --model: frame the camera on it once loaded
@@ -118,7 +127,7 @@ class ModelScene final : public Scene {
   f32 travelled_ = 0.0f;  // how far the camera moved, for the summary (tests/e2e/camera.sh)
   glm::vec3 lastEye_{0.0f};
 
-  ecs::Entity spinner_;  // the turning crate (kinematic)
+  ecs::Entity spinner_;  // the turning crate (kinematic), if there is one
   f64 simulatedSeconds_ = 0.0;
   ecs::Entity walker_;   // the character walk mode puts you in
   glm::vec3 walkerStart_{0.0f};

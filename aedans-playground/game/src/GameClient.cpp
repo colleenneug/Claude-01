@@ -273,6 +273,10 @@ f64 GameClient::interpolationTick() const noexcept { return impl_->clock.renderT
 u32 GameClient::inputSeq() const noexcept { return impl_->prediction.newestSeq(); }
 u32 GameClient::lastAckedInputSeq() const noexcept { return impl_->prediction.lastAcked(); }
 f64 GameClient::ackDelayMs() const noexcept { return impl_->ackDelayMs; }
+f64 GameClient::roundTripMs() const {
+  const auto info = impl_->host.info(impl_->server);
+  return info ? static_cast<f64>(info->roundTripMs) : 0.0;
+}
 
 glm::vec2 GameClient::renderPosition(f32 alpha) const noexcept {
   return impl_->previousRender + (impl_->currentRender - impl_->previousRender) * std::clamp(alpha, 0.0f, 1.0f);

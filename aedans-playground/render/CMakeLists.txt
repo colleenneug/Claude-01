@@ -10,6 +10,7 @@ add_library(playground_render STATIC
   src/PostProcess.cpp
   src/Shadow.cpp
   src/ShadowMap.cpp
+  src/UiOverlay.cpp
   src/VulkanRenderer.cpp)
 add_library(playground::render ALIAS playground_render)
 
@@ -19,7 +20,7 @@ target_include_directories(playground_render
 
 target_link_libraries(playground_render
   PUBLIC  playground::platform glm::glm   # FrameData uses GLM vectors
-  PRIVATE playground::gpu)
+  PRIVATE playground::gpu playground_imgui)   # Dear ImGui: only src/UiOverlay.cpp
 
 playground_compile_shader(playground_render shaders/sprite.vert)
 playground_compile_shader(playground_render shaders/sprite.frag)

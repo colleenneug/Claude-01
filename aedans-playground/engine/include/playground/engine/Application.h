@@ -102,6 +102,17 @@ using UpdateFn = std::function<void(const FrameTime&, const platform::InputState
 // Runs only on frames that are rendered.
 using ExtractFn = std::function<void(render::FrameData&, f64 alpha)>;
 
+class DebugUi;
+
+// Where the last finished frame's time went (for profilers; engine/Editor.h).
+struct FrameProfile {
+  f64 frameSeconds = 0.0;   // wall time since the previous frame
+  u32 fixedSteps = 0;       // 1/120 s steps run this frame
+  f64 fixedSeconds = 0.0;   // spent in them
+  f64 updateSeconds = 0.0;  // spent in update
+  f64 renderSeconds = 0.0;  // extract + recording + submitting the frame
+};
+
 enum class StopReason : u8 {
   None,           // still running, or never ran
   WindowClosed,   // close button, Alt+F4, Window::requestClose()
@@ -132,6 +143,8 @@ class Application {
   void setFixedUpdate(FixedUpdateFn fixedUpdate);
   void setUpdate(UpdateFn update);
   void setExtract(ExtractFn extract);
+  // The developer UI, if any (not owned; set nullptr before destroying it).
+  void setDebugUi(DebugUi* ui) noexcept { debugUi_ = ui; }
 
   // Runs frames until something stops the loop (see StopReason). Returns the
   // renderer's error if that is what stopped it; success otherwise. May be
@@ -152,6 +165,7 @@ class Application {
   [[nodiscard]] u64 framesRun() const noexcept { return framesRun_; }
   [[nodiscard]] u64 fixedStepsRun() const noexcept { return fixedStepsRun_; }
   [[nodiscard]] f64 lastAlpha() const noexcept { return lastAlpha_; }
+  [[nodiscard]] const FrameProfile& lastFrameProfile() const noexcept { return profile_; }
 
  private:
   using Clock = FrameClock::Clock;
@@ -190,6 +204,8 @@ class Application {
   u64 framesRun_ = 0;
   u64 fixedStepsRun_ = 0;
   f64 lastAlpha_ = 0.0;
+  FrameProfile profile_;
+  DebugUi* debugUi_ = nullptr;
   std::atomic<bool> quitRequested_{false};
   StopReason stopReason_ = StopReason::None;
   bool isShutDown_ = false;

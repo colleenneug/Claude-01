@@ -280,6 +280,21 @@ VulkanRenderer::~VulkanRenderer() {
   // pipeline, layout, semaphores, swapchain, and the context last.
 }
 
+Status VulkanRenderer::enableUi() {
+  if (ui_) return {};
+  auto overlay = UiOverlay::create(context_, swapchain_->format(), VK_FORMAT_D32_SFLOAT, swapchain_->imageCount());
+  if (!overlay) return tl::unexpected(std::move(overlay.error()));
+  ui_ = std::move(*overlay);
+  return {};
+}
+
+void VulkanRenderer::disableUi() noexcept {
+  if (!ui_) return;
+  // Frames in flight may still be drawing with it.
+  if (Status s = context_.device().waitIdle(); !s) log::error(Category::Render, "{}", s.error().message);
+  ui_.reset();
+}
+
 Status VulkanRenderer::createSwapchain(platform::Extent2D size) {
   const VkDevice device = context_.device().handle();
   const bool recreating = swapchain_.has_value();
@@ -323,6 +338,13 @@ Status VulkanRenderer::createSwapchain(platform::Extent2D size) {
   // The pipeline is built for one colour format; rebuild it if that changed.
   if (swapchain_->format() != pipelineFormat_) {
     if (Status s = createPipeline(swapchain_->format()); !s) return s;
+  }
+  // The UI overlay's pipeline likewise; otherwise it only needs the new image count.
+  if (ui_ && ui_->colourFormat() != swapchain_->format()) {
+    ui_.reset();
+    if (Status s = enableUi(); !s) return s;
+  } else if (ui_) {
+    ui_->setImageCount(swapchain_->imageCount());
   }
 
   if (recreating) ++recreations_;
@@ -1192,6 +1214,8 @@ Status VulkanRenderer::writeFrameUniforms(Frame& frame, const FrameData& frameDa
   const glm::mat4 viewProjection = frameData.viewProjection.value_or(
       pixelViewProjection({static_cast<f32>(extent.width), static_cast<f32>(extent.height)}));
   frame.drawSky = frameData.drawSky;
+  frame.drawUi = frameData.drawUi && ui_ != nullptr;
+  lastUiDrawLists_ = frame.drawUi ? UiOverlay::pendingDrawLists() : 0u;
   if (frameData.drawSky) ++lastDrawCalls_;
   // The HDR path only when there is something 3D to draw: a sprites-only
   // frame (the 2D demo) goes straight to the swapchain, as before.
@@ -1458,6 +1482,10 @@ Status VulkanRenderer::recordCommands(const Frame& frameSlot, u32 imageIndex) co
       vkCmdDraw(commands, 6, frameSlot.blendedCount, 0, frameSlot.opaqueCount);
     }
   }
+
+  // THE DEVELOPER UI, last, over everything: after tone mapping, so its
+  // colours are exactly ImGui's.
+  if (frameSlot.drawUi) (void)ui_->record(commands);
 
   vkCmdEndRendering(commands);
 

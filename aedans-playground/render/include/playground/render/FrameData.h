@@ -95,6 +95,9 @@ struct FrameData {
   // image; the composite pass then applies bloom, exposure and tone mapping
   // on the way to the screen. Sprites are drawn after that, untouched.
   bool drawSky = false;  // the environment behind everything, with the sun's disk
+  // Draw the developer UI over the finished frame (Renderer::enableUi):
+  // ImGui::GetDrawData() of this frame. Set by the Application each frame.
+  bool drawUi = false;
   f32 exposure = 1.0f;
   ToneMap toneMap = ToneMap::None;
   BloomSettings bloom;

@@ -31,6 +31,7 @@
 #include "playground/core/Log.h"
 #include "playground/engine/Application.h"
 #include "playground/engine/Assets.h"
+#include "playground/engine/DebugUi.h"
 #include "playground/engine/EnvironmentAsset.h"
 #include "playground/engine/Gltf.h"
 #include "playground/render/VulkanRenderer.h"
@@ -66,6 +67,8 @@ struct Options {
   u16 port = game::protocol::kDefaultPort;  // --port N
   net::NetworkConditions network;           // --net-latency, --net-loss
   u32 sprites = 25'000;  // how many bouncing squares the sprite scene spawns
+  bool editor = false;                        // --editor: start with the developer UI shown
+  std::filesystem::path sceneFile = "scene.json";  // --scene-file: what Ctrl+S / Ctrl+O save and load
 };
 
 void printUsage() {
@@ -84,6 +87,8 @@ void printUsage() {
       "  --net-loss PERCENT   testing: lose this share of the unreliable packets this end sends\n"
       "  --frames N       run N frames, then exit (used by the automated tests)\n"
       "  --sprites N      how many bouncing squares to spawn (default 25000)\n"
+      "  --editor         start with the developer UI shown (F1 shows and hides it)\n"
+      "  --scene-file PATH  the scene file the editor saves (Ctrl+S) and loads (Ctrl+O); default scene.json\n"
       "  --verbose        log at debug level, including frame-time statistics\n"
       "  --log-file PATH  where to write the log (default: playground.log)\n"
       "  --validation     turn Vulkan validation on (default in debug builds)\n"
@@ -137,6 +142,12 @@ Result<Options> parseOptions(std::span<char*> args) {
       auto value = nextValue();
       if (!value) return tl::unexpected(std::move(value.error()));
       options.connect = std::string(*value);
+    } else if (arg == "--editor") {
+      options.editor = true;
+    } else if (arg == "--scene-file") {
+      auto value = nextValue();
+      if (!value) return tl::unexpected(std::move(value.error()));
+      options.sceneFile = std::filesystem::path(*value);
     } else if (arg == "--headless") {
       options.headless = true;
     } else if (arg == "--net-latency") {
@@ -283,16 +294,17 @@ int main(int argc, char** argv) {
   // shutdown() also drops the callbacks below that refer to it.
   std::unique_ptr<app::Scene> scene;
   if (options->connect) {
-    auto netScene = app::NetScene::create(application, client);
+    auto netScene = app::NetScene::create(application, client, options->sceneFile);
     if (!netScene) {
       log::critical(Category::Net, "network client could not start: {}", netScene.error().message);
       return 1;
     }
     scene = std::move(*netScene);
   } else if (options->scene == SceneChoice::Sprites) {
-    scene = std::make_unique<app::SpriteScene>(application, options->sprites);
+    scene = std::make_unique<app::SpriteScene>(application, options->sprites, options->sceneFile);
   } else {
-    auto modelScene = app::ModelScene::create(assets, renderer, jobs, options->model, options->environment);
+    auto modelScene = app::ModelScene::create(assets, renderer, jobs, options->model, options->environment,
+                                              options->sceneFile);
     if (!modelScene) {
       log::critical(Category::Engine, "3D scene could not start ({}): {}", describe(modelScene.error().code),
                     modelScene.error().message);
@@ -325,10 +337,25 @@ int main(int argc, char** argv) {
   // Once per rendered frame: what the scene shows.
   application.setExtract([&](render::FrameData& frame, f64 alpha) { scene->extract(frame, alpha); });
 
+  // The developer UI (F1): the editor bar, hierarchy, inspector, profiler.
+  // Without it (a renderer that cannot draw it) the game runs as before.
+  std::unique_ptr<engine::DebugUi> debugUi;
+  if (auto ui = engine::DebugUi::create(application.window(), renderer, options->editor)) {
+    debugUi = std::move(*ui);
+    debugUi->addPanel([&] {
+      scene->drawDebugUi({.frame = application.lastFrameProfile(), .render = renderer.lastFrameStats()});
+    });
+    application.setDebugUi(debugUi.get());
+  } else {
+    log::warn(Category::Engine, "no developer UI: {}", ui.error().message);
+  }
+
   const Status status = application.run();
 
   scene->logSummary();  // the end-to-end tests read it
   const int sceneExitCode = scene->exitCode();
+  application.setDebugUi(nullptr);
+  debugUi.reset();      // ImGui's Vulkan side goes while the renderer still exists
   assets.clear();       // every GPU asset goes back to the renderer while it still exists
   application.shutdown();  // renderer, then window, then GLFW
 

@@ -14,6 +14,8 @@ quantized messages) with an authoritative headless dedicated server
 player and interpolates everything else; 3D physics (Jolt Physics:
 rigid bodies, a walking character controller, raycasts) stepped at the
 fixed 120 Hz on the job system;
+a developer UI (Dear ImGui, F1: entity hierarchy and live inspector, a
+frame and network profiler, saving and loading scenes as JSON);
 an entity component system (ECS), keyboard/mouse input, an orbit/fly/walk
 camera, a job system (worker threads) and an asset manager that loads files
 in the background.
@@ -84,12 +86,12 @@ the ramp, the stairs, and the stack of crates fallen and settled).*
 | `ecs/` | `playground_ecs` | `Entity`, `ComponentPool`, `World` (create, destroy, add, get, `each<...>`) |
 | `render/` | `playground_render` | `Renderer` (interface), `FrameData`, `Resources` (meshes, textures, materials: no Vulkan), `Environment` (sky and panorama descriptions), `Shadow` (shadow-map framing), the Vulkan renderer (`Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess`), the shaders |
 | `physics/` | `playground_physics` (`engine_physics`) | `PhysicsWorld`: Jolt Physics (hidden) behind our own types: bodies (box, sphere, capsule, mesh; static, kinematic, dynamic), characters (`JPH::CharacterVirtual`), raycasts with layer masks, a bridge from Jolt's jobs to our `JobSystem`. Depends on core and ecs |
-| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController` (orbit, fly, walk), `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Transform`, `Transform3D`, `Velocity`, `Sprite`, `RigidBody`, `Collider`, `CharacterController`), systems, `PhysicsSystem`, `pickSprite` |
+| `engine/` | `playground_engine` | `Application` (main loop), `Camera`, `CameraController` (orbit, fly, walk), `AssetManager`, glTF (`decodeGltf`, `Model`, `gltfLoader`), HDR panoramas (`decodeHdr`, `environmentLoader`), components (`Name`, `Transform`, `Transform3D`, `Velocity`, `Sprite`, `MeshRenderer`, `Material`, `Light`, `RigidBody`, `Collider`, `CharacterController`), systems, `PhysicsSystem`, `pickSprite`, `SceneSerializer` (JSON), `DebugUi` and `Editor` (the developer UI) |
 | `game/` | `playground_game` | the networked game: `Protocol` (v3, with delta snapshots), `Simulation` (the movement rule both sides run), `InputQueue` (the server's rate limit), `Prediction`, `Interpolation`, `GameServer`, `GameClient`. No window, no GPU |
 | `app/` | `playground_app` | `main.cpp`, the scenes (`ModelScene`, `SpriteScene`, `NetScene`), the dedicated server and headless bot (`Server`), `assets/` (copied next to the executable; `assets/third_party/` holds the one model we did not make, with its licence) |
-| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, networking, the game's pieces, a server with two clients over a bad simulated network, and physics; end-to-end keyboard, camera, walking-and-shooting, dedicated-server and windowed-client tests |
+| `tests/` | | doctest suites for core, jobs, assets, glTF, image-based-lighting maths, shadow maths, ECS, input, camera, application, GPU, renderer, meshes, environment lighting, shadows with post-processing, networking, the game's pieces, a server with two clients over a bad simulated network, physics, and scene files; end-to-end keyboard, camera, walking-and-shooting, developer-UI, dedicated-server and windowed-client tests |
 | `tools/` | | `make_demo_assets.py`: writes the demo's glTF models |
-| `third_party/` | | vendored `tl::expected`, Vulkan Memory Allocator, and Jolt Physics v5.3.0 (`JoltPhysics/`: its `Jolt/` sources and MIT licence, built by `cmake/jolt`; vcpkg's `joltphysics` is used instead where it exists).  tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
+| `third_party/` | | vendored `tl::expected`, Vulkan Memory Allocator, and Jolt Physics v5.3.0 (`JoltPhysics/`: its `Jolt/` sources and MIT licence, built by `cmake/jolt`; vcpkg's `joltphysics` is used instead where it exists), and Dear ImGui v1.91.9b (`imgui/`: the core, the GLFW and Vulkan backends, MIT; vcpkg's `imgui` where it exists). tinygltf, nlohmann/json and stb_image come from system packages (Linux) or vcpkg (Windows) |
 
 Each layer may include only the layers below it. Vulkan types stop at the
 render layer: its public headers have none, so the engine and the game build
@@ -514,6 +516,33 @@ ended from the server's answer (it should be 0.000):
 ./build/debug/app/playground_app --connect 127.0.0.1:27015 --headless --frames 600
 ```
 
+## The developer UI (F1)
+
+**F1** shows and hides a Dear ImGui overlay, drawn over the finished frame
+(after tone mapping, so its colours are exact) by `render/src/UiOverlay`;
+`engine::DebugUi` owns ImGui's context and its GLFW side. `--editor` starts
+with it shown. It never starts without a window (`--server`, `--headless`),
+and costs nothing while hidden. While it is under the mouse, the game does
+not get the mouse (clicking a button does not also shoot); it takes the
+keyboard only while you type in a field.
+
+| Panel | What it shows |
+|---|---|
+| Editor bar | File: **Save** (Ctrl+S) and **Load** (Ctrl+O) the scene (`--scene-file`, default `scene.json`); View: which panels are open; the last result |
+| Hierarchy | every entity, by `Name`; click one to inspect it |
+| Inspector | its components, live: `Name`, `Transform`/`Transform3D` (moving a physics body teleports it), `Velocity`, `Sprite`, `PlayerTag`, `MeshRenderer`, `Material` (tint, metal, roughness, glow), `Light` (the sun), `RigidBody`, `Collider`, `CharacterController` (body settings rebuild the body), and a body's live speed; Destroy entity |
+| Profiler | frame time and FPS with a graph of the last 480 frames, fixed steps and their time, update and render time, entities, draw calls, physics bodies; in the network client, round trip, snapshots (deltas, out of order), corrections |
+
+**Scene files** (`engine/SceneSerializer.h`) are JSON: one object per
+entity, one key per component, by name, readable and hand-editable
+(`Name`, `Transform`, `Transform3D`, `Velocity`, `Sprite`, `PlayerTag`,
+`MeshRenderer`, `Material`, `Light`, `RigidBody`, `Collider`,
+`CharacterController`). Floats keep every digit, so a scene loads back
+exactly. Loading is all or nothing: a broken file says what is wrong and
+leaves the scene as it was; unknown components are skipped with a warning.
+
+![The developer UI over the 3D scene](docs/editor.png)
+
 ## Physics
 
 `physics/` wraps **Jolt Physics** (v5.3.0, MIT) behind `physics::PhysicsWorld`.
@@ -779,6 +808,8 @@ Every failure is one `critical` line naming the step and the reason.
 | `--headless` | with `--connect`: no window; a bot walks for `--frames` ticks (default 240 = 2 s), then logs a summary |
 | `--net-latency MS` | testing: delay everything this end sends by MS (plus up to MS/5 jitter) |
 | `--net-loss PERCENT` | testing: lose this share of the unreliable packets this end sends |
+| `--editor` | start with the developer UI shown (F1 shows and hides it) |
+| `--scene-file PATH` | the scene file the editor saves (Ctrl+S) and loads (Ctrl+O); default `scene.json` |
 | `--verbose` | debug-level logging: frame-time statistics, Vulkan loader messages |
 | `--log-file PATH` | where the log goes (default `playground.log`) |
 | `--validation` / `--no-validation` | force Vulkan validation on or off (default: on in debug builds, off in release) |

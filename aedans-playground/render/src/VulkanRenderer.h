@@ -29,6 +29,7 @@
 #include "PostProcess.h"
 #include "ResourcePool.h"
 #include "ShadowMap.h"
+#include "UiOverlay.h"
 
 #include <array>
 #include <memory>
@@ -97,6 +98,13 @@ class VulkanRenderer final : public Renderer {
   void destroyTexture(TextureHandle texture) noexcept override;
   [[nodiscard]] Status setEnvironment(const ProceduralSky& sky, const EnvironmentQuality& quality) override;
   [[nodiscard]] Status setEnvironment(const HdrImage& panorama, const EnvironmentQuality& quality) override;
+  [[nodiscard]] Status enableUi() override;
+  void disableUi() noexcept override;
+  [[nodiscard]] FrameStats lastFrameStats() const noexcept override {
+    return {.drawCalls = lastDrawCalls_ + (lastUiDrawLists_ > 0 ? 1u : 0u), .meshDraws = lastMeshDraws_,
+            .sprites = lastSpriteCount_, .uiDrawLists = lastUiDrawLists_};
+  }
+  [[nodiscard]] bool uiEnabled() const noexcept { return ui_ != nullptr; }
 
   // For tests and diagnostics.
   [[nodiscard]] const gpu::Context& context() const noexcept { return context_; }
@@ -156,6 +164,7 @@ class VulkanRenderer final : public Renderer {
     std::vector<MeshCommand> meshCommands;  // one per entry of meshDraws, in order
     u32 singleSidedCount = 0;      // meshCommands [0, n) are culled; the rest are double-sided
     bool drawSky = false;          // FrameData::drawSky, for recording
+    bool drawUi = false;           // FrameData::drawUi (and the overlay exists)
     bool useHdr = false;           // meshes or sky this frame: scene -> HDR -> composite; else sprites only
     bool drawShadows = false;      // render the shadow map this frame
     ShadowSettings shadows;        // its bias settings
@@ -226,6 +235,9 @@ class VulkanRenderer final : public Renderer {
   // Declared last: destroyed first, while the device still exists.
   ResourcePool<gpu::Image, TextureHandle> textures_{kMaxTextures, "texture"};
   ResourcePool<Mesh, MeshHandle> meshes_{kMaxMeshes, "mesh"};
+  // The developer UI (enableUi), last of all: destroyed first, its pipeline
+  // and descriptor pool going while the device is still there.
+  std::unique_ptr<UiOverlay> ui_;
 
   u32 frameIndex_ = 0;          // which Frame slot is next
   u64 framesPresented_ = 0;
@@ -234,6 +246,7 @@ class VulkanRenderer final : public Renderer {
   u32 lastSpriteCount_ = 0;
   u32 lastDrawCalls_ = 0;
   u32 lastMeshDraws_ = 0;
+  u32 lastUiDrawLists_ = 0;
   bool lastFrameUsedHdr_ = false;
   u32 lastShadowCasters_ = 0;
   Aabb lastSceneBounds_;  // every mesh drawn this frame, world space (for framing the shadow map)

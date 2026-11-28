@@ -22,6 +22,18 @@ std::optional<physics::BodyId> PhysicsSystem::bodyOf(ecs::Entity entity) const {
   return it->second.body;
 }
 
+void PhysicsSystem::rebuild(ecs::Entity entity) {
+  if (const auto it = bodies_.find(entity.index); it != bodies_.end() && it->second.entity == entity) {
+    physics_.removeBody(it->second.body);
+    bodies_.erase(it);
+  }
+  if (const auto it = characters_.find(entity.index); it != characters_.end() && it->second.entity == entity) {
+    physics_.removeCharacter(it->second.character);
+    characters_.erase(it);
+  }
+  failed_.erase(entity.index);
+}
+
 // Bodies and characters whose entity is gone, or no longer has what made it one.
 void PhysicsSystem::forgetStale(ecs::World& world) {
   for (auto it = bodies_.begin(); it != bodies_.end();) {

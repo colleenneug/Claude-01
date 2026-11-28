@@ -1,5 +1,7 @@
 #include "playground/engine/Application.h"
 
+#include "playground/engine/DebugUi.h"
+
 #include "playground/core/Assert.h"
 #include "playground/core/Log.h"
 
@@ -182,8 +184,18 @@ Status Application::run() {
 
     // 3. Clock and input: one snapshot for the whole frame.
     const FrameTime time = clock_.tick();
-    const platform::InputState frameInput = window_->input().takeSnapshot();
+    platform::InputState frameInput = window_->input().takeSnapshot();
+    // The developer UI first: what it is using (a click on a button) the game does not get.
+    if (debugUi_ != nullptr) debugUi_->beginFrame(frameInput);
     inputLatch_.beginFrame(frameInput);
+    FrameProfile current{.frameSeconds = time.rawDeltaSeconds};  // published when the frame is done
+    auto mark = Clock::now();
+    auto lap = [&mark] {
+      const auto now = Clock::now();
+      const f64 seconds = std::chrono::duration<f64>(now - mark).count();
+      mark = now;
+      return seconds;
+    };
 
     // 4. Simulate: as many fixed steps as real time has paid for. The
     // accumulator clamps the frame and caps the catch-up (core/FixedStep.h).
@@ -197,9 +209,13 @@ Status Application::run() {
       ++fixedStepsRun_;
     }
     lastAlpha_ = plan.alpha;
+    current.fixedSteps = plan.steps;
+    current.fixedSeconds = lap();
 
     // 5. Update, once per frame.
     if (update_) update_(time, frameInput);
+    if (debugUi_ != nullptr) debugUi_->endFrame();  // its panels, then ImGui::Render()
+    current.updateSeconds = lap();
 
     // 6 and 7. Extract (interpolated by alpha) and render.
     if (renderer_ && !window_->isMinimized()) {
@@ -213,6 +229,8 @@ Status Application::run() {
       }
     }
 
+    current.renderSeconds = lap();
+    profile_ = current;
     ++framesRun_;
     recordFrameStats(time, plan);
 
@@ -256,6 +274,7 @@ Status Application::renderFrame(const FrameTime& time, f64 alpha) {
   const platform::Extent2D framebuffer = window_->framebufferSize();
   frameData_.viewportSize = {static_cast<f32>(framebuffer.width), static_cast<f32>(framebuffer.height)};
   if (extract_) extract_(frameData_, alpha);
+  frameData_.drawUi = debugUi_ != nullptr && debugUi_->frameReady();
   return renderer_->renderFrame(time, frameData_);
 }
 

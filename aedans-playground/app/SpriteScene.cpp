@@ -64,6 +64,7 @@ ecs::Entity spawnPlayer(ecs::World& world) {
   world.add<engine::Sprite>(player, engine::Sprite{.size = {44.0f, 44.0f}, .colour = {1.0f, 1.0f, 1.0f, 1.0f},
                                                    .layer = kPlayerLayer});
   world.add<engine::PlayerTag>(player);
+  world.add<engine::Name>(player, engine::Name{"player"});
   return player;
 }
 
@@ -81,7 +82,8 @@ void spawnBullet(ecs::World& world, glm::vec2 from, glm::vec2 direction) {
 
 }  // namespace
 
-SpriteScene::SpriteScene(engine::Application& application, u32 spriteCount) : application_(application) {
+SpriteScene::SpriteScene(engine::Application& application, u32 spriteCount, std::filesystem::path sceneFile)
+    : application_(application), editor_(std::move(sceneFile)) {
   spawnBouncingSprites(world_, spriteCount, bounds_.halfSize);
   player_ = spawnPlayer(world_);
   // Orthographic: the whole world, fitted to the window.
@@ -117,7 +119,8 @@ void SpriteScene::fixedUpdate(const FixedStep& step, const platform::InputState&
   const auto deltaSeconds = static_cast<f32>(step.deltaSeconds);
   engine::snapshotTransforms(world_);
   engine::inputSystem(world_, actions_, input);
-  if (actions_.pressed(input, engine::actions::kFire)) {
+  if (actions_.pressed(input, engine::actions::kFire) && world_.alive(player_) &&
+      world_.has<engine::Transform>(player_)) {
     // Aim at the mouse; straight up if it is off the playfield or on the player.
     const glm::vec2 from = world_.get<engine::Transform>(player_).position;
     glm::vec2 direction{0.0f, 1.0f};
@@ -157,9 +160,21 @@ void SpriteScene::extract(render::FrameData& frame, f64 alpha) {
   engine::extractSprites(world_, frame, alpha);
 }
 
+void SpriteScene::drawDebugUi(engine::ProfilerData data) {
+  data.entities = world_.entityCount();
+  if (editor_.draw(world_, data)) {
+    // A loaded scene replaced every entity: steer the first player in it.
+    player_ = {};
+    world_.each<engine::PlayerTag>([&](ecs::Entity e, engine::PlayerTag&) {
+      if (!player_.valid()) player_ = e;
+    });
+  }
+}
+
 // The end-to-end keyboard test (tests/e2e/keyboard.sh) reads this line.
 void SpriteScene::logSummary() {
-  const glm::vec2 playerAt = world_.get<engine::Transform>(player_).position;
+  const engine::Transform* player = world_.alive(player_) ? world_.tryGet<engine::Transform>(player_) : nullptr;
+  const glm::vec2 playerAt = player != nullptr ? player->position : glm::vec2(0.0f);
   log::info(Category::Game, "player ended at x={:.0f}, y={:.0f}; {} bullets fired", playerAt.x, playerAt.y,
             bulletsFired_);
 }

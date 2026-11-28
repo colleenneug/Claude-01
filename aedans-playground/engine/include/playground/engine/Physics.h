@@ -89,6 +89,10 @@ class PhysicsSystem {
   [[nodiscard]] usize characterCount() const noexcept { return characters_.size(); }
   // The body of an entity, if it has one.
   [[nodiscard]] std::optional<physics::BodyId> bodyOf(ecs::Entity entity) const;
+  // Drops the entity's body or character; the next step makes a new one
+  // from its components as they are now (after editing RigidBody,
+  // Collider or CharacterController settings).
+  void rebuild(ecs::Entity entity);
 
  private:
   struct TrackedBody {

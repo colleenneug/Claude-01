@@ -19,6 +19,7 @@
 #include "playground/engine/Camera.h"
 #include "playground/game/GameClient.h"
 
+#include <filesystem>
 #include <memory>
 
 namespace playground::app {
@@ -26,16 +27,18 @@ namespace playground::app {
 class NetScene final : public Scene {
  public:
   [[nodiscard]] static Result<std::unique_ptr<NetScene>> create(engine::Application& application,
-                                                                const ClientOptions& options);
+                                                                const ClientOptions& options,
+                                                                std::filesystem::path sceneFile = "scene.json");
 
   void fixedUpdate(const FixedStep& step, const platform::InputState& input) override;
   void update(const FrameTime& time, const platform::InputState& input) override;
   void extract(render::FrameData& frame, f64 alpha) override;
   void logSummary() override;
   [[nodiscard]] int exitCode() const override { return failed_ ? 1 : 0; }
+  void drawDebugUi(engine::ProfilerData data) override;
 
  private:
-  NetScene(engine::Application& application, std::unique_ptr<game::GameClient> client);
+  NetScene(engine::Application& application, std::unique_ptr<game::GameClient> client, std::filesystem::path sceneFile);
 
   engine::Application& application_;
   std::unique_ptr<game::GameClient> client_;
@@ -43,6 +46,7 @@ class NetScene final : public Scene {
   engine::Camera camera_;
   f64 secondsSinceStatus_ = 0.0;
   bool failed_ = false;
+  engine::Editor editor_;
 };
 
 }  // namespace playground::app

@@ -114,6 +114,30 @@ else()
   target_link_libraries(playground_jolt INTERFACE Jolt)
 endif()
 
+# Dear ImGui (third_party/imgui, v1.91.9b, MIT) and its GLFW and Vulkan
+# backends: the developer overlay (render/src/UiOverlay, engine/DebugUi).
+# vcpkg's imgui port (with the glfw and vulkan bindings) where there is one;
+# otherwise the copy here. Built without our warnings; SYSTEM headers.
+find_package(imgui CONFIG QUIET)
+add_library(playground_imgui INTERFACE)
+if(TARGET imgui::imgui)
+  target_link_libraries(playground_imgui INTERFACE imgui::imgui)
+else()
+  set(PLAYGROUND_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+  add_library(playground_imgui_vendored STATIC
+    ${PLAYGROUND_IMGUI_DIR}/imgui.cpp
+    ${PLAYGROUND_IMGUI_DIR}/imgui_draw.cpp
+    ${PLAYGROUND_IMGUI_DIR}/imgui_tables.cpp
+    ${PLAYGROUND_IMGUI_DIR}/imgui_widgets.cpp
+    ${PLAYGROUND_IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${PLAYGROUND_IMGUI_DIR}/backends/imgui_impl_vulkan.cpp)
+  target_include_directories(playground_imgui_vendored SYSTEM PUBLIC ${PLAYGROUND_IMGUI_DIR}
+                                                                     ${PLAYGROUND_IMGUI_DIR}/backends)
+  target_compile_definitions(playground_imgui_vendored PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+  target_link_libraries(playground_imgui_vendored PUBLIC glfw Vulkan::Vulkan)
+  target_link_libraries(playground_imgui INTERFACE playground_imgui_vendored)
+endif()
+
 add_library(playground_tl_expected INTERFACE)
 target_include_directories(playground_tl_expected SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 

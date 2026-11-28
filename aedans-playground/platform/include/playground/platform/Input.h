@@ -80,6 +80,14 @@ class InputState {
   // True if any key or button was pressed or released.
   [[nodiscard]] bool hasEdges() const noexcept;
 
+  // What the game sees while a UI is using the mouse or the keyboard: as if
+  // nothing were held or pressed (the cursor position stays).
+  void dropMouse() noexcept {
+    mouse_ = {};
+    scroll_ = 0.0;
+  }
+  void dropKeys() noexcept { keys_ = {}; }
+
  private:
   friend class InputCollector;
   friend class InputLatch;

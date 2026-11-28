@@ -81,6 +81,24 @@ class Renderer {
   virtual void destroyMesh(MeshHandle /*mesh*/) noexcept {}
   virtual void destroyTexture(TextureHandle /*texture*/) noexcept {}
 
+  // The developer UI (Dear ImGui) drawn over each finished frame whose
+  // FrameData::drawUi is set. ImGui's context must exist first (engine::
+  // DebugUi makes it) and outlive disableUi(). Renderers without one (tests'
+  // fakes) say Unsupported, and the game runs without the UI.
+  [[nodiscard]] virtual Status enableUi() {
+    return fail(Errc::Unsupported, "the {} renderer cannot draw a developer UI", name());
+  }
+  virtual void disableUi() noexcept {}
+
+  // What the last frame cost the GPU's command stream (for profilers).
+  struct FrameStats {
+    u32 drawCalls = 0;
+    u32 meshDraws = 0;
+    u32 sprites = 0;
+    u32 uiDrawLists = 0;
+  };
+  [[nodiscard]] virtual FrameStats lastFrameStats() const noexcept { return {}; }
+
   // The environment: the sky behind the scene and the light it casts
   // (render/Environment.h). Rebuilds the lighting maps on the GPU and waits
   // for them: a loading-time call, not a per-frame one. Until the first

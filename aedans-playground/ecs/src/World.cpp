@@ -47,4 +47,19 @@ void World::flush() {
   pendingDestroy_.clear();
 }
 
+std::vector<Entity> World::entities() const {
+  std::vector<Entity> live;
+  live.reserve(liveCount_);
+  for (u32 i = 0; i < slots_.size(); ++i) {
+    if (slots_[i].inUse) live.push_back({.index = i, .generation = slots_[i].generation});
+  }
+  return live;
+}
+
+void World::clear() {
+  PG_ASSERT(iterating_ == 0, "clear() during each()");
+  pendingDestroy_ = entities();
+  flush();
+}
+
 }  // namespace playground::ecs

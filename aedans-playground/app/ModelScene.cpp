@@ -60,16 +60,18 @@ std::string_view describe(engine::CameraMode mode) {
 
 Result<std::unique_ptr<ModelScene>> ModelScene::create(engine::AssetManager& assets, render::Renderer& renderer,
                                                        JobSystem& jobs, std::optional<std::filesystem::path> model,
-                                                       std::optional<std::filesystem::path> environment) {
+                                                       std::optional<std::filesystem::path> environment,
+                                                       std::filesystem::path sceneFile) {
   auto physicsWorld = physics::PhysicsWorld::create({}, &jobs);
   if (!physicsWorld) return tl::unexpected(std::move(physicsWorld.error()));
-  std::unique_ptr<ModelScene> scene(new ModelScene(assets, std::move(*physicsWorld)));
+  std::unique_ptr<ModelScene> scene(new ModelScene(assets, std::move(*physicsWorld), std::move(sceneFile)));
   scene->build(renderer, std::move(model), std::move(environment));
   return scene;
 }
 
-ModelScene::ModelScene(engine::AssetManager& assets, std::unique_ptr<physics::PhysicsWorld> physics)
-    : assets_(assets), physicsWorld_(std::move(physics)), physics_(*physicsWorld_) {}
+ModelScene::ModelScene(engine::AssetManager& assets, std::unique_ptr<physics::PhysicsWorld> physics,
+                       std::filesystem::path sceneFile)
+    : assets_(assets), physicsWorld_(std::move(physics)), physics_(*physicsWorld_), editor_(std::move(sceneFile)) {}
 
 void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem::path> model,
                        std::optional<std::filesystem::path> environment) {
@@ -86,6 +88,13 @@ void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem
   camera_.fovY = glm::radians(50.0f);
   camera_.nearPlane = 0.05f;  // a metre-scale scene: the sprite demo's near plane of 1 would clip it
   camera_.farPlane = 500.0f;
+
+  // The sun: a Light entity (the inspector can turn and dim it). The sky
+  // keeps the sun it was baked with.
+  const ecs::Entity sun = world_.create();
+  world_.add<engine::Name>(sun, engine::Name{"sun"});
+  world_.add<engine::Light>(sun, engine::Light{.direction = glm::normalize(kSunDirection),
+                                               .colour = {1.0f, 0.95f, 0.88f}, .intensity = 3.2f});
 
   // The ground: a solid slab under y = 0, in both kinds of scene.
   invisible("ground", {0.0f, -0.5f, 0.0f}, ShapeDesc::box({12.0f, 0.5f, 12.0f}));
@@ -151,15 +160,16 @@ void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem
   // The character walk mode puts you in.
   walker_ = world_.create();
   walkerStart_ = kWalkerStart;
+  world_.add<engine::Name>(walker_, engine::Name{"you"});
   world_.add<engine::Transform3D>(walker_, engine::Transform3D{.position = kWalkerStart});
   world_.add<engine::CharacterController>(walker_);
-  names_[walker_.index] = "you";
+  relink();
 
   resetView();
   log::info(Category::Game, "3D scene: {} object(s) loading; drag to orbit (left), pan (right), wheel to zoom, "
             "Tab for fly mode (WASD, Q/E, right-drag to look, Shift for speed) and again for walk mode (WASD, "
             "Space jumps, left click shoots), middle click picks, R resets the view, Escape quits",
-            objects_.size());
+            world_.count<engine::MeshRenderer>());
   log::info(Category::Game, "physics: {} solid object(s), a walking character, {}", world_.count<engine::Collider>(),
             physicsWorld_->multithreaded() ? "stepped on the job system" : "stepped on this thread");
 }
@@ -167,10 +177,12 @@ void ModelScene::build(render::Renderer& renderer, std::optional<std::filesystem
 ecs::Entity ModelScene::add(const std::string& name, const std::filesystem::path& path, glm::vec3 position,
                             glm::quat rotation, glm::vec3 scale) {
   const ecs::Entity entity = world_.create();
+  world_.add<engine::Name>(entity, engine::Name{name});
   world_.add<engine::Transform3D>(entity, engine::Transform3D{.position = position, .rotation = rotation,
                                                               .scale = scale});
-  objects_.push_back({.name = name, .model = assets_.load<engine::Model>(path.generic_string()), .entity = entity});
-  names_[entity.index] = name;
+  world_.add<engine::MeshRenderer>(entity, engine::MeshRenderer{.model = path.generic_string()});
+  world_.add<engine::Material>(entity);  // no change to the model's own materials until edited
+  (void)modelOf(world_.get<engine::MeshRenderer>(entity));  // start loading now
   return entity;
 }
 
@@ -182,15 +194,38 @@ void ModelScene::solid(ecs::Entity entity, physics::MotionType motion, physics::
 ecs::Entity ModelScene::invisible(const std::string& name, glm::vec3 position, physics::ShapeDesc shape,
                                   glm::quat rotation) {
   const ecs::Entity entity = world_.create();
+  world_.add<engine::Name>(entity, engine::Name{name});
   world_.add<engine::Transform3D>(entity, engine::Transform3D{.position = position, .rotation = rotation});
   solid(entity, MotionType::Static, std::move(shape));
-  names_[entity.index] = name;
   return entity;
 }
 
 std::string ModelScene::nameOf(ecs::Entity entity) const {
-  const auto it = names_.find(entity.index);
-  return it != names_.end() && world_.alive(entity) ? it->second : std::string("something");
+  const engine::Name* name = world_.alive(entity) ? world_.tryGet<engine::Name>(entity) : nullptr;
+  return name != nullptr ? name->value : std::string("something");
+}
+
+// The model a MeshRenderer names: loaded once per path (the AssetManager
+// would share it anyway; this saves the lookup every frame).
+const engine::Model* ModelScene::modelOf(const engine::MeshRenderer& renderer) {
+  auto it = models_.find(renderer.model);
+  if (it == models_.end()) {
+    // Absolute paths (--model) as they are; others relative to the assets folder.
+    it = models_.emplace(renderer.model, assets_.load<engine::Model>(renderer.model)).first;
+  }
+  return assets_.get(it->second);
+}
+
+void ModelScene::relink() {
+  walker_ = {};
+  spinner_ = {};
+  world_.each<engine::CharacterController>([&](ecs::Entity e, engine::CharacterController&) {
+    if (!walker_.valid()) walker_ = e;
+  });
+  world_.each<engine::Name, engine::RigidBody>([&](ecs::Entity e, engine::Name& name, engine::RigidBody& body) {
+    if (name.value == "crate" && body.motion == MotionType::Kinematic) spinner_ = e;
+  });
+  if (walker_.valid()) walkerStart_ = world_.get<engine::Transform3D>(walker_).position;
 }
 
 void ModelScene::resetView() {
@@ -207,9 +242,11 @@ void ModelScene::fixedUpdate(const FixedStep& step, const platform::InputState& 
     world_.get<engine::Transform3D>(spinner_).rotation = yawDegrees(static_cast<f32>(simulatedSeconds_) * 20.0f);
   }
 
-  auto& walker = world_.get<engine::CharacterController>(walker_);
-  walker.moveVelocity = glm::vec3(0.0f);
-  if (controller_.mode() == engine::CameraMode::Walk) {
+  engine::CharacterController* walking =
+      world_.alive(walker_) ? world_.tryGet<engine::CharacterController>(walker_) : nullptr;
+  if (walking != nullptr) walking->moveVelocity = glm::vec3(0.0f);
+  if (walking != nullptr && controller_.mode() == engine::CameraMode::Walk) {
+    engine::CharacterController& walker = *walking;
     // WASD along the ground, relative to where you look.
     const f32 yaw = controller_.yaw();
     const glm::vec3 ahead{std::sin(yaw), 0.0f, -std::cos(yaw)};
@@ -232,6 +269,7 @@ void ModelScene::fixedUpdate(const FixedStep& step, const platform::InputState& 
 
 // A hitscan shot from the eye, where the camera looks.
 void ModelScene::shoot() {
+  if (!world_.alive(walker_)) return;
   ++shots_;
   const glm::vec3 eye = world_.get<engine::Transform3D>(walker_).position + glm::vec3(0.0f, kEyeHeight, 0.0f);
   const glm::vec3 direction = controller_.forward();
@@ -266,11 +304,21 @@ void ModelScene::pick(const platform::InputState& input) {
 
 void ModelScene::update(const FrameTime& time, const platform::InputState& input) {
   // Report each model once: ready (and, with --model, frame the camera on it) or failed.
-  for (Object& object : objects_) {
-    if (object.reported) continue;
-    if (const engine::Model* model = assets_.get(object.model)) {  // ready
-      object.reported = true;
-      log::info(Category::Game, "{} ready: {} mesh(es), {} texture(s)", object.name, model->meshCount(),
+  std::vector<std::pair<ecs::Entity, std::string>> pending;
+  world_.each<engine::MeshRenderer>([&](ecs::Entity e, engine::MeshRenderer& renderer) {
+    const auto seen = reported_.find(e.index);
+    if (seen == reported_.end() || seen->second != e.generation) pending.emplace_back(e, renderer.model);
+  });
+  for (const auto& [entity, path] : pending) {
+    const std::string name = nameOf(entity);
+    const auto handle = models_.find(path);
+    if (handle == models_.end()) {
+      (void)modelOf(world_.get<engine::MeshRenderer>(entity));  // a loaded scene's model: start loading it
+      continue;
+    }
+    if (const engine::Model* model = assets_.get(handle->second)) {  // ready
+      reported_[entity.index] = entity.generation;
+      log::info(Category::Game, "{} ready: {} mesh(es), {} texture(s)", name, model->meshCount(),
                 model->textureCount());
       if (showingOneModel_ && !framed_ && !model->bounds().empty()) {
         const engine::Bounds& b = model->bounds();
@@ -278,9 +326,9 @@ void ModelScene::update(const FrameTime& time, const platform::InputState& input
                           glm::radians(-15.0f));
         framed_ = true;
       }
-    } else if (const Error* error = assets_.error(object.model)) {  // failed
-      object.reported = true;
-      log::error(Category::Game, "{} could not be loaded: {}", object.name, error->message);
+    } else if (const Error* error = assets_.error(handle->second)) {  // failed
+      reported_[entity.index] = entity.generation;
+      log::error(Category::Game, "{} could not be loaded: {}", name, error->message);
     }
   }
 
@@ -302,7 +350,7 @@ void ModelScene::update(const FrameTime& time, const platform::InputState& input
     log::info(Category::Game, "camera: {}", describe(next));
   }
   if (input.pressed(platform::Key::R)) resetView();
-  if (controller_.mode() == engine::CameraMode::Walk) {
+  if (controller_.mode() == engine::CameraMode::Walk && world_.alive(walker_)) {
     controller_.setEye(world_.get<engine::Transform3D>(walker_).position + glm::vec3(0.0f, kEyeHeight, 0.0f));
   }
   controller_.update(input, static_cast<f32>(time.deltaSeconds), camera_);
@@ -318,7 +366,7 @@ void ModelScene::update(const FrameTime& time, const platform::InputState& input
 void ModelScene::extract(render::FrameData& frame, f64 alpha) {
   const auto blend = static_cast<f32>(alpha);
   viewport_ = frame.viewportSize;
-  if (controller_.mode() == engine::CameraMode::Walk) {
+  if (controller_.mode() == engine::CameraMode::Walk && world_.alive(walker_)) {
     // The eye rides the walker, blended like everything else (no 120 Hz judder).
     const glm::mat4 feet = engine::interpolatedMatrix(world_.get<engine::Transform3D>(walker_), blend);
     camera_.position = glm::vec3(feet[3]) + glm::vec3(0.0f, kEyeHeight, 0.0f);
@@ -326,7 +374,14 @@ void ModelScene::extract(render::FrameData& frame, f64 alpha) {
   }
   frame.viewProjection = camera_.viewProjection(frame.viewportSize);
   frame.cameraPosition = camera_.position;
-  frame.sun = {.direction = kSunDirection, .colour = {1.0f, 0.95f, 0.88f}, .intensity = 3.2f};
+  // The sun: the first Light entity (none: darkness, but for the sky's own light).
+  frame.sun = {.direction = kSunDirection, .colour = glm::vec3(1.0f), .intensity = 0.0f};
+  bool sunFound = false;
+  world_.each<engine::Light>([&](ecs::Entity, engine::Light& light) {
+    if (sunFound) return;
+    sunFound = true;
+    frame.sun = {.direction = light.direction, .colour = light.colour, .intensity = light.intensity};
+  });
   frame.ambient = glm::vec3(0.0f);  // the environment lights the shadows now
   frame.environmentIntensity = 1.0f;
   frame.drawSky = true;
@@ -344,21 +399,47 @@ void ModelScene::extract(render::FrameData& frame, f64 alpha) {
   } else {
     frame.shadows.bounds.reset();  // --model: whatever the model covers
   }
-  for (const Object& object : objects_) {
-    const engine::Model* model = assets_.get(object.model);
-    if (model == nullptr || !world_.alive(object.entity)) continue;
-    model->extract(engine::interpolatedMatrix(world_.get<engine::Transform3D>(object.entity), blend), frame);
-  }
+  // Every visible MeshRenderer, blended between steps, with its Material's adjustments.
+  world_.each<engine::Transform3D, engine::MeshRenderer>([&](ecs::Entity e, engine::Transform3D& t,
+                                                             engine::MeshRenderer& renderer) {
+    if (!renderer.visible) return;
+    const engine::Model* model = modelOf(renderer);
+    if (model == nullptr) return;
+    const usize first = frame.meshes.size();
+    model->extract(engine::interpolatedMatrix(t, blend), frame);
+    const engine::Material* material = world_.tryGet<engine::Material>(e);
+    for (usize i = first; i < frame.meshes.size(); ++i) {
+      render::MeshInstance& instance = frame.meshes[i];
+      instance.castsShadow = instance.castsShadow && renderer.castsShadow;
+      if (material == nullptr) continue;
+      instance.material.baseColourFactor *= material->tint;
+      instance.material.metallicFactor = std::clamp(instance.material.metallicFactor * material->metallicScale, 0.0f, 1.0f);
+      instance.material.roughnessFactor = std::clamp(instance.material.roughnessFactor * material->roughnessScale, 0.0f, 1.0f);
+      instance.material.emissiveFactor += material->emissive;
+    }
+  });
+}
+
+void ModelScene::drawDebugUi(engine::ProfilerData data) {
+  data.entities = world_.entityCount();
+  data.physics = physicsWorld_->stats();
+  if (editor_.draw(world_, data, &physics_)) relink();  // a loaded scene: new entities
 }
 
 // The end-to-end camera and physics tests (tests/e2e/camera.sh, physics.sh) read these lines.
 void ModelScene::logSummary() {
   usize ready = 0;
-  for (const Object& object : objects_) ready += assets_.state(object.model) == engine::AssetState::Ready ? 1 : 0;
+  usize total = 0;
+  world_.each<engine::MeshRenderer>([&](ecs::Entity, engine::MeshRenderer& renderer) {
+    ++total;
+    const auto handle = models_.find(renderer.model);
+    ready += handle != models_.end() && assets_.state(handle->second) == engine::AssetState::Ready ? 1 : 0;
+  });
   const glm::vec3 moved = lastEye_ - startEye_;
   log::info(Category::Game, "camera ended in {} mode, {:.2f} units from where it started ({:.2f} travelled); "
             "{} of {} object(s) ready",
-            describe(controller_.mode()), glm::length(moved), travelled_, ready, objects_.size());
+            describe(controller_.mode()), glm::length(moved), travelled_, ready, total);
+  if (!world_.alive(walker_)) return;
   const glm::vec3 at = world_.get<engine::Transform3D>(walker_).position;
   const physics::PhysicsStats stats = physicsWorld_->stats();
   log::info(Category::Game, "walker ended at ({:.2f}, {:.2f}, {:.2f}), {:.2f} m from the start, {}; {} shot(s), {} "

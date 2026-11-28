@@ -8,13 +8,13 @@ to build, run and troubleshoot is in `README.md`.
   engine architecture, memory management and data-oriented design, and to
   host **Erebus Cradle** (the OpenGL 4.1 game in `../cpp/`) once it is ready.
 - **Where:** repository `colleenneug/Claude-01`, folder `aedans-playground/`,
-  branch `claude/relaxed-cray-5kc2fl` (35 commits, `d065ae6` → this one). No
+  branch `claude/relaxed-cray-5kc2fl` (36 commits, `d065ae6` → this one). No
   pull request open.
-- **Size:** about 18,000 lines of engine code and shaders (plus Jolt,
-  vendored), and 7,400 lines of tests.
+- **Size:** about 19,800 lines of engine code and shaders (plus Jolt and
+  Dear ImGui, vendored), and 7,700 lines of tests.
 - **State at this snapshot:**
-  - `xvfb-run -a ctest --preset debug` passes **26/26**: 19 suites with
-    **248 test cases**, plus 7 end-to-end and smoke checks.
+  - `xvfb-run -a ctest --preset debug` passes **28/28**: 20 suites with
+    **254 test cases**, plus 8 end-to-end and smoke checks.
   - A clean rebuild has **0 warnings** (warnings are errors).
   - **0 Vulkan validation errors**. (The one `[error] [gpu]` line in the
     test log is gpu_tests' deliberately injected "expected" message.)
@@ -77,7 +77,7 @@ render physics ─ ecs          │
 | **platform** (`playground_platform`) | core, GLFW | GLFW lifetime (one at a time), the window (sizes, resize, focus), keyboard/mouse/wheel input as per-frame snapshots with pressed/released edges; a latch so each press reaches exactly one fixed step; releasing keys on focus loss | `Platform`, `Window`, `InputCollector`, `InputState`, `InputLatch`, `Key`, `MouseButton` |
 | **gpu** (`playground_gpu`) | platform, Vulkan 1.3, VMA (vendored v3.3.0 on Linux) | Vulkan bring-up: instance and validation (messages counted; any error fails the app), surface, GPU selection with every rejection reason logged, logical device and queues (dynamic rendering, synchronization2, timeline semaphores, descriptor indexing with update-after-bind, buffer device address, optional anisotropy); memory (VMA); buffers (host-visible, device-local via staging, readback); images (2D, cube, arrays, mip chains built by blits); samplers; swapchain (sRGB or UNORM, rebuilt on resize); RAII for every handle | `Context`, `Device`, `Allocator`, `Buffer`, `Image`, `createTexture`, `Sampler`, `Swapchain`, `DeviceHandle<T>`, `transitionImage` |
 | **ecs** (`playground_ecs`) | core | sparse-set entity/component storage, generational entity handles, multi-component iteration, deferred destruction | `World`, `Entity`, `ComponentPool<T>` |
-| **render** (`playground_render`) | platform, glm; gpu **private** | the `Renderer` interface and Vulkan-free frame description (`FrameData`, meshes, materials, lights, environment, shadow/bloom/tone-map settings); the Vulkan renderer: instanced sprites, meshes with bindless PBR textures, image-based lighting baked on the GPU, a skybox, sun shadow maps, an HDR target, bloom, ACES/PBR Neutral tone mapping, sRGB-correct composite, frame capture for pixel tests; GPU resources behind generational handles with deferred freeing | `Renderer`, `FrameData`, `MeshData`, `Material`, `MeshInstance`, `ProceduralSky`, `HdrImage`, `Aabb`, `directionalShadowMatrix`; private: `VulkanRenderer`, `Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess` |
+| **render** (`playground_render`) | platform, glm; gpu and Dear ImGui **private** | the `Renderer` interface and Vulkan-free frame description (`FrameData`, meshes, materials, lights, environment, shadow/bloom/tone-map settings); the Vulkan renderer: instanced sprites, meshes with bindless PBR textures, image-based lighting baked on the GPU, a skybox, sun shadow maps, an HDR target, bloom, ACES/PBR Neutral tone mapping, sRGB-correct composite, frame capture for pixel tests; GPU resources behind generational handles with deferred freeing | `Renderer`, `FrameData`, `MeshData`, `Material`, `MeshInstance`, `ProceduralSky`, `HdrImage`, `Aabb`, `directionalShadowMatrix`; private: `VulkanRenderer`, `Mesh`, `ResourcePool`, `IblBaker`, `BrdfLut`, `ShadowMap`, `PostProcess` |
 | **engine** (`playground_engine`) | render, ecs, physics; tinygltf + stb **private** | the application loop (window + fixed steps + update + extract + render); cameras (orthographic/perspective, reverse-Z, screen ↔ world) and an orbit/fly/walk controller; `Transform3D` and the physics components (`RigidBody`, `Collider`, `CharacterController`) with `PhysicsSystem`, the fixed-step sync; the **asset manager** (decode on workers, finalize on the main thread, generational handles, cache by path); glTF 2.0 models and HDR panoramas as assets; components and systems (movement, bounce, input, lifetime, sprite extraction, picking); input actions | `Application`, `Camera`, `CameraController`, `AssetManager`, `AssetHandle<T>`, `Model`, `gltfLoader`, `EnvironmentAsset`, `ActionMap`, `Transform`, `Velocity`, `Sprite` |
 | **net** (`playground_net`, alias `engine_net`) | core, glm; ENet **private** | the network transport (server or client hosts; reliable-ordered and unreliable-unsequenced channels; events; `disconnectAfterSending`), **simulated latency, jitter and loss** for tests, bit-level serialization (endian-safe, overrun-proof), quantization (bounded floats, vectors, smallest-three quaternions) | `Host`, `Peer`, `Packet`, `Event`, `Channel`, `NetworkConditions`, `BitWriter`, `BitReader`, `quantize`, `writeQuaternion` |
 | **game** (`playground_game`) | engine, net | the networked game, with no window or GPU: the **wire protocol v3** (Hello, Welcome, Reject, Spawn, Despawn, Input, Snapshot) with **delta snapshots**; the **movement rule** both sides run; the server's per-client **input queue** (ordered, deduplicated, rate-limited); client **prediction** (ring, reconcile, replay) and **interpolation** (snapshot buffer, render clock); the authoritative **server** and the **client** | `protocol::*`, `stepPlayer`, `InputQueue`, `Prediction`, `SnapshotBuffer`, `InterpolationClock`, `GameServer`, `GameClient` |
@@ -251,7 +251,7 @@ procedural sky is baked at start-up, so headless tests stay quick.
 
 ---
 
-## 3. Completed Milestones (Steps 1–10)
+## 3. Completed Milestones (Steps 1–11)
 
 Each item was run and verified: tests in that step, plus every earlier
 test still passing.
@@ -342,7 +342,7 @@ test still passing.
     the demo, where all 64 balls move and spin every tick, 368 → 294
     bytes per snapshot (−20%).
 
-- [x] **Step 10: Jolt Physics** (this commit)
+- [x] **Step 10: Jolt Physics** (`d39fbba`)
   - `physics/` (`engine_physics`): Jolt v5.3.0 vendored and built by our
     own `cmake/jolt` (deterministic, SSE4.2 baseline, no Jolt flags leaking,
     its headers SYSTEM for us); `joltphysics` in `vcpkg.json` for Windows.
@@ -366,6 +366,36 @@ test still passing.
     fake `__has_feature` that hid TSan from Jolt); UBSan's vptr check is
     off for Jolt's sources only (a deliberate Jolt trick it flags).
 
+- [x] **Step 11: Developer UI, profiler and scene files** (this commit)
+  - Dear ImGui v1.91.9b vendored (`third_party/imgui`, core + GLFW and
+    Vulkan backends; vcpkg's `imgui` with both bindings where it exists);
+    `nlohmann-json` in `vcpkg.json`.
+  - `render/src/UiOverlay`: ImGui drawn at the end of the swapchain pass
+    (after tone mapping) with dynamic rendering; its own descriptor pool,
+    freed on shutdown; survives swapchain rebuilds (image count), rebuilt
+    on a format change; ImGui's colours linearised for an sRGB swapchain.
+    `Renderer::enableUi/disableUi`, `FrameData::drawUi`,
+    `Renderer::lastFrameStats`.
+  - `engine::DebugUi`: ImGui's context and GLFW side; F1; drops the mouse
+    from the game while the UI is under it, the keys only while typing;
+    created only with a window and a renderer that can draw it.
+  - `engine::Editor`: editor bar (Save/Load, Ctrl+S/Ctrl+O), Hierarchy
+    (clipped: 25,000 sprites are fine), Inspector (live editing of every
+    component, body rebuild via `PhysicsSystem::rebuild`), Profiler (frame
+    graph, fixed-step, update and render time, entities, draw calls,
+    physics, and the network client's numbers).
+    `Application::lastFrameProfile()` times each phase.
+  - `engine::SceneSerializer`: JSON save/load of every core component,
+    all-or-nothing loading with reasons; new `Name`, `MeshRenderer`,
+    `Material`, `Light` components; `ecs::World::entities()`/`clear()`.
+  - The 3D scene is now ECS-driven: models (`MeshRenderer`), names,
+    material tweaks and the sun (`Light`) are components; Save/Load
+    re-links the walker and the turning crate.
+  - Tests: `scene_tests` (6 cases: exact round trips incl. awkward floats,
+    file I/O, all-or-nothing refusals, unknown components, World::clear),
+    `ui_e2e` (F1, Ctrl+S, Ctrl+O, F1, Escape; 0 validation errors); a
+    manual check of four live resizes with the UI open (clean).
+
 **Verification as of this snapshot:**
 
 | Suite (test cases) | What it covers |
@@ -374,12 +404,13 @@ test still passing.
 | job (10), asset (10) | thread pool, async assets (also under ThreadSanitizer) |
 | gltf (14), ibl (5), shadow (6), net (15) | glTF and HDR decoding; BRDF table maths; shadow framing; bit packing, quantization, loopback networking, simulated latency and loss |
 | physics (17) | see Step 10 |
+| scene (6) | see Step 11 |
 | game (17), netsync (6) | protocol round trips and malformed packets; delta snapshots (exact rebuilds, refused without their baseline, random changes); the movement rule; the input queue and its rate limit; prediction (confirm, replay, overflow); interpolation; a server and two clients over a bad network (convergence with deltas, despawn, version rejection, handshake timeout, speed hack, 2.4 s ping); bytes with and without deltas |
 | app (14) | the main loop with a fake renderer |
 | gpu (17), render (12), mesh (11), environment (6), postfx (9) | Vulkan bring-up, memory and textures; sprites, depth, camera, capture; meshes and materials; image-based lighting and sky; shadows, bloom, ACES, UNORM vs sRGB, resizing (pixels read back from the GPU; every test asserts 0 validation errors) |
-| app_smoke, keyboard_e2e, camera_e2e, physics_e2e, server_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; walking and shooting in the physics scene; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
+| app_smoke, keyboard_e2e, camera_e2e, physics_e2e, ui_e2e, server_e2e, netclient_e2e, app_no_display | the real app for 120 frames; real X11 keystrokes in the 2D and 3D scenes; walking and shooting in the physics scene; the developer UI saving and loading the scene; server + headless bot (30 ms, 5% loss) with no display, then Ctrl+C; the windowed client against a server with validation on; a clear error with no display |
 
-- Debug, release, Clang and ASan+UBSan: 26/26.
+- Debug, release, Clang and ASan+UBSan: 28/28.
 - TSan: the threaded suites (physics included), with 0 race reports.
 - Every build at `-Werror`.
 
@@ -447,15 +478,22 @@ test still passing.
     move by `game::stepPlayer` (2D, no physics), so there is no
     server-authoritative physics yet.
 - **Engine:**
-  - only physics objects are ECS entities with `Transform3D`; there is no
-    `MeshRenderer` component yet (the 3D scene keeps a list of models);
+  - only the 3D scene draws from `MeshRenderer` components (an extraction
+    in the scene, not yet a shared engine system);
   - glTF without skins, animation, morph targets or alpha modes;
-  - no profiler (Tracy) and no debug overlay.
+  - the profiler is our own timings, not Tracy; no Vulkan debug names.
+- **Developer UI:**
+  - the inspector edits components in place; there is no undo, and
+    entities cannot be created or have components added from the UI yet;
+  - a loaded scene replaces the world's entities but not what the scene
+    keeps outside the ECS (the camera; the sky, which stays baked with the
+    original sun direction);
+  - the network client's profiler shows its numbers; its world (the
+    server's) is not editable.
 
 ### Remaining roadmap, in order
 0. **Queued by the user, in this order** (each tested and pushed before
-   the next): Prompt 10, an ImGui developer overlay (F1), entity
-   inspector, frame and netcode profiler, and JSON scene saving; Prompt
+   the next; Prompt 10, the developer UI, is done): Prompt
    11, miniaudio spatial audio (null backend when headless); Prompt 12, a
    cutscene and camera sequencer (spline camera tracks, timed events and
    subtitles, input lock, letterbox, skip; solo plays it on the local

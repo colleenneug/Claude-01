@@ -106,6 +106,8 @@ class GameClient {
   // How long, smoothed, an input takes to come back acknowledged: the
   // round trip plus the server's queue and snapshot spacing.
   [[nodiscard]] f64 ackDelayMs() const noexcept;
+  // ENet's smoothed round trip to the server (without simulated delay).
+  [[nodiscard]] f64 roundTripMs() const;
   [[nodiscard]] ClientStats stats() const noexcept;
 
  private:

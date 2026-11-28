@@ -85,6 +85,11 @@ class World {
   }
 
   [[nodiscard]] usize entityCount() const noexcept { return liveCount_; }
+  // Every live entity, in index order (editors, saving a scene).
+  [[nodiscard]] std::vector<Entity> entities() const;
+  // Destroys every entity at once (not deferred like destroy()); handles to
+  // them all go stale. Not during each().
+  void clear();
   [[nodiscard]] usize pendingDestroyCount() const noexcept { return pendingDestroy_.size(); }
 
   // -------------------------------------------------------------- components
@@ -112,6 +117,12 @@ class World {
   }
 
   // For when the entity must have a T: a missing one is a bug.
+  template <Component T>
+  [[nodiscard]] const T* tryGet(Entity e) const noexcept {
+    const ComponentPool<T>* p = findPool<T>();
+    return p ? p->tryGet(e) : nullptr;
+  }
+
   template <Component T>
   [[nodiscard]] T& get(Entity e) noexcept {
     T* component = tryGet<T>(e);

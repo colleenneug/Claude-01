@@ -11,6 +11,8 @@
 
 #include "playground/core/Types.h"
 
+#include <string>
+
 #include <glm/gtc/quaternion.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -97,6 +99,39 @@ struct PlayerTag {
 // Destroyed when this runs out (lifetimeSystem). Bullets, effects.
 struct Lifetime {
   f32 secondsLeft = 1.0f;
+};
+
+// What to call it: in editors, logs and saved scenes.
+struct Name {
+  std::string value;
+};
+
+// Draw this glTF model (a path the AssetManager resolves, e.g.
+// "models/crate.gltf") at the entity's Transform3D.
+struct MeshRenderer {
+  std::string model;
+  bool visible = true;
+  bool castsShadow = true;
+};
+
+// Adjusts the materials its model brings: multiplies the base colour by
+// `tint` and the metallic and roughness factors by their scales (clamped to
+// 0..1), and adds `emissive` light (linear RGB, may exceed 1).
+struct Material {
+  glm::vec4 tint{1.0f};
+  f32 metallicScale = 1.0f;
+  f32 roughnessScale = 1.0f;
+  glm::vec3 emissive{0.0f};
+};
+
+// A light. Only the sun for now (the renderer has one directional light;
+// point lights are on the roadmap): parallel rays along `direction`.
+enum class LightType : u8 { Directional };
+struct Light {
+  LightType type = LightType::Directional;
+  glm::vec3 direction{0.0f, -1.0f, 0.0f};  // the way the light travels
+  glm::vec3 colour{1.0f};                  // linear RGB
+  f32 intensity = 3.0f;
 };
 
 // How it looks: a coloured rectangle, size multiplied by Transform::scale.

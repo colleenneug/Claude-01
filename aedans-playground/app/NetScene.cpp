@@ -24,15 +24,17 @@ glm::vec4 ballColour(u32 id) {
 
 }  // namespace
 
-Result<std::unique_ptr<NetScene>> NetScene::create(engine::Application& application, const ClientOptions& options) {
+Result<std::unique_ptr<NetScene>> NetScene::create(engine::Application& application, const ClientOptions& options,
+                                                   std::filesystem::path sceneFile) {
   auto client = game::GameClient::connect({.host = options.host, .port = options.port, .name = "windowed player",
                                            .network = options.network});
   if (!client) return tl::unexpected(std::move(client.error()));
-  return std::unique_ptr<NetScene>(new NetScene(application, std::move(*client)));
+  return std::unique_ptr<NetScene>(new NetScene(application, std::move(*client), std::move(sceneFile)));
 }
 
-NetScene::NetScene(engine::Application& application, std::unique_ptr<game::GameClient> client)
-    : application_(application), client_(std::move(client)) {
+NetScene::NetScene(engine::Application& application, std::unique_ptr<game::GameClient> client,
+                   std::filesystem::path sceneFile)
+    : application_(application), client_(std::move(client)), editor_(std::move(sceneFile)) {
   camera_.orthoHalfExtent = game::kWorldBounds.halfSize;
   camera_.projection = engine::Projection::Orthographic;
   camera_.position = {0.0f, 0.0f, 1000.0f};
@@ -85,6 +87,20 @@ void NetScene::extract(render::FrameData& frame, f64 alpha) {
     frame.sprites.push_back({.position = client_->renderPosition(blend), .size = glm::vec2(game::kPlayerSize),
                              .colour = {1.0f, 1.0f, 1.0f, 1.0f}, .depth = kLocalPlayerLayer});
   }
+}
+
+// The profiler, with the network's numbers (the world here is the server's: nothing to edit).
+void NetScene::drawDebugUi(engine::ProfilerData data) {
+  const game::ClientStats stats = client_->stats();
+  data.entities = client_->knownEntityCount();
+  data.net = engine::NetProfile{.state = std::string(game::describe(client_->state())),
+                                .roundTripMs = client_->roundTripMs(), .ackDelayMs = client_->ackDelayMs(),
+                                .snapshots = stats.snapshots, .deltaSnapshots = stats.deltaSnapshots,
+                                .outOfOrder = stats.outOfOrder, .missingBaseline = stats.missingBaseline,
+                                .corrections = stats.prediction.corrections, .inputSeq = client_->inputSeq(),
+                                .ackedInputSeq = client_->lastAckedInputSeq(),
+                                .knownEntities = client_->knownEntityCount()};
+  editor_.drawProfilerOnly(data);
 }
 
 void NetScene::logSummary() {
